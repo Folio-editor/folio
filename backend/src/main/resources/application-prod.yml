@@ -1,0 +1,46 @@
+# ============================================================
+# 운영 프로필 (배포 환경)
+#
+# - DB: ddl-auto=validate (운영 스키마는 마이그레이션 도구로 관리, 검증만 수행)
+# - Swagger: 비활성화 (보안)
+# - SQL 로깅: 끔
+# - 모든 시크릿은 환경변수 필수 (default 없음)
+# ============================================================
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: Asia/Seoul
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.storyzip: INFO
+    org.hibernate.SQL: WARN
