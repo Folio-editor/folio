@@ -1,0 +1,41 @@
+# ============================================================
+# 테스트용 인프라 (CI / 통합 테스트)
+#
+# - 개발 DB와 포트 충돌 방지를 위해 5433 / 6380 사용
+# - tmpfs로 데이터 영속화 안 함 (테스트마다 깨끗한 상태)
+#
+# 사용법:
+#   cd infra/test
+#   cp ../.env.test.example .env
+#   docker compose -f docker-compose.test.yml --env-file .env up -d
+# ============================================================
+services:
+  postgresql-test:
+    image: postgres:16-alpine
+    container_name: storyzip-postgresql-test
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-storyzip}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-storyzip_test}
+      POSTGRES_DB: ${DB_NAME:-storyzip_test}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-storyzip}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: storyzip-redis-test
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
