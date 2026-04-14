@@ -1,12 +1,15 @@
 # ============================================================
 # 개발용 인프라 (PostgreSQL + Redis)
 #
-# 백엔드 애플리케이션은 IDE/로컬에서 직접 실행한다.
+# 백엔드/프론트엔드 애플리케이션은 IDE/로컬에서 직접 실행한다.
 #
 # 사용법:
 #   cd infra/dev
-#   cp ../.env.dev.example .env
+#   cp .env.example .env
 #   docker compose -f docker-compose.dev.yml --env-file .env up -d
+#
+# DB 스키마 원본:
+#   infra/db/schema.sql — 최초 기동 시 자동 적용
 # ============================================================
 services:
   postgresql:
@@ -19,13 +22,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-storyzip_dev}
       POSTGRES_DB: ${DB_NAME:-storyzip}
     volumes:
-<<<<<<< HEAD
-      - storyzip-pgdata:/var/lib/postgresql/data
-      - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-=======
       - storyzip-pgdata-dev:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
->>>>>>> set/S14P31F203-28_projectSetup
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     command: >
       postgres
         -c wal_level=logical
