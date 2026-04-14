@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StoryZip Wireframe</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --paper: #fdf9f8;
+      --panel: #F5EAE7;
+      --panel-strong: #B59581;
+      --ink: #3b2d29;
+      --muted: #7e6b64;
+      --line: rgba(181, 149, 129, 0.28);
+      --line-strong: rgba(181, 149, 129, 0.45);
+      --accent: #B59581;
+      --accent-soft: #F5EAE7;
+      --accent-deep: #8f7262;
+      --shadow: 0 18px 50px rgba(101, 71, 59, 0.06);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max: 1440px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    a { color: inherit; text-decoration: none; }
+    h1, h2, h3, h4, p { margin: 0; }
+
+    .shell { width: min(calc(100% - 32px), var(--max)); margin: 0 auto; }
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      backdrop-filter: blur(14px);
+      background: rgba(255, 255, 255, 0.92);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 16px 0;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: 0.04em; }
+    .brand-mark {
+      width: 42px; height: 42px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+      color: #fffaf7; display: grid; place-items: center; box-shadow: var(--shadow);
+    }
+    .nav { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav a, .chip {
+      padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line);
+      background: #ffffff; color: var(--muted); font-size: 13px;
+    }
+
+    .hero { padding: 42px 0 24px; }
+    .hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 24px; align-items: stretch; }
+    .hero-card, .panel, .screen, .note, .mini-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .hero-card { border-radius: 30px; padding: 36px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent-deep);
+      margin-bottom: 18px; font-weight: 700;
+    }
+    h1 {
+      font-size: clamp(34px, 5vw, 60px); line-height: 1.02;
+      letter-spacing: -0.04em; margin-bottom: 16px;
+    }
+    .hero-copy { font-size: 17px; line-height: 1.8; color: var(--muted); max-width: 60ch; }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px; padding: 14px 18px;
+      border-radius: 16px; border: 1px solid transparent; font-weight: 700; font-size: 14px;
+    }
+    .btn-primary { background: var(--accent); color: #fffaf7; }
+    .btn-secondary { background: #fff7f3; border-color: var(--line-strong); color: var(--accent-deep); }
+    .hero-side { display: grid; gap: 16px; }
+    .mini-card { border-radius: 26px; padding: 22px; }
+    .mini-card h3 { font-size: 18px; margin-bottom: 10px; }
+    .meta-list { display: grid; gap: 10px; margin-top: 16px; }
+    .meta-row {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 14px; padding: 10px 0; border-top: 1px dashed var(--line);
+      font-size: 14px; color: var(--muted);
+    }
+    .meta-row strong { color: var(--ink); }
+
+    .section { padding: 34px 0 18px; }
+    .section-head {
+      display: flex; justify-content: space-between; gap: 20px;
+      align-items: end; margin-bottom: 18px;
+    }
+    .section-head p { max-width: 72ch; color: var(--muted); line-height: 1.7; }
+    .grid-3, .grid-2, .screen-stack { display: grid; gap: 18px; }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split-main-side {
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      align-items: start;
+    }
+    .split-support {
+      grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+      align-items: start;
+    }
+    .split-ops {
+      grid-template-columns: minmax(0, 1.02fr) minmax(320px, 0.98fr);
+      align-items: start;
+    }
+    .panel { border-radius: 20px; padding: 24px; }
+    .panel h3 { font-size: 18px; margin-bottom: 10px; }
+    .panel p, .panel li, .note p, .screen p { color: var(--muted); line-height: 1.7; }
+    ul { margin: 12px 0 0; padding-left: 18px; }
+    li + li { margin-top: 8px; }
+    .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .tag {
+      padding: 7px 10px; border-radius: 999px; background: var(--panel);
+      border: 1px solid var(--line); font-size: 12px; color: var(--muted);
+    }
+
+    .note { border-radius: 24px; padding: 26px; position: sticky; top: 96px; }
+    .note h3 { margin-bottom: 12px; font-size: 20px; }
+    .screen { border-radius: 24px; overflow: hidden; }
+    .screen-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 18px 22px; background: var(--accent-soft);
+      border-bottom: 1px solid var(--line);
+    }
+    .screen-head h3 { font-size: 19px; }
+    .screen-body { padding: 22px; background: #ffffff; min-height: 280px; }
+
+    .mock, .dashboard-box, .link-box, .token-box {
+      border: 1px solid var(--line); border-radius: 18px; background: #fffaf7;
+    }
+    .mock { overflow: hidden; }
+    .mock-toolbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 14px; border-bottom: 1px solid var(--line);
+      background: var(--accent-soft); color: var(--muted); font-size: 13px;
+    }
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .aside-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .toolbar-btn {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--accent-deep);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .mock-grid { display: grid; grid-template-columns: 232px minmax(0, 1.55fr) 288px; min-height: 620px; }
+    .rail, .canvas, .aside { padding: 16px; }
+    .rail { background: #F5EAE7; border-right: 1px solid var(--line); }
+    .canvas { background: #ffffff; display: grid; gap: 16px; }
+    .aside { background: #F5EAE7; border-left: 1px solid var(--line); display: grid; gap: 12px; align-content: start; }
+
+    .tree-item, .stat, .subcard, .timeline, .idea-card, .workspace-row, .landing-strip, .settings-row {
+      border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 250, 247, 0.98);
+    }
+    .tree-item, .workspace-row, .settings-row { padding: 12px 14px; }
+    .tree-item + .tree-item, .workspace-row + .workspace-row, .settings-row + .settings-row { margin-top: 10px; }
+    .tree-item.active { background: var(--accent-soft); border-color: var(--line-strong); }
+    .tree-title, .workspace-title { font-weight: 700; margin-bottom: 6px; }
+    .tree-sub, .workspace-meta, .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+    .canvas-hero, .editor-sheet, .dashboard-box, .link-box, .token-box { padding: 16px; }
+    .canvas-hero { min-height: 92px; }
+    .dashboard-box { min-height: 220px; }
+    .link-box, .token-box { min-height: 136px; }
+    .editor-sheet { min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: #ffffff; }
+    .editor-sheet p + p { margin-top: 10px; }
+    .card-grid-2, .card-grid-3, .strip-grid { display: grid; gap: 12px; }
+    .card-grid-2 { grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr); }
+    .card-grid-2.equal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .strip-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .stat, .subcard, .idea-card, .landing-strip { padding: 14px; }
+    .subcard { min-height: 110px; }
+    .idea-card { min-height: 122px; }
+    .stat strong, .subcard strong, .landing-strip strong { display: block; margin-bottom: 8px; font-size: 15px; }
+
+    .timeline { padding: 16px; }
+    .timeline-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    .status-pill,
+    .level-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+    }
+    .status-pill {
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+    }
+    .level-pill {
+      background: #ffffff;
+      color: var(--ink);
+    }
+    .timeline-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .mini-stat {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+    }
+    .mini-stat strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .mini-stat p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .timeline-bar {
+      position: relative; height: 10px; border-radius: 999px;
+      background: linear-gradient(90deg, #F5EAE7, #B59581); margin: 14px 0 20px;
+    }
+    .dot {
+      position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%;
+      transform: translate(-50%, -50%); border: 3px solid #fff7ee;
+    }
+    .dot.plant { background: #d7beb2; left: 16%; }
+    .dot.resolve { background: #B59581; left: 58%; }
+    .dot.final { background: #8f7262; left: 86%; }
+    .timeline-labels {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-size: 12px; color: var(--muted);
+    }
+    @media (max-width: 1100px) {
+      .hero-grid, .grid-3, .grid-2, .split-main-side, .split-support, .split-ops, .card-grid-3, .strip-grid, .mock-grid { grid-template-columns: 1fr; }
+      .note { position: static; }
+      .timeline-summary { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(calc(100% - 20px), var(--max)); }
+      .hero-card, .mini-card, .panel, .note, .screen-body { padding: 18px; }
+      .topbar-inner, .section-head, .screen-head, .mock-toolbar { align-items: flex-start; flex-direction: column; }
+      h1 { font-size: 34px; }
+      .card-grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <div class="brand">
+        <div class="brand-mark">SZ</div>
+        <div>
+          <div>StoryZip</div>
+          <div class="muted">Writer Workspace Wireframe</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#editor-shell">집필 워크스페이스</a>
+        <a href="#ops">운영 화면</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-grid">
+        <article class="hero-card">
+          <h1>StoryZip 와이어프레임</h1>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#editor-shell">집필 화면 보기</a>
+          </div>
+        </article>
+        <div class="hero-side">
+          <article class="mini-card">
+            <h3>도메인 구조 요약</h3>
+            <div class="meta-list">
+              <div class="meta-row"><span>중심 단위</span><strong>Work</strong></div>
+              <div class="meta-row"><span>핵심 편집 축</span><strong>Plan / World / Character / Plot / Episode</strong></div>
+              <div class="meta-row"><span>보조 지원 축</span><strong>Foreshadow / Idea / Export / AI</strong></div>
+              <div class="meta-row"><span>차별 포인트</span><strong>Offline-first + Sync</strong></div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="editor-shell">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow">Core Workspace</div>
+          <h2>집필 워크스페이스</h2>
+        </div>
+      </div>
+
+      <article class="screen">
+        <div class="screen-head">
+          <div>
+            <div class="eyebrow" style="margin-bottom:8px">03</div>
+            <h3>Editor Shell</h3>
+          </div>
+          <span class="chip">Offline-first + Sync</span>
+        </div>
+        <div class="screen-body">
+          <div class="mock">
+            <div class="mock-toolbar">
+              <div>붉은 파도 아래 / 원고 / 12화 유리역 플랫폼</div>
+              <div class="toolbar-actions">
+                <span>오프라인 작업 가능 · 마지막 동기화 14:22</span>
+              </div>
+            </div>
+            <div class="mock-grid">
+              <div class="rail">
+                <div class="tree-item"><div class="tree-title">기획</div><div class="tree-sub">슬로건 · 장르 · 분위기 · 타깃 독자</div></div>
+                <div class="tree-item"><div class="tree-title">세계관</div><div class="tree-sub">시대/배경 · 공간/지리 · 세력/조직</div></div>
+                <div class="tree-item"><div class="tree-title">등장인물</div><div class="tree-sub">인물 카드 14개 · 태그 필터</div></div>
+                <div class="tree-item"><div class="tree-title">플롯</div><div class="tree-sub">3막 구조 · 12화 링크 있음</div></div>
+                <div class="tree-item active"><div class="tree-title">원고</div><div class="tree-sub">12화 유리역 플랫폼 · 초고 3,210자</div></div>
+                <div class="tree-item"><div class="tree-title">복선</div><div class="tree-sub">진행중 6 · 완결 3 · 폐기 1</div></div>
+                <div class="tree-item"><div class="tree-title">아이디어 아카이브</div><div class="tree-sub">문장 · 장면 · 설정 · 반전 · 대사</div></div>
+              </div>
+
+              <div class="canvas">
+                <div class="canvas-hero">
+                  <strong>현재 작업 회차</strong>
+                  <p class="muted">12화 유리역 플랫폼 / 상태: 초고 / 링크된 플롯: 2막 4장 추격 장면</p>
+                </div>
+                <div class="editor-sheet">
+                  <p>비가 내린 뒤 플랫폼 바닥은 유리처럼 빛났다. 서윤은 발끝으로 고인 물을 밀어내며 열차 쪽을 바라봤다.</p>
+                  <p>그녀가 기다린 건 열차가 아니라, 저 끝에서 천천히 걸어오는 남자의 표정이었다. 그 표정이 무너지면 오늘의 복선은 심긴다.</p>
+                  <p class="muted">TipTap 편집기 영역. 상단 서식 도구와 하단 글자수, 상태 영역을 포함하는 구조를 가정.</p>
+                </div>
+                <div class="card-grid-2 equal">
+                  <div class="link-box">
+                    <strong>플롯 링크</strong>
+                    <p>2막 / 4장 / 추격 장면과 1:1 연결</p>
+                  </div>
+                  <div class="link-box">
+                    <strong>AI 도우미</strong>
+                    <p>설정 충돌 분석, 톤 점검, 문장 제안, 줄거리 요약</p>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="aside">
+                <div class="aside-actions">
+                  <span class="toolbar-btn">목록보기</span>
+                  <span class="toolbar-btn">내보내기</span>
+                  <span class="toolbar-btn">설정</span>
+                </div>
+                <div class="subcard"><strong>작업 정보</strong><p>글자수 3,210자 · 상태 초고 · 마지막 수정 2분 전</p></div>
+                <div class="subcard"><strong>복선</strong><p>“붉은 우산의 정체” 심기 포인트 포함</p></div>
+                <div class="subcard"><strong>세계관</strong><p>유리역 출입 규칙 / 북부 운송조합 / 야간 경보 체계</p></div>
+                <div class="subcard"><strong>동기화 상태</strong><p>로컬 우선 저장 완료, 온라인 복귀 시 업로드 예정 1건</p></div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section">
+      <div class="grid-2 split-support">
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">04</div>
+              <h3>기획 + 세계관</h3>
+            </div>
+            <span class="chip">Plan / WorldNote 반영</span>
+          </div>
+          <div class="screen-body">
+            <div class="card-grid-2">
+              <div class="subcard">
+                <strong>기획 상단 고정 필드</strong>
+                <p>슬로건, 장르 태그, 분위기 태그, 타깃 독자를 한 화면 상단에 고정한다.</p>
+              </div>
+              <div class="subcard">
+                <strong>자유 편집 영역</strong>
+                <p>시놉시스, 연재 계획, 참고 자료는 TipTap 본문 하나로 유연하게 관리한다.</p>
+              </div>
+            </div>
+            <div style="margin-top:12px" class="dashboard-box">
+              <strong>세계관 트리</strong>
+              <div style="margin-top:12px">
+                <div class="tree-item active"><div class="tree-title">공간 / 지리</div><div class="tree-sub">유리역, 북부 항구, 사라진 선로</div></div>
+                <div class="tree-item"><div class="tree-title">세력 / 조직</div><div class="tree-sub">운송조합, 감시국, 야경단</div></div>
+                <div class="tree-item"><div class="tree-title">규칙 / 법칙</div><div class="tree-sub">야간 운행 제한, 유리광 채집 규정</div></div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">05</div>
+              <h3>등장인물</h3>
+            </div>
+            <span class="chip">Character + CharacterTag</span>
+          </div>
+          <div class="screen-body">
+            <div class="card-grid-3">
+              <div class="idea-card"><strong>서윤</strong><p>주인공 · 27세 · INTJ · 북부 운송조합 태그</p></div>
+              <div class="idea-card"><strong>도현</strong><p>조력자 · 불명 · ENTP · 유리역 야경단 태그</p></div>
+              <div class="idea-card"><strong>에녹</strong><p>적대자 · 40대 · ENTJ · 감시국 태그</p></div>
+            </div>
+            <div style="margin-top:12px" class="dashboard-box">
+              <strong>인물 상세 카드</strong>
+              <p class="muted" style="margin-top:10px">
+                기본 정보와 추가 정보를 한곳에서 수정하고, 세계관 태그로 소속이나 지역을 함께 묶는다.
+              </p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="grid-2 split-main-side">
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">06</div>
+              <h3>플롯</h3>
+            </div>
+            <span class="chip">Plot</span>
+          </div>
+          <div class="screen-body">
+            <div class="card-grid-2">
+              <div class="dashboard-box">
+                <strong>플롯 트리</strong>
+                <div style="margin-top:12px">
+                  <div class="tree-item"><div class="tree-title">2막</div><div class="tree-sub">긴장 상승 구간</div></div>
+                  <div class="tree-item active"><div class="tree-title">4장 추격 장면</div><div class="tree-sub">상태 작성중 · 원고와 연결됨</div></div>
+                  <div class="tree-item"><div class="tree-title">5장 플랫폼 대치</div><div class="tree-sub">상태 예정</div></div>
+                </div>
+              </div>
+              <div class="dashboard-box">
+                <strong>원고 연결</strong>
+                <p style="margin-top:10px">선택한 플롯 회차가 어떤 원고 회차와 연결되는지 여기서 확인하고 이동한다.</p>
+                <div class="tag-row">
+                  <span class="tag">원고 보기</span>
+                  <span class="tag">링크 해제</span>
+                  <span class="tag">연결할 회차 찾기</span>
+                </div>
+                <p style="margin-top:14px" class="muted">
+                  플롯은 별도 페이지로 두고, 원고 연결은 보조 액션으로 다루는 구조다.
+                </p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">07</div>
+              <h3>복선</h3>
+            </div>
+            <span class="chip">Foreshadow + ForeshadowLink</span>
+          </div>
+          <div class="screen-body">
+            <div class="timeline">
+              <strong>복선: 붉은 우산의 정체</strong>
+              <div class="timeline-meta">
+                <span class="status-pill">진행중</span>
+                <span class="level-pill">중요도 상</span>
+              </div>
+              <p style="margin-top:8px">심기와 회수 시점을 회차 기준으로 보여주는 복선 카드다.</p>
+              <div class="timeline-bar">
+                <div class="dot plant"></div>
+                <div class="dot resolve"></div>
+                <div class="dot final"></div>
+              </div>
+              <div class="timeline-labels">
+                <span>3화 심기</span>
+                <span>22화 부분회수</span>
+                <span>48화 최종회수</span>
+              </div>
+              <div class="timeline-summary">
+                <div class="mini-stat">
+                  <strong>심기</strong>
+                  <p>원고 2건 · 플롯 1건 연결</p>
+                </div>
+                <div class="mini-stat">
+                  <strong>회수</strong>
+                  <p>부분회수 1건 · 최종회수 1건</p>
+                </div>
+                <div class="mini-stat">
+                  <strong>상태</strong>
+                  <p>아직 끝나지 않은 진행중 복선</p>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:12px" class="card-grid-2">
+              <div class="subcard"><strong>맥락 메모</strong><p>3화에서는 색채만 암시하고, 22화에서 우산의 소유자를 바꿔 오해를 유도한다.</p></div>
+              <div class="subcard"><strong>연결 회차</strong><p>플롯 2건, 원고 3건이 이 복선과 연결되어 있다.</p></div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="ops">
+      <div class="section-head">
+        <div>
+          <h2>운영성 화면</h2>
+        </div>
+      </div>
+      <div class="grid-2 split-ops">
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">08</div>
+              <h3>AI 토큰 / 결제</h3>
+            </div>
+            <span class="chip">TokenWallet + Payment + Subscription</span>
+          </div>
+          <div class="screen-body">
+            <div class="card-grid-2">
+              <div class="token-box">
+                <strong>현재 토큰 잔액</strong>
+                <p style="margin-top:10px">18,400 토큰</p>
+                <p class="muted">이번 달 사용 6,200 / 자동 충전 없음 / 구독 플랜 베이직</p>
+              </div>
+              <div class="token-box">
+                <strong>AI 기능 단가</strong>
+                <p style="margin-top:10px">설정 충돌 분석 300 · 톤 점검 200 · 문장 제안 100 · 요약 250</p>
+              </div>
+            </div>
+            <div style="margin-top:12px" class="dashboard-box">
+              <strong>결제 / 구독 액션</strong>
+              <div class="tag-row">
+                <span class="tag">5,000 토큰 충전</span>
+                <span class="tag">20,000 토큰 충전</span>
+                <span class="tag">월간 구독 변경</span>
+                <span class="tag">거래 내역 보기</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen">
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow" style="margin-bottom:8px">09</div>
+              <h3>설정 / 동기화</h3>
+            </div>
+            <span class="chip">Settings + Sync State</span>
+          </div>
+          <div class="screen-body">
+            <div class="settings-row">
+              <div class="workspace-title">동기화 상태</div>
+              <div class="workspace-meta">온라인 / 오프라인 / 동기화 중 / 오류 상태를 상단 상태바와 별도 화면에서 확인</div>
+            </div>
+            <div class="settings-row">
+              <div class="workspace-title">데스크톱 설정</div>
+              <div class="workspace-meta">폰트 크기, 로컬 보존 정책, AI 기본 옵션</div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>
