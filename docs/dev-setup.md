@@ -25,6 +25,24 @@ S14P31F203/
 | Java | 21 | 백엔드 런타임 |
 | Gradle | 8+ (wrapper 포함) | 백엔드 빌드 |
 | Python | 3.12 | AI 서버 런타임 |
+| Doppler CLI | latest | 환경변수 중앙 관리 (권장) |
+
+### Doppler 초기 세팅
+
+환경변수는 Doppler에서 통합 관리한다. 상세: [doppler-setup.md](doppler-setup.md)
+
+```bash
+# 설치 후 로그인
+doppler login
+
+# 각 서비스 디렉토리에서 연결 (최초 1회)
+cd backend && doppler setup    # storyzip / dev
+cd ai && doppler setup
+cd frontend && doppler setup
+cd infra/dev && doppler setup
+```
+
+이후 모든 실행 명령어 앞에 `doppler run -- ` 를 붙인다.
 
 ---
 

@@ -5,6 +5,7 @@
   "description": "StoryZip - 스토리 작가를 위한 원고 편집 서비스",
   "main": ".vite/build/index.js",
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "electron-forge start",
     "package": "electron-forge package",
