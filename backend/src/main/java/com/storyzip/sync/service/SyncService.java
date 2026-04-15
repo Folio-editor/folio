@@ -12,7 +12,24 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
+/**
+ * PowerSync CRUD 업로드 처리.
+ *
+ * <p>op 종류:
+ * <ul>
+ *   <li>PUT    — 전체 행. 포함된 컬럼만 존재 (null 컬럼은 data에서 생략됨).</li>
+ *   <li>PATCH  — 변경된 컬럼만 전송.</li>
+ *   <li>DELETE — id만.</li>
+ * </ul>
+ *
+ * <p>따라서 setter는 {@code data.containsKey(key)}일 때만 호출해야 한다.
+ * 그렇지 않으면 PATCH에서 포함 안 된 NOT NULL 컬럼이 null로 덮어써져 제약 위반.
+ *
+ * <p>writer_id는 예외 — 보안상 항상 JWT 값으로 덮어쓴다.
+ * updated_at은 항상 서버 시각으로 갱신한다.
+ */
 @Service
 @RequiredArgsConstructor
 public class SyncService {
@@ -57,212 +74,317 @@ public class SyncService {
     // ── work ────────────────────────────────────────────────────
     private void processWork(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { workRepo.deleteById(id); return; }
-        Work entity = workRepo.findById(id).orElse(Work.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setTitle(str(data, "title", "제목 없음"));
-        entity.setAuthorName(str(data, "author_name", null));
-        entity.setDescription(str(data, "description", null));
-        entity.setStatus(str(data, "status", "active"));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        workRepo.save(entity);
+        Work e = workRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;  // PATCH 대상 없음 — 무시
+            e = Work.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyStr(data, "title",       e::setTitle);
+        applyStr(data, "author_name", e::setAuthorName);
+        applyStr(data, "description", e::setDescription);
+        applyStr(data, "status",      e::setStatus);
+        applyInt(data, "sort_order",  e::setSortOrder);
+        applyDt(data,  "created_at",  e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        // 신규 insert인 경우 NOT NULL 기본값 보정
+        if (e.getTitle() == null) e.setTitle("제목 없음");
+        if (e.getStatus() == null) e.setStatus("연재중");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        workRepo.save(e);
     }
 
     // ── plan ────────────────────────────────────────────────────
     private void processPlan(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { planRepo.deleteById(id); return; }
-        Plan entity = planRepo.findById(id).orElse(Plan.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setSlogan(str(data, "slogan", null));
-        entity.setGenres(str(data, "genres", null));
-        entity.setMoods(str(data, "moods", null));
-        entity.setTargetAudience(str(data, "target_audience", null));
-        entity.setContent(str(data, "content", null));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        planRepo.save(entity);
+        UUID workId = uuid(data, "work_id");
+        // 1:1 UNIQUE 제약 → work_id로 기존 entity 선 조회, 없으면 id로 조회
+        Plan e = null;
+        if (workId != null) {
+            e = planRepo.findByWorkId(workId).orElse(null);
+        }
+        if (e == null) {
+            e = planRepo.findById(id).orElse(null);
+        }
+        if (e == null) {
+            if ("PATCH".equals(op)) return;  // PATCH 대상 없음 — 무시
+            e = Plan.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id", e::setWorkId);
+        applyStr(data,  "slogan",          e::setSlogan);
+        applyStr(data,  "genres",          e::setGenres);
+        applyStr(data,  "moods",           e::setMoods);
+        applyStr(data,  "target_audience", e::setTargetAudience);
+        applyStr(data,  "content",         e::setContent);
+        applyDt(data,   "created_at",      e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        planRepo.save(e);
     }
 
     // ── world_note ───────────────────────────────────────────────
     private void processWorldNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { worldNoteRepo.deleteById(id); return; }
-        WorldNote entity = worldNoteRepo.findById(id).orElse(WorldNote.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setParentId(uuidOrNull(data, "parent_id"));
-        entity.setName(str(data, "name", "새 문서"));
-        entity.setContent(str(data, "content", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        worldNoteRepo.save(entity);
+        WorldNote e = worldNoteRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = WorldNote.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data,  "work_id",    e::setWorkId);
+        applyUuidN(data, "parent_id",  e::setParentId);
+        applyStr(data,   "name",       e::setName);
+        applyStr(data,   "content",    e::setContent);
+        applyInt(data,   "sort_order", e::setSortOrder);
+        applyDt(data,    "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getName() == null) e.setName("새 문서");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        worldNoteRepo.save(e);
     }
 
     // ── character ────────────────────────────────────────────────
     private void processCharacter(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { characterRepo.deleteById(id); return; }
-        Character entity = characterRepo.findById(id).orElse(Character.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setName(str(data, "name", "이름 없음"));
-        entity.setProfileImageUrl(str(data, "profile_image_url", null));
-        entity.setGender(str(data, "gender", "unknown"));
-        entity.setAge(str(data, "age", "unknown"));
-        entity.setAppearance(str(data, "appearance", ""));
-        entity.setMbti(str(data, "mbti", null));
-        entity.setPersonality(str(data, "personality", null));
-        entity.setContent(str(data, "content", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        characterRepo.save(entity);
+        Character e = characterRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = Character.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id",           e::setWorkId);
+        applyStr(data,  "name",              e::setName);
+        applyStr(data,  "profile_image_url", e::setProfileImageUrl);
+        applyStr(data,  "gender",            e::setGender);
+        applyStr(data,  "age",               e::setAge);
+        applyStr(data,  "appearance",        e::setAppearance);
+        applyStr(data,  "mbti",              e::setMbti);
+        applyStr(data,  "personality",       e::setPersonality);
+        applyStr(data,  "content",           e::setContent);
+        applyInt(data,  "sort_order",        e::setSortOrder);
+        applyDt(data,   "created_at",        e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getName() == null) e.setName("이름 없음");
+        if (e.getGender() == null) e.setGender("미설정");
+        if (e.getAge() == null) e.setAge("");
+        if (e.getAppearance() == null) e.setAppearance("");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        characterRepo.save(e);
     }
 
     // ── character_custom_field ────────────────────────────────────
     private void processCharacterCustomField(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { charCustomFieldRepo.deleteById(id); return; }
-        CharacterCustomField entity = charCustomFieldRepo.findById(id).orElse(CharacterCustomField.builder().id(id).build());
-        entity.setCharacterId(uuid(data, "character_id"));
-        entity.setFieldName(str(data, "field_name", ""));
-        entity.setFieldValue(str(data, "field_value", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        charCustomFieldRepo.save(entity);
+        CharacterCustomField e = charCustomFieldRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = CharacterCustomField.builder().id(id).build();
+        }
+        applyUuid(data, "character_id", e::setCharacterId);
+        applyStr(data,  "field_name",   e::setFieldName);
+        applyStr(data,  "field_value",  e::setFieldValue);
+        applyInt(data,  "sort_order",   e::setSortOrder);
+        applyDt(data,   "created_at",   e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getFieldName() == null) e.setFieldName("");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        charCustomFieldRepo.save(e);
     }
 
     // ── character_tag ─────────────────────────────────────────────
     private void processCharacterTag(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { charTagRepo.deleteById(id); return; }
-        CharacterTag entity = charTagRepo.findById(id).orElse(CharacterTag.builder().id(id).build());
-        entity.setCharacterId(uuid(data, "character_id"));
-        entity.setWorldNoteId(uuid(data, "world_note_id"));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        charTagRepo.save(entity);
+        CharacterTag e = charTagRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = CharacterTag.builder().id(id).build();
+        }
+        applyUuid(data, "character_id",  e::setCharacterId);
+        applyUuid(data, "world_note_id", e::setWorldNoteId);
+        applyDt(data,   "created_at",    e::setCreatedAt);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        charTagRepo.save(e);
     }
 
     // ── plot ─────────────────────────────────────────────────────
     private void processPlot(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { plotRepo.deleteById(id); return; }
-        Plot entity = plotRepo.findById(id).orElse(Plot.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setParentId(uuidOrNull(data, "parent_id"));
-        entity.setTitle(str(data, "title", "제목 없음"));
-        entity.setStatus(str(data, "status", null));
-        entity.setContent(str(data, "content", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        plotRepo.save(entity);
+        Plot e = plotRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = Plot.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data,  "work_id",   e::setWorkId);
+        applyUuidN(data, "parent_id", e::setParentId);
+        applyStr(data,   "title",     e::setTitle);
+        applyStr(data,   "status",    e::setStatus);
+        applyStr(data,   "content",   e::setContent);
+        applyInt(data,   "sort_order", e::setSortOrder);
+        applyDt(data,    "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getTitle() == null) e.setTitle("제목 없음");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        plotRepo.save(e);
     }
 
     // ── episode ───────────────────────────────────────────────────
     private void processEpisode(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { episodeRepo.deleteById(id); return; }
-        Episode entity = episodeRepo.findById(id).orElse(Episode.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setParentId(uuidOrNull(data, "parent_id"));
-        entity.setTitle(str(data, "title", "제목 없음"));
-        entity.setStatus(str(data, "status", "draft"));
-        entity.setContent(str(data, "content", null));
-        entity.setWordCount(integer(data, "word_count", 0));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        episodeRepo.save(entity);
+        Episode e = episodeRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = Episode.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data,  "work_id",    e::setWorkId);
+        applyUuidN(data, "parent_id",  e::setParentId);
+        applyStr(data,   "title",      e::setTitle);
+        applyStr(data,   "status",     e::setStatus);
+        applyStr(data,   "content",    e::setContent);
+        applyInt(data,   "word_count", e::setWordCount);
+        applyInt(data,   "sort_order", e::setSortOrder);
+        applyDt(data,    "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getTitle() == null) e.setTitle("제목 없음");
+        if (e.getStatus() == null) e.setStatus("미작성");
+        if (e.getWordCount() == null) e.setWordCount(0);
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        episodeRepo.save(e);
     }
 
     // ── plot_episode_link ─────────────────────────────────────────
     private void processPlotEpisodeLink(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { plotEpisodeLinkRepo.deleteById(id); return; }
-        PlotEpisodeLink entity = plotEpisodeLinkRepo.findById(id).orElse(PlotEpisodeLink.builder().id(id).build());
-        entity.setPlotId(uuid(data, "plot_id"));
-        entity.setEpisodeId(uuid(data, "episode_id"));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        plotEpisodeLinkRepo.save(entity);
+        PlotEpisodeLink e = plotEpisodeLinkRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = PlotEpisodeLink.builder().id(id).build();
+        }
+        applyUuid(data, "plot_id",    e::setPlotId);
+        applyUuid(data, "episode_id", e::setEpisodeId);
+        applyDt(data,   "created_at", e::setCreatedAt);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        plotEpisodeLinkRepo.save(e);
     }
 
     // ── foreshadow ────────────────────────────────────────────────
     private void processForeshadow(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { foreshadowRepo.deleteById(id); return; }
-        Foreshadow entity = foreshadowRepo.findById(id).orElse(Foreshadow.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setTitle(str(data, "title", "제목 없음"));
-        entity.setStatus(str(data, "status", "open"));
-        entity.setImportance(str(data, "importance", "medium"));
-        entity.setContent(str(data, "content", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        foreshadowRepo.save(entity);
+        Foreshadow e = foreshadowRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = Foreshadow.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id",    e::setWorkId);
+        applyStr(data,  "title",      e::setTitle);
+        applyStr(data,  "status",     e::setStatus);
+        applyStr(data,  "importance", e::setImportance);
+        applyStr(data,  "content",    e::setContent);
+        applyInt(data,  "sort_order", e::setSortOrder);
+        applyDt(data,   "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getTitle() == null) e.setTitle("제목 없음");
+        if (e.getStatus() == null) e.setStatus("진행중");
+        if (e.getImportance() == null) e.setImportance("중");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        foreshadowRepo.save(e);
     }
 
     // ── foreshadow_link ───────────────────────────────────────────
     private void processForeshadowLink(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { foreshadowLinkRepo.deleteById(id); return; }
-        ForeshadowLink entity = foreshadowLinkRepo.findById(id).orElse(ForeshadowLink.builder().id(id).build());
-        entity.setForeshadowId(uuid(data, "foreshadow_id"));
-        entity.setLinkType(str(data, "link_type", ""));
-        entity.setEpisodeId(uuidOrNull(data, "episode_id"));
-        entity.setPlotId(uuidOrNull(data, "plot_id"));
-        entity.setContextMemo(str(data, "context_memo", null));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        foreshadowLinkRepo.save(entity);
+        ForeshadowLink e = foreshadowLinkRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = ForeshadowLink.builder().id(id).build();
+        }
+        applyUuid(data,  "foreshadow_id", e::setForeshadowId);
+        applyStr(data,   "link_type",    e::setLinkType);
+        applyUuidN(data, "episode_id",   e::setEpisodeId);
+        applyUuidN(data, "plot_id",      e::setPlotId);
+        applyStr(data,   "context_memo", e::setContextMemo);
+        applyDt(data,    "created_at",   e::setCreatedAt);
+        if (e.getLinkType() == null) e.setLinkType("");
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        foreshadowLinkRepo.save(e);
     }
 
     // ── idea_archive ──────────────────────────────────────────────
     private void processIdeaArchive(String op, UUID id, Map<String, Object> data, UUID writerId) {
         if ("DELETE".equals(op)) { ideaArchiveRepo.deleteById(id); return; }
-        IdeaArchive entity = ideaArchiveRepo.findById(id).orElse(IdeaArchive.builder().id(id).build());
-        entity.setWriterId(writerId);
-        entity.setWorkId(uuid(data, "work_id"));
-        entity.setContent(str(data, "content", ""));
-        entity.setTag(str(data, "tag", null));
-        entity.setSortOrder(integer(data, "sort_order", 0));
-        entity.setCreatedAt(datetime(data, "created_at", entity.getCreatedAt()));
-        entity.setUpdatedAt(datetime(data, "updated_at", LocalDateTime.now()));
-        ideaArchiveRepo.save(entity);
+        IdeaArchive e = ideaArchiveRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = IdeaArchive.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id",    e::setWorkId);
+        applyStr(data,  "content",    e::setContent);
+        applyStr(data,  "tag",        e::setTag);
+        applyInt(data,  "sort_order", e::setSortOrder);
+        applyDt(data,   "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getContent() == null) e.setContent("");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        ideaArchiveRepo.save(e);
     }
 
     // ── helpers ───────────────────────────────────────────────────
-    private String str(Map<String, Object> data, String key, String defaultVal) {
-        Object v = data.get(key);
-        return v != null ? v.toString() : defaultVal;
+    // data에 key가 "존재할 때만" 설정 — PATCH에서 누락된 필드를 null로 덮어쓰는 것을 방지.
+    private static void applyStr(Map<String, Object> data, String key, Consumer<String> setter) {
+        if (data.containsKey(key)) {
+            Object v = data.get(key);
+            setter.accept(v != null ? v.toString() : null);
+        }
     }
 
-    private Integer integer(Map<String, Object> data, String key, Integer defaultVal) {
+    private static void applyInt(Map<String, Object> data, String key, Consumer<Integer> setter) {
+        if (!data.containsKey(key)) return;
         Object v = data.get(key);
-        if (v == null) return defaultVal;
-        if (v instanceof Number n) return n.intValue();
-        try { return Integer.parseInt(v.toString()); } catch (NumberFormatException e) { return defaultVal; }
+        if (v == null) { setter.accept(null); return; }
+        if (v instanceof Number n) { setter.accept(n.intValue()); return; }
+        try { setter.accept(Integer.parseInt(v.toString())); } catch (NumberFormatException e) { /* 값 유지 */ }
     }
 
+    private static void applyUuid(Map<String, Object> data, String key, Consumer<UUID> setter) {
+        if (!data.containsKey(key)) return;
+        Object v = data.get(key);
+        setter.accept(v != null ? UUID.fromString(v.toString()) : null);
+    }
+
+    /** parent_id, episode_id 등 선택적 UUID — null/blank 허용 */
+    private static void applyUuidN(Map<String, Object> data, String key, Consumer<UUID> setter) {
+        if (!data.containsKey(key)) return;
+        Object v = data.get(key);
+        if (v == null || v.toString().isBlank()) { setter.accept(null); return; }
+        setter.accept(UUID.fromString(v.toString()));
+    }
+
+    private static void applyDt(Map<String, Object> data, String key, Consumer<LocalDateTime> setter) {
+        if (!data.containsKey(key)) return;
+        Object v = data.get(key);
+        if (v == null) { setter.accept(null); return; }
+        try {
+            String s = v.toString();
+            if (s.endsWith("Z")) s = s.substring(0, s.length() - 1);
+            setter.accept(LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        } catch (Exception e) { /* 값 유지 */ }
+    }
+
+    // uuid() 헬퍼는 processPlan에서 work_id 조회 시 사용 (findByWorkId)
     private UUID uuid(Map<String, Object> data, String key) {
         Object v = data.get(key);
         return v != null ? UUID.fromString(v.toString()) : null;
-    }
-
-    private UUID uuidOrNull(Map<String, Object> data, String key) {
-        Object v = data.get(key);
-        if (v == null || v.toString().isBlank()) return null;
-        return UUID.fromString(v.toString());
-    }
-
-    private LocalDateTime datetime(Map<String, Object> data, String key, LocalDateTime defaultVal) {
-        Object v = data.get(key);
-        if (v == null) return defaultVal != null ? defaultVal : LocalDateTime.now();
-        try {
-            String s = v.toString();
-            // ISO-8601 with or without trailing Z
-            if (s.endsWith("Z")) s = s.substring(0, s.length() - 1);
-            return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-        } catch (Exception e) {
-            return defaultVal != null ? defaultVal : LocalDateTime.now();
-        }
     }
 }

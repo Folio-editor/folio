@@ -14,7 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,6 +40,26 @@ public class SyncController {
 
     private final SyncService syncService;
 
+    /**
+     * FK depth — 부모 테이블일수록 낮은 숫자.
+     * PUT은 얕은 순서(work 먼저)로, DELETE는 깊은 순서(link 먼저)로 처리해야
+     * 외래키 제약 위반을 피할 수 있다.
+     */
+    private static final Map<String, Integer> TABLE_DEPTH = Map.ofEntries(
+            Map.entry("work", 0),
+            Map.entry("plan", 1),
+            Map.entry("world_note", 1),
+            Map.entry("character", 1),
+            Map.entry("plot", 1),
+            Map.entry("episode", 1),
+            Map.entry("foreshadow", 1),
+            Map.entry("idea_archive", 1),
+            Map.entry("character_custom_field", 2),
+            Map.entry("character_tag", 2),
+            Map.entry("plot_episode_link", 2),
+            Map.entry("foreshadow_link", 2)
+    );
+
     @PostMapping("/upload")
     @Transactional
     @Operation(
@@ -48,9 +71,31 @@ public class SyncController {
             Authentication authentication
     ) {
         UUID writerId = UUID.fromString(authentication.getName());
-        for (SyncUploadRequest entry : entries) {
+        // PowerSync 클라이언트가 보낸 entry는 사용자 작업 순서대로 들어있지만
+        // 부모-자식 테이블 순서가 섞이면 FK 제약에 걸릴 수 있다.
+        // PUT은 얕은→깊은, DELETE는 깊은→얕은 순으로 재정렬.
+        List<SyncUploadRequest> ordered = new ArrayList<>(entries);
+        ordered.sort(Comparator
+                .comparingInt(SyncController::opPriority)      // PUT/PATCH 먼저, DELETE 나중
+                .thenComparingInt(SyncController::entryDepth)  // PUT: 얕은 테이블부터
+        );
+        for (SyncUploadRequest entry : ordered) {
             syncService.process(entry, writerId);
         }
-        return ResponseEntity.ok().build();
+        return ResponseEntity.noContent().build();
+    }
+
+    /** DELETE는 뒤로 몰기 위해 높은 값 */
+    private static int opPriority(SyncUploadRequest e) {
+        return "DELETE".equals(e.op()) ? 1 : 0;
+    }
+
+    /**
+     * PUT/PATCH인 경우 얕은 depth가 먼저(오름차순).
+     * DELETE는 깊은 depth가 먼저 처리되어야 하므로 음수로 뒤집는다.
+     */
+    private static int entryDepth(SyncUploadRequest e) {
+        int d = TABLE_DEPTH.getOrDefault(e.table(), 99);
+        return "DELETE".equals(e.op()) ? -d : d;
     }
 }

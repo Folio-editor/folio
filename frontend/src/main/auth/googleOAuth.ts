@@ -11,7 +11,7 @@ const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const SCOPE = 'openid email profile';
 
 function apiUrl(): string {
-  const url = process.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+  const url = process.env.VITE_API_URL ?? 'http://127.0.0.1:8080/api/v1';
   return url.replace(/\/$/, '');
 }
 
@@ -78,6 +78,7 @@ export async function loginWithGoogle(): Promise<LoginResult> {
       accessToken: string;
       refreshToken: string;
       writer: Writer;
+      isNewUser: boolean;
     };
 
     saveRefreshToken(body.refreshToken);
@@ -85,7 +86,7 @@ export async function loginWithGoogle(): Promise<LoginResult> {
     currentAccessToken = body.accessToken;
     currentWriter = body.writer;
 
-    return { accessToken: body.accessToken, writer: body.writer };
+    return { accessToken: body.accessToken, writer: body.writer, isNewUser: body.isNewUser };
   } finally {
     server.close();
   }
@@ -135,7 +136,8 @@ export async function tryRestoreLogin(): Promise<LoginResult | null> {
     const writer = (await meResponse.json()) as Writer;
     currentWriter = writer;
 
-    return { accessToken, writer };
+    // 자동 복원은 이미 결정 끝난 기존 사용자이므로 isNewUser=false
+    return { accessToken, writer, isNewUser: false };
   } catch {
     clearAllTokens();
     return null;

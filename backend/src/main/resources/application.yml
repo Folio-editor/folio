@@ -35,6 +35,8 @@ jwt:
   refresh-expiry: ${JWT_REFRESH_EXPIRY:1209600}
   # Access Token의 aud 클레임 — PowerSync가 PS_JWT_AUDIENCE로 검증
   audience: ${PS_JWT_AUDIENCE:powersync-dev}
+  # JWT header의 kid — powersync.yaml keystore의 kid와 정확히 일치해야 한다
+  key-id: ${PS_JWT_KID:storyzip-dev}
 
 # Google OAuth
 google:

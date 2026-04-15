@@ -12,20 +12,25 @@ export function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isGuest = useAuthStore((s) => s.isGuest);
   const isRestoring = useAuthStore((s) => s.isRestoring);
+  const syncDecision = useAuthStore((s) => s.syncDecision);
   const restore = useAuthStore((s) => s.restore);
 
   useEffect(() => {
     void restore();
   }, [restore]);
 
-  // 로그인 성공 시 PowerSync sync 연결, 로그아웃(게스트 복귀) 시 해제
+  // PowerSync connect 게이팅:
+  //   - syncDecision이 결정되기 전(login 직후, null)에는 connect 금지 → 로컬 게스트 데이터가 의도치 않게 업로드되는 것을 막는다
+  //   - 로그인 + 결정 완료 → connect (sync 양방향 활성)
+  //   - 로그아웃/게스트 → disconnect
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && syncDecision !== null) {
       void db.connect(connector);
-    } else {
+    } else if (!isAuthenticated) {
       void db.disconnect();
     }
-  }, [isAuthenticated]);
+    // 로그인 직후 syncDecision === null 인 사이에는 의도적으로 아무것도 하지 않음
+  }, [isAuthenticated, syncDecision]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {

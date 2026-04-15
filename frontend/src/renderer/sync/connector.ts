@@ -11,8 +11,10 @@ import type {
 } from '@powersync/web';
 import { apiClient, ApiError } from '@shared/lib/apiClient';
 
+// Windows Docker에서 localhost는 IPv6 우선 해석되는데 컨테이너는 IPv4 바인딩이라
+// CONNECTION_RESET이 난다. 기본값을 127.0.0.1로 고정.
 const POWERSYNC_URL =
-  import.meta.env.VITE_POWERSYNC_URL ?? 'http://localhost:8090';
+  import.meta.env.VITE_POWERSYNC_URL ?? 'http://127.0.0.1:8090';
 
 interface SyncUploadEntry {
   table: string;
@@ -37,6 +39,7 @@ export class StoryZipConnector implements PowerSyncBackendConnector {
       throw new Error('PowerSync: 인증 토큰 없음 — 로그인 필요');
     }
 
+    console.log('[sync] 인증 OK, PowerSync 연결 시도:', POWERSYNC_URL);
     return { endpoint: POWERSYNC_URL, token };
   }
 
@@ -77,10 +80,10 @@ export class StoryZipConnector implements PowerSyncBackendConnector {
     try {
       await apiClient.post('/sync/upload', entries);
       await transaction.complete();
-      console.log(`[uploadData] ${entries.length}개 항목 업로드 완료`);
+      console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
     } catch (e) {
       const status = e instanceof ApiError ? e.status : 'network';
-      console.warn(`[uploadData] 업로드 실패 (${status}) — 재시도 예정:`, e);
+      console.warn(`[sync] uploadData 업로드 실패 (${status}) — 재시도 예정:`, e);
       // complete() 미호출 → PowerSync 자동 재시도
     }
   }

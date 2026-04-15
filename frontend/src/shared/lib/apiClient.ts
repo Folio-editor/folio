@@ -6,7 +6,8 @@
  */
 
 function apiUrl(): string {
-  const url = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
+  // Windows Docker의 IPv6 localhost 이슈 회피를 위해 기본값을 127.0.0.1로 통일
+  const url = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8080/api/v1';
   return url.replace(/\/$/, '');
 }
 
@@ -45,11 +46,15 @@ async function request<T>(
     throw new ApiError(response.status, text || response.statusText);
   }
 
+  // 204 또는 빈 body (Content-Length 0 / 비어있는 텍스트)는 undefined로 반환
   if (response.status === 204) {
     return undefined as T;
   }
-
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export const apiClient = {

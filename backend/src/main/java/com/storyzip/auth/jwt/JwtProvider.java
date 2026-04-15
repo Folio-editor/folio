@@ -2,6 +2,7 @@ package com.storyzip.auth.jwt;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
@@ -44,17 +45,27 @@ public class JwtProvider {
     public String createAccessToken(UUID writerId, String email, String role) {
         long now = System.currentTimeMillis();
         long expiry = now + properties.getAccessExpiry() * 1000L;
-        var builder = Jwts.builder()
+
+        // header.kid 먼저 설정 후 이어지는 claim 체이닝
+        JwtBuilder builder = Jwts.builder();
+        String keyId = properties.getKeyId();
+        if (keyId != null && !keyId.isBlank()) {
+            builder.header().keyId(keyId);
+        }
+        builder
                 .subject(writerId.toString())
                 .claim(CLAIM_EMAIL, email)
                 .claim(CLAIM_ROLE, role)
                 .issuedAt(new Date(now))
                 .expiration(new Date(expiry));
+
         String audience = properties.getAudience();
         if (audience != null && !audience.isBlank()) {
             builder.audience().add(audience);
         }
-        return builder.signWith(key()).compact();
+        // HS256 명시 — Keys.hmacShaKeyFor는 바이트 길이에 따라 HS256/384/512를 자동 선택하므로
+        // 검증 측(PowerSync)과 알고리즘이 항상 일치하도록 고정한다.
+        return builder.signWith(key(), Jwts.SIG.HS256).compact();
     }
 
     /**

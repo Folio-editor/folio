@@ -11,6 +11,12 @@ export interface Writer {
 export interface LoginResult {
   accessToken: string;
   writer: Writer;
+  /**
+   * 이번 로그인에서 writer가 새로 생성됐는지.
+   * - 신규 로그인: 백엔드 LoginResponse.isNewUser
+   * - 자동 복원(tryRestore): 이미 결정 끝난 기존 사용자이므로 항상 false
+   */
+  isNewUser: boolean;
 }
 
 /**
