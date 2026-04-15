@@ -36,6 +36,10 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+    // Google API Client (id_token 검증)
+    implementation("com.google.api-client:google-api-client:2.7.0")
+    implementation("com.google.http-client:google-http-client-jackson2:1.45.0")
+
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
