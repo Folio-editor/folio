@@ -69,6 +69,7 @@ docker-data/
 *.class
 target/
 .gradle/
+!gradle/wrapper/gradle-wrapper.jar
 
 # Python / FastAPI
 __pycache__/
