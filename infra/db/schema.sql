@@ -11,24 +11,21 @@
 -- ────────────────────────────────────────────────────────────
 
 CREATE TABLE writer (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) NOT NULL UNIQUE,
-    password_hash   VARCHAR(255),
-    nickname        VARCHAR(100),
-    role            VARCHAR(20) NOT NULL DEFAULT 'user',
-    oauth_provider  VARCHAR(50),
-    oauth_id        VARCHAR(255),
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    deleted_at      TIMESTAMP
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email               VARCHAR(255) NOT NULL UNIQUE,
+    password_hash       VARCHAR(255),
+    nickname            VARCHAR(100),
+    profile_image_url   TEXT,
+    role                VARCHAR(20) NOT NULL DEFAULT 'USER',
+    oauth_provider      VARCHAR(50),
+    oauth_id            VARCHAR(255),
+    created_at          TIMESTAMP NOT NULL DEFAULT now(),
+    deleted_at          TIMESTAMP
 );
 
-CREATE TABLE refresh_token (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    refresh_token   VARCHAR(500) NOT NULL,
-    expires_at      TIMESTAMP NOT NULL,
-    created_at      TIMESTAMP NOT NULL DEFAULT now()
-);
+-- Refresh Token은 Redis에 저장한다.
+-- Key: RT:{writer_id}:{device_id}
+-- TTL: Refresh Token 만료 시간
 
 CREATE TABLE audit_log (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -305,7 +302,6 @@ CREATE INDEX idx_idea_archive_writer ON idea_archive(writer_id);
 CREATE INDEX idx_idea_archive_work ON idea_archive(work_id);
 
 -- 서버 전용
-CREATE INDEX idx_refresh_token_writer ON refresh_token(writer_id);
 CREATE INDEX idx_audit_log_writer ON audit_log(writer_id);
 CREATE INDEX idx_payment_writer ON payment(writer_id);
 CREATE INDEX idx_notification_writer ON notification(writer_id);

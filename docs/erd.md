@@ -242,27 +242,21 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 | email | VARCHAR(255) | NOT NULL, UNIQUE | |
 | password_hash | VARCHAR(255) | | OAuth 전용 사용자는 NULL |
 | nickname | VARCHAR(100) | | 작가명 기본값 |
-| role | VARCHAR(20) | NOT NULL DEFAULT 'user' | user / premium / admin |
+| profile_image_url | TEXT | | 프로필 이미지 URL (OAuth 제공자에서 수신) |
+| role | VARCHAR(20) | NOT NULL DEFAULT 'USER' | USER / PREMIUM / ADMIN |
 | oauth_provider | VARCHAR(50) | | google 등 |
 | oauth_id | VARCHAR(255) | | OAuth 제공자별 ID |
 | created_at | TIMESTAMP | NOT NULL | |
 | deleted_at | TIMESTAMP | | 소프트 삭제 |
 
----
-
-### 2.2 RefreshToken
-
-| 컬럼 | 타입 | 제약 | 설명 |
-|------|------|------|------|
-| id | UUID | PK | |
-| writer_id | UUID | FK → Writer | |
-| refresh_token | VARCHAR(500) | NOT NULL | |
-| expires_at | TIMESTAMP | NOT NULL | |
-| created_at | TIMESTAMP | NOT NULL | |
+**Refresh Token은 Redis에 저장한다 (별도 테이블 없음).**
+- Key: `RT:{writer_id}:{device_id}` — 기기별 분리 (다중 로그인 지원)
+- TTL: Refresh Token 만료 시간과 동일
+- 특정 기기 로그아웃 시 해당 Key만 삭제, 전체 로그아웃 시 `RT:{writer_id}:*` 패턴 일괄 삭제
 
 ---
 
-### 2.3 AuditLog (감사 로그)
+### 2.2 AuditLog (감사 로그)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -275,7 +269,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.4 Payment (결제)
+### 2.3 Payment (결제)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -291,7 +285,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.5 Subscription (구독)
+### 2.4 Subscription (구독)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -307,7 +301,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.6 TokenWallet (토큰 잔액)
+### 2.5 TokenWallet (토큰 잔액)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -319,7 +313,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.7 TokenTransaction (토큰 거래 내역)
+### 2.6 TokenTransaction (토큰 거래 내역)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -333,7 +327,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.8 AIAnalysis (AI 분석)
+### 2.7 AIAnalysis (AI 분석)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -349,7 +343,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.9 Export (내보내기)
+### 2.8 Export (내보내기)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -364,7 +358,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.10 Notification (알림)
+### 2.9 Notification (알림)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -379,7 +373,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.11 AIPromptTemplate (AI 프롬프트 템플릿)
+### 2.10 AIPromptTemplate (AI 프롬프트 템플릿)
 
 관리자가 관리하는 AI 프롬프트 템플릿. 클라이언트 수정 없이 프롬프트 개선 가능.
 
@@ -424,7 +418,6 @@ Writer (서버 전용)
   │         ├─1:N── IdeaArchive (아이디어)
   │         │
   │
-  ├─1:N── RefreshToken
   ├─1:N── AuditLog
   ├─1:N── Payment
   ├─1:1── Subscription
