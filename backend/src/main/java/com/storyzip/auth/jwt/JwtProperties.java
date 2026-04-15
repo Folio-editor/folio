@@ -20,4 +20,7 @@ public class JwtProperties {
 
     /** Refresh Token 유효기간 (초). */
     private long refreshExpiry;
+
+    /** Access Token의 aud 클레임 (PowerSync 검증용). 비워두면 aud 미포함. */
+    private String audience;
 }

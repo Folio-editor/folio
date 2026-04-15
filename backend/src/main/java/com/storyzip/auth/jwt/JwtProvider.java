@@ -44,14 +44,17 @@ public class JwtProvider {
     public String createAccessToken(UUID writerId, String email, String role) {
         long now = System.currentTimeMillis();
         long expiry = now + properties.getAccessExpiry() * 1000L;
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(writerId.toString())
                 .claim(CLAIM_EMAIL, email)
                 .claim(CLAIM_ROLE, role)
                 .issuedAt(new Date(now))
-                .expiration(new Date(expiry))
-                .signWith(key())
-                .compact();
+                .expiration(new Date(expiry));
+        String audience = properties.getAudience();
+        if (audience != null && !audience.isBlank()) {
+            builder.audience().add(audience);
+        }
+        return builder.signWith(key()).compact();
     }
 
     /**
