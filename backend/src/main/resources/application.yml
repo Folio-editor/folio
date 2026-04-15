@@ -42,6 +42,14 @@ google:
     desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
     desktop-client-secret: ${GOOGLE_DESKTOP_CLIENT_SECRET:}
 
+# 토스페이먼츠 (문서용 테스트 키를 기본값으로. 라이브 전환 시 환경변수로 덮어쓴다)
+toss:
+  payments:
+    client-key: ${TOSS_CLIENT_KEY:test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
+    secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
+    api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
+    webhook-secret: ${TOSS_WEBHOOK_SECRET:}
+
 # springdoc / Swagger 공통 (활성화 여부는 프로필별로 제어)
 springdoc:
   api-docs:
