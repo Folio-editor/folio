@@ -115,20 +115,6 @@ docker compose -f infra/prod/docker-compose.prod.yml --env-file infra/prod/.env 
 `infra/db/schema.sql`이 PostgreSQL 최초 기동 시 자동 실행됨.
 이미 데이터가 있는 볼륨에서는 재실행되지 않음.
 DDL을 다시 적용하려면 `down -v`로 볼륨 삭제 후 재기동.
-<<<<<<< HEAD
 
 - `docs/ddl.sql` — 문서 공유/ERD Cloud용 (참고용)
 - `infra/db/schema.sql` — 실제 DB 초기화에 사용되는 원본
-
-### 구조
-
-```
-infra/
-├── db/
-│   └── schema.sql                  # DB 스키마 원본 (DDL)
-└── dev/
-    ├── docker-compose.dev.yml      # PostgreSQL + Redis
-    └── .env.example                # 환경변수 템플릿
-```
-=======
->>>>>>> set/S14P31F203-28_projectSetup
