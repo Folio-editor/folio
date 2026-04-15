@@ -10,6 +10,8 @@ const api: StoryZipApi = {
       ipcRenderer.invoke('auth:tryRestore') as Promise<LoginResult | null>,
     getAccessToken: () =>
       ipcRenderer.invoke('auth:getAccessToken') as Promise<string | null>,
+    getGuestId: () =>
+      ipcRenderer.invoke('auth:getGuestId') as Promise<string>,
   },
 };
 

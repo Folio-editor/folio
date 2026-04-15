@@ -7,6 +7,7 @@ import {
   tryRestoreLogin,
   getAccessToken,
 } from './auth/googleOAuth';
+import { getOrCreateGuestId } from './auth/guestId';
 
 if (started) {
   app.quit();
@@ -43,6 +44,7 @@ function registerAuthHandlers() {
   ipcMain.handle('auth:logout', async () => logout());
   ipcMain.handle('auth:tryRestore', async () => tryRestoreLogin());
   ipcMain.handle('auth:getAccessToken', () => getAccessToken());
+  ipcMain.handle('auth:getGuestId', () => getOrCreateGuestId());
 }
 
 app.on('ready', () => {

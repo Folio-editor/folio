@@ -21,6 +21,8 @@ export interface StoryZipAuthApi {
   logout: () => Promise<void>;
   tryRestore: () => Promise<LoginResult | null>;
   getAccessToken: () => Promise<string | null>;
+  /** 게스트 UUID 반환. 없으면 생성 후 userData에 저장. */
+  getGuestId: () => Promise<string>;
 }
 
 export interface StoryZipApi {
