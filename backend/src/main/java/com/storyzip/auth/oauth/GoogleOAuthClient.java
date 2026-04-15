@@ -51,6 +51,12 @@ public class GoogleOAuthClient {
         form.add("grant_type", "authorization_code");
         form.add("redirect_uri", redirectUri);
 
+        // "웹 애플리케이션" 타입 Desktop 클라이언트는 client_secret 필요.
+        String secret = properties.getDesktopClientSecret();
+        if (secret != null && !secret.isBlank()) {
+            form.add("client_secret", secret);
+        }
+
         TokenResponse response = callTokenEndpoint(form);
         return verifyIdToken(response.idToken(), properties.getDesktopClientId());
     }

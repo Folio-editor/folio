@@ -40,6 +40,7 @@ google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
+    desktop-client-secret: ${GOOGLE_DESKTOP_CLIENT_SECRET:}
 
 # springdoc / Swagger 공통 (활성화 여부는 프로필별로 제어)
 springdoc:
