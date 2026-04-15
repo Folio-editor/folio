@@ -39,11 +39,14 @@ CREATE TABLE audit_log (
 CREATE TABLE payment (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    order_id        VARCHAR(100) NOT NULL,
+    order_id        VARCHAR(100) NOT NULL UNIQUE,
     payment_key     VARCHAR(200),
     amount          INTEGER NOT NULL,
     token_qty       INTEGER NOT NULL,
     status          VARCHAR(20) NOT NULL,
+    method          VARCHAR(20),
+    approved_at     TIMESTAMP,
+    failure_reason  TEXT,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -51,13 +54,24 @@ CREATE TABLE payment (
 CREATE TABLE subscription (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    customer_key    VARCHAR(100) NOT NULL UNIQUE,
     billing_key     VARCHAR(200) NOT NULL,
     plan            VARCHAR(50) NOT NULL,
     monthly_tokens  INTEGER NOT NULL,
     status          VARCHAR(20) NOT NULL,
     next_billing_at TIMESTAMP NOT NULL,
+    last_payment_at TIMESTAMP,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
     cancelled_at    TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE payment_event (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id        VARCHAR(100) NOT NULL UNIQUE,
+    event_type      VARCHAR(50) NOT NULL,
+    payload         JSONB NOT NULL,
+    processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE token_wallet (
@@ -75,6 +89,7 @@ CREATE TABLE token_transaction (
     type            VARCHAR(20) NOT NULL,
     reason          VARCHAR(100),
     reference_id    UUID,
+    expires_at      TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -304,12 +319,17 @@ CREATE INDEX idx_idea_archive_work ON idea_archive(work_id);
 -- 서버 전용
 CREATE INDEX idx_audit_log_writer ON audit_log(writer_id);
 CREATE INDEX idx_payment_writer ON payment(writer_id);
+CREATE INDEX idx_subscription_writer ON subscription(writer_id);
+CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
+CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);
 CREATE INDEX idx_notification_writer ON notification(writer_id);
 CREATE INDEX idx_notification_unread ON notification(writer_id, is_read) WHERE is_read = false;
 CREATE INDEX idx_token_transaction_writer ON token_transaction(writer_id);
+CREATE INDEX idx_token_transaction_expires ON token_transaction(writer_id, expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX idx_ai_analysis_episode ON ai_analysis(episode_id);
 CREATE INDEX idx_export_writer ON export(writer_id);
 
 -- JSONB 인덱스
 CREATE INDEX idx_plan_genres ON plan USING GIN (genres);
 CREATE INDEX idx_plan_moods ON plan USING GIN (moods);
+ 
