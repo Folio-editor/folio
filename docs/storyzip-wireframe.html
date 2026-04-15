@@ -6,17 +6,23 @@
   <title>StoryZip Wireframe</title>
   <style>
     :root {
-      --bg: #ffffff;
-      --paper: #fdf9f8;
-      --panel: #F5EAE7;
-      --panel-strong: #B59581;
-      --ink: #3b2d29;
-      --muted: #7e6b64;
-      --line: rgba(181, 149, 129, 0.28);
-      --line-strong: rgba(181, 149, 129, 0.45);
-      --accent: #B59581;
-      --accent-soft: #F5EAE7;
-      --accent-deep: #8f7262;
+      --bg: #FFFFFF;
+      --paper: #EFE7E2;
+      --panel: #E5DBD5;
+      --panel-strong: #DED3CC;
+      --surface: #FFFFFF;
+      --surface-soft: #FAF7F5;
+      --ink: #2B2B2B;
+      --muted: #555555;
+      --muted-soft: #888888;
+      --line: #D8CEC7;
+      --line-strong: #CFC4BD;
+      --accent: #A88E7A;
+      --accent-sub: #B79B87;
+      --accent-soft: #E2D4CA;
+      --accent-deep: #8F7663;
+      --selected: #C4A995;
+      --tag: #BFAFA3;
       --shadow: 0 18px 50px rgba(101, 71, 59, 0.06);
       --radius-lg: 24px;
       --radius-md: 16px;
@@ -40,7 +46,7 @@
     .topbar {
       position: sticky; top: 0; z-index: 50;
       backdrop-filter: blur(14px);
-      background: rgba(255, 255, 255, 0.92);
+      background: rgba(246, 241, 238, 0.92);
       border-bottom: 1px solid var(--line);
     }
     .topbar-inner {
@@ -51,12 +57,12 @@
     .brand-mark {
       width: 42px; height: 42px; border-radius: 14px;
       background: linear-gradient(135deg, var(--accent-soft), var(--accent));
-      color: #fffaf7; display: grid; place-items: center; box-shadow: var(--shadow);
+      color: var(--surface); display: grid; place-items: center; box-shadow: var(--shadow);
     }
     .nav { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .nav a, .chip {
       padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line);
-      background: #ffffff; color: var(--muted); font-size: 13px;
+      background: var(--surface); color: var(--muted); font-size: 13px;
     }
 
     .hero { padding: 42px 0 24px; }
@@ -82,8 +88,8 @@
       display: inline-flex; align-items: center; gap: 10px; padding: 14px 18px;
       border-radius: 16px; border: 1px solid transparent; font-weight: 700; font-size: 14px;
     }
-    .btn-primary { background: var(--accent); color: #fffaf7; }
-    .btn-secondary { background: #fff7f3; border-color: var(--line-strong); color: var(--accent-deep); }
+    .btn-primary { background: var(--accent); color: var(--surface); }
+    .btn-secondary { background: var(--surface-soft); border-color: var(--line-strong); color: var(--accent-deep); }
     .hero-side { display: grid; gap: 16px; }
     .mini-card { border-radius: 26px; padding: 22px; }
     .mini-card h3 { font-size: 18px; margin-bottom: 10px; }
@@ -136,10 +142,10 @@
       border-bottom: 1px solid var(--line);
     }
     .screen-head h3 { font-size: 19px; }
-    .screen-body { padding: 22px; background: #ffffff; min-height: 280px; }
+    .screen-body { padding: 22px; background: var(--surface); min-height: 280px; }
 
     .mock, .dashboard-box, .link-box, .token-box {
-      border: 1px solid var(--line); border-radius: 18px; background: #fffaf7;
+      border: 1px solid var(--line); border-radius: 18px; background: var(--surface-soft);
     }
     .mock { overflow: hidden; }
     .mock-toolbar {
@@ -164,23 +170,23 @@
       padding: 8px 12px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--surface);
       color: var(--accent-deep);
       font-size: 12px;
       font-weight: 600;
     }
     .mock-grid { display: grid; grid-template-columns: 232px minmax(0, 1.55fr) 288px; min-height: 620px; }
     .rail, .canvas, .aside { padding: 16px; }
-    .rail { background: #F5EAE7; border-right: 1px solid var(--line); }
-    .canvas { background: #ffffff; display: grid; gap: 16px; }
-    .aside { background: #F5EAE7; border-left: 1px solid var(--line); display: grid; gap: 12px; align-content: start; }
+    .rail { background: var(--panel); border-right: 1px solid var(--line); }
+    .canvas { background: var(--surface); display: grid; gap: 16px; }
+    .aside { background: var(--panel); border-left: 1px solid var(--line); display: grid; gap: 12px; align-content: start; }
 
     .tree-item, .stat, .subcard, .timeline, .idea-card, .workspace-row, .landing-strip, .settings-row {
-      border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 250, 247, 0.98);
+      border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft);
     }
     .tree-item, .workspace-row, .settings-row { padding: 12px 14px; }
     .tree-item + .tree-item, .workspace-row + .workspace-row, .settings-row + .settings-row { margin-top: 10px; }
-    .tree-item.active { background: var(--accent-soft); border-color: var(--line-strong); }
+    .tree-item.active { background: var(--accent-soft); border-color: var(--selected); }
     .tree-title, .workspace-title { font-weight: 700; margin-bottom: 6px; }
     .tree-sub, .workspace-meta, .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
 
@@ -188,7 +194,7 @@
     .canvas-hero { min-height: 92px; }
     .dashboard-box { min-height: 220px; }
     .link-box, .token-box { min-height: 136px; }
-    .editor-sheet { min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: #ffffff; }
+    .editor-sheet { min-height: 360px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
     .editor-sheet p + p { margin-top: 10px; }
     .card-grid-2, .card-grid-3, .strip-grid { display: grid; gap: 12px; }
     .card-grid-2 { grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr); }
@@ -224,7 +230,7 @@
       color: var(--accent-deep);
     }
     .level-pill {
-      background: #ffffff;
+      background: var(--surface);
       color: var(--ink);
     }
     .timeline-summary {
@@ -237,7 +243,7 @@
       padding: 12px;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--surface);
     }
     .mini-stat strong {
       display: block;
@@ -251,21 +257,278 @@
     }
     .timeline-bar {
       position: relative; height: 10px; border-radius: 999px;
-      background: linear-gradient(90deg, #F5EAE7, #B59581); margin: 14px 0 20px;
+      background: linear-gradient(90deg, var(--accent-soft), var(--accent-sub)); margin: 14px 0 20px;
     }
     .dot {
       position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%;
-      transform: translate(-50%, -50%); border: 3px solid #fff7ee;
+      transform: translate(-50%, -50%); border: 3px solid var(--surface-soft);
     }
-    .dot.plant { background: #d7beb2; left: 16%; }
-    .dot.resolve { background: #B59581; left: 58%; }
-    .dot.final { background: #8f7262; left: 86%; }
+    .dot.plant { background: var(--tag); left: 16%; }
+    .dot.resolve { background: var(--accent-sub); left: 58%; }
+    .dot.final { background: var(--accent-deep); left: 86%; }
     .timeline-labels {
       display: flex; justify-content: space-between; gap: 8px;
       font-size: 12px; color: var(--muted);
     }
+    .workspace-screen .screen-body {
+      padding: 0;
+      background: var(--surface);
+    }
+    .workspace-shell {
+      background: var(--paper);
+    }
+    .workspace-appbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+    }
+    .workspace-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 22px 22px;
+      border-right: 1px solid var(--line);
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--accent-deep);
+      letter-spacing: 0.03em;
+    }
+    .workspace-brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+    }
+    .workspace-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+    }
+    .workspace-breadcrumb {
+      font-size: 14px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .workspace-breadcrumb strong {
+      color: var(--ink);
+      font-size: 15px;
+    }
+    .workspace-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .workspace-status {
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .workspace-top-btn {
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--accent-deep);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .workspace-top-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--surface);
+    }
+    .workspace-body {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr) 310px;
+      min-height: 720px;
+    }
+    .workspace-sidebar {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 16px;
+      display: grid;
+      align-content: start;
+      gap: 16px;
+    }
+    .workspace-search {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      padding: 11px 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .workspace-navlist,
+    .workspace-tree,
+    .workspace-account,
+    .workspace-usage {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      padding: 14px;
+    }
+    .workspace-navitem,
+    .workspace-treeitem {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 8px;
+      border-radius: 12px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .workspace-treeitem.active {
+      background: var(--accent-soft);
+    }
+    .workspace-treeitem-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+    .workspace-section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .workspace-editorpane {
+      background: var(--surface);
+      border-right: 1px solid var(--line);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    .workspace-formatbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .format-chip {
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .workspace-document {
+      padding: 34px 40px 28px;
+    }
+    .workspace-document h3 {
+      font-size: 24px;
+      margin-bottom: 22px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .workspace-document p {
+      font-size: 15px;
+      line-height: 2;
+      color: var(--ink);
+      margin-bottom: 18px;
+    }
+    .workspace-footerbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-top: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .workspace-inspector {
+      background: var(--panel);
+      padding: 16px;
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }
+    .workspace-side-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .workspace-inspector-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      color: var(--accent-deep);
+      font-size: 16px;
+      padding: 4px 2px 0;
+    }
+    .workspace-tabs {
+      display: flex;
+      gap: 16px;
+      padding: 0 2px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .workspace-tab {
+      padding-bottom: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+    }
+    .workspace-tab.active {
+      color: var(--accent-deep);
+      border-bottom-color: var(--accent);
+      font-weight: 700;
+    }
+    .workspace-ai-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      padding: 16px;
+    }
+    .workspace-ai-card h4 {
+      font-size: 15px;
+      margin-bottom: 10px;
+    }
+    .workspace-ai-card p,
+    .workspace-ai-card li {
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--muted);
+    }
+    .workspace-ai-apply {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 0;
+      background: var(--accent);
+      color: var(--surface);
+      font-size: 14px;
+      font-weight: 800;
+    }
     @media (max-width: 1100px) {
-      .hero-grid, .grid-3, .grid-2, .split-main-side, .split-support, .split-ops, .card-grid-3, .strip-grid, .mock-grid { grid-template-columns: 1fr; }
+      .hero-grid, .grid-3, .grid-2, .split-main-side, .split-support, .split-ops, .card-grid-3, .strip-grid, .mock-grid, .workspace-appbar, .workspace-body { grid-template-columns: 1fr; }
       .note { position: static; }
       .timeline-summary { grid-template-columns: 1fr; }
     }
@@ -327,65 +590,155 @@
         </div>
       </div>
 
-      <article class="screen">
+      <article class="screen workspace-screen">
         <div class="screen-head">
           <div>
             <div class="eyebrow" style="margin-bottom:8px">03</div>
-            <h3>Editor Shell</h3>
+            <h3>집필 워크스페이스</h3>
           </div>
           <span class="chip">Offline-first + Sync</span>
         </div>
         <div class="screen-body">
-          <div class="mock">
-            <div class="mock-toolbar">
-              <div>붉은 파도 아래 / 원고 / 12화 유리역 플랫폼</div>
-              <div class="toolbar-actions">
-                <span>오프라인 작업 가능 · 마지막 동기화 14:22</span>
+          <div class="workspace-shell">
+            <div class="workspace-appbar">
+              <div class="workspace-brand">
+                <div class="workspace-brand-mark">✦</div>
+                <span>STORYZIP</span>
+              </div>
+              <div class="workspace-topbar">
+                <div class="workspace-breadcrumb">
+                  <strong>붉은 파도 아래</strong>
+                  <span>/</span>
+                  <span>에피소드 12</span>
+                </div>
+                <div class="workspace-top-actions">
+                  <span class="workspace-status">오프라인 작업 가능 · 마지막 동기화 14:22</span>
+                  <span class="workspace-top-btn">내보내기</span>
+                  <span class="workspace-top-btn primary">AI 초안 생성</span>
+                </div>
               </div>
             </div>
-            <div class="mock-grid">
-              <div class="rail">
-                <div class="tree-item"><div class="tree-title">기획</div><div class="tree-sub">슬로건 · 장르 · 분위기 · 타깃 독자</div></div>
-                <div class="tree-item"><div class="tree-title">세계관</div><div class="tree-sub">시대/배경 · 공간/지리 · 세력/조직</div></div>
-                <div class="tree-item"><div class="tree-title">등장인물</div><div class="tree-sub">인물 카드 14개 · 태그 필터</div></div>
-                <div class="tree-item"><div class="tree-title">플롯</div><div class="tree-sub">3막 구조 · 12화 링크 있음</div></div>
-                <div class="tree-item active"><div class="tree-title">원고</div><div class="tree-sub">12화 유리역 플랫폼 · 초고 3,210자</div></div>
-                <div class="tree-item"><div class="tree-title">복선</div><div class="tree-sub">진행중 6 · 완결 3 · 폐기 1</div></div>
-                <div class="tree-item"><div class="tree-title">아이디어 아카이브</div><div class="tree-sub">문장 · 장면 · 설정 · 반전 · 대사</div></div>
-              </div>
 
-              <div class="canvas">
-                <div class="canvas-hero">
-                  <strong>현재 작업 회차</strong>
-                  <p class="muted">12화 유리역 플랫폼 / 상태: 초고 / 링크된 플롯: 2막 4장 추격 장면</p>
+            <div class="workspace-body">
+              <aside class="workspace-sidebar">
+                <div class="workspace-search">
+                  <span>작품 검색...</span>
+                  <span>⌘K</span>
                 </div>
-                <div class="editor-sheet">
+
+                <div class="workspace-navlist">
+                  <div class="workspace-navitem">홈</div>
+                  <div class="workspace-navitem">작품 목록</div>
+                </div>
+
+                <div class="workspace-tree">
+                  <div class="workspace-section-title">
+                    <span>내 작품</span>
+                    <span>+ 새 작품</span>
+                  </div>
+                  <div class="workspace-treeitem">
+                    <div>
+                      <div class="tree-title">붉은 파도 아래</div>
+                    </div>
+                  </div>
+                  <div class="workspace-treeitem active">
+                    <div>
+                      <div class="tree-title">에피소드 12</div>
+                      <div class="workspace-treeitem-sub">유리역 플랫폼</div>
+                    </div>
+                  </div>
+                  <div class="workspace-treeitem">
+                    <div>
+                      <div class="tree-title">에피소드 13</div>
+                      <div class="workspace-treeitem-sub">사라진 선로</div>
+                    </div>
+                  </div>
+                  <div class="workspace-treeitem">
+                    <div>
+                      <div class="tree-title">플롯</div>
+                      <div class="workspace-treeitem-sub">3막 구조 · 12화 링크 있음</div>
+                    </div>
+                  </div>
+                  <div class="workspace-treeitem">
+                    <div>
+                      <div class="tree-title">등장인물</div>
+                      <div class="workspace-treeitem-sub">인물 카드 14개</div>
+                    </div>
+                  </div>
+                  <div class="workspace-treeitem">
+                    <div>
+                      <div class="tree-title">세계관</div>
+                      <div class="workspace-treeitem-sub">시대 · 공간 · 세력</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="workspace-account">
+                  <div class="tree-title">writer@example.com</div>
+                </div>
+
+                <div class="workspace-usage">
+                  <div class="tree-title">AI 사용량</div>
+                  <div class="workspace-treeitem-sub">24 / 100</div>
+                </div>
+              </aside>
+
+              <section class="workspace-editorpane">
+                <div class="workspace-formatbar">
+                  <span class="format-chip">본문</span>
+                  <span class="format-chip">16</span>
+                  <span>B</span>
+                  <span>I</span>
+                  <span>U</span>
+                  <span>S</span>
+                  <span>•</span>
+                  <span>≡</span>
+                  <span>❞</span>
+                  <span>🔗</span>
+                  <span>🖼</span>
+                </div>
+                <div class="workspace-document">
+                  <h3>에피소드 12. 유리역 플랫폼</h3>
                   <p>비가 내린 뒤 플랫폼 바닥은 유리처럼 빛났다. 서윤은 발끝으로 고인 물을 밀어내며 열차 쪽을 바라봤다.</p>
                   <p>그녀가 기다린 건 열차가 아니라, 저 끝에서 천천히 걸어오는 남자의 표정이었다. 그 표정이 무너지면 오늘의 복선은 심긴다.</p>
-                  <p class="muted">TipTap 편집기 영역. 상단 서식 도구와 하단 글자수, 상태 영역을 포함하는 구조를 가정.</p>
+                  <p>유리역의 경보등은 밤마다 조금 늦게 켜졌다. 그 사소한 시간차 때문에, 서윤은 오늘이 평소와 다르다는 걸 먼저 알아챘다.</p>
+                  <p>그리고 오늘, 편지 한 통이 그녀를 찾아왔다. 북부 항구를 지나 왕국의 수도로 향하라는 초대장이었다.</p>
                 </div>
-                <div class="card-grid-2 equal">
-                  <div class="link-box">
-                    <strong>플롯 링크</strong>
-                    <p>2막 / 4장 / 추격 장면과 1:1 연결</p>
-                  </div>
-                  <div class="link-box">
-                    <strong>AI 도우미</strong>
-                    <p>설정 충돌 분석, 톤 점검, 문장 제안, 줄거리 요약</p>
-                  </div>
+                <div class="workspace-footerbar">
+                  <span>글자 수: 3,210</span>
+                  <span>예상 읽는 시간: 11분</span>
+                  <span>집중 모드</span>
                 </div>
-              </div>
+              </section>
 
-              <aside class="aside">
-                <div class="aside-actions">
+              <aside class="workspace-inspector">
+                <div class="workspace-side-actions">
                   <span class="toolbar-btn">목록보기</span>
-                  <span class="toolbar-btn">내보내기</span>
                   <span class="toolbar-btn">설정</span>
                 </div>
-                <div class="subcard"><strong>작업 정보</strong><p>글자수 3,210자 · 상태 초고 · 마지막 수정 2분 전</p></div>
-                <div class="subcard"><strong>복선</strong><p>“붉은 우산의 정체” 심기 포인트 포함</p></div>
-                <div class="subcard"><strong>세계관</strong><p>유리역 출입 규칙 / 북부 운송조합 / 야간 경보 체계</p></div>
-                <div class="subcard"><strong>동기화 상태</strong><p>로컬 우선 저장 완료, 온라인 복귀 시 업로드 예정 1건</p></div>
+                <div class="workspace-inspector-head">AI 결과</div>
+                <div class="workspace-tabs">
+                  <span class="workspace-tab active">요약</span>
+                  <span class="workspace-tab">개선 제안</span>
+                  <span class="workspace-tab">추출 정보</span>
+                </div>
+                <div class="workspace-ai-card">
+                  <h4>에피소드 요약</h4>
+                  <p>서윤은 유리역 플랫폼에서 도착을 기다리며, 오늘 심어질 복선의 기점을 맞이한다. 이후 북부 항구를 지나 수도로 향하라는 초대장이 등장한다.</p>
+                </div>
+                <div class="workspace-ai-card">
+                  <h4>개선 제안</h4>
+                  <ul>
+                    <li>플랫폼의 공기감과 소리 묘사를 조금 더 넣으면 장면 집중도가 올라간다.</li>
+                    <li>초대장이 등장하는 순간의 감정 변화를 한 문단 더 강조하면 전환이 선명해진다.</li>
+                    <li>복선과 연결되는 상징을 한 번 더 반복하면 후반 회수 효과가 커진다.</li>
+                  </ul>
+                </div>
+                <div class="workspace-ai-card">
+                  <h4>작업 정보</h4>
+                  <p>상태 초고 · 연결 플롯 2막 4장 · 관련 복선 1건 · 참고 세계관 3건</p>
+                </div>
+                <button class="workspace-ai-apply">검토 및 적용</button>
               </aside>
             </div>
           </div>
