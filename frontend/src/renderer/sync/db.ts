@@ -16,3 +16,9 @@ export const db = new PowerSyncDatabase({
     // 미지원 환경: IndexedDB 자동 폴백 (@powersync/web 내부 처리)
   },
 });
+
+// 개발 환경에서 DevTools Console로 직접 쿼리 가능하도록 노출
+// 사용법: __db.execute('SELECT * FROM work').then(r => console.table(r.rows._array))
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__db = db;
+}

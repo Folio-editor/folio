@@ -3,7 +3,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { Sidebar } from '../../components/layout/Sidebar';
 import { RightPanels } from '../../components/layout/RightPanels';
 import { WorkspaceScreen } from '../workspace/WorkspaceScreen';
-import { WorldNoteScreen } from '../world-note/WorldNoteScreen';
+import { WorldNoteScreen } from '../worldnote/WorldNoteScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 
 /**
@@ -25,7 +25,17 @@ export function AuthenticatedApp() {
 
   const handleNewNote = async () => {
     if (!selectedWorkId) return;
-    const id = await createWorldNote(selectedWorkId, '새 문서', Date.now());
+    const name = '새 문서';
+    const id = await createWorldNote(selectedWorkId, name, Date.now());
+    setSelectedNoteId(id);
+  };
+
+  const handleWorkSelect = (id: string) => {
+    setSelectedWorkId(id);
+    setSelectedNoteId(null);
+  };
+
+  const handleNoteSelect = (id: string) => {
     setSelectedNoteId(id);
   };
 
@@ -35,9 +45,14 @@ export function AuthenticatedApp() {
         <Sidebar
           selectedWorkId={selectedWorkId}
           selectedNoteId={selectedNoteId}
-          onWorkSelect={(id) => { setSelectedWorkId(id); setSelectedNoteId(null); }}
-          onNoteSelect={(id) => setSelectedNoteId(id)}
-          onNewWork={() => { setSelectedWorkId(null); setSelectedNoteId(null); }}
+          onWorkSelect={handleWorkSelect}
+          onNoteSelect={handleNoteSelect}
+          onNewWork={() => {
+            // WorkspaceScreen의 입력 UI로 작품 생성을 위임
+            // 작품이 없거나 선택 해제 시 WorkspaceScreen이 표시됨
+            setSelectedWorkId(null);
+            setSelectedNoteId(null);
+          }}
           onNewNote={() => void handleNewNote()}
         />
       }

@@ -1,5 +1,10 @@
 # StoryZip — PowerSync 연동 구현 문서
 
+> **관련 문서**
+> - 본 문서: PowerSync **인프라/스키마/연결 설정**
+> - [sync-backend.md](./sync-backend.md): 백엔드 `POST /api/v1/sync/upload` API 구현
+> - [sync-frontend.md](./sync-frontend.md): 클라이언트 connector + 쓰기 흐름
+
 ## 개요
 
 StoryZip은 오프라인 우선(offline-first) 설계를 목표로 **PowerSync Open Edition**을 채택했다.

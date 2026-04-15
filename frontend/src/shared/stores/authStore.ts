@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Writer } from '../types/auth';
-import { migrateGuestToAccount } from '../sync/migrate';
+import { cleanupGuestData } from '../sync/migrate';
 
 // ────────────────────────────────────────────────────────────
 // 앱 모드
@@ -100,10 +100,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoggingIn: false,
       });
 
-      // 게스트에서 로그인 시 로컬 데이터 서버로 업로드
+      // 게스트에서 로그인 시 SQLite guestUUID 행 정리
+      // (CRUD 큐 업로드는 PowerSync uploadData()가 자동 처리)
       if (wasGuest && guestId) {
-        void migrateGuestToAccount(guestId, result.writer.id).catch((e) => {
-          console.warn('[AuthStore] 게스트 데이터 마이그레이션 실패:', e);
+        void cleanupGuestData(guestId).catch((e) => {
+          console.warn('[AuthStore] 게스트 데이터 정리 실패:', e);
         });
       }
     } catch (e) {
