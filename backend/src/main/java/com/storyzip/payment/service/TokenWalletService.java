@@ -59,6 +59,27 @@ public class TokenWalletService {
                 .build());
     }
 
+    /**
+     * 환불로 인한 토큰 회수. 잔액이 부족하면 가진 만큼만 차감한다.
+     * (이미 토큰을 사용한 유저도 환불 가능해야 하므로 부족 에러를 던지지 않음)
+     */
+    @Transactional
+    public void deductForRefund(UUID writerId, int amount, String reason, UUID referenceId) {
+        TokenWallet wallet = walletRepository.findWithLockByWriterId(writerId)
+                .orElseGet(() -> walletRepository.save(TokenWallet.createEmpty(writerId)));
+        int actualDeduct = Math.min(amount, wallet.getBalance());
+        if (actualDeduct > 0) {
+            wallet.use(actualDeduct);
+            transactionRepository.save(TokenTransaction.builder()
+                    .writerId(writerId)
+                    .amount(-actualDeduct)
+                    .type(TokenTransactionType.REFUND)
+                    .reason(reason)
+                    .referenceId(referenceId)
+                    .build());
+        }
+    }
+
     /** AI 기능 사용으로 인한 차감. 잔액 부족 시 {@link com.storyzip.common.exception.PaymentException} 발생. */
     @Transactional
     public void use(UUID writerId, int amount, String reason, UUID referenceId) {

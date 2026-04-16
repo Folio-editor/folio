@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.ZoneId;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -71,6 +72,13 @@ public class PaymentService {
 
     @Transactional
     public PaymentResponse confirmPayment(UUID writerId, ConfirmPaymentRequest request) {
+        // 멱등성: 동일 paymentKey로 이미 완료된 결제가 있으면 그 결과를 반환
+        Optional<Payment> alreadyConfirmed = paymentRepository.findByPaymentKey(request.paymentKey());
+        if (alreadyConfirmed.isPresent() && alreadyConfirmed.get().isDone()) {
+            log.info("Idempotent confirm hit: paymentKey={}", request.paymentKey());
+            return PaymentResponse.from(alreadyConfirmed.get());
+        }
+
         Payment payment = paymentRepository.findByOrderId(request.orderId())
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_NOT_FOUND));
 
@@ -78,7 +86,7 @@ public class PaymentService {
             throw new PaymentException(ErrorCode.FORBIDDEN);
         }
         if (payment.isDone()) {
-            throw new PaymentException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+            return PaymentResponse.from(payment);
         }
         if (!payment.getAmount().equals(request.amount())) {
             throw new PaymentException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);

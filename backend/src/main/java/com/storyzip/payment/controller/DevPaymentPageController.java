@@ -27,7 +27,16 @@ public class DevPaymentPageController {
 
     @GetMapping(value = "/test-payment.html", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> testPaymentPage() throws Exception {
-        ClassPathResource resource = new ClassPathResource("static/test-payment.html");
+        return serveClasspathHtml("static/test-payment.html");
+    }
+
+    @GetMapping(value = "/test-subscription.html", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> testSubscriptionPage() throws Exception {
+        return serveClasspathHtml("static/test-subscription.html");
+    }
+
+    private ResponseEntity<String> serveClasspathHtml(String path) throws Exception {
+        ClassPathResource resource = new ClassPathResource(path);
         String html = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         return ResponseEntity.ok()
                 .header("Cache-Control", "no-store")

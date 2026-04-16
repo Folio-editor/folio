@@ -60,6 +60,7 @@ public enum ErrorCode {
     INSUFFICIENT_TOKEN(HttpStatus.PAYMENT_REQUIRED, "P008", "토큰 잔량이 부족합니다"),
     PAYMENT_GATEWAY_ERROR(HttpStatus.BAD_GATEWAY, "P009", "결제 게이트웨이 통신에 실패했습니다"),
     WEBHOOK_SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED, "P010", "웹훅 서명이 유효하지 않습니다"),
+    RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "P011", "결제 요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
 
     // ===== AI (AI###) =====
     AI_SERVER_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "AI001", "AI 서버에 연결할 수 없습니다"),

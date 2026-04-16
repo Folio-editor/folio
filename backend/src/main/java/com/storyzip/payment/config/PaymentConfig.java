@@ -3,11 +3,13 @@ package com.storyzip.payment.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 
 @Configuration
+@EnableScheduling
 @EnableConfigurationProperties(TossPaymentsProperties.class)
 public class PaymentConfig {
 
