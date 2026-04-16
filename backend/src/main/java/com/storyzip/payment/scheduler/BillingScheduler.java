@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -33,9 +34,9 @@ public class BillingScheduler {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionService subscriptionService;
 
-    @Scheduled(cron = "0 0 4 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 19 * * *", zone = "UTC")
     public void runDailyBilling() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Subscription> due = findDue(now);
         log.info("Billing scheduler started at {}: {} subscriptions due", now, due.size());
 

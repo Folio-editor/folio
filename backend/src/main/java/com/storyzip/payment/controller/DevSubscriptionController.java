@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -51,7 +52,7 @@ public class DevSubscriptionController {
                 .findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE)
                 .orElseThrow(() -> new PaymentException(ErrorCode.SUBSCRIPTION_NOT_FOUND));
 
-        subscriptionRepository.updateNextBillingAt(subscription.getId(), LocalDateTime.now().minusMinutes(1));
+        subscriptionRepository.updateNextBillingAt(subscription.getId(), LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         entityManager.flush();
         entityManager.clear();
 

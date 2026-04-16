@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -86,7 +86,7 @@ public class SubscriptionService {
                 .plan(plan.getCode())
                 .monthlyTokens(plan.getMonthlyTokens())
                 .monthlyAmount(plan.getAmount())
-                .nextBillingAt(LocalDateTime.now())
+                .nextBillingAt(LocalDateTime.now(ZoneOffset.UTC))
                 .build());
 
         chargeAndApply(subscription, plan, writer, "PRO 구독 가입 결제");
@@ -173,9 +173,9 @@ public class SubscriptionService {
                     writer.getEmail()
             );
 
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
             LocalDateTime approvedAt = confirmed.approvedAt() != null
-                    ? confirmed.approvedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
+                    ? confirmed.approvedAt().atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime()
                     : now;
             payment.markDone(confirmed.paymentKey(), parseMethod(confirmed.method()), approvedAt);
 
@@ -192,7 +192,7 @@ public class SubscriptionService {
                     subscription.getId(), orderId, plan.getAmount());
         } catch (PaymentException e) {
             payment.markFailed(e.getMessage());
-            subscription.recordPaymentFailure(LocalDateTime.now());
+            subscription.recordPaymentFailure(LocalDateTime.now(ZoneOffset.UTC));
             log.warn("Subscription billing failed: subscriptionId={}, retryCount={}, status={}",
                     subscription.getId(), subscription.getRetryCount(), subscription.getStatus());
             throw e;

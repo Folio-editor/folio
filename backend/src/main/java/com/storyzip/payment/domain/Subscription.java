@@ -12,6 +12,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -124,7 +125,7 @@ public class Subscription {
         if (this.cancelledAt != null) {
             throw new PaymentException(ErrorCode.INVALID_REQUEST, "이미 해지 예약된 구독입니다");
         }
-        this.cancelledAt = LocalDateTime.now();
+        this.cancelledAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     /** 해지 예약 취소 — cancelledAt을 지워 정기 갱신을 유지한다. */

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
@@ -54,7 +55,7 @@ public class RefundService {
 
         LocalDateTime approvedAt = payment.getApprovedAt() != null
                 ? payment.getApprovedAt() : payment.getCreatedAt();
-        long hoursElapsed = ChronoUnit.HOURS.between(approvedAt, LocalDateTime.now());
+        long hoursElapsed = ChronoUnit.HOURS.between(approvedAt, LocalDateTime.now(ZoneOffset.UTC));
 
         int refundAmount;
         int tokenDeduct;
@@ -65,7 +66,7 @@ public class RefundService {
             tokenDeduct = payment.getTokenQty();
             refundType = "FULL";
         } else {
-            long daysUsed = ChronoUnit.DAYS.between(approvedAt.toLocalDate(), LocalDateTime.now().toLocalDate());
+            long daysUsed = ChronoUnit.DAYS.between(approvedAt.toLocalDate(), LocalDateTime.now(ZoneOffset.UTC).toLocalDate());
             if (daysUsed >= SUBSCRIPTION_PERIOD_DAYS) {
                 throw new PaymentException(ErrorCode.REFUND_FAILED, "구독 기간이 이미 만료되어 환불할 수 없습니다");
             }

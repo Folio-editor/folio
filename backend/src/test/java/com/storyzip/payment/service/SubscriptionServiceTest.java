@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -256,7 +257,7 @@ class SubscriptionServiceTest {
                 .plan("PRO_MONTHLY")
                 .monthlyTokens(25_000)
                 .monthlyAmount(9_900)
-                .nextBillingAt(LocalDateTime.now().plusDays(30))
+                .nextBillingAt(LocalDateTime.now(ZoneOffset.UTC).minusDays(1))
                 .build();
     }
 }

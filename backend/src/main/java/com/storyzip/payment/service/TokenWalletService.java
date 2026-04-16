@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -55,7 +56,7 @@ public class TokenWalletService {
                 .type(type)
                 .reason(reason)
                 .referenceId(referenceId)
-                .expiresAt(LocalDateTime.now().plusDays(TOKEN_VALIDITY_DAYS))
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(TOKEN_VALIDITY_DAYS))
                 .build());
     }
 
