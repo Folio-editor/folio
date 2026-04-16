@@ -4,8 +4,6 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   mvc:
-    # 매핑되지 않은 요청에 대해 NoHandlerFoundException을 던지도록 설정
-    # (GlobalExceptionHandler에서 404 응답으로 변환)
     throw-exception-if-no-handler-found: true
   web:
     resources:
@@ -33,6 +31,8 @@ jwt:
   secret: ${JWT_SECRET}
   access-expiry: ${JWT_ACCESS_EXPIRY:1800}
   refresh-expiry: ${JWT_REFRESH_EXPIRY:1209600}
+  audience: ${PS_JWT_AUDIENCE:powersync-dev}
+  key-id: ${PS_JWT_KID:storyzip-dev}
 
 # Google OAuth
 google:
@@ -50,7 +50,15 @@ ai:
     connect-timeout: 3s
     read-timeout: 10s
 
-# springdoc / Swagger 공통 (활성화 여부는 프로필별로 제어)
+# 토스페이먼츠
+toss:
+  payments:
+    client-key: ${TOSS_CLIENT_KEY:test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
+    secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
+    api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
+    webhook-secret: ${TOSS_WEBHOOK_SECRET:}
+
+# springdoc / Swagger
 springdoc:
   api-docs:
     path: /v3/api-docs

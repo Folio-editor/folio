@@ -242,27 +242,21 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 | email | VARCHAR(255) | NOT NULL, UNIQUE | |
 | password_hash | VARCHAR(255) | | OAuth 전용 사용자는 NULL |
 | nickname | VARCHAR(100) | | 작가명 기본값 |
-| role | VARCHAR(20) | NOT NULL DEFAULT 'user' | user / premium / admin |
+| profile_image_url | TEXT | | 프로필 이미지 URL (OAuth 제공자에서 수신) |
+| role | VARCHAR(20) | NOT NULL DEFAULT 'USER' | USER / PREMIUM / ADMIN |
 | oauth_provider | VARCHAR(50) | | google 등 |
 | oauth_id | VARCHAR(255) | | OAuth 제공자별 ID |
 | created_at | TIMESTAMP | NOT NULL | |
 | deleted_at | TIMESTAMP | | 소프트 삭제 |
 
----
-
-### 2.2 RefreshToken
-
-| 컬럼 | 타입 | 제약 | 설명 |
-|------|------|------|------|
-| id | UUID | PK | |
-| writer_id | UUID | FK → Writer | |
-| refresh_token | VARCHAR(500) | NOT NULL | |
-| expires_at | TIMESTAMP | NOT NULL | |
-| created_at | TIMESTAMP | NOT NULL | |
+**Refresh Token은 Redis에 저장한다 (별도 테이블 없음).**
+- Key: `RT:{writer_id}:{device_id}` — 기기별 분리 (다중 로그인 지원)
+- TTL: Refresh Token 만료 시간과 동일
+- 특정 기기 로그아웃 시 해당 Key만 삭제, 전체 로그아웃 시 `RT:{writer_id}:*` 패턴 일괄 삭제
 
 ---
 
-### 2.3 AuditLog (감사 로그)
+### 2.2 AuditLog (감사 로그)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -275,39 +269,60 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.4 Payment (결제)
+### 2.3 Payment (결제)
+
+토스페이먼츠 결제 1건 단위. 1회성(토큰 충전)과 정기결제(프로 구독)의 매 회차 결제가 모두 기록된다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | UUID | PK | |
 | writer_id | UUID | FK → Writer | |
-| order_id | VARCHAR(100) | NOT NULL | |
-| payment_key | VARCHAR(200) | | |
-| amount | INTEGER | NOT NULL | |
-| token_qty | INTEGER | NOT NULL | |
-| status | VARCHAR(20) | NOT NULL | |
-| created_at | TIMESTAMP | NOT NULL | |
+| order_id | VARCHAR(100) | NOT NULL, UNIQUE | 우리가 발급하는 주문 고유번호 (토스 전달용, 중복 방지 위해 UNIQUE) |
+| payment_key | VARCHAR(200) | | 토스가 발급하는 결제 식별자 (승인 완료 시 채워짐) |
+| amount | INTEGER | NOT NULL | 결제 금액 (원) |
+| token_qty | INTEGER | NOT NULL | 충전될 토큰 수량 |
+| status | VARCHAR(20) | NOT NULL | READY / IN_PROGRESS / DONE / CANCELED / FAILED |
+| method | VARCHAR(20) | | 결제수단 (CARD / VIRTUAL_ACCOUNT / EASY_PAY 등) |
+| approved_at | TIMESTAMP | | 토스 승인 완료 시각 (승인 전에는 NULL) |
+| failure_reason | TEXT | | 실패 시 토스가 반환한 원인 코드·메시지 |
+| created_at | TIMESTAMP | NOT NULL | 결제 요청 생성 시각 |
 | updated_at | TIMESTAMP | NOT NULL | |
 
+**추가 필드 이유**:
+- `order_id UNIQUE`: 코드 버그로 같은 주문번호가 중복 INSERT되면 DB가 차단
+- `method`: 가상계좌는 입금 전까지 PENDING 유지 등 결제수단별 분기에 필요
+- `approved_at`: 요청·승인 시각이 다르므로 환불 기한·세무 대응에 필요
+- `failure_reason`: CS 대응 (작가 "왜 결제 안 됐어요?" 문의)
+
 ---
 
-### 2.5 Subscription (구독)
+### 2.4 Subscription (구독)
+
+프로 구독 이력. 활성 구독은 한 작가당 최대 1건(`status='ACTIVE'`), 재구독 시 새 레코드를 INSERT하여 이력 누적.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | UUID | PK | |
 | writer_id | UUID | FK → Writer | |
-| billing_key | VARCHAR(200) | NOT NULL | |
-| plan | VARCHAR(50) | NOT NULL | |
-| monthly_tokens | INTEGER | NOT NULL | |
-| status | VARCHAR(20) | NOT NULL | |
-| next_billing_at | TIMESTAMP | NOT NULL | |
-| cancelled_at | TIMESTAMP | | |
+| customer_key | VARCHAR(100) | NOT NULL, UNIQUE | 토스에 전달하는 작가 식별자 (빌링키 발급 시 세트) |
+| billing_key | VARCHAR(200) | NOT NULL | 토스가 발급하는 정기결제 티켓 (카드 정보 대체) |
+| plan | VARCHAR(50) | NOT NULL | PRO 등 |
+| monthly_tokens | INTEGER | NOT NULL | 매월 자동 충전 토큰 수 |
+| status | VARCHAR(20) | NOT NULL | ACTIVE / CANCELLED / PAYMENT_FAILED / EXPIRED |
+| next_billing_at | TIMESTAMP | NOT NULL | 다음 청구 예정일 |
+| last_payment_at | TIMESTAMP | | 마지막 성공 결제 시각 (재시도 판단 기준) |
+| retry_count | INTEGER | NOT NULL DEFAULT 0 | 결제 실패 연속 재시도 횟수 (3회 초과 시 PAYMENT_FAILED) |
+| cancelled_at | TIMESTAMP | | 작가가 취소한 시각 |
 | created_at | TIMESTAMP | NOT NULL | |
+
+**추가 필드 이유**:
+- `customer_key`: 토스 정기결제 API가 필수로 요구. 내부 `writer.id`를 그대로 노출하지 않기 위해 별도 식별자 사용 (토스 보안 가이드)
+- `last_payment_at`: 결제 실패 재시도 스케줄러가 "이미 처리된 건지" 판단
+- `retry_count`: 3일 간격 3회 재시도 정책 구현용
 
 ---
 
-### 2.6 TokenWallet (토큰 잔액)
+### 2.5 TokenWallet (토큰 잔액)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -319,21 +334,27 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.7 TokenTransaction (토큰 거래 내역)
+### 2.6 TokenTransaction (토큰 거래 내역)
+
+토큰 충전·차감·만료의 append-only 원장. 잔액은 `TokenWallet`에 스냅샷으로 유지하지만, 정산·감사 시 이 원장이 진실의 소스가 된다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | UUID | PK | |
 | writer_id | UUID | FK → Writer | |
-| amount | INTEGER | NOT NULL | |
-| type | VARCHAR(20) | NOT NULL | |
-| reason | VARCHAR(100) | | |
-| reference_id | UUID | | |
+| amount | INTEGER | NOT NULL | 양수=충전, 음수=차감 |
+| type | VARCHAR(20) | NOT NULL | CHARGE / SUBSCRIPTION / USAGE / EXPIRE / REFUND |
+| reason | VARCHAR(100) | | 사유 (AI_DRAFT, AI_REVIEW, AUTO_SUMMARY 등) |
+| reference_id | UUID | | 연관된 레코드 ID (Payment, AIAnalysis 등) |
+| expires_at | TIMESTAMP | | 충전 토큰의 만료일 (기획: 1년 유효). 차감/만료 타입은 NULL |
 | created_at | TIMESTAMP | NOT NULL | |
+
+**추가 필드 이유**:
+- `expires_at`: 기획안 "토큰 1년 유효, 이월 가능" 조건 구현. 충전 레코드별로 만료일을 기록해 선입선출(FIFO) 차감 가능. 나중에 추가하면 기존 원장 전체를 백필해야 하는 마이그레이션 부담이 크므로 지금 추가
 
 ---
 
-### 2.8 AIAnalysis (AI 분석)
+### 2.7 AIAnalysis (AI 분석)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -349,7 +370,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.9 Export (내보내기)
+### 2.8 Export (내보내기)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -364,7 +385,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.10 Notification (알림)
+### 2.9 Notification (알림)
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -379,7 +400,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ---
 
-### 2.11 AIPromptTemplate (AI 프롬프트 템플릿)
+### 2.10 AIPromptTemplate (AI 프롬프트 템플릿)
 
 관리자가 관리하는 AI 프롬프트 템플릿. 클라이언트 수정 없이 프롬프트 개선 가능.
 
@@ -395,6 +416,27 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 | is_active | BOOLEAN | NOT NULL DEFAULT true | 활성화 여부 |
 | created_at | TIMESTAMP | NOT NULL | |
 | updated_at | TIMESTAMP | NOT NULL | |
+
+---
+
+### 2.11 PaymentEvent (결제 웹훅 로그)
+
+토스페이먼츠 웹훅 수신 원본. 웹훅이 "최소 한 번 전송"이라 같은 이벤트가 여러 번 도착할 수 있어 멱등성 처리가 필수다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | |
+| event_id | VARCHAR(100) | NOT NULL, UNIQUE | 토스가 발급하는 이벤트 고유번호. UNIQUE 제약으로 중복 자동 차단 |
+| event_type | VARCHAR(50) | NOT NULL | PAYMENT.DONE / PAYMENT.CANCELED / VIRTUAL_ACCOUNT.DEPOSITED 등 |
+| payload | JSONB | NOT NULL | 웹훅 요청 본문 원본 (감사·디버깅·재처리용) |
+| processed_at | TIMESTAMP | NOT NULL DEFAULT now() | |
+
+**동작 원리**:
+1. 웹훅 수신 → 맨 먼저 `INSERT INTO payment_event (event_id, ...)` 시도
+2. 성공 → 처음 보는 이벤트, 후속 처리 (결제 상태 갱신 + 토큰 충전 등)
+3. UNIQUE 위반 → 이미 처리한 이벤트, 200 OK만 반환하고 무시
+
+**왜 필요한가**: 웹훅이 2번 도착해도 DB의 UNIQUE 제약이 원자적으로 중복을 막아준다. 이 테이블이 없으면 같은 결제 승인 이벤트로 토큰이 2번 충전되는 사고가 발생할 수 있다.
 
 ---
 
@@ -424,15 +466,15 @@ Writer (서버 전용)
   │         ├─1:N── IdeaArchive (아이디어)
   │         │
   │
-  ├─1:N── RefreshToken
   ├─1:N── AuditLog
   ├─1:N── Payment
-  ├─1:1── Subscription
+  ├─1:N── Subscription (재구독 이력 누적, 활성 구독은 최대 1건)
   ├─1:1── TokenWallet
   ├─1:N── TokenTransaction
   └─1:N── Notification
 
 AIPromptTemplate (독립 — 관리자 전용)
+PaymentEvent (독립 — 토스 웹훅 멱등성 로그, Writer FK 없음)
 ```
 
 ---

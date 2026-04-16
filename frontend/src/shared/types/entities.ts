@@ -168,23 +168,18 @@ export interface IdeaArchive {
 export interface Writer {
   id: string;
   email: string;
-  password_hash: string | null;  // OAuth 전용 사용자는 NULL
-  nickname: string | null;       // 작가명 기본값
-  role: string;                  // user / premium / admin
-  oauth_provider: string | null; // google 등
+  password_hash: string | null;     // OAuth 전용 사용자는 NULL
+  nickname: string | null;          // 작가명 기본값
+  profile_image_url: string | null; // 프로필 이미지 URL
+  role: 'USER' | 'PREMIUM' | 'ADMIN';
+  oauth_provider: string | null;    // google 등
   oauth_id: string | null;
   created_at: string;
-  deleted_at: string | null;     // 소프트 삭제
+  deleted_at: string | null;        // 소프트 삭제
 }
 
-/** 리프레시 토큰 */
-export interface RefreshToken {
-  id: string;
-  writer_id: string;
-  refresh_token: string;
-  expires_at: string;
-  created_at: string;
-}
+// Refresh Token은 Redis에 저장 (엔티티 없음).
+// Key: RT:{writer_id}:{device_id}
 
 /** 감사 로그 */
 export interface AuditLog {
