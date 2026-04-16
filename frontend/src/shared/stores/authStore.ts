@@ -46,6 +46,14 @@ interface AuthState {
    * syncDecision이 결정되면 null로 정리한다.
    */
   previousGuestId: string | null;
+  /**
+   * 로컬 퍼스트 원칙: 로그아웃/앱 재시작 후에도 마지막 로그인 사용자의 로컬 데이터를
+   * 계속 표시하기 위한 writerId. 로그인 경험이 없으면 null.
+   * - 로그인 성공 시 세팅 (Main이 파일에 영속 저장)
+   * - 로그아웃 시 유지 (★ 클리어 금지 — useQuery 필터가 바뀌면 데이터가 "사라져" 보임)
+   * - 다른 사용자가 로그인하면 덮어씀
+   */
+  lastKnownWriterId: string | null;
   isAuthenticated: boolean;
   isGuest: boolean;
   isRestoring: boolean;
@@ -69,12 +77,18 @@ interface AuthState {
    * 'use-server'면 disconnectAndClear()로 로컬을 비운 뒤 connect 허용 상태로 전환.
    */
   resolveSyncDecision: (decision: 'use-server' | 'use-local') => Promise<void>;
+  /**
+   * Main 프로세스의 token refresh가 RT 거부/재시도 초과로 실패한 경우 수신.
+   * 앱 루트에서 1회 호출하고 반환된 함수로 언마운트 시 해지한다.
+   */
+  subscribeSessionEvents: () => () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   writer: null,
   guestWriterId: null,
   previousGuestId: null,
+  lastKnownWriterId: null,
   isAuthenticated: false,
   isGuest: false,
   isRestoring: true,
@@ -83,9 +97,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isNewUser: false,
   syncDecision: null,
 
+  /**
+   * useQuery 필터에 사용할 writerId.
+   * 우선순위: 현재 로그인 > 마지막 로그인(로컬 데이터 표시용) > 게스트
+   * 로그아웃 직후에도 같은 값을 반환하도록 lastKnownWriterId를 중간에 끼운다.
+   */
   currentWriterId: () => {
-    const { writer, guestWriterId } = get();
-    return writer?.id ?? guestWriterId;
+    const { writer, lastKnownWriterId, guestWriterId } = get();
+    return writer?.id ?? lastKnownWriterId ?? guestWriterId;
   },
 
   restore: async () => {
@@ -93,11 +112,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const result = await window.storyzip.auth.tryRestore();
       if (result) {
-        // 자동 복원: 이미 결정 끝난 기존 사용자 → 서버 우선으로 즉시 결정 확정
+        // 자동 복원: 이미 결정 끝난 기존 사용자 → 서버 우선으로 즉시 결정 확정.
+        // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
+        // App.tsx가 syncDecision만 보고 connect하므로 disconnectAndClear는 호출되지 않는다.
         set({
           writer: result.writer,
           guestWriterId: null,
           previousGuestId: null,
+          lastKnownWriterId: result.writer.id,
           isAuthenticated: true,
           isGuest: false,
           isRestoring: false,
@@ -113,11 +135,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   enterGuestMode: async () => {
-    const guestWriterId = await window.storyzip.auth.getGuestId();
+    const [guestWriterId, lastKnownWriterId] = await Promise.all([
+      window.storyzip.auth.getGuestId(),
+      window.storyzip.auth.getLastKnownWriterId(),
+    ]);
+    // 로그인 경험이 있으면 lastKnownWriterId로 이전 데이터 계속 표시 (로컬 퍼스트).
+    // 없으면 게스트 UUID 사용.
     set({
       writer: null,
       guestWriterId,
       previousGuestId: null,
+      lastKnownWriterId,
       isAuthenticated: false,
       isGuest: true,
       isRestoring: false,
@@ -136,6 +164,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoggingIn: true, error: null });
     try {
       const result = await window.storyzip.auth.loginWithGoogle();
+      // lastKnownWriterId는 여기서 건드리지 않는다 — 아직 사용자가 SyncDecisionDialog에서
+      // 취소할 수 있는 단계. resolveSyncDecision이 확정된 후에만 커밋한다.
       set({
         writer: result.writer,
         // 로그인 직전의 guestWriterId를 previousGuestId로 이동 — useSyncResolver가 조회에 사용
@@ -180,8 +210,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.warn('[AuthStore] writer_id 재매핑 실패:', e);
       }
     }
-    // 결정 후 previousGuestId 정리
-    set({ syncDecision: decision, previousGuestId: null });
+    // 결정 후 previousGuestId 정리 + lastKnownWriterId 커밋(로그아웃 후에도 로컬 데이터 유지).
+    set({
+      syncDecision: decision,
+      previousGuestId: null,
+      lastKnownWriterId: writer?.id ?? get().lastKnownWriterId,
+    });
+    if (writer) {
+      try {
+        await window.storyzip.auth.commitLastKnownWriterId(writer.id);
+      } catch (e) {
+        console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
+      }
+    }
   },
 
   logout: async () => {
@@ -189,6 +230,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await window.storyzip.auth.logout();
     } finally {
       const guestWriterId = get().guestWriterId ?? (await window.storyzip.auth.getGuestId());
+      // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
+      // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.
       set({
         writer: null,
         guestWriterId,
@@ -200,4 +243,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     }
   },
+
+  subscribeSessionEvents: () =>
+    window.storyzip.auth.onSessionExpired(() => {
+      // Main에서 이미 로컬 토큰을 정리한 상태. 클라이언트 상태도 게스트 모드로 전환.
+      console.warn('[auth] 세션 만료 감지 — 게스트 모드로 전환');
+      void get().logout();
+    }),
 }));

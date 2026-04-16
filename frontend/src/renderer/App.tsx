@@ -14,10 +14,17 @@ export function App() {
   const isRestoring = useAuthStore((s) => s.isRestoring);
   const syncDecision = useAuthStore((s) => s.syncDecision);
   const restore = useAuthStore((s) => s.restore);
+  const subscribeSessionEvents = useAuthStore((s) => s.subscribeSessionEvents);
 
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  // Main 프로세스의 proactive refresh 실패(RT 거부/재시도 초과) 수신
+  useEffect(() => {
+    const unsubscribe = subscribeSessionEvents();
+    return unsubscribe;
+  }, [subscribeSessionEvents]);
 
   // PowerSync connect 게이팅:
   //   - syncDecision이 결정되기 전(login 직후, null)에는 connect 금지 → 로컬 게스트 데이터가 의도치 않게 업로드되는 것을 막는다

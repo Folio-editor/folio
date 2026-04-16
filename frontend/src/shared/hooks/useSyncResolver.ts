@@ -3,7 +3,7 @@ import { usePowerSync } from '@powersync/react';
 import { useAuthStore } from '../stores/authStore';
 
 interface ResolverState {
-  /** 다이얼로그 표시 여부 (기존 유저 + 로컬 데이터 있음 케이스에만) */
+  /** 다이얼로그 표시 여부 (기존 유저 + 로컬 게스트 데이터 있음 케이스에만) */
   showDialog: boolean;
   guestRowCount: number;
 }
@@ -22,15 +22,18 @@ const SYNC_TABLES = [
 /**
  * 로그인 직후 sync 의사결정을 자동/수동으로 처리한다.
  *
- * 정책 — "로컬을 자연스럽게 유지하며 서버에 백업":
- *   1. 신규 가입자(isNewUser=true)
- *      → 로컬 데이터 유무 관계없이 자동 'use-local' (로컬 보존 + 자동 업로드)
- *   2. 기존 회원(isNewUser=false) + 로컬 데이터 0건
- *      → 자동 'use-server' (서버 데이터 sync down)
- *   3. 기존 회원 + 로컬 데이터 >0건
- *      → 다이얼로그 (서버 데이터 덮어쓸 위험이 있으므로 폐기 안내)
+ * 판정 매트릭스 — (userRows: 로그인 사용자 UUID 행 수, guestRows: 이전 게스트 UUID 행 수):
+ *   - isNewUser=true
+ *       → 'use-local' (게스트 UUID가 있으면 재매핑, 없으면 no-op)
+ *   - userRows>0, guestRows=0
+ *       → 'use-local' (★ 재로그인 / 같은 계정 자동복원. clear 금지!)
+ *   - userRows=0, guestRows=0
+ *       → 'use-server' (완전 빈 앱 — 서버에서 다운로드)
+ *   - guestRows>0 (userRows 무관)
+ *       → 다이얼로그 (사용자가 서버 사용/취소 선택)
  *
- * 상위 컴포넌트는 showDialog=true일 때만 SyncDecisionDialog를 렌더한다.
+ * 주의: guestRows만 세고 '0이면 clear'로 단정하면 재로그인 시 로컬이 통째로 날아간다.
+ * 재로그인에서는 로컬 행이 이전 로그인 사용자 UUID로 남아있기 때문.
  */
 export function useSyncResolver(): ResolverState & {
   busy: boolean;
@@ -42,6 +45,7 @@ export function useSyncResolver(): ResolverState & {
   const syncDecision = useAuthStore((s) => s.syncDecision);
   const previousGuestId = useAuthStore((s) => s.previousGuestId);
   const isNewUser = useAuthStore((s) => s.isNewUser);
+  const writerId = useAuthStore((s) => s.writer?.id ?? null);
   const resolveSyncDecision = useAuthStore((s) => s.resolveSyncDecision);
   const logout = useAuthStore((s) => s.logout);
 
@@ -59,29 +63,41 @@ export function useSyncResolver(): ResolverState & {
       return;
     }
     // 같은 로그인 사이클에서 중복 트리거 방지
-    const key = `${isNewUser}-${previousGuestId ?? 'null'}`;
+    const key = `${isNewUser}-${previousGuestId ?? 'null'}-${writerId ?? 'null'}`;
     if (lastResolvedKeyRef.current === key) return;
     lastResolvedKeyRef.current = key;
 
     void (async () => {
-      // 1) 신규 가입자 — 무조건 자동 백업 (로컬 보존)
+      // 1) 신규 가입자 — 무조건 로컬 보존 (게스트 UUID가 있으면 재매핑)
       if (isNewUser) {
         await resolveSyncDecision('use-local');
         return;
       }
 
-      // 2) 기존 회원 — 로컬 데이터 유무 판별
-      const count = await countRows(db, previousGuestId);
-      if (count === 0) {
-        // 로컬 비어있음 → 바로 서버 우선 (sync down)
-        await resolveSyncDecision('use-server');
+      // 2) 로컬 상태 두 방향 모두 확인
+      const [userRows, guestRows] = await Promise.all([
+        countRowsByWriter(db, writerId),
+        countRowsByWriter(db, previousGuestId),
+      ]);
+
+      // 2-a) 게스트 로컬 데이터가 있으면 서버 덮어쓸 위험 → 다이얼로그
+      if (guestRows > 0) {
+        setState({ showDialog: true, guestRowCount: guestRows });
         return;
       }
-      // 로컬 데이터 있음 → 다이얼로그로 폐기 확인
-      setState({ showDialog: true, guestRowCount: count });
+
+      // 2-b) 재로그인 / 자동 복원 — 로컬에 이미 내 데이터가 있음
+      //      clear 없이 그대로 connect (use-local은 writer.id === writer.id이므로 UPDATE는 no-op)
+      if (userRows > 0) {
+        await resolveSyncDecision('use-local');
+        return;
+      }
+
+      // 2-c) 완전 빈 상태 (새 기기 첫 로그인 등) — 서버에서 sync down
+      await resolveSyncDecision('use-server');
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, syncDecision, isNewUser, previousGuestId]);
+  }, [isAuthenticated, syncDecision, isNewUser, previousGuestId, writerId]);
 
   const wrap = (fn: () => Promise<void>) => async () => {
     if (busy) return;
@@ -110,7 +126,7 @@ export function useSyncResolver(): ResolverState & {
 /**
  * 주어진 writerId로 작성된 모든 동기화 테이블 행 수 합계 (단일 UNION ALL 쿼리).
  */
-async function countRows(
+async function countRowsByWriter(
   db: ReturnType<typeof usePowerSync>,
   writerId: string | null,
 ): Promise<number> {
