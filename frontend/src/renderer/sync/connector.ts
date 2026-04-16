@@ -60,31 +60,33 @@ export class StoryZipConnector implements PowerSyncBackendConnector {
    *   - 백엔드: client UUID 수락, writer_id는 JWT에서 추출하여 덮어씀
    */
   async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
-    const transaction = await database.getNextCrudTransaction();
-    if (!transaction) return;
-
     const token = await window.storyzip.auth.getAccessToken();
     if (!token) {
-      // 게스트 모드 — 큐 유지, 로그인 후 재시도
       console.log('[uploadData] 게스트 모드 — 큐 유지');
       return;
     }
 
-    const entries: SyncUploadEntry[] = transaction.crud.map((entry) => ({
-      table: entry.table,
-      op: entry.op,
-      id: entry.id,
-      data: (entry.opData as Record<string, unknown>) ?? null,
-    }));
+    let transaction = await database.getNextCrudTransaction();
 
-    try {
-      await apiClient.post('/sync/upload', entries);
-      await transaction.complete();
-      console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
-    } catch (e) {
-      const status = e instanceof ApiError ? e.status : 'network';
-      console.warn(`[sync] uploadData 업로드 실패 (${status}) — 재시도 예정:`, e);
-      // complete() 미호출 → PowerSync 자동 재시도
+    while (transaction) {
+      const entries: SyncUploadEntry[] = transaction.crud.map((entry) => ({
+        table: entry.table,
+        op: entry.op,
+        id: entry.id,
+        data: (entry.opData as Record<string, unknown>) ?? null,
+      }));
+
+      try {
+        await apiClient.post('/sync/upload', entries);
+        await transaction.complete();
+        console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
+      } catch (e) {
+        const status = e instanceof ApiError ? e.status : 'network';
+        console.warn(`[sync] uploadData 업로드 실패 (${status}) — 재시도 예정:`, e);
+        break;
+      }
+
+      transaction = await database.getNextCrudTransaction();
     }
   }
 }
