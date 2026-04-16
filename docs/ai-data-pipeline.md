@@ -91,7 +91,7 @@
 ┌─────────────────────────────────────────┐
 │  STEP 3. Celery 워커가 task 수신          │
 │                                          │
-│  ai_job.status → "running"               │
+│  ai_job.status → "running"               │11
 │  ai_job.updated_at → now()               │
 └────────────────────┬────────────────────┘
                      │
