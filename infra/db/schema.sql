@@ -39,11 +39,14 @@ CREATE TABLE audit_log (
 CREATE TABLE payment (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    order_id        VARCHAR(100) NOT NULL,
+    order_id        VARCHAR(100) NOT NULL UNIQUE,
     payment_key     VARCHAR(200),
     amount          INTEGER NOT NULL,
     token_qty       INTEGER NOT NULL,
     status          VARCHAR(20) NOT NULL,
+    method          VARCHAR(20),
+    approved_at     TIMESTAMP,
+    failure_reason  TEXT,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -51,13 +54,25 @@ CREATE TABLE payment (
 CREATE TABLE subscription (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    customer_key    VARCHAR(100) NOT NULL UNIQUE,
     billing_key     VARCHAR(200) NOT NULL,
     plan            VARCHAR(50) NOT NULL,
     monthly_tokens  INTEGER NOT NULL,
     status          VARCHAR(20) NOT NULL,
     next_billing_at TIMESTAMP NOT NULL,
+    last_payment_at TIMESTAMP,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
     cancelled_at    TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE payment_event (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id        VARCHAR(100) NOT NULL UNIQUE,
+    event_type      VARCHAR(50) NOT NULL,
+    payload         JSONB NOT NULL,
+    consumed        BOOLEAN NOT NULL DEFAULT FALSE,
+    processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE token_wallet (
@@ -75,6 +90,7 @@ CREATE TABLE token_transaction (
     type            VARCHAR(20) NOT NULL,
     reason          VARCHAR(100),
     reference_id    UUID,
+    expires_at      TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -248,6 +264,89 @@ CREATE TABLE idea_archive (
 );
 
 -- ────────────────────────────────────────────────────────────
+-- AI 전용 (PostgreSQL only, PowerSync 제외)
+-- ────────────────────────────────────────────────────────────
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TABLE episode_chunk (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id    UUID NOT NULL REFERENCES episode(id) ON DELETE CASCADE,
+    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    chunk_index   INTEGER NOT NULL,
+    content       TEXT NOT NULL,
+    embedding     VECTOR(1536) NOT NULL,
+    token_count   INTEGER NOT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (episode_id, chunk_index)
+);
+
+CREATE TABLE episode_summary (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id    UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
+    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    summary       TEXT NOT NULL,
+    is_confirmed  BOOLEAN NOT NULL DEFAULT false,
+    model_used    VARCHAR(50),
+    raw_result    TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE extraction_suggestion (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id           UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    work_id             UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    episode_id          UUID REFERENCES episode(id) ON DELETE SET NULL,
+    entity_type         VARCHAR(30) NOT NULL
+        CHECK (entity_type IN ('character','world_note','term')),
+    suggested_name      VARCHAR(200) NOT NULL,
+    payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status              VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','confirmed','rejected')),
+    confirmed_target_id UUID,
+    created_at          TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (work_id, entity_type, suggested_name)
+);
+
+CREATE TABLE ai_job (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    episode_id    UUID REFERENCES episode(id) ON DELETE SET NULL,
+    job_type      VARCHAR(30) NOT NULL
+        CHECK (job_type IN ('indexing','summary','review','generation')),
+    status        VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','running','done','failed')),
+    error_message TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_episode_summary_updated_at
+    BEFORE UPDATE ON episode_summary
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_extraction_suggestion_updated_at
+    BEFORE UPDATE ON extraction_suggestion
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_ai_job_updated_at
+    BEFORE UPDATE ON ai_job
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ────────────────────────────────────────────────────────────
 -- 서버 전용이지만 동기화 테이블 참조
 -- ────────────────────────────────────────────────────────────
 
@@ -304,12 +403,36 @@ CREATE INDEX idx_idea_archive_work ON idea_archive(work_id);
 -- 서버 전용
 CREATE INDEX idx_audit_log_writer ON audit_log(writer_id);
 CREATE INDEX idx_payment_writer ON payment(writer_id);
+CREATE INDEX idx_subscription_writer ON subscription(writer_id);
+CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
+CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);
 CREATE INDEX idx_notification_writer ON notification(writer_id);
 CREATE INDEX idx_notification_unread ON notification(writer_id, is_read) WHERE is_read = false;
 CREATE INDEX idx_token_transaction_writer ON token_transaction(writer_id);
+CREATE INDEX idx_token_transaction_expires ON token_transaction(writer_id, expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX idx_ai_analysis_episode ON ai_analysis(episode_id);
 CREATE INDEX idx_export_writer ON export(writer_id);
 
 -- JSONB 인덱스
 CREATE INDEX idx_plan_genres ON plan USING GIN (genres);
 CREATE INDEX idx_plan_moods ON plan USING GIN (moods);
+
+-- AI 전용
+CREATE INDEX idx_episode_chunk_embedding
+    ON episode_chunk USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);
+CREATE INDEX idx_episode_chunk_work     ON episode_chunk(work_id);
+CREATE INDEX idx_episode_chunk_writer   ON episode_chunk(writer_id);
+CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
+CREATE INDEX idx_episode_summary_work_confirmed
+    ON episode_summary(work_id, is_confirmed);
+CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
+CREATE INDEX idx_extraction_suggestion_work_status
+    ON extraction_suggestion(work_id, status);
+CREATE INDEX idx_extraction_suggestion_writer  ON extraction_suggestion(writer_id);
+CREATE INDEX idx_extraction_suggestion_episode ON extraction_suggestion(episode_id);
+CREATE INDEX idx_ai_job_work    ON ai_job(work_id);
+CREATE INDEX idx_ai_job_episode ON ai_job(episode_id);
+CREATE INDEX idx_ai_job_writer  ON ai_job(writer_id);
+CREATE INDEX idx_ai_job_active_status
+    ON ai_job(status) WHERE status IN ('pending','running');

@@ -1,0 +1,48 @@
+# ============================================================
+# PowerSync Sync Rules — StoryZip
+# ============================================================
+# - 각 writer는 자신의 writer_id와 일치하는 데이터만 동기화 받음
+# - request.user_id()는 JWT `sub` 클레임에서 추출
+#   백엔드 JwtProvider.createAccessToken이 writerId(UUID)를 sub에 넣음
+#
+# 제약:
+#   PowerSync `data` 쿼리는 단일 테이블 SELECT만 허용 (JOIN 금지).
+#   writer_id 컬럼이 없는 종속 테이블은 parameters 쿼리로 부모 id 목록을
+#   미리 뽑고, data 쿼리에서 그 id로 필터하는 패턴을 사용한다.
+#
+# 주의:
+#   `character`는 SQL 예약어 → 반드시 큰따옴표로 쿼팅
+# ============================================================
+
+bucket_definitions:
+  # writer_id 컬럼을 직접 가진 상위 엔티티
+  user_workspace:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from work         where writer_id = bucket.user_id
+      - select * from plan         where writer_id = bucket.user_id
+      - select * from world_note   where writer_id = bucket.user_id
+      - select * from "character"  where writer_id = bucket.user_id
+      - select * from plot         where writer_id = bucket.user_id
+      - select * from episode      where writer_id = bucket.user_id
+      - select * from foreshadow   where writer_id = bucket.user_id
+      - select * from idea_archive where writer_id = bucket.user_id
+
+  # character에 종속된 테이블 — 내 character id 목록으로 필터
+  character_children:
+    parameters: select id as character_id from "character" where writer_id = request.user_id()
+    data:
+      - select * from character_custom_field where character_id = bucket.character_id
+      - select * from character_tag          where character_id = bucket.character_id
+
+  # plot에 종속된 링크 테이블
+  plot_children:
+    parameters: select id as plot_id from plot where writer_id = request.user_id()
+    data:
+      - select * from plot_episode_link where plot_id = bucket.plot_id
+
+  # foreshadow에 종속된 링크 테이블
+  foreshadow_children:
+    parameters: select id as foreshadow_id from foreshadow where writer_id = request.user_id()
+    data:
+      - select * from foreshadow_link where foreshadow_id = bucket.foreshadow_id

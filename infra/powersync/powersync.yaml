@@ -1,0 +1,44 @@
+# ============================================================
+# PowerSync Service Config — dev
+# ============================================================
+# 환경변수 참조: `!env PS_*` (PS_ 접두사 변수만 치환 가능)
+# sync rule은 별도 파일 sync-rules.yaml 로 분리
+# 인증: HS256 공유 시크릿 (JWK `oct` 타입)
+# ============================================================
+
+# 원본 DB (logical replication 구독 대상)
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+# 동기화 버킷 메타 저장소
+storage:
+  type: mongodb
+  uri: !env PS_MONGO_URI
+
+# API 서버 포트 (컨테이너 내부)
+port: 8080
+
+# Sync rule 파일 경로 (별도 파일)
+sync_config:
+  path: /app/sync-rules.yaml
+
+# 클라이언트 JWT 인증
+# - Spring Boot가 발급한 Access Token(HS256) 검증
+# - `k`는 JWT_SECRET 문자열을 UTF-8 바이트로 본 후 base64url 인코딩한 값
+client_auth:
+  jwks:
+    keys:
+      - kty: 'oct'
+        alg: 'HS256'
+        kid: 'storyzip-dev'
+        k: !env PS_JWT_K
+  audience: ['powersync-dev']
+
+# 로깅
+system:
+  logging:
+    level: info
+    format: text

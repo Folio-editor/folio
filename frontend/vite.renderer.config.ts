@@ -11,4 +11,11 @@ export default defineConfig({
       '@platform': path.resolve(__dirname, 'src/platform'),
     },
   },
+  // PowerSync의 WASM Worker가 Vite 개발 서버에서 올바르게 로드되도록 설정
+  optimizeDeps: {
+    exclude: ['@powersync/web'],
+  },
+  worker: {
+    format: 'es',
+  },
 });

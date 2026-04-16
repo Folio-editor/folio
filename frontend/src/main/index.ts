@@ -6,7 +6,11 @@ import {
   logout,
   tryRestoreLogin,
   getAccessToken,
+  tokenRefreshScheduler,
+  getLastKnownWriterId,
+  commitLastKnownWriterId,
 } from './auth/googleOAuth';
+import { getOrCreateGuestId } from './auth/guestId';
 
 if (started) {
   app.quit();
@@ -43,11 +47,26 @@ function registerAuthHandlers() {
   ipcMain.handle('auth:logout', async () => logout());
   ipcMain.handle('auth:tryRestore', async () => tryRestoreLogin());
   ipcMain.handle('auth:getAccessToken', () => getAccessToken());
+  ipcMain.handle('auth:getGuestId', () => getOrCreateGuestId());
+  ipcMain.handle('auth:getLastKnownWriterId', () => getLastKnownWriterId());
+  ipcMain.handle('auth:commitLastKnownWriterId', (_e, writerId: string) =>
+    commitLastKnownWriterId(writerId),
+  );
 }
 
 app.on('ready', () => {
   registerAuthHandlers();
+  // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
+  tokenRefreshScheduler.on('session-expired', () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('auth:session-expired');
+    }
+  });
   createWindow();
+});
+
+app.on('before-quit', () => {
+  tokenRefreshScheduler.stop();
 });
 
 app.on('window-all-closed', () => {

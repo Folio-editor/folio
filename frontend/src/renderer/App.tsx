@@ -1,18 +1,52 @@
 import { useEffect } from 'react';
 import { MemoryRouter } from 'react-router-dom';
+import { PowerSyncContext } from '@powersync/react';
 import { useAuthStore } from '../shared/stores/authStore';
-import { LoginScreen } from '../shared/features/auth/LoginScreen';
 import { AuthenticatedApp } from '../shared/features/auth/AuthenticatedApp';
+import { db } from './sync/db';
+import { StoryZipConnector } from './sync/connector';
+
+const connector = new StoryZipConnector();
 
 export function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isGuest = useAuthStore((s) => s.isGuest);
   const isRestoring = useAuthStore((s) => s.isRestoring);
+  const syncDecision = useAuthStore((s) => s.syncDecision);
   const restore = useAuthStore((s) => s.restore);
+  const subscribeSessionEvents = useAuthStore((s) => s.subscribeSessionEvents);
 
   useEffect(() => {
     void restore();
   }, [restore]);
 
+  // Main 프로세스의 proactive refresh 실패(RT 거부/재시도 초과) 수신
+  useEffect(() => {
+    const unsubscribe = subscribeSessionEvents();
+    return unsubscribe;
+  }, [subscribeSessionEvents]);
+
+  // PowerSync connect 게이팅:
+  //   - syncDecision이 결정되기 전(login 직후, null)에는 connect 금지 → 로컬 게스트 데이터가 의도치 않게 업로드되는 것을 막는다
+  //   - 로그인 + 결정 완료 → connect (sync 양방향 활성)
+  //   - 로그아웃/게스트 → disconnect
+  useEffect(() => {
+    if (isAuthenticated && syncDecision !== null) {
+      // use-server는 disconnectAndClear 직후라 SDK 내부 정리가 끝나야 connect 가능.
+      // await로 순차 실행하여 race 방지. 실패 시 다음 렌더에서 재시도.
+      (async () => {
+        try {
+          await db.connect(connector);
+        } catch (e) {
+          console.warn('[App] db.connect 실패 — 다음 렌더에서 재시도:', e);
+        }
+      })();
+    } else if (!isAuthenticated) {
+      void db.disconnect();
+    }
+  }, [isAuthenticated, syncDecision]);
+
+  // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {
     return (
       <div className="flex min-h-screen items-center justify-center text-gray-500">
@@ -21,7 +55,22 @@ export function App() {
     );
   }
 
+  // 게스트 또는 로그인 상태 모두 편집 화면 진입
+  // 로그인 화면은 AuthenticatedApp 내부의 게스트 배너에서 선택적으로 제공
+  if (isAuthenticated || isGuest) {
+    return (
+      <PowerSyncContext.Provider value={db}>
+        <MemoryRouter>
+          <AuthenticatedApp />
+        </MemoryRouter>
+      </PowerSyncContext.Provider>
+    );
+  }
+
+  // restore 완료 후 isGuest도 false인 경우는 없어야 하지만 방어 처리
   return (
-    <MemoryRouter>{isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}</MemoryRouter>
+    <div className="flex min-h-screen items-center justify-center text-gray-500">
+      초기화 중...
+    </div>
   );
 }

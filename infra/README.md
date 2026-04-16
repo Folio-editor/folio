@@ -11,10 +11,13 @@ infra/
 ├── .env.test.example         # 테스트용 환경변수 템플릿
 ├── .env.prod.example         # 운영용 환경변수 템플릿
 ├── db/
-│   └── schema.sql            # DB 스키마 원본 (DDL)
+│   ├── schema.sql            # DB 스키마 원본 (DDL)
+│   └── powersync-init.sql    # PowerSync replication role + publication
 ├── dev/
-│   ├── docker-compose.dev.yml    # PostgreSQL + Redis (개발용)
+│   ├── docker-compose.dev.yml    # PostgreSQL + Redis + MongoDB + PowerSync
 │   └── .env.example              # Docker Compose 전용 (dev 인프라 기동만)
+├── powersync/
+│   └── sync-rules.yaml       # writer_id 기반 RLS sync rule
 ├── test/
 │   └── docker-compose.test.yml   # PostgreSQL + Redis (CI/통합 테스트, tmpfs)
 └── prod/
@@ -91,6 +94,8 @@ cd backend && ./gradlew bootRun
 |--------|--------|------|-----------|
 | PostgreSQL | localhost | 5432 | storyzip / storyzip_dev |
 | Redis | localhost | 6379 | - |
+| MongoDB | (내부 전용) | - | - (PowerSync 메타 저장소) |
+| PowerSync | localhost | 8090 | - (HS256 JWT 인증) |
 | Spring Boot | localhost | 8080 | - |
 | Swagger UI | localhost | 8080/swagger-ui.html | - |
 | FastAPI | localhost | 8000 | - |
@@ -142,11 +147,38 @@ rm infra/prod/.env   # 사용 후 즉시 삭제
 ## DB 스키마
 
 - `docs/ddl.sql` — 문서 공유/ERD Cloud용 참고
-- `infra/db/schema.sql` — 실제 DB 초기화에 사용되는 원본
+- `infra/db/schema.sql` — 실제 DB 초기화에 사용되는 원본 (01-)
+- `infra/db/powersync-init.sql` — PowerSync replication role + publication (02-)
 
-`infra/db/schema.sql`이 PostgreSQL 최초 기동 시 자동 실행됨.
+두 파일 모두 PostgreSQL 최초 기동 시 자동 실행됨.
 이미 데이터가 있는 볼륨에서는 재실행되지 않음.
 DDL을 다시 적용하려면 `down -v`로 볼륨 삭제 후 재기동.
+
+**기존 dev 환경에 PowerSync를 처음 추가하는 경우:**
+기존 `storyzip-pgdata-dev` 볼륨에는 `powersync_repl` role과 publication이 없으므로 아래 중 하나 수행:
+- 데이터 초기화 허용 시: `docker compose down -v` 후 `up -d`
+- 데이터 유지 시: `docker exec -i storyzip-postgresql-dev psql -U storyzip -d storyzip < infra/db/powersync-init.sql`
+
+## PowerSync
+
+- 서비스: `journeyapps/powersync-service` (Open Edition, 무료)
+- 메타 저장소: MongoDB (`storyzip-mongo-dev`, 내부 통신만)
+- 인증: dev는 HS256 공유 시크릿(`JWT_SECRET`) — Spring Boot Access Token 재사용
+- sync rule: `infra/powersync/sync-rules.yaml` (writer_id 기반 RLS)
+
+헬스체크:
+```bash
+curl http://localhost:8090/probes/liveness
+curl http://localhost:8090/probes/readiness
+```
+
+Replication 상태 확인:
+```bash
+docker exec -it storyzip-postgresql-dev psql -U storyzip -d storyzip -c \
+  "SELECT slot_name, plugin, active FROM pg_replication_slots;"
+docker exec -it storyzip-postgresql-dev psql -U storyzip -d storyzip -c \
+  "SELECT tablename FROM pg_publication_tables WHERE pubname='powersync';"
+```
 
 ## Doppler 시크릿 import
 
