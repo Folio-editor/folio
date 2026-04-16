@@ -11,6 +11,24 @@ export type WorkspaceSection =
   | 'foreshadow'
   | 'idea-archive';
 
+/**
+ * 액티비티 바(좁은 좌측 아이콘 바) 항목.
+ * - `home`: 작품 목록
+ * - 그 외: WorkspaceSection 과 동일
+ */
+export type Activity = 'home' | WorkspaceSection;
+
+export const ACTIVITY_ORDER: Activity[] = [
+  'home',
+  'plan',
+  'world-note',
+  'character',
+  'plot',
+  'episode',
+  'foreshadow',
+  'idea-archive',
+];
+
 export const SECTION_LABELS: Record<WorkspaceSection, string> = {
   'plan': '기획',
   'world-note': '세계관',
@@ -19,6 +37,11 @@ export const SECTION_LABELS: Record<WorkspaceSection, string> = {
   'episode': '원고',
   'foreshadow': '복선',
   'idea-archive': '아이디어',
+};
+
+export const ACTIVITY_LABELS: Record<Activity, string> = {
+  home: '홈',
+  ...SECTION_LABELS,
 };
 
 export const SECTION_ICONS: Record<WorkspaceSection, string> = {

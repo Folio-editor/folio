@@ -21,11 +21,38 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
-        `INSERT INTO work (id, writer_id, title, status, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, '연재중', 0, ?, ?)`,
+        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, ?, ?)`,
         [id, writerId, title, now, now],
       );
       return id;
+    },
+    updateWork: async (
+      id: string,
+      patch: Partial<{
+        title: string;
+        author_name: string | null;
+        description: string | null;
+        status: string;
+      }>,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const fields = Object.keys(patch);
+      if (fields.length === 0) return;
+      const setClause = fields.map((f) => `${f} = ?`).join(', ');
+      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      await db.execute(
+        `UPDATE work SET ${setClause}, updated_at = ? WHERE id = ?`,
+        [...values, now, id],
+      );
+    },
+    /**
+     * 작품 완전 삭제.
+     * 백엔드 FK ON DELETE CASCADE로 연관 엔티티(plan, world_note, character, plot,
+     * episode, foreshadow, idea_archive 등)가 서버 측에서 자동 정리된다.
+     */
+    deleteWork: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM work WHERE id = ?`, [id]);
     },
 
     // ── plan (work당 1개) ────────────────────────────────────
