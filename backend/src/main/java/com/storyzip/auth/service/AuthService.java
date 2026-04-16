@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -44,8 +45,29 @@ public class AuthService {
     public LoginResponse loginWithGoogleDesktop(String code, String codeVerifier,
                                                 String redirectUri, String deviceId) {
         GoogleUserInfo userInfo = googleOAuthClient.exchangeDesktopCode(code, codeVerifier, redirectUri);
-        Writer writer = findOrCreateWriter(userInfo);
-        return issueTokens(writer, deviceId);
+        Optional<Writer> existing = writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, userInfo.sub());
+
+        Writer writer;
+        boolean isNewUser;
+        if (existing.isPresent()) {
+            writer = existing.get();
+            writer.updateProfile(userInfo.name(), userInfo.picture());
+            isNewUser = false;
+        } else {
+            writer = writerRepository.save(
+                    Writer.builder()
+                            .email(userInfo.email())
+                            .nickname(userInfo.name())
+                            .profileImageUrl(userInfo.picture())
+                            .role(Role.USER)
+                            .oauthProvider(PROVIDER_GOOGLE)
+                            .oauthId(userInfo.sub())
+                            .build()
+            );
+            isNewUser = true;
+        }
+
+        return issueTokens(writer, deviceId, isNewUser);
     }
 
     /**
@@ -92,29 +114,10 @@ public class AuthService {
         return WriterDto.from(writer);
     }
 
-    private Writer findOrCreateWriter(GoogleUserInfo info) {
-        return writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, info.sub())
-                .map(existing -> {
-                    // 프로필 이미지/닉네임은 최신 Google 정보로 갱신
-                    existing.updateProfile(info.name(), info.picture());
-                    return existing;
-                })
-                .orElseGet(() -> writerRepository.save(
-                        Writer.builder()
-                                .email(info.email())
-                                .nickname(info.name())
-                                .profileImageUrl(info.picture())
-                                .role(Role.USER)
-                                .oauthProvider(PROVIDER_GOOGLE)
-                                .oauthId(info.sub())
-                                .build()
-                ));
-    }
-
-    private LoginResponse issueTokens(Writer writer, String deviceId) {
+    private LoginResponse issueTokens(Writer writer, String deviceId, boolean isNewUser) {
         String access = jwtProvider.createAccessToken(writer.getId(), writer.getEmail(), writer.getRole().name());
         String refresh = jwtProvider.createRefreshToken();
         refreshTokenRedisService.save(writer.getId(), deviceId, refresh, jwtProvider.getRefreshExpirySeconds());
-        return new LoginResponse(access, refresh, WriterDto.from(writer));
+        return new LoginResponse(access, refresh, WriterDto.from(writer), isNewUser);
     }
 }

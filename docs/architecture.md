@@ -270,7 +270,7 @@ S14P31F203/
 
 | 환경 | 목적 | Docker 대상 | 앱 실행 방식 |
 |------|------|-------------|-------------|
-| dev | 로컬 개발 | DB, Redis만 | 로컬 직접 실행 (HMR) |
+| dev | 로컬 개발 | DB, Redis, MongoDB, PowerSync | 로컬 직접 실행 (HMR) |
 | test | 통합 테스트 (CI) | DB, PowerSync + 앱 전체 | 컨테이너 내 실행 |
 | prod | 프로덕션 배포 | 전체 (Blue/Green) | 컨테이너 이미지 |
 

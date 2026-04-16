@@ -20,4 +20,13 @@ public class JwtProperties {
 
     /** Refresh Token 유효기간 (초). */
     private long refreshExpiry;
+
+    /** Access Token의 aud 클레임 (PowerSync 검증용). 비워두면 aud 미포함. */
+    private String audience;
+
+    /**
+     * JWT header의 kid. PowerSync powersync.yaml의 keystore `kid`와 정확히 일치해야 한다.
+     * 불일치 시 PSYNC_S2101 (no key matched the token KID) 발생.
+     */
+    private String keyId;
 }

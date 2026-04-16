@@ -13,7 +13,7 @@ EC2 단일 서버에 Docker Compose로 전체 서비스를 운영한다.
 
 | 환경 | 목적 | Docker 대상 | 앱 실행 방식 |
 |------|------|-------------|-------------|
-| **dev** | 로컬 개발 | DB, PowerSync만 | 로컬 직접 실행 (HMR) |
+| **dev** | 로컬 개발 | DB, Redis, MongoDB, PowerSync | 로컬 직접 실행 (HMR) |
 | **test** | 통합 테스트 (CI) | DB, PowerSync + 앱 전체 | 컨테이너 내 실행 |
 | **prod** | 프로덕션 배포 | 전체 (Blue/Green) | 컨테이너 이미지 |
 
@@ -27,8 +27,12 @@ EC2 단일 서버에 Docker Compose로 전체 서비스를 운영한다.
 
 | 서비스 | 포트 | 설명 |
 |--------|------|------|
-| PostgreSQL | 5432 | 개발용 DB |
-| PowerSync | 8080 | 동기화 엔진 |
+| PostgreSQL | 5432 | 개발용 DB (logical replication 활성화) |
+| Redis | 6379 | Refresh Token 저장소 |
+| MongoDB | (내부 전용) | PowerSync 메타 저장소 |
+| PowerSync | 8090 | 동기화 엔진 (Open Edition) |
+
+**인증 방식:** dev는 HS256 공유 시크릿(`JWT_SECRET`) — Spring Boot가 발급한 Access Token을 PowerSync가 그대로 검증한다. prod 직전에 RS256/JWKS로 전환 예정.
 
 **로컬에서 직접 실행하는 서비스:**
 

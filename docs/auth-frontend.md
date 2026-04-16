@@ -260,7 +260,8 @@ doppler run -- pnpm dev
 - [ ] 웹 에디터 로그인 (redirect 방식, `src/web/App.tsx` 분기)
 - [ ] 에러 UI 개선 (토스트, 재시도 버튼)
 - [ ] 프로필 수정 / 탈퇴 UI
-- [ ] PowerSync 토큰 발급 연동 (`GET /auth/powersync-token`)
+- [x] PowerSync 인증 (dev) — HS256 공유 시크릿. Access Token에 `aud=powersync-dev` 클레임 포함, PowerSync가 `JWT_SECRET`으로 검증
+- [ ] PowerSync 인증 (prod) — RS256 + JWKS, `GET /auth/powersync-token` 별도 엔드포인트
 - [ ] 활성 세션 목록 조회 UI + 원격 로그아웃
 - [ ] 단위/통합 테스트 (Vitest + Playwright)
 
