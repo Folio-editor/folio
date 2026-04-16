@@ -34,9 +34,19 @@ class FakeLLM(LLMProvider):
         }
 
     async def generate_stream(self, system: str, user: str) -> AsyncIterator[str]:
-        text = "[fake draft] 이 문장은 SSAFY GMS 키 발급 전 테스트용 더미 스트림입니다."
+        import asyncio
+
+        text = (
+            "리운은 사무실 의자에 앉아 창밖을 바라보았다. "
+            "회색 하늘 아래 도시의 불빛들이 하나둘 켜지고 있었다. "
+            "오늘도 의뢰가 세 건이나 남아 있었다. "
+            "그는 책상 위의 서류를 집어 들었다. "
+            "다음 의뢰인의 이름이 눈에 들어왔다. "
+            "낯선 이름이었지만, 어딘가 익숙한 느낌이 들었다."
+        )
         for i in range(0, len(text), 2):
             yield text[i : i + 2]
+            await asyncio.sleep(0.03)
 
 
 class AnthropicLLM(LLMProvider):
