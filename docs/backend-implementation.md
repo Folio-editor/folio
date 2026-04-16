@@ -21,6 +21,22 @@
 | 시크릿 | Doppler |
 | 컨테이너 | Docker Compose (backend / postgres / redis / powersync) |
 
+### 타임존 규약 — 전 계층 UTC 통일
+
+| 계층 | 설정 | 값 |
+|------|------|----|
+| **프론트엔드** | `new Date().toISOString()` | 항상 UTC (`...Z`) |
+| **JVM** | `StoryZipApplication.main` → `TimeZone.setDefault(UTC)` | UTC |
+| **Hibernate JDBC** | `application-*.yml` → `hibernate.jdbc.time_zone` | `UTC` |
+| **Jackson 직렬화** | `application.yml` → `jackson.time-zone` | `UTC` |
+| **PostgreSQL** | `TIMESTAMP WITHOUT TIME ZONE` 컬럼 | UTC 기준 저장 |
+| **결제 승인 시각** | `PaymentService` → `ZoneOffset.UTC` 명시 | UTC |
+
+**사용자에게 보여줄 때만** 프론트엔드에서 KST 변환:
+```typescript
+new Date(utcString).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+```
+
 ---
 
 ## 1. 시스템 개요

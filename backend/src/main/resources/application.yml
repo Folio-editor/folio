@@ -13,7 +13,7 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
-    time-zone: Asia/Seoul
+    time-zone: UTC
 
 server:
   port: ${SERVER_PORT:8080}
