@@ -48,6 +48,7 @@ public class SyncController {
     private static final Map<String, Integer> TABLE_DEPTH = Map.ofEntries(
             Map.entry("work", 0),
             Map.entry("plan", 1),
+            Map.entry("plan_note", 1),
             Map.entry("world_note", 1),
             Map.entry("character", 1),
             Map.entry("plot", 1),

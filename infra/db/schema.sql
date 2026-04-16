@@ -141,7 +141,18 @@ CREATE TABLE plan (
     genres          JSONB,
     moods           JSONB,
     target_audience VARCHAR(200),
+    created_at      TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- 기획서 하위 문서 (1:N) — slogan/genres/moods 는 plan 에, 자유 문서는 여기에.
+CREATE TABLE plan_note (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    work_id         UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    title           VARCHAR(200) NOT NULL,
     content         TEXT,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -379,6 +390,8 @@ CREATE TABLE export (
 -- 동기화 필터링 (PowerSync RLS)
 CREATE INDEX idx_work_writer ON work(writer_id);
 CREATE INDEX idx_plan_writer ON plan(writer_id);
+CREATE INDEX idx_plan_note_writer ON plan_note(writer_id);
+CREATE INDEX idx_plan_note_work   ON plan_note(work_id);
 CREATE INDEX idx_world_note_writer ON world_note(writer_id);
 CREATE INDEX idx_world_note_work ON world_note(work_id);
 CREATE INDEX idx_world_note_parent ON world_note(parent_id);

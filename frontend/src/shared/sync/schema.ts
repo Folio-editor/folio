@@ -29,9 +29,19 @@ const plan = new Table({
   genres:          column.text,  // JSON array — 읽을 때 JSON.parse() 필요
   moods:           column.text,  // JSON array — 읽을 때 JSON.parse() 필요
   target_audience: column.text,
-  content:         column.text,
   created_at:      column.text,
   updated_at:      column.text,
+});
+
+// 기획서 하위 자유 문서 (1:N). 트리/parent_id 없음.
+const plan_note = new Table({
+  work_id:    column.text,
+  writer_id:  column.text,
+  title:      column.text,
+  content:    column.text,
+  sort_order: column.integer,
+  created_at: column.text,
+  updated_at: column.text,
 });
 
 const world_note = new Table({
@@ -141,6 +151,7 @@ const idea_archive = new Table({
 export const AppSchema = new Schema({
   work,
   plan,
+  plan_note,
   world_note,
   character,
   character_custom_field,

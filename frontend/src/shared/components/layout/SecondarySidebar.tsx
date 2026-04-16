@@ -10,7 +10,7 @@ import {
 } from '../../types/workspace';
 import { Input } from '../ui/Input';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
-import { PlanPanel } from './sidebar-panels/PlanPanel';
+import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { SyncStatusBar } from './SyncStatusBar';
@@ -24,6 +24,7 @@ interface SecondarySidebarProps {
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
   onNewWorldNote: () => void;
+  onNewPlanNote: () => void;
   width: number;
   onWidthChange: (delta: number) => void;
   onCollapse: () => void;
@@ -57,6 +58,7 @@ export function SecondarySidebar({
   onItemSelect,
   onNewWork,
   onNewWorldNote,
+  onNewPlanNote,
   width,
   onWidthChange,
   onCollapse,
@@ -123,24 +125,22 @@ export function SecondarySidebar({
       </div>
 
       {/* 검색 */}
-      {activity !== 'plan' && (
-        <div className="shrink-0 border-b border-gray-100 px-3 py-2">
-          <div className="relative">
-            <Search
-              size={14}
-              strokeWidth={2}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <Input
-              type="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.currentTarget.value)}
-              placeholder="검색"
-              className="pl-7 text-xs"
-            />
-          </div>
+      <div className="shrink-0 border-b border-gray-100 px-3 py-2">
+        <div className="relative">
+          <Search
+            size={14}
+            strokeWidth={2}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <Input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.currentTarget.value)}
+            placeholder="검색"
+            className="pl-7 text-xs"
+          />
         </div>
-      )}
+      </div>
 
       {/* 콘텐츠 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -153,6 +153,7 @@ export function SecondarySidebar({
           onItemSelect,
           onNewWork,
           onNewWorldNote,
+          onNewPlanNote,
         })}
       </div>
 
@@ -219,6 +220,7 @@ function renderContent(args: {
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
   onNewWorldNote: () => void;
+  onNewPlanNote: () => void;
 }) {
   const {
     activity,
@@ -229,6 +231,7 @@ function renderContent(args: {
     onItemSelect,
     onNewWork,
     onNewWorldNote,
+    onNewPlanNote,
   } = args;
 
   if (activity === 'home') {
@@ -251,7 +254,15 @@ function renderContent(args: {
   }
 
   if (activity === 'plan') {
-    return <PlanPanel />;
+    return (
+      <PlanNoteList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+        onNewPlanNote={onNewPlanNote}
+      />
+    );
   }
 
   if (activity === 'world-note') {

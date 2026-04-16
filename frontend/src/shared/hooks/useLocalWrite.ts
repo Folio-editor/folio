@@ -68,8 +68,8 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
-        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, content, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
         [id, workId, writerId, now, now],
       );
       return id;
@@ -81,7 +81,6 @@ export function useLocalWrite() {
         genres: string | null;
         moods: string | null;
         target_audience: string | null;
-        content: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -92,6 +91,32 @@ export function useLocalWrite() {
       await db.execute(
         `UPDATE plan SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
+      );
+    },
+
+    // ── plan_note (work당 1:N 자유 문서) ────────────────────
+    createPlanNote: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, title, sortOrder, now, now],
+      );
+      return id;
+    },
+    updatePlanNoteTitle: async (id: string, title: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE plan_note SET title = ?, updated_at = ? WHERE id = ?`,
+        [title, now, id],
+      );
+    },
+    updatePlanNoteContent: async (id: string, content: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE plan_note SET content = ?, updated_at = ? WHERE id = ?`,
+        [content, now, id],
       );
     },
 

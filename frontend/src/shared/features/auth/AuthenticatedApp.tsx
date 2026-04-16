@@ -5,7 +5,7 @@ import { SecondarySidebar } from '../../components/layout/SecondarySidebar';
 import { RightPanels } from '../../components/layout/RightPanels';
 import { WorkspaceScreen } from '../workspace/WorkspaceScreen';
 import { WorkspaceHomeScreen } from '../workspace/WorkspaceHomeScreen';
-import { PlanScreen } from '../plan/PlanScreen';
+import { PlanSectionShell } from '../plan/PlanSectionShell';
 import { WorldNoteScreen } from '../world-note/WorldNoteScreen';
 import { CharacterListScreen } from '../character/CharacterListScreen';
 import { CharacterEditScreen } from '../character/CharacterEditScreen';
@@ -46,7 +46,7 @@ export function AuthenticatedApp() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const resolver = useSyncResolver();
 
-  const { createWork, createWorldNote } = useLocalWrite();
+  const { createWork, createWorldNote, createPlanNote } = useLocalWrite();
 
   // 레이아웃 상태 — localStorage 에 영속
   const [sidebarWidth, setSidebarWidth] = usePersistentState(
@@ -110,6 +110,15 @@ export function AuthenticatedApp() {
     setActivity('world-note');
   };
 
+  const handleNewPlanNote = async () => {
+    if (!selectedWorkId) return;
+    const id = await createPlanNote(selectedWorkId, '새 문서', Date.now());
+    setSelectedSection('plan');
+    setSelectedItemId(id);
+    setSidebarCollapsed(false);
+    setActivity('plan');
+  };
+
   const handleNewWorkReset = () => {
     // WorkspaceScreen 진입 — 작품 목록에서 "+ 새 작품" 인라인 생성을 위해 선택 초기화
     setSelectedWorkId(null);
@@ -148,6 +157,7 @@ export function AuthenticatedApp() {
               onItemSelect={setSelectedItemId}
               onNewWork={handleNewWorkReset}
               onNewWorldNote={() => void handleNewWorldNote()}
+              onNewPlanNote={() => void handleNewPlanNote()}
               width={sidebarWidth}
               onWidthChange={resizeSidebar}
               onCollapse={() => setSidebarCollapsed(true)}
@@ -217,7 +227,13 @@ function renderMain({
 
   switch (section) {
     case 'plan':
-      return <PlanScreen workId={workId} />;
+      return (
+        <PlanSectionShell
+          workId={workId}
+          selectedItemId={itemId}
+          onItemBack={back}
+        />
+      );
     case 'world-note':
       return itemId ? (
         <WorldNoteScreen noteId={itemId} />

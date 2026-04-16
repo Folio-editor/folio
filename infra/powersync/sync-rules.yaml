@@ -21,6 +21,7 @@ bucket_definitions:
     data:
       - select * from work         where writer_id = bucket.user_id
       - select * from plan         where writer_id = bucket.user_id
+      - select * from plan_note    where writer_id = bucket.user_id
       - select * from world_note   where writer_id = bucket.user_id
       - select * from "character"  where writer_id = bucket.user_id
       - select * from plot         where writer_id = bucket.user_id

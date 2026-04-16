@@ -36,6 +36,7 @@ public class SyncService {
 
     private final WorkRepository workRepo;
     private final PlanRepository planRepo;
+    private final PlanNoteRepository planNoteRepo;
     private final WorldNoteRepository worldNoteRepo;
     private final CharacterRepository characterRepo;
     private final CharacterCustomFieldRepository charCustomFieldRepo;
@@ -57,6 +58,7 @@ public class SyncService {
         switch (table) {
             case "work" -> processWork(op, id, data, writerId);
             case "plan" -> processPlan(op, id, data, writerId);
+            case "plan_note" -> processPlanNote(op, id, data, writerId);
             case "world_note" -> processWorldNote(op, id, data, writerId);
             case "character" -> processCharacter(op, id, data, writerId);
             case "character_custom_field" -> processCharacterCustomField(op, id, data);
@@ -117,11 +119,31 @@ public class SyncService {
         applyStr(data,  "genres",          e::setGenres);
         applyStr(data,  "moods",           e::setMoods);
         applyStr(data,  "target_audience", e::setTargetAudience);
-        applyStr(data,  "content",         e::setContent);
         applyDt(data,   "created_at",      e::setCreatedAt);
         e.setUpdatedAt(LocalDateTime.now());
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         planRepo.save(e);
+    }
+
+    // ── plan_note ────────────────────────────────────────────────
+    private void processPlanNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
+        if ("DELETE".equals(op)) { planNoteRepo.deleteById(id); return; }
+        PlanNote e = planNoteRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = PlanNote.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id",    e::setWorkId);
+        applyStr(data,  "title",      e::setTitle);
+        applyStr(data,  "content",    e::setContent);
+        applyInt(data,  "sort_order", e::setSortOrder);
+        applyDt(data,   "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getTitle() == null) e.setTitle("새 문서");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        planNoteRepo.save(e);
     }
 
     // ── world_note ───────────────────────────────────────────────
