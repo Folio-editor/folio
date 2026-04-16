@@ -37,6 +37,7 @@ class FakeLLM(LLMProvider):
         import asyncio
 
         text = (
+            "[fake draft] "
             "리운은 사무실 의자에 앉아 창밖을 바라보았다. "
             "회색 하늘 아래 도시의 불빛들이 하나둘 켜지고 있었다. "
             "오늘도 의뢰가 세 건이나 남아 있었다. "
