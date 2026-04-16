@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { LogOut, Search } from 'lucide-react';
+import { ChevronsLeft, LogOut, Search } from 'lucide-react';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -14,6 +14,7 @@ import { PlanPanel } from './sidebar-panels/PlanPanel';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { SyncStatusBar } from './SyncStatusBar';
+import { ResizeHandle } from './ResizeHandle';
 
 interface SecondarySidebarProps {
   activity: Activity;
@@ -23,6 +24,9 @@ interface SecondarySidebarProps {
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
   onNewWorldNote: () => void;
+  width: number;
+  onWidthChange: (delta: number) => void;
+  onCollapse: () => void;
 }
 
 interface WorkTitleRow {
@@ -53,6 +57,9 @@ export function SecondarySidebar({
   onItemSelect,
   onNewWork,
   onNewWorldNote,
+  width,
+  onWidthChange,
+  onCollapse,
 }: SecondarySidebarProps) {
   const writerId = useWriterId();
   const isGuest = useIsGuest();
@@ -90,13 +97,29 @@ export function SecondarySidebar({
   const handleLoginClick = () => void login();
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-gray-200 bg-white text-sm">
+    <aside
+      style={{ width }}
+      className="relative flex shrink-0 flex-col border-r border-gray-200 bg-white text-sm"
+    >
       {/* 헤더 */}
       <div className="shrink-0 border-b border-gray-200 px-4 py-3">
-        <div className="truncate text-sm font-semibold text-gray-900">{header}</div>
-        {subHeader && (
-          <div className="mt-0.5 truncate text-xs text-gray-500">{subHeader}</div>
-        )}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-gray-900">{header}</div>
+            {subHeader && (
+              <div className="mt-0.5 truncate text-xs text-gray-500">{subHeader}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="사이드바 접기"
+            title="사이드바 접기"
+            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          >
+            <ChevronsLeft size={14} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       {/* 검색 */}
@@ -176,6 +199,13 @@ export function SecondarySidebar({
           </div>
         )}
       </div>
+
+      {/* 리사이즈 핸들 (우측 엣지) */}
+      <ResizeHandle
+        side="right"
+        onResize={onWidthChange}
+        ariaLabel="사이드바 너비 조절"
+      />
     </aside>
   );
 }

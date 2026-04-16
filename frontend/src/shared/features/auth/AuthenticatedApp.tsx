@@ -19,8 +19,17 @@ import { IdeaArchiveListScreen } from '../idea-archive/IdeaArchiveListScreen';
 import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
 import { Activity, WorkspaceSection } from '../../types/workspace';
+
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+const RIGHT_PANEL_MIN = 200;
+const RIGHT_PANEL_MAX = 600;
+
+const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
 
 /**
  * 메인 에디터 화면.
@@ -39,7 +48,28 @@ export function AuthenticatedApp() {
 
   const { createWork, createWorldNote } = useLocalWrite();
 
+  // 레이아웃 상태 — localStorage 에 영속
+  const [sidebarWidth, setSidebarWidth] = usePersistentState(
+    'storyzip.ui.sidebarWidth',
+    256,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistentState(
+    'storyzip.ui.sidebarCollapsed',
+    false,
+  );
+  const [rightPanelsWidth, setRightPanelsWidth] = usePersistentState(
+    'storyzip.ui.rightPanelsWidth',
+    288,
+  );
+
+  const resizeSidebar = (delta: number) =>
+    setSidebarWidth((w) => clamp(w + delta, SIDEBAR_MIN, SIDEBAR_MAX));
+  const resizeRightPanels = (delta: number) =>
+    setRightPanelsWidth((w) => clamp(w + delta, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX));
+
   const handleActivityChange = (next: Activity) => {
+    // 접힌 상태에서 아이콘 클릭 → 자동 펼침 (VSCode 동작)
+    if (sidebarCollapsed) setSidebarCollapsed(false);
     setActivity(next);
     setSelectedItemId(null);
     if (next === 'home') {
@@ -67,6 +97,7 @@ export function AuthenticatedApp() {
     setSelectedWorkId(id);
     setSelectedSection(null);
     setSelectedItemId(null);
+    setSidebarCollapsed(false);
     setActivity('home');
   };
 
@@ -75,6 +106,7 @@ export function AuthenticatedApp() {
     const id = await createWorldNote(selectedWorkId, '새 문서', Date.now());
     setSelectedSection('world-note');
     setSelectedItemId(id);
+    setSidebarCollapsed(false);
     setActivity('world-note');
   };
 
@@ -83,6 +115,7 @@ export function AuthenticatedApp() {
     setSelectedWorkId(null);
     setSelectedSection(null);
     setSelectedItemId(null);
+    setSidebarCollapsed(false);
     setActivity('home');
   };
 
@@ -91,6 +124,7 @@ export function AuthenticatedApp() {
     setSelectedWorkId(null);
     setSelectedSection(null);
     setSelectedItemId(null);
+    setSidebarCollapsed(false);
     setActivity('home');
   };
 
@@ -105,17 +139,24 @@ export function AuthenticatedApp() {
           />
         }
         sidebar={
-          <SecondarySidebar
-            activity={activity}
-            selectedWorkId={selectedWorkId}
-            selectedItemId={selectedItemId}
-            onWorkSelect={handleWorkSelect}
-            onItemSelect={setSelectedItemId}
-            onNewWork={handleNewWorkReset}
-            onNewWorldNote={() => void handleNewWorldNote()}
-          />
+          sidebarCollapsed ? null : (
+            <SecondarySidebar
+              activity={activity}
+              selectedWorkId={selectedWorkId}
+              selectedItemId={selectedItemId}
+              onWorkSelect={handleWorkSelect}
+              onItemSelect={setSelectedItemId}
+              onNewWork={handleNewWorkReset}
+              onNewWorldNote={() => void handleNewWorldNote()}
+              width={sidebarWidth}
+              onWidthChange={resizeSidebar}
+              onCollapse={() => setSidebarCollapsed(true)}
+            />
+          )
         }
-        rightPanels={<RightPanels />}
+        rightPanels={
+          <RightPanels width={rightPanelsWidth} onWidthChange={resizeRightPanels} />
+        }
       >
         {renderMain({
           workId: selectedWorkId,
