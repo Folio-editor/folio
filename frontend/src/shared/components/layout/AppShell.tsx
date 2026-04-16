@@ -1,75 +1,70 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 interface AppShellProps {
+  activityBar: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
   rightPanels: ReactNode;
 }
 
 /**
- * 3패널 IDE 스타일 앱 셸.
- * - 게스트 배너 (isGuest 시 상단 표시)
- * - 헤더 (타이틀 + 프로필/로그아웃)
- * - 좌측 사이드바 | 중앙 에디터 | 우측 패널
+ * VSCode 스타일 4슬롯 앱 셸.
+ * - 상단 헤더 없음 (프로필/로그아웃은 SecondarySidebar 프로필 풋터가 담당)
+ * - 게스트 모드 공지: 메인 영역 상단에 얇게 겹쳐진 오버레이 + 우측 X 닫기
+ * - 액티비티 바(narrow) | 보조 사이드바(list) | 중앙 에디터 | 우측 패널
  */
-export function AppShell({ sidebar, children, rightPanels }: AppShellProps) {
-  const writer = useAuthStore((s) => s.writer);
+export function AppShell({ activityBar, sidebar, children, rightPanels }: AppShellProps) {
   const isGuest = useAuthStore((s) => s.isGuest);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
   const login = useAuthStore((s) => s.login);
-  const logout = useAuthStore((s) => s.logout);
+
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // 게스트 → 로그인 → 게스트 복귀 시 배너 다시 표시
+  useEffect(() => {
+    if (!isGuest) setBannerDismissed(false);
+  }, [isGuest]);
+
+  const showBanner = isGuest && !bannerDismissed;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-50">
-      {/* 게스트 배너 */}
-      {isGuest && (
-        <div className="flex shrink-0 items-center justify-between border-b border-amber-200 bg-amber-50 px-6 py-2 text-sm text-amber-800">
-          <span>게스트 모드 — 로컬 편집만 가능합니다. 클라우드 저장·동기화를 사용하려면 로그인하세요.</span>
-          <button
-            type="button"
-            onClick={() => void login()}
-            disabled={isLoggingIn}
-            className="ml-4 rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          >
-            {isLoggingIn ? '로그인 중…' : 'Google로 로그인'}
-          </button>
-        </div>
-      )}
-
-      {/* 헤더 */}
-      <header className="flex shrink-0 items-center justify-between border-b bg-white px-4 py-2">
-        <span className="text-base font-bold tracking-tight text-gray-900">StoryZip</span>
-        <div className="flex items-center gap-3">
-          {writer?.profileImageUrl && (
-            <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
-          )}
-          {writer ? (
-            <>
-              <span className="text-sm text-gray-700">{writer.nickname ?? writer.email}</span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="rounded border px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-              >
-                로그아웃
-              </button>
-            </>
-          ) : (
-            <span className="text-sm text-gray-400">게스트</span>
-          )}
-        </div>
-      </header>
-
-      {/* 3패널 본문 */}
       <div className="flex min-h-0 flex-1">
-        {/* 좌측 사이드바 */}
-        <aside className="flex w-60 shrink-0 flex-col border-r bg-white">
-          {sidebar}
-        </aside>
+        {activityBar}
+        {sidebar}
 
         {/* 중앙 에디터 */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+          {/* 게스트 오버레이 공지 */}
+          {showBanner && (
+            <div
+              role="status"
+              className="pointer-events-auto absolute inset-x-3 top-3 z-10 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50/95 px-3 py-1.5 text-xs text-amber-800 shadow-sm backdrop-blur"
+            >
+              <span className="flex-1 truncate">
+                게스트 모드 — 로컬 편집만 가능합니다. 클라우드 저장·동기화를 사용하려면 로그인하세요.
+              </span>
+              <button
+                type="button"
+                onClick={() => void login()}
+                disabled={isLoggingIn}
+                className="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {isLoggingIn ? '로그인 중…' : 'Google로 로그인'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBannerDismissed(true)}
+                aria-label="알림 닫기"
+                className="shrink-0 rounded p-0.5 text-amber-700 hover:bg-amber-100 hover:text-amber-900"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+          )}
+
           {children}
         </main>
 
