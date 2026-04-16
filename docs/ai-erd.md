@@ -86,8 +86,8 @@ StoryZip은 Episode(대용량·반복)는 RAG, Character/WorldNote/Plan/Plot(소
 | id | UUID | PK |
 | work_id | UUID | FK → work(id) |
 | writer_id | UUID | FK → writer(id) |
-| source_episode_id | UUID | FK → episode(id), 최초 발견 회차 |
-| entity_type | VARCHAR(20) | `character` / `world_note` / `term` / `foreshadow` |
+| episode_id | UUID | FK → episode(id), 최초 발견 회차 |
+| entity_type | VARCHAR(30) | `character` / `world_note` / `term` |
 | suggested_name | VARCHAR(200) | 후보 이름 |
 | payload | JSONB | 상세(설명, role, 근거 등) |
 | status | VARCHAR(20) | `pending` / `confirmed` / `rejected` |
@@ -107,14 +107,13 @@ StoryZip은 Episode(대용량·반복)는 RAG, Character/WorldNote/Plan/Plot(소
 | writer_id | UUID | FK → writer(id) |
 | work_id | UUID | FK → work(id) |
 | episode_id | UUID | FK → episode(id), nullable |
-| job_type | VARCHAR(30) | `indexing` / `summary` / `review` / `draft` |
+| job_type | VARCHAR(30) | `indexing` / `summary` / `review` / `generation` |
 | status | VARCHAR(20) | `pending` / `running` / `done` / `failed` |
-| celery_task_id | VARCHAR(100) | Celery task UUID (취소·재시도 연결점) |
 | error_message | TEXT | 실패 원인 |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
 
-- **인덱스**: `(work_id)`, `(episode_id)`, 부분 인덱스 `(status) WHERE status IN ('pending','running')`
+- **인덱스**: `(work_id)`, `(episode_id)`, `(writer_id)`, 부분 인덱스 `(status) WHERE status IN ('pending','running')`
 - **용도**: 임포트 프로그레스 바, 결제 감사, 재시도 UI
 
 ### 2.5 동기화/비동기화 요약
