@@ -20,6 +20,7 @@ CREATE ROLE powersync_repl WITH LOGIN REPLICATION PASSWORD 'storyzip_repl_dev';
 GRANT SELECT ON
     work,
     plan,
+    plan_note,
     world_note,
     "character",
     character_custom_field,
@@ -37,6 +38,7 @@ TO powersync_repl;
 CREATE PUBLICATION powersync FOR TABLE
     work,
     plan,
+    plan_note,
     world_note,
     "character",
     character_custom_field,
