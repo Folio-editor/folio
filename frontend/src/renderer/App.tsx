@@ -32,11 +32,18 @@ export function App() {
   //   - 로그아웃/게스트 → disconnect
   useEffect(() => {
     if (isAuthenticated && syncDecision !== null) {
-      void db.connect(connector);
+      // use-server는 disconnectAndClear 직후라 SDK 내부 정리가 끝나야 connect 가능.
+      // await로 순차 실행하여 race 방지. 실패 시 다음 렌더에서 재시도.
+      (async () => {
+        try {
+          await db.connect(connector);
+        } catch (e) {
+          console.warn('[App] db.connect 실패 — 다음 렌더에서 재시도:', e);
+        }
+      })();
     } else if (!isAuthenticated) {
       void db.disconnect();
     }
-    // 로그인 직후 syncDecision === null 인 사이에는 의도적으로 아무것도 하지 않음
   }, [isAuthenticated, syncDecision]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)

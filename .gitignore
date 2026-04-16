@@ -27,6 +27,10 @@ release/
 # AI / Claude
 .claude/
 
+# Docker Compose 개인 override (포트 노출 등)
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # IDE
 .vscode/
 .idea/

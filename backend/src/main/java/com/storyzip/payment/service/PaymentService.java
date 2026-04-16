@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -94,7 +94,7 @@ public class PaymentService {
                 confirmed.paymentKey(),
                 method,
                 confirmed.approvedAt() != null
-                        ? confirmed.approvedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
+                        ? confirmed.approvedAt().atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime()
                         : null
         );
 

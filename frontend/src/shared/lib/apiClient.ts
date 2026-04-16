@@ -37,7 +37,8 @@ async function request<T>(
   if (response.status === 401 && retry) {
     const restored = await window.storyzip.auth.tryRestore();
     if (restored) {
-      return request<T>(path, init, false);
+      // body를 새 객체로 재구성 — ReadableStream/FormData 등 1회성 body 재사용 방지
+      return request<T>(path, { ...init, body: init.body }, false);
     }
   }
 
