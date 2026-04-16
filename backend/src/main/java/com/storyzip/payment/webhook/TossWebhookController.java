@@ -2,6 +2,9 @@ package com.storyzip.payment.webhook;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.common.exception.PaymentException;
+import com.storyzip.payment.config.TossPaymentsProperties;
 import com.storyzip.payment.domain.PaymentEvent;
 import com.storyzip.payment.repository.PaymentEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -11,17 +14,26 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 
 /**
  * 토스페이먼츠 웹훅 수신.
  *
+ * <p>서명 검증: 토스가 보내는 {@code Toss-Signature} 헤더를
+ * HMAC-SHA256(webhookSecret, requestBody)과 비교해 위변조를 차단한다.
+ *
  * <p>멱등성 전략: event_id에 UNIQUE 제약이 걸린 {@code payment_event}에 먼저 INSERT.
  * 중복이면 UNIQUE 위반 예외가 발생하고, 이미 처리한 이벤트로 간주해 200만 반환한다.
- *
- * <p>실제 결제 상태 반영(DB payment.status 동기화 등)은 후속 작업에서 이 로그를
- * 소비해 처리하는 방식으로 확장. MVP에서는 수신·기록까지만 담당.
  */
 @Slf4j
 @RestController
@@ -29,12 +41,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class TossWebhookController {
 
+    private static final String HMAC_ALGORITHM = "HmacSHA256";
+
     private final PaymentEventRepository paymentEventRepository;
     private final ObjectMapper objectMapper;
+    private final TossPaymentsProperties properties;
 
     @PostMapping
     @Transactional
-    public ResponseEntity<Void> receive(@RequestBody JsonNode body) {
+    public ResponseEntity<Void> receive(
+            @RequestHeader(value = "Toss-Signature", required = false) String signature,
+            @RequestBody String rawBody) {
+
+        verifySignature(signature, rawBody);
+
+        JsonNode body;
+        try {
+            body = objectMapper.readTree(rawBody);
+        } catch (Exception e) {
+            log.warn("Webhook body parse failed", e);
+            return ResponseEntity.ok().build();
+        }
+
         String eventId = extractEventId(body);
         String eventType = body.path("eventType").asText("UNKNOWN");
 
@@ -65,10 +93,30 @@ public class TossWebhookController {
         return ResponseEntity.ok().build();
     }
 
-    /**
-     * 토스가 내려주는 이벤트 식별자를 추출.
-     * 실제 스펙에서는 헤더 혹은 eventId 필드로 내려오지만, 없을 경우 결제 식별자를 사용해 키로 삼는다.
-     */
+    private void verifySignature(String signature, String payload) {
+        String secret = properties.webhookSecret();
+        if (secret == null || secret.isBlank()) {
+            log.warn("Webhook secret not configured — skipping signature verification");
+            return;
+        }
+        if (signature == null || signature.isBlank()) {
+            throw new PaymentException(ErrorCode.WEBHOOK_SIGNATURE_INVALID, "Missing Toss-Signature header");
+        }
+        try {
+            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+            String expected = Base64.getEncoder().encodeToString(
+                    mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+            if (!MessageDigest.isEqual(
+                    expected.getBytes(StandardCharsets.UTF_8),
+                    signature.getBytes(StandardCharsets.UTF_8))) {
+                throw new PaymentException(ErrorCode.WEBHOOK_SIGNATURE_INVALID, "Signature mismatch");
+            }
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new PaymentException(ErrorCode.INTERNAL_SERVER_ERROR, e);
+        }
+    }
+
     private String extractEventId(JsonNode body) {
         String direct = body.path("eventId").asText(null);
         if (direct != null && !direct.isBlank()) return direct;

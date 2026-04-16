@@ -175,19 +175,20 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("confirmPayment: 이미 DONE 된 주문은 재호출해도 PAYMENT_ALREADY_PROCESSED (이중 충전 방지)")
-    void confirmPayment_alreadyDone_blocksDoubleCharge() {
+    @DisplayName("confirmPayment: 이미 DONE 된 주문은 재호출해도 멱등하게 성공 응답 반환 (이중 충전 방지)")
+    void confirmPayment_alreadyDone_idempotentSuccess() {
         Payment done = Payment.builder()
                 .writer(writer).orderId("SZ-ABC").amount(9_900).tokenQty(20_000).build();
         done.markDone("pk_1", PaymentMethod.CARD, null);
+        ReflectionTestUtils.setField(done, "id", UUID.randomUUID());
 
-        given(paymentRepository.findByOrderId("SZ-ABC")).willReturn(Optional.of(done));
+        given(paymentRepository.findByPaymentKey("pk_1")).willReturn(Optional.of(done));
 
-        assertThatThrownBy(() -> paymentService.confirmPayment(
-                writerId, new ConfirmPaymentRequest("pk_1", "SZ-ABC", 9_900)))
-                .isInstanceOf(PaymentException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        PaymentResponse response = paymentService.confirmPayment(
+                writerId, new ConfirmPaymentRequest("pk_1", "SZ-ABC", 9_900));
 
+        assertThat(response).isNotNull();
+        assertThat(response.orderId()).isEqualTo("SZ-ABC");
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
         verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
     }

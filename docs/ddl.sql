@@ -71,6 +71,7 @@ CREATE TABLE payment_event (
     event_id        VARCHAR(100) NOT NULL UNIQUE,
     event_type      VARCHAR(50) NOT NULL,
     payload         JSONB NOT NULL,
+    consumed        BOOLEAN NOT NULL DEFAULT FALSE,
     processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
