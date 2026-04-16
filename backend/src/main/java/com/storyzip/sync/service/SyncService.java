@@ -1,5 +1,6 @@
 package com.storyzip.sync.service;
 
+import com.storyzip.ai.service.EpisodeIndexDebouncer;
 import com.storyzip.sync.domain.*;
 import com.storyzip.sync.domain.Character;
 import com.storyzip.sync.dto.SyncUploadRequest;
@@ -46,6 +47,7 @@ public class SyncService {
     private final ForeshadowRepository foreshadowRepo;
     private final ForeshadowLinkRepository foreshadowLinkRepo;
     private final IdeaArchiveRepository ideaArchiveRepo;
+    private final EpisodeIndexDebouncer episodeIndexDebouncer;
 
     @Transactional
     public void process(SyncUploadRequest req, UUID writerId) {
@@ -258,6 +260,10 @@ public class SyncService {
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         episodeRepo.save(e);
+
+        if (!"DELETE".equals(op) && data.containsKey("content")) {
+            episodeIndexDebouncer.schedule(id, e.getWorkId(), writerId);
+        }
     }
 
     // ── plot_episode_link ─────────────────────────────────────────

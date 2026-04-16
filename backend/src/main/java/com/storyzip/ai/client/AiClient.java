@@ -1,5 +1,7 @@
 package com.storyzip.ai.client;
 
+import com.storyzip.ai.client.dto.EpisodePipelineRequest;
+import com.storyzip.ai.client.dto.EpisodePipelineResponse;
 import com.storyzip.ai.client.dto.HealthResponse;
 import com.storyzip.ai.client.dto.PingEnqueuedResponse;
 import com.storyzip.ai.client.dto.PingResultResponse;
@@ -61,6 +63,29 @@ public class AiClient {
             throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
         } catch (RestClientResponseException e) {
             log.warn("AI health request failed (http {})", e.getStatusCode(), e);
+            throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+        }
+    }
+
+    /** 회차 인덱싱 파이프라인 트리거 (청킹 + 임베딩 + 요약 + 추출). */
+    public EpisodePipelineResponse triggerEpisodePipeline(EpisodePipelineRequest request) {
+        try {
+            EpisodePipelineResponse body = restClient.post()
+                    .uri("/v1/pipelines/episode")
+                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(EpisodePipelineResponse.class);
+            if (body == null || body.taskId() == null) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+            }
+            return body;
+        } catch (ResourceAccessException e) {
+            log.warn("AI pipeline trigger failed (connection)", e);
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (RestClientResponseException e) {
+            log.warn("AI pipeline trigger failed (http {})", e.getStatusCode(), e);
             throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
         }
     }
