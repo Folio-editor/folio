@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface ForeshadowListScreenProps {
   workId: string;
@@ -45,10 +45,10 @@ export function ForeshadowListScreen({ workId, onSelect }: ForeshadowListScreenP
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="복선"
-        description="복선의 설정과 회수 흐름을 관리합니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 복선</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">복선</h2>}
+        subtitle="복선의 설정과 회수를 추적합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 복선</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (

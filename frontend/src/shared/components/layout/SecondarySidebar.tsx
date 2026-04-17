@@ -14,6 +14,7 @@ import { HomeWorkList } from './sidebar-panels/HomeWorkList';
 import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
+import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -26,6 +27,9 @@ interface SecondarySidebarProps {
   onNewWork: () => void;
   onNewWorldNote: () => void;
   onNewPlanNote: () => void;
+  selectedCharacterNoteId: string | null;
+  onCharacterNoteSelect: (id: string | null) => void;
+  onNewCharacterNote: () => void;
   width: number;
   onWidthChange: (delta: number) => void;
   onCollapse: () => void;
@@ -60,6 +64,9 @@ export function SecondarySidebar({
   onNewWork,
   onNewWorldNote,
   onNewPlanNote,
+  selectedCharacterNoteId,
+  onCharacterNoteSelect,
+  onNewCharacterNote,
   width,
   onWidthChange,
   onCollapse,
@@ -111,13 +118,13 @@ export function SecondarySidebar({
       style={{ width }}
       className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
     >
-      {/* 헤더 */}
-      <div className="shrink-0 border-b border-sidebar-border px-4 py-3">
-        <div className="flex items-start justify-between gap-2">
+      {/* 헤더 — 메인 패널 h-12와 높이 일치 */}
+      <div className="flex h-12 shrink-0 items-center border-b border-sidebar-border px-4">
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-sidebar-foreground">{header}</div>
             {subHeader && (
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">{subHeader}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{subHeader}</div>
             )}
           </div>
           <button
@@ -162,6 +169,9 @@ export function SecondarySidebar({
           onNewWork,
           onNewWorldNote,
           onNewPlanNote,
+          selectedCharacterNoteId,
+          onCharacterNoteSelect,
+          onNewCharacterNote,
         })}
       </div>
 
@@ -233,6 +243,9 @@ function renderContent(args: {
   onNewWork: () => void;
   onNewWorldNote: () => void;
   onNewPlanNote: () => void;
+  selectedCharacterNoteId: string | null;
+  onCharacterNoteSelect: (id: string | null) => void;
+  onNewCharacterNote: () => void;
 }) {
   const {
     activity,
@@ -244,6 +257,9 @@ function renderContent(args: {
     onNewWork,
     onNewWorldNote,
     onNewPlanNote,
+    selectedCharacterNoteId,
+    onCharacterNoteSelect,
+    onNewCharacterNote,
   } = args;
 
   if (activity === 'home') {
@@ -289,8 +305,23 @@ function renderContent(args: {
     );
   }
 
-  // character / plot / episode / foreshadow / idea-archive
-  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note'>;
+  // character: 인물 트리 리스트 (인물 목록 + 선택 시 하위 노트 펼침)
+  if (activity === 'character' && selectedWorkId) {
+    return (
+      <CharacterNoteList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedCharacterId={selectedItemId}
+        selectedNoteId={selectedCharacterNoteId}
+        onCharacterSelect={onItemSelect}
+        onNoteSelect={onCharacterNoteSelect}
+        onNewCharacterNote={onNewCharacterNote}
+      />
+    );
+  }
+
+  // plot / episode / foreshadow / idea-archive
+  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character'>;
   return (
     <SectionItemList
       section={section}

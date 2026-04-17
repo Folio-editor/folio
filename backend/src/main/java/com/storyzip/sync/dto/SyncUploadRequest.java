@@ -6,7 +6,7 @@ import java.util.Map;
 
 public record SyncUploadRequest(
     @NotBlank
-    @Pattern(regexp = "work|plan|plan_note|world_note|character|character_custom_field|"
+    @Pattern(regexp = "work|plan|plan_note|world_note|character|character_note|character_custom_field|"
             + "character_tag|plot|episode|plot_episode_link|foreshadow|foreshadow_link|idea_archive",
             message = "허용되지 않은 테이블: ${validatedValue}")
     String table,

@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface CharacterListScreenProps {
   workId: string;
@@ -14,30 +14,29 @@ interface CharacterRow {
   name: string;
   gender: string;
   age: string;
-  appearance: string;
 }
 
 export function CharacterListScreen({ workId, onSelect }: CharacterListScreenProps) {
   const writerId = useWriterId();
   const { createCharacter } = useLocalWrite();
   const { data: items = [] } = useQuery<CharacterRow>(
-    `SELECT id, name, gender, age, appearance FROM character
+    `SELECT id, name, gender, age FROM character
      WHERE work_id = ? AND writer_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
     [workId, writerId],
   );
 
   const handleNew = async () => {
-    const id = await createCharacter(workId, '새 인물', '미설정', '', '', items.length);
+    const id = await createCharacter(workId, '새 인물', '미설정', '', items.length);
     onSelect(id);
   };
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="등장인물"
-        description="캐릭터의 프로필과 성격을 관리합니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 인물</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">등장인물</h2>}
+        subtitle="캐릭터 프로필과 설정을 관리합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 인물</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (
@@ -55,9 +54,6 @@ export function CharacterListScreen({ workId, onSelect }: CharacterListScreenPro
                 <div className="text-xs text-muted-foreground">
                   {item.gender}{item.age ? ` · ${item.age}` : ''}
                 </div>
-                {item.appearance && (
-                  <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.appearance}</p>
-                )}
               </button>
             ))}
           </div>

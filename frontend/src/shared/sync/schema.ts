@@ -62,13 +62,20 @@ const character = new Table({
   profile_image_url: column.text,
   gender:            column.text,
   age:               column.text,
-  appearance:        column.text,
-  mbti:              column.text,
-  personality:       column.text,
-  content:           column.text,
   sort_order:        column.integer,
   created_at:        column.text,
   updated_at:        column.text,
+});
+
+const character_note = new Table({
+  character_id: column.text,
+  writer_id:    column.text,
+  kind:         column.text,
+  title:        column.text,
+  content:      column.text,
+  sort_order:   column.integer,
+  created_at:   column.text,
+  updated_at:   column.text,
 });
 
 const character_custom_field = new Table({
@@ -154,6 +161,7 @@ export const AppSchema = new Schema({
   plan_note,
   world_note,
   character,
+  character_note,
   character_custom_field,
   character_tag,
   plot,

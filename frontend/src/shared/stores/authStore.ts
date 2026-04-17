@@ -32,6 +32,7 @@ const WRITER_ID_TABLES = [
   'plan_note',
   'world_note',
   'character',
+  'character_note',
   'plot',
   'episode',
   'foreshadow',

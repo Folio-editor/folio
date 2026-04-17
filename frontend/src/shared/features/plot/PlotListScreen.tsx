@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface PlotListScreenProps {
   workId: string;
@@ -38,10 +38,10 @@ export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="플롯"
-        description="줄거리 구조와 회차별 전개를 설계합니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 플롯</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">플롯</h2>}
+        subtitle="줄거리 구조와 회차별 전개를 설계합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 플롯</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (

@@ -6,34 +6,31 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "character")
+@Table(name = "character_note")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Character {
+public class CharacterNote {
     @Id
     @Column(columnDefinition = "UUID")
     private UUID id;
 
-    @Column(name = "work_id", nullable = false, columnDefinition = "UUID")
-    private UUID workId;
+    @Column(name = "character_id", nullable = false, columnDefinition = "UUID")
+    private UUID characterId;
 
     @Column(name = "writer_id", nullable = false, columnDefinition = "UUID")
     private UUID writerId;
 
-    @Column(nullable = false, length = 200)
-    private String name;
-
-    @Column(name = "profile_image_url", columnDefinition = "TEXT")
-    private String profileImageUrl;
-
     @Column(nullable = false, length = 20)
-    private String gender;
+    private String kind;
 
-    @Column(nullable = false, length = 100)
-    private String age;
+    @Column(nullable = false, length = 200)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String content;
 
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;

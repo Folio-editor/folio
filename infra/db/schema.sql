@@ -177,9 +177,18 @@ CREATE TABLE character (
     profile_image_url TEXT,
     gender          VARCHAR(20) NOT NULL,
     age             VARCHAR(100) NOT NULL,
-    appearance      TEXT NOT NULL,
-    mbti            VARCHAR(10),
-    personality     TEXT,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- 인물 하위 문서 (1:N) — 외형/성격은 자동 생성, 사용자 추가 문서도 가능
+CREATE TABLE character_note (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    character_id    UUID NOT NULL REFERENCES character(id) ON DELETE CASCADE,
+    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    kind            VARCHAR(20) NOT NULL DEFAULT 'custom',
+    title           VARCHAR(200) NOT NULL,
     content         TEXT,
     sort_order      INTEGER NOT NULL DEFAULT 0,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
@@ -397,6 +406,8 @@ CREATE INDEX idx_world_note_work ON world_note(work_id);
 CREATE INDEX idx_world_note_parent ON world_note(parent_id);
 CREATE INDEX idx_character_writer ON character(writer_id);
 CREATE INDEX idx_character_work ON character(work_id);
+CREATE INDEX idx_character_note_character ON character_note(character_id);
+CREATE INDEX idx_character_note_writer ON character_note(writer_id);
 CREATE INDEX idx_character_custom_field_character ON character_custom_field(character_id);
 CREATE INDEX idx_character_tag_character ON character_tag(character_id);
 CREATE INDEX idx_character_tag_world_note ON character_tag(world_note_id);

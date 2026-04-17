@@ -23,7 +23,8 @@ bucket_definitions:
       - select * from plan         where writer_id = bucket.user_id
       - select * from plan_note    where writer_id = bucket.user_id
       - select * from world_note   where writer_id = bucket.user_id
-      - select * from "character"  where writer_id = bucket.user_id
+      - select * from "character"      where writer_id = bucket.user_id
+      - select * from character_note   where writer_id = bucket.user_id
       - select * from plot         where writer_id = bucket.user_id
       - select * from episode      where writer_id = bucket.user_id
       - select * from foreshadow   where writer_id = bucket.user_id

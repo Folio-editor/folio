@@ -55,6 +55,7 @@ public class SyncController {
             Map.entry("episode", 1),
             Map.entry("foreshadow", 1),
             Map.entry("idea_archive", 1),
+            Map.entry("character_note", 2),
             Map.entry("character_custom_field", 2),
             Map.entry("character_tag", 2),
             Map.entry("plot_episode_link", 2),

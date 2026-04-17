@@ -44,9 +44,10 @@ export function AuthenticatedApp() {
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<WorkspaceSection | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedCharacterNoteId, setSelectedCharacterNoteId] = useState<string | undefined>(undefined);
   const resolver = useSyncResolver();
 
-  const { createWork, createWorldNote, createPlanNote } = useLocalWrite();
+  const { createWork, createWorldNote, createPlanNote, createCharacterNote } = useLocalWrite();
 
   // 레이아웃 상태 — localStorage 에 영속
   const [sidebarWidth, setSidebarWidth] = usePersistentState(
@@ -72,6 +73,7 @@ export function AuthenticatedApp() {
     if (sidebarCollapsed) setSidebarCollapsed(false);
     setActivity(next);
     setSelectedItemId(null);
+    setSelectedCharacterNoteId(undefined);
     if (next === 'home') {
       // home 으로 전환 시 섹션만 초기화 — 선택된 작품은 보존
       setSelectedSection(null);
@@ -133,8 +135,19 @@ export function AuthenticatedApp() {
     setSelectedWorkId(null);
     setSelectedSection(null);
     setSelectedItemId(null);
+    setSelectedCharacterNoteId(undefined);
     setSidebarCollapsed(false);
     setActivity('home');
+  };
+
+  const handleNewCharacterNote = async () => {
+    if (!selectedItemId) return;
+    const id = await createCharacterNote(selectedItemId, '새 문서', Date.now());
+    setSelectedCharacterNoteId(id);
+  };
+
+  const handleCharacterNoteSelect = (id: string | null) => {
+    setSelectedCharacterNoteId(id ?? undefined);
   };
 
   return (
@@ -158,6 +171,9 @@ export function AuthenticatedApp() {
               onNewWork={handleNewWorkReset}
               onNewWorldNote={() => void handleNewWorldNote()}
               onNewPlanNote={() => void handleNewPlanNote()}
+              selectedCharacterNoteId={selectedCharacterNoteId ?? null}
+              onCharacterNoteSelect={handleCharacterNoteSelect}
+              onNewCharacterNote={() => void handleNewCharacterNote()}
               width={sidebarWidth}
               onWidthChange={resizeSidebar}
               onCollapse={() => setSidebarCollapsed(true)}
@@ -176,6 +192,8 @@ export function AuthenticatedApp() {
           onSectionSelect: handleSectionSelect,
           onItemSelect: setSelectedItemId,
           onWorkDeleted: handleWorkDeleted,
+          selectedCharacterNoteId: selectedCharacterNoteId ?? null,
+          setSelectedCharacterNoteId,
         })}
       </AppShell>
 
@@ -199,6 +217,8 @@ interface RenderMainArgs {
   onSectionSelect: (section: WorkspaceSection) => void;
   onItemSelect: (id: string | null) => void;
   onWorkDeleted: () => void;
+  selectedCharacterNoteId: string | null;
+  setSelectedCharacterNoteId: (id: string | undefined) => void;
 }
 
 function renderMain({
@@ -209,6 +229,8 @@ function renderMain({
   onSectionSelect,
   onItemSelect,
   onWorkDeleted,
+  selectedCharacterNoteId,
+  setSelectedCharacterNoteId,
 }: RenderMainArgs) {
   if (!workId) {
     return <WorkspaceScreen onCreateWork={onCreateWork} />;
@@ -241,10 +263,15 @@ function renderMain({
         <EmptyDetail message="좌측 사이드바에서 세계관 문서를 선택하거나 새로 추가하세요." />
       );
     case 'character':
-      return itemId ? (
-        <CharacterEditScreen id={itemId} onBack={back} />
-      ) : (
-        <CharacterListScreen workId={workId} onSelect={onItemSelect} />
+      if (!itemId) return <CharacterListScreen workId={workId} onSelect={onItemSelect} />;
+      return (
+        <CharacterEditScreen
+          id={itemId}
+          noteId={selectedCharacterNoteId ?? null}
+          onBack={() => { setSelectedCharacterNoteId(undefined); back(); }}
+          onNoteBack={() => setSelectedCharacterNoteId(undefined)}
+          onNoteSelect={(noteId) => setSelectedCharacterNoteId(noteId)}
+        />
       );
     case 'plot':
       return itemId ? (

@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface IdeaArchiveListScreenProps {
   workId: string;
@@ -33,10 +33,10 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="아이디어 아카이브"
-        description="영감, 좋은 문장, 표현을 모아둡니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 아이디어</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">아이디어</h2>}
+        subtitle="영감과 좋은 문장을 저장합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 아이디어</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {ideas.length === 0 ? (

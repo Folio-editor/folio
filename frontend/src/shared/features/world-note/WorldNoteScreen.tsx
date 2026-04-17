@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@powersync/react';
 import { WorldNoteEditor } from './WorldNoteEditor';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface WorldNoteScreenProps {
   noteId: string;
@@ -62,31 +63,32 @@ export function WorldNoteScreen({ noteId }: WorldNoteScreenProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 제목 바 */}
-      <div className="shrink-0 border-b px-8 py-3">
-        {isEditingName ? (
-          <input
-            autoFocus
-            type="text"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onBlur={() => void handleNameBlur()}
-            onKeyDown={handleNameKeyDown}
-            className="w-full text-lg font-semibold text-foreground outline-none"
-          />
-        ) : (
-          <h2
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsEditingName(true)}
-            onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(true); }}
-            className="cursor-text text-lg font-semibold text-foreground hover:text-primary"
-            title="클릭하여 제목 편집"
-          >
-            {note.name}
-          </h2>
-        )}
-      </div>
+      <MainPanelHeader
+        title={
+          isEditingName ? (
+            <input
+              autoFocus
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onBlur={() => void handleNameBlur()}
+              onKeyDown={handleNameKeyDown}
+              className="w-full text-lg font-semibold text-foreground outline-none"
+            />
+          ) : (
+            <h2
+              role="button"
+              tabIndex={0}
+              onClick={() => setIsEditingName(true)}
+              onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(true); }}
+              className="cursor-text text-lg font-semibold text-foreground hover:text-primary"
+              title="클릭하여 제목 편집"
+            >
+              {note.name}
+            </h2>
+          )
+        }
+      />
 
       {/* 에디터 */}
       <WorldNoteEditor

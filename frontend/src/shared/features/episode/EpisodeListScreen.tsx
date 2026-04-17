@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface EpisodeListScreenProps {
   workId: string;
@@ -40,10 +40,10 @@ export function EpisodeListScreen({ workId, onSelect }: EpisodeListScreenProps) 
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="원고"
-        description="실제 본문을 집필합니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 회차</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">원고</h2>}
+        subtitle="실제 본문을 집필합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 회차</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (

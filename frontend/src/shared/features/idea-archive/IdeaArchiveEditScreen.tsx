@@ -2,7 +2,8 @@ import { useQuery } from '@powersync/react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
-import { ContentEditor } from '../../components/ui/ContentEditor';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { ContentEditor } from '../../components/editor/ContentEditor';
 
 interface IdeaArchiveEditScreenProps {
   id: string;
@@ -38,21 +39,19 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-3">
-          <IconButton onClick={onBack} title="목록으로">
-            ←
-          </IconButton>
-          <span className="text-sm font-medium text-foreground">아이디어</span>
-        </div>
-        <div className="w-40">
-          <Select
-            options={TAG_OPTIONS}
-            value={idea.tag ?? ''}
-            onChange={(e) => void updateIdea(id, { tag: e.target.value || null })}
-          />
-        </div>
-      </header>
+      <MainPanelHeader
+        leading={<IconButton onClick={onBack} title="목록으로">←</IconButton>}
+        title={<span className="text-sm font-medium text-foreground">아이디어</span>}
+        trailing={
+          <div className="w-40">
+            <Select
+              options={TAG_OPTIONS}
+              value={idea.tag ?? ''}
+              onChange={(e) => void updateIdea(id, { tag: e.target.value || null })}
+            />
+          </div>
+        }
+      />
       <ContentEditor
         itemId={id}
         initialContent={idea.content}
