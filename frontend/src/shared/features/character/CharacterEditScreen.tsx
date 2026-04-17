@@ -31,7 +31,7 @@ export function CharacterEditScreen({ id, onBack }: CharacterEditScreenProps) {
   const character = rows[0];
 
   if (!character) {
-    return <div className="p-8 text-sm text-gray-500">캐릭터를 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">캐릭터를 불러오는 중…</div>;
   }
 
   return <CharacterEditor key={id} character={character} onBack={onBack} />;

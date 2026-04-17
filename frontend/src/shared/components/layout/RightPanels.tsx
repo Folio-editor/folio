@@ -27,7 +27,7 @@ export function RightPanels({ width, onWidthChange }: RightPanelsProps) {
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col gap-2 border-l border-gray-200 p-2"
+      className="relative flex shrink-0 flex-col gap-2 border-l border-border p-2"
     >
       {/* 리사이즈 핸들 (좌측 엣지) */}
       <ResizeHandle
@@ -39,13 +39,13 @@ export function RightPanels({ width, onWidthChange }: RightPanelsProps) {
       {visiblePanels.map((panel) => (
         <div
           key={panel.id}
-          className="flex flex-1 flex-col rounded border border-gray-200 bg-white"
+          className="flex flex-1 flex-col rounded border border-border bg-background"
         >
-          <div className="flex items-center justify-end border-b border-gray-100 px-2 py-1">
+          <div className="flex items-center justify-end border-b border-border/50 px-2 py-1">
             <button
               type="button"
               onClick={() => close(panel.id)}
-              className="text-sm text-gray-400 hover:text-gray-700"
+              className="text-sm text-muted-foreground hover:text-foreground"
               aria-label="패널 닫기"
             >
               ×

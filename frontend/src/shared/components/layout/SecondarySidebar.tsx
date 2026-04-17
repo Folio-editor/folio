@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronsLeft, LogOut, Search } from 'lucide-react';
+import { ChevronsLeft, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -70,6 +71,8 @@ export function SecondarySidebar({
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
 
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
   const [searchTerm, setSearchTerm] = useState('');
 
   // activity 전환 시 검색어 초기화
@@ -98,18 +101,23 @@ export function SecondarySidebar({
 
   const handleLoginClick = () => void login();
 
+  const cycleTheme = () => {
+    const order: Theme[] = ['light', 'dark', 'system'];
+    setTheme(order[(order.indexOf(theme) + 1) % order.length]);
+  };
+
   return (
     <aside
       style={{ width }}
-      className="relative flex shrink-0 flex-col border-r border-gray-200 bg-white text-sm"
+      className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
     >
       {/* 헤더 */}
-      <div className="shrink-0 border-b border-gray-200 px-4 py-3">
+      <div className="shrink-0 border-b border-sidebar-border px-4 py-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-gray-900">{header}</div>
+            <div className="truncate text-sm font-semibold text-sidebar-foreground">{header}</div>
             {subHeader && (
-              <div className="mt-0.5 truncate text-xs text-gray-500">{subHeader}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{subHeader}</div>
             )}
           </div>
           <button
@@ -117,7 +125,7 @@ export function SecondarySidebar({
             onClick={onCollapse}
             aria-label="사이드바 접기"
             title="사이드바 접기"
-            className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <ChevronsLeft size={14} strokeWidth={2} />
           </button>
@@ -125,12 +133,12 @@ export function SecondarySidebar({
       </div>
 
       {/* 검색 */}
-      <div className="shrink-0 border-b border-gray-100 px-3 py-2">
+      <div className="shrink-0 border-b border-sidebar-border/50 px-3 py-2">
         <div className="relative">
           <Search
             size={14}
             strokeWidth={2}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <Input
             type="search"
@@ -161,39 +169,43 @@ export function SecondarySidebar({
       <SyncStatusBar />
 
       {/* 프로필 풋터 */}
-      <div className="shrink-0 border-t border-gray-200 p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         {isGuest ? (
-          <button
-            type="button"
-            onClick={handleLoginClick}
-            disabled={isLoggingIn}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs">
-              ○
-            </span>
-            <span className="truncate text-xs">
-              {isLoggingIn ? '로그인 중…' : '게스트 — 로그인'}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoginClick}
+              disabled={isLoggingIn}
+              className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-muted-foreground hover:bg-sidebar-accent disabled:opacity-50"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs">
+                ○
+              </span>
+              <span className="truncate text-xs">
+                {isLoggingIn ? '로그인 중…' : '게스트 — 로그인'}
+              </span>
+            </button>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
+          </div>
         ) : (
           <div className="flex items-center gap-2 px-2 py-1.5">
             {writer?.profileImageUrl ? (
               <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs text-blue-600">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">
                 ●
               </span>
             )}
-            <span className="flex-1 truncate text-xs text-gray-700">
+            <span className="flex-1 truncate text-xs text-sidebar-foreground">
               {writer?.nickname ?? writer?.email ?? ''}
             </span>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
             <button
               type="button"
               onClick={() => void logout()}
               aria-label="로그아웃"
               title="로그아웃"
-              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <LogOut size={14} strokeWidth={2} />
             </button>
@@ -247,7 +259,7 @@ function renderContent(args: {
 
   if (!selectedWorkId) {
     return (
-      <p className="px-4 py-6 text-center text-xs text-gray-400">
+      <p className="px-4 py-6 text-center text-xs text-muted-foreground">
         좌측 홈(🏠)에서 작품을 먼저 선택하세요.
       </p>
     );
@@ -287,5 +299,26 @@ function renderContent(args: {
       selectedItemId={selectedItemId}
       onItemSelect={onItemSelect}
     />
+  );
+}
+
+const THEME_LABEL: Record<Theme, string> = {
+  light: '라이트',
+  dark: '다크',
+  system: '시스템',
+};
+
+function ThemeToggle({ theme, onCycle }: { theme: Theme; onCycle: () => void }) {
+  const Icon = theme === 'dark' ? Moon : theme === 'system' ? Monitor : Sun;
+  return (
+    <button
+      type="button"
+      onClick={onCycle}
+      aria-label={`테마: ${THEME_LABEL[theme]}`}
+      title={`테마: ${THEME_LABEL[theme]}`}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+    >
+      <Icon size={14} strokeWidth={2} />
+    </button>
   );
 }

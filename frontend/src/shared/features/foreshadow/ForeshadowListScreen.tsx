@@ -17,15 +17,15 @@ interface ForeshadowRow {
 }
 
 const IMPORTANCE_COLOR: Record<string, string> = {
-  '상': 'bg-red-100 text-red-700',
-  '중': 'bg-yellow-100 text-yellow-700',
-  '하': 'bg-gray-100 text-gray-600',
+  '상': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  '중': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  '하': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  '진행중': 'bg-blue-100 text-blue-700',
-  '완결': 'bg-green-100 text-green-700',
-  '폐기': 'bg-gray-100 text-gray-500',
+  '진행중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  '완결': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  '폐기': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
 };
 
 export function ForeshadowListScreen({ workId, onSelect }: ForeshadowListScreenProps) {
@@ -52,7 +52,7 @@ export function ForeshadowListScreen({ workId, onSelect }: ForeshadowListScreenP
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">아직 복선이 없습니다.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">아직 복선이 없습니다.</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((item) => (
@@ -60,21 +60,21 @@ export function ForeshadowListScreen({ workId, onSelect }: ForeshadowListScreenP
                 key={item.id}
                 type="button"
                 onClick={() => onSelect(item.id)}
-                className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:shadow-sm"
+                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:shadow-sm"
               >
                 <div className="mb-2 flex gap-1.5">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${IMPORTANCE_COLOR[item.importance] ?? 'bg-gray-100'}`}
+                    className={`rounded-full px-2 py-0.5 text-xs ${IMPORTANCE_COLOR[item.importance] ?? 'bg-muted'}`}
                   >
                     {item.importance}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[item.status] ?? 'bg-gray-100'}`}
+                    className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[item.status] ?? 'bg-muted'}`}
                   >
                     {item.status}
                   </span>
                 </div>
-                <p className="text-sm font-medium text-gray-800">{item.title}</p>
+                <p className="text-sm font-medium text-foreground">{item.title}</p>
               </button>
             ))}
           </div>

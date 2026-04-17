@@ -61,20 +61,20 @@ export function TagEditModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
+      <div className="w-full max-w-md rounded-lg bg-background p-5 shadow-lg">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           >
             <X size={16} strokeWidth={2} />
           </button>
         </div>
 
-        <p className="mb-2 text-xs text-gray-500">
+        <p className="mb-2 text-xs text-muted-foreground">
           Enter 또는 쉼표로 태그를 추가, 칩의 × 로 개별 제거
         </p>
 
@@ -85,10 +85,10 @@ export function TagEditModal({
         />
 
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="outline" onClick={onClose}>
             취소
           </Button>
-          <Button variant="primary" onClick={handleApply}>
+          <Button variant="default" onClick={handleApply}>
             적용
           </Button>
         </div>

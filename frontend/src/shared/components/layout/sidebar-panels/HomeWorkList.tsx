@@ -43,13 +43,13 @@ export function HomeWorkList({
       <button
         type="button"
         onClick={onNewWork}
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100"
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-sidebar-accent"
       >
         <Plus size={14} strokeWidth={2} />
         <span>새 작품</span>
       </button>
       {works.length === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-gray-400">
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '작품이 없습니다.'}
         </p>
       ) : (
@@ -59,10 +59,10 @@ export function HomeWorkList({
             type="button"
             onClick={() => onWorkSelect(work.id)}
             className={cn(
-              'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100',
+              'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
               selectedWorkId === work.id
-                ? 'bg-blue-50 font-medium text-blue-700'
-                : 'text-gray-700',
+                ? 'bg-primary/5 font-medium text-primary'
+                : 'text-sidebar-foreground',
             )}
           >
             {work.title}

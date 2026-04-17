@@ -40,7 +40,7 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
       />
       <div className="flex-1 overflow-y-auto p-6">
         {ideas.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">
+          <p className="py-12 text-center text-sm text-muted-foreground">
             아직 아이디어가 없습니다.
           </p>
         ) : (
@@ -50,14 +50,14 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
                 key={idea.id}
                 type="button"
                 onClick={() => onSelect(idea.id)}
-                className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:shadow-sm"
+                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:shadow-sm"
               >
                 {idea.tag && (
-                  <span className="mb-2 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">
+                  <span className="mb-2 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
                     {idea.tag}
                   </span>
                 )}
-                <p className="line-clamp-4 text-sm text-gray-700">
+                <p className="line-clamp-4 text-sm text-foreground">
                   {extractText(idea.content) || '(빈 아이디어)'}
                 </p>
               </button>

@@ -82,7 +82,7 @@ export function PlanHeader({
   };
 
   return (
-    <div className="shrink-0 border-b border-gray-200 bg-gray-50/50">
+    <div className="shrink-0 border-b border-border bg-muted/50">
       {/* 1. 현재 선택 문서 제목 바 — 선택 시에만 최상단에 표시 */}
       {currentNote && (
         <CurrentNoteBar
@@ -123,27 +123,27 @@ export function PlanHeader({
 
         {/* R2: 슬로건 */}
         <div className="flex items-center gap-2">
-          <label className="w-14 shrink-0 text-xs font-medium text-gray-500">슬로건</label>
+          <label className="w-14 shrink-0 text-xs font-medium text-muted-foreground">슬로건</label>
           <input
             type="text"
             value={sloganField.value}
             onChange={(e) => sloganField.onChange(e.target.value)}
             onBlur={sloganField.onBlur}
             placeholder="작품의 핵심을 한 줄로"
-            className="w-full bg-transparent py-1 text-sm text-gray-800 outline-none placeholder:text-gray-400"
+            className="w-full bg-transparent py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
 
         {/* R3: 타겟 */}
         <div className="flex items-center gap-2">
-          <label className="w-14 shrink-0 text-xs font-medium text-gray-500">타겟</label>
+          <label className="w-14 shrink-0 text-xs font-medium text-muted-foreground">타겟</label>
           <input
             type="text"
             value={targetField.value}
             onChange={(e) => targetField.onChange(e.target.value)}
             onBlur={targetField.onBlur}
             placeholder="20·30대 여성, 정통 판타지 팬 등"
-            className="w-full bg-transparent py-1 text-sm text-gray-800 outline-none placeholder:text-gray-400"
+            className="w-full bg-transparent py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -180,19 +180,19 @@ interface TagRowProps {
 function TagRow({ field, label, tags, onAdd, onRemove }: TagRowProps) {
   return (
     <div className="flex items-center gap-2">
-      <label className="w-14 shrink-0 text-xs font-medium text-gray-500">{label}</label>
+      <label className="w-14 shrink-0 text-xs font-medium text-muted-foreground">{label}</label>
       <div className="flex min-h-8 flex-1 flex-wrap items-center gap-1.5">
         {tags.map((tag, idx) => (
           <span
             key={`${field}-${tag}-${idx}`}
-            className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700"
+            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
           >
             {tag}
             <button
               type="button"
               onClick={() => onRemove(idx)}
               aria-label={`${tag} 제거`}
-              className="rounded text-blue-500 hover:bg-blue-200 hover:text-blue-900"
+              className="rounded text-primary/70 hover:bg-primary/20 hover:text-primary"
             >
               ×
             </button>
@@ -203,7 +203,7 @@ function TagRow({ field, label, tags, onAdd, onRemove }: TagRowProps) {
           onClick={onAdd}
           aria-label={`${label} 추가`}
           title={`${label} 추가`}
-          className="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-500 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600"
+          className="inline-flex items-center gap-1 rounded-md border border-dashed border-input bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
         >
           <Plus size={12} strokeWidth={2.5} />
           추가
@@ -236,13 +236,13 @@ function CurrentNoteBar({ title, onTitleChange, onBack }: CurrentNoteBarProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-6 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-background px-6 py-2">
       <button
         type="button"
         onClick={onBack}
         aria-label="메타로 돌아가기"
         title="메타 뷰로 돌아가기"
-        className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       >
         <ArrowLeft size={14} strokeWidth={2} />
       </button>
@@ -259,7 +259,7 @@ function CurrentNoteBar({ title, onTitleChange, onBack }: CurrentNoteBarProps) {
           }
         }}
         placeholder="문서 제목"
-        className="flex-1 bg-transparent text-sm font-medium text-gray-900 outline-none placeholder:text-gray-300"
+        className="flex-1 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
       />
     </div>
   );

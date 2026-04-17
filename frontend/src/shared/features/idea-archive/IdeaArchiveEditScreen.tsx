@@ -33,7 +33,7 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
   const idea = rows[0];
 
   if (!idea) {
-    return <div className="p-8 text-sm text-gray-500">아이디어를 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">아이디어를 불러오는 중…</div>;
   }
 
   return (
@@ -43,7 +43,7 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
           <IconButton onClick={onBack} title="목록으로">
             ←
           </IconButton>
-          <span className="text-sm font-medium text-gray-700">아이디어</span>
+          <span className="text-sm font-medium text-foreground">아이디어</span>
         </div>
         <div className="w-40">
           <Select

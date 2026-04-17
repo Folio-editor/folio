@@ -70,7 +70,7 @@ export function PlanSectionShell({
   const note = selectedItemId ? (noteRows[0] ?? null) : null;
 
   if (!meta || !planId) {
-    return <div className="p-8 text-sm text-gray-500">기획을 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">기획을 불러오는 중…</div>;
   }
 
   return (
@@ -105,11 +105,11 @@ export function PlanSectionShell({
             onUpdate={(content) => void updatePlanNoteContent(note.id, content)}
           />
         ) : selectedItemId && !note ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             문서를 불러오는 중…
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center px-8 text-center text-sm text-gray-400">
+          <div className="flex flex-1 items-center justify-center px-8 text-center text-sm text-muted-foreground">
             좌측 사이드바에서 기획 문서를 선택하거나 "+ 새 문서" 로 추가하세요.
           </div>
         )}

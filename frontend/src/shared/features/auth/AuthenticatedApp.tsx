@@ -275,7 +275,7 @@ function renderMain({
 
 function EmptyDetail({ message }: { message: string }) {
   return (
-    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">
+    <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
       {message}
     </div>
   );

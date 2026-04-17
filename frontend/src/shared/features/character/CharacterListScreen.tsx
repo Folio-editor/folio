@@ -41,7 +41,7 @@ export function CharacterListScreen({ workId, onSelect }: CharacterListScreenPro
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">아직 등장인물이 없습니다.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">아직 등장인물이 없습니다.</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((item) => (
@@ -49,14 +49,14 @@ export function CharacterListScreen({ workId, onSelect }: CharacterListScreenPro
                 key={item.id}
                 type="button"
                 onClick={() => onSelect(item.id)}
-                className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:shadow-sm"
+                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:shadow-sm"
               >
-                <div className="mb-1 text-base font-semibold text-gray-900">{item.name}</div>
-                <div className="text-xs text-gray-500">
+                <div className="mb-1 text-base font-semibold text-foreground">{item.name}</div>
+                <div className="text-xs text-muted-foreground">
                   {item.gender}{item.age ? ` · ${item.age}` : ''}
                 </div>
                 {item.appearance && (
-                  <p className="mt-2 line-clamp-2 text-xs text-gray-600">{item.appearance}</p>
+                  <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.appearance}</p>
                 )}
               </button>
             ))}

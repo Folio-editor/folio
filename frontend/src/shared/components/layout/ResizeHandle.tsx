@@ -65,7 +65,7 @@ export function ResizeHandle({ side, onResize, ariaLabel }: ResizeHandleProps) {
     >
       <span
         aria-hidden
-        className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-blue-400 group-active:bg-blue-500"
+        className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-ring group-active:bg-ring"
       />
     </div>
   );

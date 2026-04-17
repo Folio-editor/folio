@@ -39,7 +39,7 @@ export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) 
   const item = rows[0];
 
   if (!item) {
-    return <div className="p-8 text-sm text-gray-500">복선을 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">복선을 불러오는 중…</div>;
   }
 
   return <ForeshadowEditor key={id} item={item} onBack={onBack} />;

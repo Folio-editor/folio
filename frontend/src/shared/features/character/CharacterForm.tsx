@@ -26,9 +26,9 @@ const GENDER_OPTIONS = [
 
 const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
   <div>
-    <label className="mb-1 block text-xs font-medium text-gray-600">
+    <label className="mb-1 block text-xs font-medium text-muted-foreground">
       {label}
-      {required && <span className="ml-1 text-red-500">*</span>}
+      {required && <span className="ml-1 text-destructive">*</span>}
     </label>
     {children}
   </div>

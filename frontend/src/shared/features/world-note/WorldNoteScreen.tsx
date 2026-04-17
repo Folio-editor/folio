@@ -54,7 +54,7 @@ export function WorldNoteScreen({ noteId }: WorldNoteScreenProps) {
 
   if (!note) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         문서를 불러오는 중…
       </div>
     );
@@ -72,7 +72,7 @@ export function WorldNoteScreen({ noteId }: WorldNoteScreenProps) {
             onChange={(e) => setNameInput(e.target.value)}
             onBlur={() => void handleNameBlur()}
             onKeyDown={handleNameKeyDown}
-            className="w-full text-lg font-semibold text-gray-900 outline-none"
+            className="w-full text-lg font-semibold text-foreground outline-none"
           />
         ) : (
           <h2
@@ -80,7 +80,7 @@ export function WorldNoteScreen({ noteId }: WorldNoteScreenProps) {
             tabIndex={0}
             onClick={() => setIsEditingName(true)}
             onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(true); }}
-            className="cursor-text text-lg font-semibold text-gray-900 hover:text-blue-600"
+            className="cursor-text text-lg font-semibold text-foreground hover:text-primary"
             title="클릭하여 제목 편집"
           >
             {note.name}

@@ -34,7 +34,7 @@ export function EpisodeEditScreen({ id, onBack }: EpisodeEditScreenProps) {
   const item = rows[0];
 
   if (!item) {
-    return <div className="p-8 text-sm text-gray-500">회차를 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">회차를 불러오는 중…</div>;
   }
 
   return <EpisodeEditor key={id} item={item} onBack={onBack} />;
@@ -64,7 +64,7 @@ function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void 
           placeholder="회차 제목"
           className="flex-1 border-none px-0 text-base font-medium focus:ring-0"
         />
-        <span className="text-xs text-gray-400">{item.word_count.toLocaleString()}자</span>
+        <span className="text-xs text-muted-foreground">{item.word_count.toLocaleString()}자</span>
         <div className="w-28">
           <Select
             options={STATUS_OPTIONS}

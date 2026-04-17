@@ -48,13 +48,13 @@ export function PlanNoteList({
       <button
         type="button"
         onClick={onNewPlanNote}
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100"
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-sidebar-accent"
       >
         <Plus size={14} strokeWidth={2} />
         <span>새 문서</span>
       </button>
       {notes.length === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-gray-400">
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '기획 문서가 없습니다.'}
         </p>
       ) : (
@@ -134,7 +134,7 @@ function NoteItem({ note, selected, onSelect, onRename }: NoteItemProps) {
         onFocus={(e) => e.currentTarget.select()}
         onKeyDown={handleKeyDown}
         maxLength={200}
-        className="w-full rounded-md border border-blue-400 bg-white px-2 py-1 text-sm text-gray-900 outline-none ring-1 ring-blue-400"
+        className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
       />
     );
   }
@@ -146,10 +146,10 @@ function NoteItem({ note, selected, onSelect, onRename }: NoteItemProps) {
       onDoubleClick={() => setEditing(true)}
       title="더블클릭으로 이름 변경"
       className={cn(
-        'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100',
+        'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
         selected
-          ? 'bg-blue-50 font-medium text-blue-700'
-          : 'text-gray-700',
+          ? 'bg-primary/5 font-medium text-primary'
+          : 'text-sidebar-foreground',
       )}
     >
       {note.title?.trim() || '(제목 없음)'}

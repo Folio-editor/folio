@@ -73,21 +73,21 @@ export function TagInput({
   return (
     <div
       className={cn(
-        'flex min-h-[34px] w-full flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm transition-colors focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500',
+        'flex min-h-[34px] w-full flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1 text-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring',
         className,
       )}
     >
       {value.map((tag, idx) => (
         <span
           key={`${tag}-${idx}`}
-          className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700"
+          className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
         >
           {tag}
           <button
             type="button"
             onClick={() => removeTag(idx)}
             aria-label={`${tag} 제거`}
-            className="rounded hover:bg-blue-200 hover:text-blue-900"
+            className="rounded hover:bg-primary/20 hover:text-primary"
           >
             <X size={12} strokeWidth={2.25} />
           </button>
@@ -100,7 +100,7 @@ export function TagInput({
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         placeholder={value.length === 0 ? placeholder : ''}
-        className="min-w-[80px] flex-1 bg-transparent px-1 py-0.5 text-sm text-gray-800 placeholder-gray-400 outline-none"
+        className="min-w-[80px] flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground placeholder:text-muted-foreground outline-none"
       />
     </div>
   );

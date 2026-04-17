@@ -52,9 +52,9 @@ const STATUS_OPTIONS = [
 ];
 
 const STATUS_COLOR: Record<string, string> = {
-  연재중: 'bg-blue-100 text-blue-700',
-  완결: 'bg-green-100 text-green-700',
-  휴재: 'bg-yellow-100 text-yellow-700',
+  연재중: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  완결: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  휴재: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
 };
 
 /**
@@ -78,7 +78,7 @@ export function WorkspaceHomeScreen({
   const work = works[0];
 
   if (!work) {
-    return <div className="p-8 text-sm text-gray-500">작품을 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">작품을 불러오는 중…</div>;
   }
 
   return (
@@ -134,7 +134,7 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* 작품 메타데이터 에디터 */}
-      <section className="border-b border-gray-200 px-10 pb-6 pt-8">
+      <section className="border-b border-border px-10 pb-6 pt-8">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex-1">
             <input
@@ -143,17 +143,17 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
               onBlur={title.onBlur}
               placeholder="작품 제목"
               maxLength={200}
-              className="w-full border-0 bg-transparent px-0 py-1 text-2xl font-bold text-gray-900 placeholder-gray-300 outline-none focus:ring-0"
+              className="w-full border-0 bg-transparent px-0 py-1 text-2xl font-bold text-foreground placeholder-muted-foreground/50 outline-none focus:ring-0"
             />
             <div className="mt-1 flex items-center gap-2">
-              <span className="text-xs text-gray-400">작가</span>
+              <span className="text-xs text-muted-foreground">작가</span>
               <input
                 value={authorName.value}
                 onChange={(e) => authorName.onChange(e.target.value)}
                 onBlur={authorName.onBlur}
                 placeholder="작가명을 입력하세요"
                 maxLength={100}
-                className="flex-1 border-0 bg-transparent px-0 py-0 text-sm text-gray-700 placeholder-gray-300 outline-none focus:ring-0"
+                className="flex-1 border-0 bg-transparent px-0 py-0 text-sm text-foreground placeholder-muted-foreground/50 outline-none focus:ring-0"
               />
             </div>
           </div>
@@ -174,7 +174,7 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
               onClick={() => setConfirmOpen(true)}
               aria-label="작품 삭제"
               title="작품 삭제"
-              className="rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
             >
               <Trash2 size={16} strokeWidth={1.75} />
             </button>
@@ -182,7 +182,7 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
         </div>
 
         <div className="mb-3">
-          <label className="mb-1 block text-xs font-medium text-gray-500">
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
             작품 소개
           </label>
           <Textarea
@@ -194,7 +194,7 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
           />
         </div>
 
-        <div className="flex gap-4 text-xs text-gray-400">
+        <div className="flex gap-4 text-xs text-muted-foreground">
           <span>생성 {formatDate(work.created_at)}</span>
           <span>최근 수정 {formatDate(work.updated_at)}</span>
         </div>
@@ -202,20 +202,20 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
 
       {/* 섹션 네비게이션 */}
       <section className="px-10 py-6">
-        <h2 className="mb-3 text-sm font-semibold text-gray-700">바로가기</h2>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">바로가기</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {SECTIONS.map((section) => (
             <button
               key={section}
               type="button"
               onClick={() => onSectionSelect(section)}
-              className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:bg-blue-50"
+              className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
             >
               <span className="text-2xl">{SECTION_ICONS[section]}</span>
-              <span className="mt-2 text-sm font-medium text-gray-900">
+              <span className="mt-2 text-sm font-medium text-foreground">
                 {SECTION_LABELS[section]}
               </span>
-              <span className="mt-1 text-xs text-gray-500">
+              <span className="mt-1 text-xs text-muted-foreground">
                 {SECTION_DESCRIPTIONS[section]}
               </span>
             </button>
@@ -246,18 +246,18 @@ interface DeleteConfirmDialogProps {
 function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirmDialogProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
-        <h3 className="text-base font-semibold text-gray-900">작품 삭제</h3>
-        <p className="mt-2 text-sm text-gray-600">
-          <span className="font-medium text-gray-900">&ldquo;{title}&rdquo;</span> 과 그에
+      <div className="w-full max-w-md rounded-lg bg-background p-5 shadow-lg">
+        <h3 className="text-base font-semibold text-foreground">작품 삭제</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">&ldquo;{title}&rdquo;</span> 과 그에
           속한 모든 기획·세계관·캐릭터·플롯·원고·복선·아이디어가 <strong>영구 삭제</strong>됩니다.
         </p>
-        <p className="mt-1 text-xs text-red-600">이 작업은 되돌릴 수 없습니다.</p>
+        <p className="mt-1 text-xs text-destructive">이 작업은 되돌릴 수 없습니다.</p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          <Button variant="outline" onClick={onCancel} disabled={busy}>
             취소
           </Button>
-          <Button variant="danger" onClick={onConfirm} disabled={busy}>
+          <Button variant="destructive" onClick={onConfirm} disabled={busy}>
             {busy ? '삭제 중…' : '영구 삭제'}
           </Button>
         </div>

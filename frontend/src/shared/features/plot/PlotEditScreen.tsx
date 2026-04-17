@@ -32,7 +32,7 @@ export function PlotEditScreen({ id, onBack }: PlotEditScreenProps) {
   const item = rows[0];
 
   if (!item) {
-    return <div className="p-8 text-sm text-gray-500">플롯을 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">플롯을 불러오는 중…</div>;
   }
 
   return <PlotEditor key={id} item={item} onBack={onBack} />;
