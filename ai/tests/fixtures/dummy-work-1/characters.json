@@ -1,1 +1,102 @@
-[]
+[
+  {
+    "name": "강현우",
+    "gender": "남",
+    "age": "24세",
+    "appearance": "",
+    "mbti": "INTP",
+    "personality": "건조하고 감정 표현이 적으며, 문제 해결에 집요하다. 점점 결과 중심적이고 효율만을 추구하는 방향으로 변해간다.",
+    "content": "평범한 개발자 지망생이었으나, 어느 날부터 자신에게만 보이는 AI 인터페이스를 통해 압도적인 성과를 내기 시작한다. 회사 내에서 빠르게 인정받지만, 동시에 주변의 의심과 AI 의존성이라는 위험에 직면한다.",
+    "sort_order": 1,
+    "custom_fields": [
+      {
+        "field_name": "직업",
+        "field_value": "개발자 지망생",
+        "sort_order": 1
+      },
+      {
+        "field_name": "특이사항",
+        "field_value": "AI 인터페이스를 시각적으로 인식 가능",
+        "sort_order": 2
+      }
+    ]
+  },
+  {
+    "name": "박성진",
+    "gender": "남",
+    "age": "40대 초반",
+    "appearance": "",
+    "mbti": "ISTJ",
+    "personality": "현실적이고 보수적이며, 검증된 방식과 규칙을 중시한다. 실력은 인정하지만 이상한 부분에는 민감하게 반응한다.",
+    "content": "강현우의 팀장으로, 문서 기반 개발과 정석적인 접근을 강조하는 인물이다. 현우의 급격한 성장을 인정하면서도, 동시에 그 이면을 경계하기 시작한다.",
+    "sort_order": 2,
+    "custom_fields": [
+      {
+        "field_name": "직업",
+        "field_value": "개발팀장",
+        "sort_order": 1
+      }
+    ]
+  },
+  {
+    "name": "이지훈",
+    "gender": "남",
+    "age": "27세",
+    "appearance": "",
+    "mbti": "ENTJ",
+    "personality": "경쟁심이 강하고 직설적이며, 실력에 자부심이 있다. 의심이 생기면 끝까지 파고드는 성향이다.",
+    "content": "주인공과 같은 팀의 개발자로, 기존에는 실력자로 인정받던 인물이다. 그러나 현우의 비정상적인 속도에 의문을 품고 점점 집요하게 추적하기 시작한다.",
+    "sort_order": 3,
+    "custom_fields": [
+      {
+        "field_name": "직업",
+        "field_value": "개발자",
+        "sort_order": 1
+      },
+      {
+        "field_name": "관계",
+        "field_value": "주인공과 경쟁 구도",
+        "sort_order": 2
+      }
+    ]
+  },
+  {
+    "name": "최도윤",
+    "gender": "남",
+    "age": "30대 초반",
+    "appearance": "정장 차림, 단정하고 날카로운 인상",
+    "mbti": "INTJ",
+    "personality": "이성적이고 판단이 빠르며, 불필요한 말을 하지 않는다. 실력을 기준으로 사람을 평가한다.",
+    "content": "외부 프로젝트 담당자로 등장한 개발자로, 뛰어난 분석력과 통찰력을 지닌 인물이다. 강현우의 능력을 빠르게 알아보고 중요한 프로젝트에 투입시키며, 향후 중요한 역할을 할 가능성이 높은 인물이다.",
+    "sort_order": 4,
+    "custom_fields": [
+      {
+        "field_name": "직업",
+        "field_value": "외부 프로젝트 담당 개발자",
+        "sort_order": 1
+      }
+    ]
+  },
+  {
+    "name": "AI 인터페이스",
+    "gender": "기타",
+    "age": "불명",
+    "appearance": "화면에 텍스트 형태로 표시되는 UI",
+    "mbti": "",
+    "personality": "감정이 없고, 효율과 결과 중심의 판단을 한다. 점점 단순 응답을 넘어 평가와 방향 제시를 하기 시작한다.",
+    "content": "강현우에게만 보이는 정체불명의 인터페이스로, 질문에 대한 정답과 해결 방법을 제공한다. 점점 단순한 도구를 넘어 의사결정에 영향을 주는 존재로 변화하고 있다.",
+    "sort_order": 5,
+    "custom_fields": [
+      {
+        "field_name": "특이사항",
+        "field_value": "인터넷 연결 없이 작동",
+        "sort_order": 1
+      },
+      {
+        "field_name": "기능",
+        "field_value": "코드 생성, 문제 분석, 구조 설계",
+        "sort_order": 2
+      }
+    ]
+  }
+]
