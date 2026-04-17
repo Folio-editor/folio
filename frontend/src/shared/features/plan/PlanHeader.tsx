@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
-import { Input } from '../../components/ui/Input';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { TagEditModal } from './TagEditModal';
 
@@ -40,14 +39,14 @@ const TAG_LABELS: Record<TagField, string> = {
  *
  * 레이아웃:
  *  ┌──────────────────────────────────────────────┐
- *  │ 슬로건 [_________________________________]   │
- *  │ 장르: [칩][칩][+]    분위기: [칩][칩][+]      │
- *  │ 타겟 [_________________________________]     │
  *  │ (선택 문서 있으면) ← [현재 문서 제목]          │
+ *  │ 장르: [칩][칩][+]    분위기: [칩][칩][+]      │
+ *  │ 슬로건 ________________________________      │
+ *  │ 타겟   ________________________________      │
  *  └──────────────────────────────────────────────┘
  *
- * - 슬로건/타겟: useDeferredText + onBlur 커밋
- * - 장르/분위기: 읽기 전용 칩 + "+" 버튼 → TagEditModal
+ * - 장르/분위기: 좌우 나란히, 읽기 전용 칩 + "+" 버튼 → TagEditModal
+ * - 슬로건/타겟: borderless 인라인 텍스트 편집 (useDeferredText + onBlur 커밋)
  * - 현재 문서 제목: 인라인 편집 (onBlur/Enter 커밋)
  */
 export function PlanHeader({
@@ -95,54 +94,56 @@ export function PlanHeader({
       )}
 
       {/*
-        2열 × 2행 그리드 (row-first flow)
-        ┌─────────────┬─────────────┐
-        │  장르       │  슬로건      │
-        ├─────────────┼─────────────┤
-        │  분위기     │  타겟        │
-        └─────────────┴─────────────┘
-        좁은 창에서는 1열로 폴백.
+        레이아웃:
+        ┌─────────────────┬─────────────────┐
+        │  장르 [칩][+]    │  분위기 [칩][+]  │
+        ├─────────────────┴─────────────────┤
+        │  슬로건 [____borderless__________] │
+        │  타겟   [____borderless__________] │
+        └───────────────────────────────────┘
       */}
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 px-6 pb-3 pt-4 md:grid-cols-2">
-        {/* R1 C1: 장르 */}
-        <TagRow
-          field="genres"
-          label={TAG_LABELS.genres}
-          tags={genres}
-          onAdd={() => setModal('genres')}
-          onRemove={(idx) => removeTag('genres', idx)}
-        />
+      <div className="space-y-2.5 px-6 pb-3 pt-4">
+        {/* R1: 장르 + 분위기 나란히 */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-2.5 md:grid-cols-2">
+          <TagRow
+            field="genres"
+            label={TAG_LABELS.genres}
+            tags={genres}
+            onAdd={() => setModal('genres')}
+            onRemove={(idx) => removeTag('genres', idx)}
+          />
+          <TagRow
+            field="moods"
+            label={TAG_LABELS.moods}
+            tags={moods}
+            onAdd={() => setModal('moods')}
+            onRemove={(idx) => removeTag('moods', idx)}
+          />
+        </div>
 
-        {/* R1 C2: 슬로건 */}
+        {/* R2: 슬로건 */}
         <div className="flex items-center gap-2">
           <label className="w-14 shrink-0 text-xs font-medium text-gray-500">슬로건</label>
-          <Input
+          <input
+            type="text"
             value={sloganField.value}
             onChange={(e) => sloganField.onChange(e.target.value)}
             onBlur={sloganField.onBlur}
             placeholder="작품의 핵심을 한 줄로"
-            className="h-8 py-1 text-sm"
+            className="w-full bg-transparent py-1 text-sm text-gray-800 outline-none placeholder:text-gray-400"
           />
         </div>
 
-        {/* R2 C1: 분위기 */}
-        <TagRow
-          field="moods"
-          label={TAG_LABELS.moods}
-          tags={moods}
-          onAdd={() => setModal('moods')}
-          onRemove={(idx) => removeTag('moods', idx)}
-        />
-
-        {/* R2 C2: 타겟 */}
+        {/* R3: 타겟 */}
         <div className="flex items-center gap-2">
           <label className="w-14 shrink-0 text-xs font-medium text-gray-500">타겟</label>
-          <Input
+          <input
+            type="text"
             value={targetField.value}
             onChange={(e) => targetField.onChange(e.target.value)}
             onBlur={targetField.onBlur}
             placeholder="20·30대 여성, 정통 판타지 팬 등"
-            className="h-8 py-1 text-sm"
+            className="w-full bg-transparent py-1 text-sm text-gray-800 outline-none placeholder:text-gray-400"
           />
         </div>
       </div>
