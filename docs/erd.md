@@ -1,4 +1,4 @@
-# StoryZip - ERD (Entity Relationship Diagram)
+# Folio - ERD (Entity Relationship Diagram)
 
 ## 개요
 

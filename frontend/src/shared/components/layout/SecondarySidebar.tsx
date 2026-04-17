@@ -89,12 +89,12 @@ export function SecondarySidebar({
 
   const header =
     activity === 'home'
-      ? '작품'
+      ? 'Folio'
       : workTitle
         ? workTitle
         : '작품 미선택';
 
-  const subHeader = activity === 'home' ? null : ACTIVITY_LABELS[activity];
+  const subHeader = ACTIVITY_LABELS[activity];
 
   const handleLoginClick = () => void login();
 

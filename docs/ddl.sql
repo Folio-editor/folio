@@ -1,5 +1,5 @@
 -- ============================================================
--- StoryZip DDL (PostgreSQL)
+-- Folio DDL (PostgreSQL)
 -- ============================================================
 -- 동기화 대상: SQLite (로컬) + PostgreSQL (서버) via PowerSync
 -- 서버 전용: PostgreSQL only

@@ -1,9 +1,9 @@
-# StoryZip 백엔드 구현 상세 문서
+# Folio 백엔드 구현 상세 문서
 
 > 작성 시점: 2026-04-16
 > 대상 브랜치: `feat/S14P31F203-62_setEditor` (기동·sync 정상 검증 완료 시점)
 
-오프라인 우선(offline-first) 집필 서비스 **StoryZip**의 Spring Boot 백엔드 구현을 정리한 문서다. 프론트(Electron + SQLite)와 PowerSync + PostgreSQL 사이의 인증·동기화 경로가 안정 동작하기까지 합의된 설계·규약을 담는다.
+오프라인 우선(offline-first) 집필 서비스 **Folio**의 Spring Boot 백엔드 구현을 정리한 문서다. 프론트(Electron + SQLite)와 PowerSync + PostgreSQL 사이의 인증·동기화 경로가 안정 동작하기까지 합의된 설계·규약을 담는다.
 
 ---
 

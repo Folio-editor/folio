@@ -1,6 +1,6 @@
 # AI ERD (RAG + MCP 하이브리드)
 
-> 본 문서는 StoryZip AI 기능이 사용하는 **서버 전용 테이블**과, 기존 동기화 테이블(`episode`, `character`, `world_note` 등)을 **RAG / MCP 중 어떤 방식으로 활용하는지** 정리한다.
+> 본 문서는 Folio AI 기능이 사용하는 **서버 전용 테이블**과, 기존 동기화 테이블(`episode`, `character`, `world_note` 등)을 **RAG / MCP 중 어떤 방식으로 활용하는지** 정리한다.
 >
 > 관련 문서: [architecture.md](architecture.md), [AI_architecture2.md](AI_architecture2.md), [ai-data-pipeline.md](ai-data-pipeline.md), [ai-overview.md](ai-overview.md), [infra.md](infra.md)
 
@@ -35,7 +35,7 @@
 | SSE 첫 토큰 2초 내 | ✅ | ❌ (툴 왕복 지연) | ✅ (핵심 재료는 사전 조립) |
 | 토큰 비용 예측 | ✅ 고정 | ❌ 변동 | ✅ (상한 합의 가능) |
 
-StoryZip은 Episode(대용량·반복)는 RAG, Character/WorldNote/Plan/Plot(소용량·선택)은 MCP로 분할.
+Folio는 Episode(대용량·반복)는 RAG, Character/WorldNote/Plan/Plot(소용량·선택)은 MCP로 분할.
 
 ---
 

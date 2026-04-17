@@ -23,16 +23,16 @@ interface SyncUploadEntry {
   data: Record<string, unknown> | null;
 }
 
-export class StoryZipConnector implements PowerSyncBackendConnector {
+export class FolioConnector implements PowerSyncBackendConnector {
   /**
    * PowerSync 서비스에 연결할 JWT와 엔드포인트를 반환한다.
    */
   async fetchCredentials() {
-    let token = await window.storyzip.auth.getAccessToken();
+    let token = await window.folio.auth.getAccessToken();
 
     if (!token) {
-      await window.storyzip.auth.tryRestore();
-      token = await window.storyzip.auth.getAccessToken();
+      await window.folio.auth.tryRestore();
+      token = await window.folio.auth.getAccessToken();
     }
 
     if (!token) {
@@ -60,7 +60,7 @@ export class StoryZipConnector implements PowerSyncBackendConnector {
    *   - 백엔드: client UUID 수락, writer_id는 JWT에서 추출하여 덮어씀
    */
   async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
-    const token = await window.storyzip.auth.getAccessToken();
+    const token = await window.folio.auth.getAccessToken();
     if (!token) {
       console.log('[uploadData] 게스트 모드 — 큐 유지');
       return;

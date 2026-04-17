@@ -50,15 +50,15 @@ export function AuthenticatedApp() {
 
   // 레이아웃 상태 — localStorage 에 영속
   const [sidebarWidth, setSidebarWidth] = usePersistentState(
-    'storyzip.ui.sidebarWidth',
+    'folio.ui.sidebarWidth',
     256,
   );
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistentState(
-    'storyzip.ui.sidebarCollapsed',
+    'folio.ui.sidebarCollapsed',
     false,
   );
   const [rightPanelsWidth, setRightPanelsWidth] = usePersistentState(
-    'storyzip.ui.rightPanelsWidth',
+    'folio.ui.rightPanelsWidth',
     288,
   );
 

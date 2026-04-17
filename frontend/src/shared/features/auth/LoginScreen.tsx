@@ -8,7 +8,7 @@ export function LoginScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow">
-        <h1 className="mb-2 text-center text-2xl font-bold">StoryZip</h1>
+        <h1 className="mb-2 text-center text-2xl font-bold">Folio</h1>
         <p className="mb-6 text-center text-sm text-gray-500">
           스토리 작가를 위한 원고 편집 서비스
         </p>

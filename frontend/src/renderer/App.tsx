@@ -4,9 +4,9 @@ import { PowerSyncContext } from '@powersync/react';
 import { useAuthStore } from '../shared/stores/authStore';
 import { AuthenticatedApp } from '../shared/features/auth/AuthenticatedApp';
 import { db } from './sync/db';
-import { StoryZipConnector } from './sync/connector';
+import { FolioConnector } from './sync/connector';
 
-const connector = new StoryZipConnector();
+const connector = new FolioConnector();
 
 export function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);

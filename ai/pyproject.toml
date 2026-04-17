@@ -1,7 +1,7 @@
 [project]
-name = "storyzip-ai"
+name = "folio-ai"
 version = "0.1.0"
-description = "StoryZip AI server (FastAPI + Celery)"
+description = "Folio AI server (FastAPI + Celery)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

@@ -111,7 +111,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   restore: async () => {
     set({ isRestoring: true, error: null });
     try {
-      const result = await window.storyzip.auth.tryRestore();
+      const result = await window.folio.auth.tryRestore();
       if (result) {
         // 자동 복원: 이미 결정 끝난 기존 사용자 → 서버 우선으로 즉시 결정 확정.
         // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
@@ -137,8 +137,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   enterGuestMode: async () => {
     const [guestWriterId, lastKnownWriterId] = await Promise.all([
-      window.storyzip.auth.getGuestId(),
-      window.storyzip.auth.getLastKnownWriterId(),
+      window.folio.auth.getGuestId(),
+      window.folio.auth.getLastKnownWriterId(),
     ]);
     // 로그인 경험이 있으면 lastKnownWriterId로 이전 데이터 계속 표시 (로컬 퍼스트).
     // 없으면 게스트 UUID 사용.
@@ -170,7 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const currentGuestId = get().guestWriterId;
     set({ isLoggingIn: true, error: null });
     try {
-      const result = await window.storyzip.auth.loginWithGoogle();
+      const result = await window.folio.auth.loginWithGoogle();
 
       // 신규 가입자 + 게스트 UUID 있으면 pre-state 재매핑으로 UI 깜빡임 제거
       const shouldPreRemap =
@@ -218,7 +218,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // 신규 가입자 lastKnownWriterId 파일 영속
       if (shouldPreRemap) {
         try {
-          await window.storyzip.auth.commitLastKnownWriterId(result.writer.id);
+          await window.folio.auth.commitLastKnownWriterId(result.writer.id);
         } catch (e) {
           console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
         }
@@ -264,7 +264,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
     if (writer) {
       try {
-        await window.storyzip.auth.commitLastKnownWriterId(writer.id);
+        await window.folio.auth.commitLastKnownWriterId(writer.id);
       } catch (e) {
         console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
       }
@@ -273,9 +273,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await window.storyzip.auth.logout();
+      await window.folio.auth.logout();
     } finally {
-      const guestWriterId = get().guestWriterId ?? (await window.storyzip.auth.getGuestId());
+      const guestWriterId = get().guestWriterId ?? (await window.folio.auth.getGuestId());
       // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
       // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.
       set({
@@ -291,7 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   subscribeSessionEvents: () =>
-    window.storyzip.auth.onSessionExpired(() => {
+    window.folio.auth.onSessionExpired(() => {
       // Main에서 이미 로컬 토큰을 정리한 상태. 클라이언트 상태도 게스트 모드로 전환.
       console.warn('[auth] 세션 만료 감지 — 게스트 모드로 전환');
       void get().logout();

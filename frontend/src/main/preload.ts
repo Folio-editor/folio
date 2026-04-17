@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { LoginResult, StoryZipApi } from '../shared/types/auth';
+import type { LoginResult, FolioApi } from '../shared/types/auth';
 
-const api: StoryZipApi = {
+const api: FolioApi = {
   platform: 'electron',
   auth: {
     loginWithGoogle: () => ipcRenderer.invoke('auth:login') as Promise<LoginResult>,
@@ -24,4 +24,4 @@ const api: StoryZipApi = {
   },
 };
 
-contextBridge.exposeInMainWorld('storyzip', api);
+contextBridge.exposeInMainWorld('folio', api);

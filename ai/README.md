@@ -1,4 +1,4 @@
-# StoryZip AI Server (FastAPI)
+# Folio AI Server (FastAPI)
 
 ## 기술 스택
 

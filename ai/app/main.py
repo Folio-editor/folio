@@ -6,7 +6,7 @@ from app.core.logging import configure_logging
 
 configure_logging()
 
-app = FastAPI(title="StoryZip AI", version="0.1.0")
+app = FastAPI(title="Folio AI", version="0.1.0")
 
 # 공개 라우터
 app.include_router(health.router, prefix="/v1")

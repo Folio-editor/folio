@@ -1,4 +1,4 @@
-# StoryZip 인프라
+# Folio 인프라
 
 환경별 Docker Compose와 환경변수 템플릿을 관리한다.
 환경변수는 **Doppler**를 통해 중앙 관리하는 것을 원칙으로 한다. 상세: [docs/doppler-setup.md](../docs/doppler-setup.md)
