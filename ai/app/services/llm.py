@@ -1,8 +1,4 @@
-"""LLM Provider 인터페이스 + Fake/Anthropic 구현.
-
-SSAFY GMS 키 발급 전까지 FakeLLM으로 Phase 3 JSON 파싱·SSE 스트리밍 구조 검증.
-키 도착 후 AnthropicLLM 본체 구현 + LLM_PROVIDER=anthropic 전환.
-"""
+"""LLM provider interfaces plus fake/Anthropic implementations."""
 
 from __future__ import annotations
 
@@ -30,7 +26,12 @@ class LLMProvider(ABC):
     async def generate_json(self, system: str, user: str, schema_hint: str) -> dict: ...
 
     @abstractmethod
-    def generate_stream(self, system: str, user: str) -> AsyncIterator[str]: ...
+    def generate_stream(
+        self,
+        system: str,
+        user: str,
+        model_override: str | None = None,
+    ) -> AsyncIterator[str]: ...
 
     @abstractmethod
     async def generate_with_tools(
@@ -43,13 +44,12 @@ class LLMProvider(ABC):
 
 
 class FakeLLM(LLMProvider):
-    """프롬프트 키워드 기반 고정 JSON. docs/ai-pipeline.md 스키마와 일치."""
+    """Fixed fake responses for local flow validation."""
 
     async def generate_json(self, system: str, user: str, schema_hint: str) -> dict:
         blob = f"{system}\n{user}\n{schema_hint}".lower()
         if "review" in blob:
             return {"issues": [], "newItems": []}
-        # default: summary 스키마
         return {
             "summary": "[fake] 회차 요약 더미",
             "characters": {"existing": [], "new": []},
@@ -57,7 +57,12 @@ class FakeLLM(LLMProvider):
             "foreshadowingCandidates": [],
         }
 
-    async def generate_stream(self, system: str, user: str) -> AsyncIterator[str]:
+    async def generate_stream(
+        self,
+        system: str,
+        user: str,
+        model_override: str | None = None,
+    ) -> AsyncIterator[str]:
         import asyncio
 
         text = (
@@ -69,8 +74,8 @@ class FakeLLM(LLMProvider):
             "다음 의뢰인의 이름이 눈에 들어왔다. "
             "낯선 이름이었지만, 어딘가 익숙한 느낌이 들었다."
         )
-        for i in range(0, len(text), 2):
-            yield text[i : i + 2]
+        for index in range(0, len(text), 2):
+            yield text[index : index + 2]
             await asyncio.sleep(0.03)
 
     async def generate_with_tools(
@@ -84,14 +89,21 @@ class FakeLLM(LLMProvider):
 
 
 class AnthropicLLM(LLMProvider):
-    """Claude Messages API 기반 LLM 구현."""
+    """Claude Messages API based implementation."""
 
-    def __init__(self, api_key: str, sonnet_model: str, haiku_model: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        sonnet_model: str,
+        haiku_model: str,
+        opus_model: str,
+    ) -> None:
         if anthropic is None:
             raise RuntimeError("anthropic package is not installed.")
         self._api_key = api_key
         self._sonnet_model = sonnet_model
         self._haiku_model = haiku_model
+        self._opus_model = opus_model
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
     async def generate_json(self, system: str, user: str, schema_hint: str) -> dict:
@@ -110,9 +122,15 @@ class AnthropicLLM(LLMProvider):
         raw_text = _extract_text(response.content)
         return _parse_json_response(raw_text)
 
-    async def generate_stream(self, system: str, user: str) -> AsyncIterator[str]:
+    async def generate_stream(
+        self,
+        system: str,
+        user: str,
+        model_override: str | None = None,
+    ) -> AsyncIterator[str]:
+        model = model_override or self._sonnet_model
         async with self._client.messages.stream(
-            model=self._sonnet_model,
+            model=model,
             max_tokens=8000,
             temperature=0.7,
             system=system,
@@ -172,7 +190,10 @@ class AnthropicLLM(LLMProvider):
                     )
 
                 if not tool_results:
-                    return {"error": "도구 호출 결과가 비어 있습니다.", "raw": _extract_text(response.content)}
+                    return {
+                        "error": "도구 호출 결과가 비어 있습니다.",
+                        "raw": _extract_text(response.content),
+                    }
 
                 messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({"role": "user", "content": tool_results})

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small")
     claude_sonnet_model: str = Field(default="claude-sonnet-4-5")
     claude_haiku_model: str = Field(default="claude-haiku-4-5-20251001")
+    claude_opus_model: str = Field(default="claude-opus-4-5-20250514")
 
     # Provider 토글 — SSAFY GMS 키 발급 전: "fake" / 발급 후: "openai", "anthropic"
     embedding_provider: str = Field(default="fake")

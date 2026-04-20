@@ -6,7 +6,7 @@ BEGIN;
 DELETE FROM writer WHERE email = 'fixture-seed@folio.local';
 
 INSERT INTO writer (id, email, nickname, role)
-VALUES ('c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'fixture-seed@folio.local', 'fixture-seed-writer', 'USER')
+VALUES ('1b5188e5-2caf-450a-a519-313402437941', 'fixture-seed@folio.local', 'fixture-seed-writer', 'USER')
 ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
     nickname = EXCLUDED.nickname,
@@ -14,10 +14,10 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- dummy-work-1
 INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order)
-VALUES ('e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '세기말의 천재 개발자가 되었다', 'Fixture Writer', '??: 1990년대 후반 (인터넷 태동기, 개발 환경 초창기)
-??: 현대 판타지, 성장, 직장, 테크, 회귀물 감성
-?: 현실적, 건조함, 빠른 전개, 성취감 중심, 점진적 긴장 고조
-??? ??: 1인칭 시점, 짧고 직관적인 문장 위주. 불필요한 감정 묘사 최소화, 결과와 행동 중심 서술. 문제 해결 → 즉각적인 성과 → 주변 반응 구조 반복. 초반은 도파민 중심, 중반 이후 AI 의존과 불안 요소 점진적으로 강화.', 'draft', 1)
+VALUES ('bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', '세기말의 천재 개발자가 되었다', 'Fixture Writer', 'era: 1990년대 후반 (인터넷 태동기, 개발 환경 초창기)
+genre: 현대 판타지, 성장, 직장, 테크, 회귀물 감성
+tone: 현실적, 건조함, 빠른 전개, 성취감 중심, 점진적 긴장 고조
+style_memo: 1인칭 시점, 짧고 직관적인 문장 위주. 불필요한 감정 묘사 최소화, 결과와 행동 중심 서술. 문제 해결 → 즉각적인 성과 → 주변 반응 구조 반복. 초반은 도파민 중심, 중반 이후 AI 의존과 불안 요소 점진적으로 강화.', 'draft', 1)
 ON CONFLICT (id) DO UPDATE SET
     writer_id = EXCLUDED.writer_id,
     title = EXCLUDED.title,
@@ -29,10 +29,10 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- dummy-work-2
 INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order)
-VALUES ('cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '잊고싶은 모든 것을 기억해드립니다', 'Fixture Writer', '??: 근미래 (2031년, 기억 추출·이식 기술이 상용화되어 ''기억 보관사''가 국가 자격 직업으로 제도화된 시대)
-??: 현대판타지, 감성드라마, 힐링, 직업물
-?: 잔잔함, 묵직함, 절제된 슬픔, 쓸쓸함, 건조한 따뜻함, 여백이 많은 서정
-??? ??: 1인칭에 가까운 3인칭 제한 시점. 주인공 서리운의 시야와 감각만 따라가며, 다른 인물의 내면은 외적 묘사로만 추론하게 한다. 설명보다 행동과 침묵으로 보여주는 방식. 짧은 문장과 긴 문장을 교차해 호흡을 만들고, 단락 사이에 ***로 장면을 끊어 여백을 둔다. 감정을 직접 진술하지 않고 사물·동작·반복되는 일상으로 드러낸다(보리차 한 잔, 티슈 한 장, 김밥집의 같은 자리 등). 주인공의 과거는 직접 언급하지 않고 행동의 부재(운전을 안 함, 가족 사진 없음)와 작은 습관으로만 암시한다. 의뢰인 한 명마다 다른 결의 슬픔을 다루되 보편적 감정 — 죄책감, 미련, 사랑, 사과 — 을 건드린다. 톤은 절대 가볍거나 사이다스럽지 않으며, 무겁되 짓누르지 않는 균형을 지킨다.', 'draft', 2)
+VALUES ('7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '잊고싶은 모든 것을 기억해드립니다', 'Fixture Writer', 'era: 근미래 (2031년, 기억 추출·이식 기술이 상용화되어 ''기억 보관사''가 국가 자격 직업으로 제도화된 시대)
+genre: 현대판타지, 감성드라마, 힐링, 직업물
+tone: 잔잔함, 묵직함, 절제된 슬픔, 쓸쓸함, 건조한 따뜻함, 여백이 많은 서정
+style_memo: 1인칭에 가까운 3인칭 제한 시점. 주인공 서리운의 시야와 감각만 따라가며, 다른 인물의 내면은 외적 묘사로만 추론하게 한다. 설명보다 행동과 침묵으로 보여주는 방식. 짧은 문장과 긴 문장을 교차해 호흡을 만들고, 단락 사이에 ***로 장면을 끊어 여백을 둔다. 감정을 직접 진술하지 않고 사물·동작·반복되는 일상으로 드러낸다(보리차 한 잔, 티슈 한 장, 김밥집의 같은 자리 등). 주인공의 과거는 직접 언급하지 않고 행동의 부재(운전을 안 함, 가족 사진 없음)와 작은 습관으로만 암시한다. 의뢰인 한 명마다 다른 결의 슬픔을 다루되 보편적 감정 — 죄책감, 미련, 사랑, 사과 — 을 건드린다. 톤은 절대 가볍거나 사이다스럽지 않으며, 무겁되 짓누르지 않는 균형을 지킨다.', 'draft', 2)
 ON CONFLICT (id) DO UPDATE SET
     writer_id = EXCLUDED.writer_id,
     title = EXCLUDED.title,
@@ -44,10 +44,10 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- dummy-work-3
 INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order)
-VALUES ('55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '만년취준생', 'Fixture Writer', '??: 현대
-??: 현대판타지, 무속, 방송
-?: 긴박한, 유머러스, 몰입감
-??? ??: 3인칭 전지 시점(다시점). 인터넷 방송 채팅 로그가 본문에 직접 삽입되는 독특한 구조. 대화체 비중이 높고 구어체 사용. 신점/무속 요소와 현대 인터넷 방송 문화가 결합. 시청자 반응이 서사 전개의 핵심 장치로 작동.', 'draft', 3)
+VALUES ('919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '만년취준생', 'Fixture Writer', 'era: 현대
+genre: 현대판타지, 무속, 방송
+tone: 긴박한, 유머러스, 몰입감
+style_memo: 3인칭 전지 시점(다시점). 인터넷 방송 채팅 로그가 본문에 직접 삽입되는 독특한 구조. 대화체 비중이 높고 구어체 사용. 신점/무속 요소와 현대 인터넷 방송 문화가 결합. 시청자 반응이 서사 전개의 핵심 장치로 작동.', 'draft', 3)
 ON CONFLICT (id) DO UPDATE SET
     writer_id = EXCLUDED.writer_id,
     title = EXCLUDED.title,
@@ -58,7 +58,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('36c29fcb-ed76-4807-89b1-690be731c239', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '아무도 모르는 창', 'draft', 'TypeError: ''NoneType'' object is not iterable
+VALUES ('f5faf322-3e0e-48a2-995f-c4f5a82a57fa', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '아무도 모르는 창', 'draft', 'TypeError: ''NoneType'' object is not iterable
 
 야근은 선택이 아니라 상태였다.
 
@@ -437,7 +437,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('f0b36fc1-fcbf-4ea2-9bee-4785c48c99b2', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '속도가 다르다', 'draft', '며칠이 지났다.
+VALUES ('c640bd28-954e-406b-8aa3-c56b5636bcd1', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '속도가 다르다', 'draft', '며칠이 지났다.
 
 변한 건 하나뿐이었다.
 
@@ -670,7 +670,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('6dbec406-b3e5-4dc5-8402-23f379e5d4ec', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '들킨다', 'draft', '며칠 사이였다.
+VALUES ('b1828144-7f9e-4725-ad95-2e8dcc9b7ac5', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '들킨다', 'draft', '며칠 사이였다.
 
 아무도 말하지 않았지만, 분위기는 분명히 바뀌었다.
 
@@ -981,7 +981,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('5535daa5-6844-4954-9c00-9034ca9e49be', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '차원이 다르다', 'draft', '월요일 아침이었다.
+VALUES ('a2c37f47-344f-465e-9f98-b0d6cf5c788c', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '차원이 다르다', 'draft', '월요일 아침이었다.
 
 출근하자마자 공기가 이상했다. 조용한데 묘하게 무거웠다.
 
@@ -1282,7 +1282,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('e88ed3f0-6331-4a8e-bced-b21d602ed526', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '값이 매겨진다', 'draft', '다음 날이었다.
+VALUES ('e865a57d-06c4-49eb-aa55-75f09554bf06', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '값이 매겨진다', 'draft', '다음 날이었다.
 
 출근하자마자 분위기가 달랐다.
 
@@ -1603,7 +1603,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('277a95ff-7f1d-4f1a-8fc2-0928295ff3f9', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '흔들리지 않는 사람', 'draft', '부고는 새벽  5시 12분에 도착했다.
+VALUES ('09db0d48-a62c-4a1b-a94d-4e64ace0161e', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '흔들리지 않는 사람', 'draft', '부고는 새벽  5시 12분에 도착했다.
 
 서리운은 그 시간에 깨어 있었다. 정확히 말하면 잠든 적이 없었다. 어제 받은 의뢰인의 기억이 자정쯤 한 차례 떠올랐고, 그 뒤로는 눈을 감아도 누군가의 결혼식 장면이 머릿속에서 계속 재생되었다. 신부 입장곡이 흐르고, 식장 뒷줄에 앉은 누군가가 울고 있는 장면. 그건 의뢰인의 기억이었다. 의뢰인이 짝사랑하던 사람의 결혼식이었고, 의뢰인은 그 자리에 끝까지 앉아 있었다고 했다. 그 기억을 지우고 싶다고 했다.
 
@@ -1895,7 +1895,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('6423790f-1670-43b0-9f64-2c8a4e90e35b', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '보관 상태 확인', 'draft', '다음 날 아침, 리운은 평소보다 10분 일찍 출근했다.
+VALUES ('9bf5a179-e5f8-4811-b51c-06cc304bd048', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '보관 상태 확인', 'draft', '다음 날 아침, 리운은 평소보다 10분 일찍 출근했다.
 
 이유를 묻는다면 답하지 못했을 것이다. 알람은 평소처럼 울렸고, 평소처럼 일어났고, 평소처럼 씻고 옷을 입었다. 다만 어제 침대에 한 시간 일찍 누운 탓인지 잠이 평소보다 깊었고, 그래서 아침의 동작20분 정도 빨라졌을 뿐이었다. 리운은 그렇게 자기 자신에게 설명했다.
 
@@ -2132,7 +2132,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('37207292-9f73-4e60-a3fd-a45765accf18', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '길을 잃은 사람', 'draft', '오후 두 시의 의뢰인은 마흔 살의 남자였다.
+VALUES ('92bb1340-1d1b-4dfd-a1ea-0093e93313d4', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '길을 잃은 사람', 'draft', '오후 두 시의 의뢰인은 마흔 살의 남자였다.
 
 리운은 사무실 문을 열고 그를 맞이했다. 회색 정장 차림에 손목엔 무난한 시계를 차고 있었다. 회사원의 얼굴이었다. 다만 눈가에 깊은 그늘이 있었고, 사무실에 들어서자마자 그가 한 일은 의자에 앉기 전에 잠깐 한숨을 쉬는 것이었다. 그 한숨은 의식한 것이 아니라 몸에 배인 것이었다. 사람이 너무 오래 무거운 것을 들고 다니면 한숨이 그렇게 변했다.
 
@@ -2477,7 +2477,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('b54276f7-5510-4eab-91af-dbc873e5c39f', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '첫 잔', 'draft', '도하가 안다는 가게는 회사에서 두 정거장 떨어진 골목 안쪽에 있었다.
+VALUES ('25f4431c-a959-4c29-85ce-24c119624d5f', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '첫 잔', 'draft', '도하가 안다는 가게는 회사에서 두 정거장 떨어진 골목 안쪽에 있었다.
 
 간판도 작고, 입구도 좁아서 모르는 사람은 그냥 지나칠 만한 곳이었다. 도하가 앞장서서 미닫이문을 열었다. 안은 생각보다 좁았다. 카운터석 다섯 자리, 작은 테이블 두 개. 손님은 카운터석에 한 명뿐이었다. 등을 돌리고 혼자 술을 마시는 중년 남자.
 
@@ -2791,7 +2791,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('1941df53-b59d-4d5c-82aa-1b61f24111c1', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '흔들리지 않는 사람', 'draft', '부고는 새벽  5시 12분에 도착했다.
+VALUES ('854253a8-92c3-4912-9d42-fe3bfe4c2ee5', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '흔들리지 않는 사람', 'draft', '부고는 새벽  5시 12분에 도착했다.
 
 서리운은 그 시간에 깨어 있었다. 정확히 말하면 잠든 적이 없었다. 어제 받은 의뢰인의 기억이 자정쯤 한 차례 떠올랐고, 그 뒤로는 눈을 감아도 누군가의 결혼식 장면이 머릿속에서 계속 재생되었다. 신부 입장곡이 흐르고, 식장 뒷줄에 앉은 누군가가 울고 있는 장면. 그건 의뢰인의 기억이었다. 의뢰인이 짝사랑하던 사람의 결혼식이었고, 의뢰인은 그 자리에 끝까지 앉아 있었다고 했다. 그 기억을 지우고 싶다고 했다.
 
@@ -3083,7 +3083,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('42b97732-23f2-48a8-b41e-52f4cc99258b', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '보관 상태 확인', 'draft', '다음 날 아침, 리운은 평소보다 10분 일찍 출근했다.
+VALUES ('593674bb-9fa9-4a84-afb5-67c06a64dd42', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '보관 상태 확인', 'draft', '다음 날 아침, 리운은 평소보다 10분 일찍 출근했다.
 
 이유를 묻는다면 답하지 못했을 것이다. 알람은 평소처럼 울렸고, 평소처럼 일어났고, 평소처럼 씻고 옷을 입었다. 다만 어제 침대에 한 시간 일찍 누운 탓인지 잠이 평소보다 깊었고, 그래서 아침의 동작20분 정도 빨라졌을 뿐이었다. 리운은 그렇게 자기 자신에게 설명했다.
 
@@ -3320,7 +3320,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('33184889-15a2-4872-b5a6-14a0d32a7492', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '길을 잃은 사람', 'draft', '오후 두 시의 의뢰인은 마흔 살의 남자였다.
+VALUES ('cbea3cf8-527c-47e1-a415-105b7142a930', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '길을 잃은 사람', 'draft', '오후 두 시의 의뢰인은 마흔 살의 남자였다.
 
 리운은 사무실 문을 열고 그를 맞이했다. 회색 정장 차림에 손목엔 무난한 시계를 차고 있었다. 회사원의 얼굴이었다. 다만 눈가에 깊은 그늘이 있었고, 사무실에 들어서자마자 그가 한 일은 의자에 앉기 전에 잠깐 한숨을 쉬는 것이었다. 그 한숨은 의식한 것이 아니라 몸에 배인 것이었다. 사람이 너무 오래 무거운 것을 들고 다니면 한숨이 그렇게 변했다.
 
@@ -3665,7 +3665,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('ceff3bd7-11d7-43de-a304-cf8130fb4a53', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '첫 잔', 'draft', '도하가 안다는 가게는 회사에서 두 정거장 떨어진 골목 안쪽에 있었다.
+VALUES ('334ba470-112f-4802-bd72-96dd0322f999', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '첫 잔', 'draft', '도하가 안다는 가게는 회사에서 두 정거장 떨어진 골목 안쪽에 있었다.
 
 간판도 작고, 입구도 좁아서 모르는 사람은 그냥 지나칠 만한 곳이었다. 도하가 앞장서서 미닫이문을 열었다. 안은 생각보다 좁았다. 카운터석 다섯 자리, 작은 테이블 두 개. 손님은 카운터석에 한 명뿐이었다. 등을 돌리고 혼자 술을 마시는 중년 남자.
 
@@ -3979,7 +3979,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('36dcf711-488b-476c-ae70-436336dee7ce', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '30년치 한 마디', 'draft', '오전 10시 정각, 사무실 문이 두드려졌다.
+VALUES ('023eb111-9bb3-4307-8088-43fce78c702e', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '30년치 한 마디', 'draft', '오전 10시 정각, 사무실 문이 두드려졌다.
 
 리운은 문을 열었다. 의뢰인은 67세 남자였다. 키가 작은 편이었고, 등이 살짝 굽어 있었다. 회색 점퍼에 베이지색 면바지. 손에는 검은색 가죽 가방을 들고 있었다. 가방은 낡았지만 깨끗했다. 오랫동안 한 사람이 자기 가방을 아끼며 들고 다닌 흔적이었다.
 
@@ -4338,7 +4338,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('6c1c2b6f-a724-48e5-86a1-000a53f53651', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '점심시간', 'draft', '오후 1시 12분.
+VALUES ('f7111878-72a8-4443-ac22-fb399a5dbaba', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '점심시간', 'draft', '오후 1시 12분.
 
 리운은 여전히 책상 앞에 앉아 있었다.
 
@@ -4562,7 +4562,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('75f5be61-39de-40a2-a789-5f5b6ceaf99b', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '메모리언', 'draft', '오후 3시 정각, 사무실 문이 두드려졌다.
+VALUES ('589e8529-138f-4930-890a-0fe4666fa159', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '메모리언', 'draft', '오후 3시 정각, 사무실 문이 두드려졌다.
 
 리운은 문을 열었다. 의뢰인은 41세 여성이었다. 평범한 회사원의 옷차림. 짙은 회색 정장 재킷에 검은색 슬랙스. 가방은 가죽이 아닌 천 가방이었고, 한쪽 어깨에 비스듬히 메고 있었다. 화장은 옅었지만 정성스러웠다. 출근하기 위해 그 화장을 한 사람의 정성이었다. 다만 눈 밑에 옅은 그늘이 있었다. 며칠 잠을 못 잔 사람의 그늘.
 
@@ -4897,7 +4897,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('986fd191-7bb5-4d17-8708-70872f77c85c', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '읽지 못한 카톡', 'draft', '월요일 아침이었다.
+VALUES ('346f7f86-2070-4c2f-93af-7803c40d7ba6', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '읽지 못한 카톡', 'draft', '월요일 아침이었다.
 
 주말 동안 리운은 평소와 같은 이틀을 보냈다. 토요일에 한강을 따라 두 시간쯤 걸었고, 일요일에는 오피스텔에서 거의 나가지 않았다. 주말의 리운은 평일보다 더 조용했다. 의뢰인도 없고 동료도 없으니까, 그를 사람으로 만들어주는 최소한의 접점마저 사라졌다. 오피스텔에 혼자 있으면 리운은 거의 물건 같았다. 씻고, 먹고, 누워 있었다. 그것이 주말이었다.
 
@@ -5133,7 +5133,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('e63e0b8c-204c-47e8-adcd-a7c6d0854628', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '1', 'draft', '오후 의뢰가 없는 날이었다.
+VALUES ('d3c7fc3d-7b33-4dd2-a369-dc3457c727f7', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '1', 'draft', '오후 의뢰가 없는 날이었다.
 
 월요일 오전에 스무 살 여대생의 의뢰를 받은 뒤, 오후 일정은 비어 있었다. 리운은 사무실에 혼자 앉아 의뢰서 정리를 마쳤다. 창밖에서 4월 오후의 햇빛이 비스듬히 들어와 책상 한쪽을 비추고 있었다. 조용한 오후였다. 복도에서도 사람 소리가 거의 들리지 않았다.
 
@@ -5348,7 +5348,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('7ee38c9c-6aa4-4fb4-b2c1-3cc49d487e86', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '돌아온 자리', 'draft', '오전 11시, 의뢰인이 도착했다.
+VALUES ('91ff4eab-f086-40f5-a01e-1c516e7742e1', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '돌아온 자리', 'draft', '오전 11시, 의뢰인이 도착했다.
 
 리운은 사무실 문을 열었다. 30대 후반 남자였다. 키는 평균보다 약간 컸고, 약간 마른 편이었다. 짙은 남색 코트 안에 흰 셔츠와 회색 슬랙스. 손에는 작은 가죽 가방을 들고 있었다. 출근길에 잠깐 들른 사람의 차림이었다.
 
@@ -5607,7 +5607,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('53957068-6a42-4015-bea9-09d7adec82b9', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '1화', 'draft', '박지훈은 편의점 앞 간이 의자에 앉아 두근거리는 마음으로 휴대폰을 확인했다.
+VALUES ('4d441f92-bb1d-4557-a06c-35b1aa216637', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '1화', 'draft', '박지훈은 편의점 앞 간이 의자에 앉아 두근거리는 마음으로 휴대폰을 확인했다.
 
 "제발!"
 
@@ -5876,7 +5876,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('bcfd9656-48ec-4a13-9963-c6ddc921f5b9', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '2화', 'draft', '-29세무직 : 뭐? 내 제삿날이라고? 좆까!
+VALUES ('95c71dfb-a642-4756-b8c7-70fecda5e197', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '2화', 'draft', '-29세무직 : 뭐? 내 제삿날이라고? 좆까!
 
 그 순간, 지훈의 시야가 다시 한번 일그러졌다.
 비릿한 연기 냄새와 귀를 찢는 듯한 급브레이크 소음이 고막을 때렸다.
@@ -6258,7 +6258,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('5e46f11a-7764-46cb-85a4-a6bf859c309f', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '3화', 'draft', '29세무직.
+VALUES ('dbce223e-2323-4452-85c1-e2432dcdd9fb', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '3화', 'draft', '29세무직.
 본명은 강진수였다.
 그날 오전, 그는 평소보다 늦은 시간에 눈을 떴다.
 간밤에 잠을 설쳤기 때문이다.
@@ -6598,7 +6598,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('b9edef73-87db-4c33-a927-abe34cd9a9da', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '4화', 'draft', '"아니라고요! 우리 오빠가 그럴 리가 없다고요!"
+VALUES ('8222dd5d-e5e6-4d0c-b74e-1c3c492074d0', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '4화', 'draft', '"아니라고요! 우리 오빠가 그럴 리가 없다고요!"
 
 순살라면이 강하게 부정하고 나섰다.
 하지만 박지훈은 표정 하나 바꾸지 않고 칼같이 말했다.
@@ -6957,7 +6957,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order)
-VALUES ('b8f8403b-543a-4b95-ac43-4dba8205c213', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '5화', 'draft', '철컥-
+VALUES ('b3741947-6269-4a07-9b77-8ae2dcd7ae6e', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '5화', 'draft', '철컥-
 
 312호의 문이 천천히 열리기 시작했다.
 노정희는 숨을 멈춘 채 그 장면을 바라봤다.
@@ -7310,7 +7310,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('a464a2ad-eb10-4f48-9e90-2e577cea654d', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '강현우', NULL, '남', '24세', '', 'INTP', '건조하고 감정 표현이 적으며, 문제 해결에 집요하다. 점점 결과 중심적이고 효율만을 추구하는 방향으로 변해간다.', '평범한 개발자 지망생이었으나, 어느 날부터 자신에게만 보이는 AI 인터페이스를 통해 압도적인 성과를 내기 시작한다. 회사 내에서 빠르게 인정받지만, 동시에 주변의 의심과 AI 의존성이라는 위험에 직면한다.', 1)
+VALUES ('6e07aac9-13d1-43c0-8bab-3eb6b719bb54', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', '강현우', NULL, '남', '24세', '', 'INTP', '건조하고 감정 표현이 적으며, 문제 해결에 집요하다. 점점 결과 중심적이고 효율만을 추구하는 방향으로 변해간다.', '평범한 개발자 지망생이었으나, 어느 날부터 자신에게만 보이는 AI 인터페이스를 통해 압도적인 성과를 내기 시작한다. 회사 내에서 빠르게 인정받지만, 동시에 주변의 의심과 AI 의존성이라는 위험에 직면한다.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7326,7 +7326,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('75043004-6b09-42b2-954a-f7fc01d0ff87', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '박성진', NULL, '남', '40대 초반', '', 'ISTJ', '현실적이고 보수적이며, 검증된 방식과 규칙을 중시한다. 실력은 인정하지만 이상한 부분에는 민감하게 반응한다.', '강현우의 팀장으로, 문서 기반 개발과 정석적인 접근을 강조하는 인물이다. 현우의 급격한 성장을 인정하면서도, 동시에 그 이면을 경계하기 시작한다.', 2)
+VALUES ('c1ceee1f-98cf-4b99-b1f6-1747cd98dbd2', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', '박성진', NULL, '남', '40대 초반', '', 'ISTJ', '현실적이고 보수적이며, 검증된 방식과 규칙을 중시한다. 실력은 인정하지만 이상한 부분에는 민감하게 반응한다.', '강현우의 팀장으로, 문서 기반 개발과 정석적인 접근을 강조하는 인물이다. 현우의 급격한 성장을 인정하면서도, 동시에 그 이면을 경계하기 시작한다.', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7342,7 +7342,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('77c7e852-3346-4a11-bc6d-795fd56d12da', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '이지훈', NULL, '남', '27세', '', 'ENTJ', '경쟁심이 강하고 직설적이며, 실력에 자부심이 있다. 의심이 생기면 끝까지 파고드는 성향이다.', '주인공과 같은 팀의 개발자로, 기존에는 실력자로 인정받던 인물이다. 그러나 현우의 비정상적인 속도에 의문을 품고 점점 집요하게 추적하기 시작한다.', 3)
+VALUES ('a69a0584-cd9d-45ef-b581-b27709b836f8', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', '이지훈', NULL, '남', '27세', '', 'ENTJ', '경쟁심이 강하고 직설적이며, 실력에 자부심이 있다. 의심이 생기면 끝까지 파고드는 성향이다.', '주인공과 같은 팀의 개발자로, 기존에는 실력자로 인정받던 인물이다. 그러나 현우의 비정상적인 속도에 의문을 품고 점점 집요하게 추적하기 시작한다.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7358,7 +7358,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('18ae7975-0c9f-4ae1-9393-d0cc6bb7bddd', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '최도윤', NULL, '남', '30대 초반', '정장 차림, 단정하고 날카로운 인상', 'INTJ', '이성적이고 판단이 빠르며, 불필요한 말을 하지 않는다. 실력을 기준으로 사람을 평가한다.', '외부 프로젝트 담당자로 등장한 개발자로, 뛰어난 분석력과 통찰력을 지닌 인물이다. 강현우의 능력을 빠르게 알아보고 중요한 프로젝트에 투입시키며, 향후 중요한 역할을 할 가능성이 높은 인물이다.', 4)
+VALUES ('2bdd3673-4bd3-49c0-864c-f133e5d1ae0d', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', '최도윤', NULL, '남', '30대 초반', '정장 차림, 단정하고 날카로운 인상', 'INTJ', '이성적이고 판단이 빠르며, 불필요한 말을 하지 않는다. 실력을 기준으로 사람을 평가한다.', '외부 프로젝트 담당자로 등장한 개발자로, 뛰어난 분석력과 통찰력을 지닌 인물이다. 강현우의 능력을 빠르게 알아보고 중요한 프로젝트에 투입시키며, 향후 중요한 역할을 할 가능성이 높은 인물이다.', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7374,7 +7374,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('c428c6b9-434f-4f27-b6c7-d0d897d5aaed', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'AI 인터페이스', NULL, '기타', '불명', '화면에 텍스트 형태로 표시되는 UI', NULL, '감정이 없고, 효율과 결과 중심의 판단을 한다. 점점 단순 응답을 넘어 평가와 방향 제시를 하기 시작한다.', '강현우에게만 보이는 정체불명의 인터페이스로, 질문에 대한 정답과 해결 방법을 제공한다. 점점 단순한 도구를 넘어 의사결정에 영향을 주는 존재로 변화하고 있다.', 5)
+VALUES ('7b4b4657-a993-4b86-9dbf-6e22e4be9960', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', 'AI 인터페이스', NULL, '기타', '불명', '화면에 텍스트 형태로 표시되는 UI', NULL, '감정이 없고, 효율과 결과 중심의 판단을 한다. 점점 단순 응답을 넘어 평가와 방향 제시를 하기 시작한다.', '강현우에게만 보이는 정체불명의 인터페이스로, 질문에 대한 정답과 해결 방법을 제공한다. 점점 단순한 도구를 넘어 의사결정에 영향을 주는 존재로 변화하고 있다.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7390,7 +7390,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('79e66b3e-c7b6-41e9-888b-fecc3bd5a7fd', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '서리운', NULL, '남', '30세', '마른 편, 키는 평균보다 약간 큼. 눈 밑이 어둡고 입가의 선이 깊음. 웃지 않는 사람의 얼굴. 평일에는 단정한 셔츠와 슬랙스, 거의 무채색. 악수할 때 손이 차가운 사람.', 'ISTJ', '극도로 절제된 감정 표현. 직업적으로 차분하고 정확하며, 사적으로는 모든 변수를 제거하고 같은 패턴을 반복하는 사람. 자기 자신에게 가장 엄격하고, 자기를 돌보는 방법을 가진 적이 없다. 타인과의 거리를 의식적으로 유지하지만, 최근 그 거리가 미세하게 줄어들기 시작했다.', '주인공. 한국기억보존관리원 본원 소속 기억 보관사 3년차. 7년 전 가족 여행 중 자신이 운전하던 차가 사고를 내 부모와 여동생을 모두 잃었다. 면허 딴 지 6개월, 산길에서 트럭이 중앙선을 넘어왔을 때 패닉에 빠져 대응하지 못한 것을 평생의 죄로 안고 살아간다. 보관사 직업을 자기 기억을 영원히 잊지 않기 위한 족쇄이자 속죄의 도구로 삼고 있으며, 타인의 고통을 대신 짊어질 때마다 자기 죄가 덜어진다는 착각으로 버텨왔다. ''흔들리지 않는 사람''으로 입소문이 나 있지만, 최근 의뢰인들의 기억을 받으면서 내면의 봉인이 조금씩 흔들리고 있다.', 1)
+VALUES ('c5463700-b720-439a-b995-a0bc23bdad6b', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '서리운', NULL, '남', '30세', '마른 편, 키는 평균보다 약간 큼. 눈 밑이 어둡고 입가의 선이 깊음. 웃지 않는 사람의 얼굴. 평일에는 단정한 셔츠와 슬랙스, 거의 무채색. 악수할 때 손이 차가운 사람.', 'ISTJ', '극도로 절제된 감정 표현. 직업적으로 차분하고 정확하며, 사적으로는 모든 변수를 제거하고 같은 패턴을 반복하는 사람. 자기 자신에게 가장 엄격하고, 자기를 돌보는 방법을 가진 적이 없다. 타인과의 거리를 의식적으로 유지하지만, 최근 그 거리가 미세하게 줄어들기 시작했다.', '주인공. 한국기억보존관리원 본원 소속 기억 보관사 3년차. 7년 전 가족 여행 중 자신이 운전하던 차가 사고를 내 부모와 여동생을 모두 잃었다. 면허 딴 지 6개월, 산길에서 트럭이 중앙선을 넘어왔을 때 패닉에 빠져 대응하지 못한 것을 평생의 죄로 안고 살아간다. 보관사 직업을 자기 기억을 영원히 잊지 않기 위한 족쇄이자 속죄의 도구로 삼고 있으며, 타인의 고통을 대신 짊어질 때마다 자기 죄가 덜어진다는 착각으로 버텨왔다. ''흔들리지 않는 사람''으로 입소문이 나 있지만, 최근 의뢰인들의 기억을 받으면서 내면의 봉인이 조금씩 흔들리고 있다.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7406,7 +7406,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('115a82eb-fdba-4110-be78-46d28d29ed66', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '임도하', NULL, '남', '35세', '구체적 외모 묘사는 적으나, 평소 활기찬 분위기. 술을 마시면 얼굴이 살짝 붉어짐. 머리가 가끔 정돈되지 않은 상태.', 'ENFP', '활발하고 농담을 자주 함. 감정 표현이 풍부하고 자주 울지만 그것이 그를 살리는 방식이라는 것을 본인도 알고 있음. 리운에게 끊임없이 말을 걸고 거절당해도 계속 다가가는 사람. 진심으로 걱정하면서도 상대방의 선을 넘지 않는 배려가 있음.', '본원 소속 동료 보관사. 리운보다 한 해 후배. 리운과 가장 자주 마주치는 동료이며, 3년간 거절당하면서도 매번 점심·술·영화를 제안해온 사람. 의뢰인이 자주 우는 사무실의 주인으로, 본원의 비공식 분류에서 ''의뢰인이 울고 싶어 하면 도하에게'' 보내지는 보관사. 리운에게 가장 가까운 동료이자, 동시에 리운이 누구인지를 가장 모르는 사람. 리운이 처음으로 술 제안을 받아들인 상대.', 2)
+VALUES ('e8787dc2-549f-488e-997f-33e2e37784b9', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '임도하', NULL, '남', '35세', '구체적 외모 묘사는 적으나, 평소 활기찬 분위기. 술을 마시면 얼굴이 살짝 붉어짐. 머리가 가끔 정돈되지 않은 상태.', 'ENFP', '활발하고 농담을 자주 함. 감정 표현이 풍부하고 자주 울지만 그것이 그를 살리는 방식이라는 것을 본인도 알고 있음. 리운에게 끊임없이 말을 걸고 거절당해도 계속 다가가는 사람. 진심으로 걱정하면서도 상대방의 선을 넘지 않는 배려가 있음.', '본원 소속 동료 보관사. 리운보다 한 해 후배. 리운과 가장 자주 마주치는 동료이며, 3년간 거절당하면서도 매번 점심·술·영화를 제안해온 사람. 의뢰인이 자주 우는 사무실의 주인으로, 본원의 비공식 분류에서 ''의뢰인이 울고 싶어 하면 도하에게'' 보내지는 보관사. 리운에게 가장 가까운 동료이자, 동시에 리운이 누구인지를 가장 모르는 사람. 리운이 처음으로 술 제안을 받아들인 상대.', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7422,7 +7422,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('c61dd717-caa4-43bb-baeb-84c5b79ca5a5', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '김혜원 (김 주임)', NULL, '여', '32세', '구체적 외모 묘사 없음.', 'ISFJ', '따뜻하고 세심함. 보관사들에게 사실상 어머니 같은 존재. 무너지는 보관사를 가장 가까이서 본 사람이면서도, 자기 감정을 드러내지 않으려고 노력함. 말 없는 돌봄의 사람.', '본원 1층 안내데스크 행정직. 5년째 근무. 보관사 7명 모두의 의뢰 일정을 관리하며, 매일 아침 리운에게 보리차를 따라주는 사람. 리운이 처음 입사했을 때부터 ''곧 무너지겠다''고 직감했지만 3년째 무너지지 않는 것을 보며 오히려 더 걱정하게 된 인물. 한지섭이 휴직 전에 ''리운 씨 잘 챙겨주세요. 그 사람은 자기 자신을 챙길 줄 모르는 사람이에요''라는 말을 남겼고, 한지섭이 리운에게 남긴 편지를 전달함.', 3)
+VALUES ('2d663b2d-d61d-4c59-bf3e-c88993b91a7c', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '김혜원 (김 주임)', NULL, '여', '32세', '구체적 외모 묘사 없음.', 'ISFJ', '따뜻하고 세심함. 보관사들에게 사실상 어머니 같은 존재. 무너지는 보관사를 가장 가까이서 본 사람이면서도, 자기 감정을 드러내지 않으려고 노력함. 말 없는 돌봄의 사람.', '본원 1층 안내데스크 행정직. 5년째 근무. 보관사 7명 모두의 의뢰 일정을 관리하며, 매일 아침 리운에게 보리차를 따라주는 사람. 리운이 처음 입사했을 때부터 ''곧 무너지겠다''고 직감했지만 3년째 무너지지 않는 것을 보며 오히려 더 걱정하게 된 인물. 한지섭이 휴직 전에 ''리운 씨 잘 챙겨주세요. 그 사람은 자기 자신을 챙길 줄 모르는 사람이에요''라는 말을 남겼고, 한지섭이 리운에게 남긴 편지를 전달함.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7438,7 +7438,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('d80d16ef-699f-4f9b-8425-5a6e9f59c5ee', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '한지섭', NULL, '남', '40대 초반 (사망 시)', '구체적 외모 묘사 없음.', NULL, '생전에는 따뜻하고 말이 많았으며, 동료들과 잘 어울리는 사람이었음. 리운과는 기질이 정반대였지만 늘 리운을 신경 썼고, 혼자 밥 먹고 있으면 도시락 들고 와서 옆에 앉던 사람.', '리운보다 두 해 먼저 자격을 취득한 선배 보관사. 1화 새벽에 자택에서 사망(공식 사인: 심장마비, 동료들은 진실을 짐작). 작년 가을부터 휴직 상태였음. 죽기 전 마지막 몇 달 동안 비공식 루트로 자기 의뢰인들의 가장 무거운 기억을 다른 보관사들에게 넘기고 있었으며, 그중 가장 무거운 것들을 의뢰인 6번(40대 여성 보관사)에게 넘겼다. 리운에게 편지를 남김 — ''언젠가 못 버틸 날이 오면, 누군가에게 가세요. 못 버티겠다고 그 한 마디만 하면 돼요.''', 4)
+VALUES ('e1d7aa21-8281-4b15-bcc4-5243340c5371', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '한지섭', NULL, '남', '40대 초반 (사망 시)', '구체적 외모 묘사 없음.', NULL, '생전에는 따뜻하고 말이 많았으며, 동료들과 잘 어울리는 사람이었음. 리운과는 기질이 정반대였지만 늘 리운을 신경 썼고, 혼자 밥 먹고 있으면 도시락 들고 와서 옆에 앉던 사람.', '리운보다 두 해 먼저 자격을 취득한 선배 보관사. 1화 새벽에 자택에서 사망(공식 사인: 심장마비, 동료들은 진실을 짐작). 작년 가을부터 휴직 상태였음. 죽기 전 마지막 몇 달 동안 비공식 루트로 자기 의뢰인들의 가장 무거운 기억을 다른 보관사들에게 넘기고 있었으며, 그중 가장 무거운 것들을 의뢰인 6번(40대 여성 보관사)에게 넘겼다. 리운에게 편지를 남김 — ''언젠가 못 버틸 날이 오면, 누군가에게 가세요. 못 버티겠다고 그 한 마디만 하면 돼요.''', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7454,7 +7454,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('facd89fb-343e-4ba2-9a46-db0c11ac1778', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '정선재', NULL, '남', '50대 후반', '구체적 외모 묘사 없음.', 'INTJ', '차분하고 말수 적음. 한지섭의 죽음을 누구보다 무겁게 받아들임. 리운의 능력을 인정하지만 너무 많은 의뢰를 받는 것을 우려함. 강요하지 않되 지켜보는 사람.', '본원장이자 1세대 보관사. 2031년 제도 시행 당시 첫 보관사 중 한 명. 현재는 의뢰를 받지 않고 관리·교육 업무만 담당. 비공식 루트의 존재를 알고 있을 뿐 아니라 그것을 처음 만든 사람 중 하나. 이 사실은 3부쯤 드러남. 리운에게 휴직을 권유하지만 강요하지 않음. 2부에서 리운에게 ''당신은 왜 보관사가 되었습니까?''라고 묻는 인물.', 5)
+VALUES ('31a6489f-27f5-40fd-9283-85be0d3686ad', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '정선재', NULL, '남', '50대 후반', '구체적 외모 묘사 없음.', 'INTJ', '차분하고 말수 적음. 한지섭의 죽음을 누구보다 무겁게 받아들임. 리운의 능력을 인정하지만 너무 많은 의뢰를 받는 것을 우려함. 강요하지 않되 지켜보는 사람.', '본원장이자 1세대 보관사. 2031년 제도 시행 당시 첫 보관사 중 한 명. 현재는 의뢰를 받지 않고 관리·교육 업무만 담당. 비공식 루트의 존재를 알고 있을 뿐 아니라 그것을 처음 만든 사람 중 하나. 이 사실은 3부쯤 드러남. 리운에게 휴직을 권유하지만 강요하지 않음. 2부에서 리운에게 ''당신은 왜 보관사가 되었습니까?''라고 묻는 인물.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7470,7 +7470,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('922b9f3f-c488-4fcb-bd7c-ac82efac196b', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '차은오', NULL, '여', '40대', '구체적 외모 묘사 없음.', NULL, '직업적으로 정확하고 집요함. 보관사들의 상태를 직감으로 읽는 능력이 있으며, 리운의 매번 ''정상''인 검진 결과가 거짓말이라는 것을 의학적 직감으로 알고 있음. 한지섭의 마지막 검진을 했던 의사로서 자기 책임을 느끼고 있어 리운에게 더 집요하게 매달림.', '본원 4층 의료지원실 보관사 전담 의사. 보관사들의 정신·신체 상태를 정기 검진하고 약을 처방함. 리운의 안정제도 차은오가 처방한 것. 한지섭에게 휴직을 권했지만 그가 죽었기 때문에 또 한 명을 잃고 싶지 않아서 리운에게 더 관심을 기울이는 인물. 1부 후반~2부에서 본격 등장 예정.', 6)
+VALUES ('0f406d40-533e-46d6-9070-89d2846a5d9b', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '차은오', NULL, '여', '40대', '구체적 외모 묘사 없음.', NULL, '직업적으로 정확하고 집요함. 보관사들의 상태를 직감으로 읽는 능력이 있으며, 리운의 매번 ''정상''인 검진 결과가 거짓말이라는 것을 의학적 직감으로 알고 있음. 한지섭의 마지막 검진을 했던 의사로서 자기 책임을 느끼고 있어 리운에게 더 집요하게 매달림.', '본원 4층 의료지원실 보관사 전담 의사. 보관사들의 정신·신체 상태를 정기 검진하고 약을 처방함. 리운의 안정제도 차은오가 처방한 것. 한지섭에게 휴직을 권했지만 그가 죽었기 때문에 또 한 명을 잃고 싶지 않아서 리운에게 더 관심을 기울이는 인물. 1부 후반~2부에서 본격 등장 예정.', 6)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7486,7 +7486,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('a3c01e9e-d6f8-4017-abb0-5f72624331d8', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '박이수', NULL, '남', '40대 후반', '구체적 외모 묘사 없음.', NULL, '전직 경찰다운 과묵함과 경계심. 평소엔 거의 드러나지 않지만, 위기 상황에서 전면에 나서는 인물.', '본원 보안팀장. 전직 경찰. 보관사들이 가진 기억은 사실상 국가급 비밀이므로 외부 위협으로부터 보관사들을 보호하는 역할. 1부에서는 배경 인물로, 2부 후반~3부에서 보관소가 외부 세력의 표적이 될 때 큰 역할 예정.', 7)
+VALUES ('842a4e96-0f9b-43c5-92c4-880e38b8f292', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '박이수', NULL, '남', '40대 후반', '구체적 외모 묘사 없음.', NULL, '전직 경찰다운 과묵함과 경계심. 평소엔 거의 드러나지 않지만, 위기 상황에서 전면에 나서는 인물.', '본원 보안팀장. 전직 경찰. 보관사들이 가진 기억은 사실상 국가급 비밀이므로 외부 위협으로부터 보관사들을 보호하는 역할. 1부에서는 배경 인물로, 2부 후반~3부에서 보관소가 외부 세력의 표적이 될 때 큰 역할 예정.', 7)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7502,7 +7502,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('847a62cf-c0e7-4b46-a268-29fa0bc8ddbb', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '조유라', NULL, '여', '28세', '구체적 외모 묘사 없음 (1부 후반에 등장 예정).', 'ENFJ', '밝고 말 많고 감정 표현이 풍부함. 의뢰인의 기억을 받을 때마다 울지만, 다음 날 다시 출근해서 의뢰를 받음. 리운의 정반대. 어머니가 알츠하이머로 기억을 잃어가는 것을 보며 자란 배경 때문에 기억의 무게를 누구보다 잘 알고 있음.', '신입 보관사. 1부 후반(20화 전후)에 본원 발령. 정선재 원장이 리운에게 멘토를 부탁함. 리운에게 ''보관사로서의 다른 길''이 가능하다는 것을 보여주는 거울 같은 인물. 로맨스 라인이 아니라 동료이자 거울. 2부에서 리운에게 ''왜 이 일을 하세요?''라고 물으며 리운의 내면 변화를 자극하는 역할.', 8)
+VALUES ('d191cee4-b017-4fcc-aa9a-bc0545755033', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '조유라', NULL, '여', '28세', '구체적 외모 묘사 없음 (1부 후반에 등장 예정).', 'ENFJ', '밝고 말 많고 감정 표현이 풍부함. 의뢰인의 기억을 받을 때마다 울지만, 다음 날 다시 출근해서 의뢰를 받음. 리운의 정반대. 어머니가 알츠하이머로 기억을 잃어가는 것을 보며 자란 배경 때문에 기억의 무게를 누구보다 잘 알고 있음.', '신입 보관사. 1부 후반(20화 전후)에 본원 발령. 정선재 원장이 리운에게 멘토를 부탁함. 리운에게 ''보관사로서의 다른 길''이 가능하다는 것을 보여주는 거울 같은 인물. 로맨스 라인이 아니라 동료이자 거울. 2부에서 리운에게 ''왜 이 일을 하세요?''라고 물으며 리운의 내면 변화를 자극하는 역할.', 8)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7518,7 +7518,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('d0101bb6-0458-4eb1-b5df-30620a468714', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '윤재희', NULL, '여', '33세', '구체적 외모 묘사 없음 (2부 초반에 등장 예정).', NULL, '끈질기고 직관이 강함. 한지섭을 막지 못한 죄책감을 안고 있으며, 다음 보관사가 무너지는 걸 막고 싶어 함. 리운에게 ''선생님은 다음 한지섭이에요''라고 직접 말하는 사람.', '전직 다큐멘터리 PD. 보관사 제도에 관한 다큐를 만들다가, 한지섭의 죽음 후 ''보관사들은 왜 무너지는가''를 묻는 다큐로 방향 전환. 한지섭과 개인적으로 가까웠으며 마지막으로 무너지는 모습을 옆에서 봄. 리운에게 인터뷰를 요청하며 접근, 리운의 일상에 외부 변수를 던지는 인물. 잠재적 로맨스 라인이 될 수 있으나, 전형적 로맨스가 아니라 ''서로를 구원하려는 두 사람''의 관계. 3부에서 리운의 과거 사고에 관한 옛 기사를 우연히 발견함.', 9)
+VALUES ('fafa11a3-2e6c-4cda-a3ff-eb3c496956e7', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '윤재희', NULL, '여', '33세', '구체적 외모 묘사 없음 (2부 초반에 등장 예정).', NULL, '끈질기고 직관이 강함. 한지섭을 막지 못한 죄책감을 안고 있으며, 다음 보관사가 무너지는 걸 막고 싶어 함. 리운에게 ''선생님은 다음 한지섭이에요''라고 직접 말하는 사람.', '전직 다큐멘터리 PD. 보관사 제도에 관한 다큐를 만들다가, 한지섭의 죽음 후 ''보관사들은 왜 무너지는가''를 묻는 다큐로 방향 전환. 한지섭과 개인적으로 가까웠으며 마지막으로 무너지는 모습을 옆에서 봄. 리운에게 인터뷰를 요청하며 접근, 리운의 일상에 외부 변수를 던지는 인물. 잠재적 로맨스 라인이 될 수 있으나, 전형적 로맨스가 아니라 ''서로를 구원하려는 두 사람''의 관계. 3부에서 리운의 과거 사고에 관한 옛 기사를 우연히 발견함.', 9)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7534,7 +7534,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('29af1cb2-d314-4ce9-a647-b28091830fad', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '서리운의 여동생', NULL, '여', '20세 (사망 시)', '짧은 단발머리 (사고 직전에 머리를 자름). 셀카에서 밝게 웃고 있는 얼굴.', NULL, '직접 등장하지 않으나, 셀카 메시지(''오빠 나 머리 잘랐어 어때'')에서 밝고 장난기 있는 성격이 암시됨.', '리운의 여동생. 리운보다 어린 나이에 사고로 사망. 리운의 침대 머리맡 서랍에 그녀의 셀카 사진 한 장이 보관되어 있으며, 리운은 잠들기 전 가끔 그 사진을 꺼내 봄. 리운이 보낸 마지막 답장(''그냥 그래'')을 리운은 평생 후회하고 있음.', 10)
+VALUES ('f6625dff-71d8-47d4-9e1c-d6fce6465254', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '서리운의 여동생', NULL, '여', '20세 (사망 시)', '짧은 단발머리 (사고 직전에 머리를 자름). 셀카에서 밝게 웃고 있는 얼굴.', NULL, '직접 등장하지 않으나, 셀카 메시지(''오빠 나 머리 잘랐어 어때'')에서 밝고 장난기 있는 성격이 암시됨.', '리운의 여동생. 리운보다 어린 나이에 사고로 사망. 리운의 침대 머리맡 서랍에 그녀의 셀카 사진 한 장이 보관되어 있으며, 리운은 잠들기 전 가끔 그 사진을 꺼내 봄. 리운이 보낸 마지막 답장(''그냥 그래'')을 리운은 평생 후회하고 있음.', 10)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7550,7 +7550,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '박지훈', NULL, '남', '29세', '등까지 들려붙은 뱃가죽에서 꼬르륵거리는 소리가 날 정도로 마른 체형.', NULL, '무기력하지만 자존심이 있다. 방송 중에는 낮게 깔린 차가운 말투로 변한다. 접신 상태에서는 단호하고 직설적.', '서울 상위권 4년제 졸업, 학점 4.1, 어학 성적 우수, 다수 자격증 보유. 그러나 100곳 넘게 지원하고 단 한 곳도 최종합격 못함. 어릴 때 옆집 무당 할머니에게 ''박수될 팔자''라는 말을 들었다. 방송을 시작한 순간 신병이 도지며 신안(神眼)이 열림. 오션(Ocean) 플랫폼에서 ''만년취준생'' 닉네임으로 활동.', 1)
+VALUES ('a27eaac3-64f4-43cb-8880-4051f4b751bb', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '박지훈', NULL, '남', '29세', '등까지 들려붙은 뱃가죽에서 꼬르륵거리는 소리가 날 정도로 마른 체형.', NULL, '무기력하지만 자존심이 있다. 방송 중에는 낮게 깔린 차가운 말투로 변한다. 접신 상태에서는 단호하고 직설적.', '서울 상위권 4년제 졸업, 학점 4.1, 어학 성적 우수, 다수 자격증 보유. 그러나 100곳 넘게 지원하고 단 한 곳도 최종합격 못함. 어릴 때 옆집 무당 할머니에게 ''박수될 팔자''라는 말을 들었다. 방송을 시작한 순간 신병이 도지며 신안(神眼)이 열림. 오션(Ocean) 플랫폼에서 ''만년취준생'' 닉네임으로 활동.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7566,7 +7566,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('2a2c4cbc-074b-49e2-8f2e-a5c962484d64', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '김우식', NULL, '남', '29세 추정 (박지훈과 동갑 불알친구)', '', NULL, '실용적이고 센스 있다. 친구를 위하면서도 자기 이익(대회 참가)을 챙기는 영리함. 겉으로는 투덜거리지만 속으로 잘 챙긴다.', '박지훈의 어릴 때부터 함께 자란 불알친구. 오션(Ocean) 플랫폼의 기존 스트리머(고인물). 지훈에게 방송을 권유하고 장비(웹캠, 마이크, 헤드셋)를 직접 세팅해줌. 방송 첫날 자기 시청자들에게 지훈 방송을 홍보해줌(뻐꾸기). 실제 목적은 스트리머만 참가 가능한 대회에 지훈과 함께 참가하기 위함.', 2)
+VALUES ('41d9524a-2ab1-4d2e-9549-73a067f28a98', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '김우식', NULL, '남', '29세 추정 (박지훈과 동갑 불알친구)', '', NULL, '실용적이고 센스 있다. 친구를 위하면서도 자기 이익(대회 참가)을 챙기는 영리함. 겉으로는 투덜거리지만 속으로 잘 챙긴다.', '박지훈의 어릴 때부터 함께 자란 불알친구. 오션(Ocean) 플랫폼의 기존 스트리머(고인물). 지훈에게 방송을 권유하고 장비(웹캠, 마이크, 헤드셋)를 직접 세팅해줌. 방송 첫날 자기 시청자들에게 지훈 방송을 홍보해줌(뻐꾸기). 실제 목적은 스트리머만 참가 가능한 대회에 지훈과 함께 참가하기 위함.', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7582,7 +7582,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('0725be12-8283-46f1-99e9-ad5b9262b8f0', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '강진수', NULL, '남', '29세', '넥타이를 매고 구두를 신은 면접 준비 차림.', NULL, '절박하고 성실하다. 고졸에서 전문대, 야간대학까지 다니며 기회를 만들어온 노력파. 처음엔 신점을 믿지 않았으나 경험 후 완전히 신뢰.', '오션 닉네임 ''29세무직''. 지훈의 첫 번째 시청자이자 첫 번째 신점 대상. 10살 때 교통사고를 당해 아버지가 살려줌. 어머니 무릎이 아프고 연락을 잘 안 하는 불효자. 오성전자 1차 면접 날, 지훈의 경고를 듣고 버스를 놓쳐 905번 버스 사고를 모면. 이후 물방울 100개를 후원하며 감사를 표함.', 3)
+VALUES ('c6efc248-628b-4581-8d4c-0e600c6e152c', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '강진수', NULL, '남', '29세', '넥타이를 매고 구두를 신은 면접 준비 차림.', NULL, '절박하고 성실하다. 고졸에서 전문대, 야간대학까지 다니며 기회를 만들어온 노력파. 처음엔 신점을 믿지 않았으나 경험 후 완전히 신뢰.', '오션 닉네임 ''29세무직''. 지훈의 첫 번째 시청자이자 첫 번째 신점 대상. 10살 때 교통사고를 당해 아버지가 살려줌. 어머니 무릎이 아프고 연락을 잘 안 하는 불효자. 오성전자 1차 면접 날, 지훈의 경고를 듣고 버스를 놓쳐 905번 버스 사고를 모면. 이후 물방울 100개를 후원하며 감사를 표함.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7598,7 +7598,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('f2693cf6-3047-49f6-beb4-70a87caa0c4a', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '노정희', NULL, '여', '28세', '', NULL, '겉으로는 밝고 순진하지만, 결정적 순간에 단단함을 보인다. 남자친구 배신을 확인한 후 ''전 여자친구예요''라고 침착하게 말할 수 있는 강인함.', '오션 닉네임 ''순살라면''. 지훈의 두 번째 신점 대상. 남자친구와 예식장까지 잡은 상태였으나, 지훈의 신안을 통해 남자친구의 양다리가 밝혀짐. 남동생 노찬영과 함께 모텔로 가서 현장을 확인하고 남자친구와 결별.', 4)
+VALUES ('03e61841-dba8-4bae-a1a2-3ede5ab75818', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '노정희', NULL, '여', '28세', '', NULL, '겉으로는 밝고 순진하지만, 결정적 순간에 단단함을 보인다. 남자친구 배신을 확인한 후 ''전 여자친구예요''라고 침착하게 말할 수 있는 강인함.', '오션 닉네임 ''순살라면''. 지훈의 두 번째 신점 대상. 남자친구와 예식장까지 잡은 상태였으나, 지훈의 신안을 통해 남자친구의 양다리가 밝혀짐. 남동생 노찬영과 함께 모텔로 가서 현장을 확인하고 남자친구와 결별.', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7614,7 +7614,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order)
-VALUES ('7e26868b-1c9b-45f4-b045-9016cbbb8067', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '노찬영', NULL, '남', '20대 추정 (노정희의 남동생)', '', NULL, '침착하고 실용적. 누나를 걱정하면서도 증거 확보를 먼저 챙기는 냉정함.', '노정희(순살라면)의 남동생. 누나와 함께 방송을 보고 있다가, 누나가 모텔에 가겠다고 하자 동행을 자처. 영상통화 촬영을 맡고 현장에서 누나를 보호하는 역할.', 5)
+VALUES ('5092f3e4-ecf4-4cd0-828b-72634bb6d38e', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '노찬영', NULL, '남', '20대 추정 (노정희의 남동생)', '', NULL, '침착하고 실용적. 누나를 걱정하면서도 증거 확보를 먼저 챙기는 냉정함.', '노정희(순살라면)의 남동생. 누나와 함께 방송을 보고 있다가, 누나가 모텔에 가겠다고 하자 동행을 자처. 영상통화 촬영을 맡고 현장에서 누나를 보호하는 역할.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -7630,7 +7630,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('f848bb45-e026-4b04-9c8d-ef9cdaf9f51e', 'a464a2ad-eb10-4f48-9e90-2e577cea654d', '직업', '개발자 지망생', 1)
+VALUES ('1895318e-f9ed-4bc5-b19b-f38dc7881aee', '6e07aac9-13d1-43c0-8bab-3eb6b719bb54', '직업', '개발자 지망생', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7639,7 +7639,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('b91485d8-b3ed-44ed-b1f9-d02f93ab7868', 'a464a2ad-eb10-4f48-9e90-2e577cea654d', '특이사항', 'AI 인터페이스를 시각적으로 인식 가능', 2)
+VALUES ('d8c0e809-a71c-47bf-8d2f-225e1c7f29ae', '6e07aac9-13d1-43c0-8bab-3eb6b719bb54', '특이사항', 'AI 인터페이스를 시각적으로 인식 가능', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7648,7 +7648,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('edb66be3-6bfc-4588-a1fe-65170502ab26', '75043004-6b09-42b2-954a-f7fc01d0ff87', '직업', '개발팀장', 1)
+VALUES ('6ac7314a-4610-416f-8d63-b09d44943cd2', 'c1ceee1f-98cf-4b99-b1f6-1747cd98dbd2', '직업', '개발팀장', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7657,7 +7657,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('278e8df1-5fc3-4c59-a65d-1ef9fb9b87f1', '77c7e852-3346-4a11-bc6d-795fd56d12da', '직업', '개발자', 1)
+VALUES ('4196ee11-3afb-47c4-a738-44824ab1ac39', 'a69a0584-cd9d-45ef-b581-b27709b836f8', '직업', '개발자', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7666,7 +7666,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('6ed484d7-4029-4faa-a04d-c489ed8dc688', '77c7e852-3346-4a11-bc6d-795fd56d12da', '관계', '주인공과 경쟁 구도', 2)
+VALUES ('16ff72d1-ec3f-4ddc-b631-eb5e8f01ea89', 'a69a0584-cd9d-45ef-b581-b27709b836f8', '관계', '주인공과 경쟁 구도', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7675,7 +7675,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('eb48362c-6e2a-4ed3-8790-2bee24049a0e', '18ae7975-0c9f-4ae1-9393-d0cc6bb7bddd', '직업', '외부 프로젝트 담당 개발자', 1)
+VALUES ('517b7b13-df54-4bd2-8b71-4fc0c2271276', '2bdd3673-4bd3-49c0-864c-f133e5d1ae0d', '직업', '외부 프로젝트 담당 개발자', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7684,7 +7684,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('6fe17a69-f537-4eaa-aa45-34c0bcaf3186', 'c428c6b9-434f-4f27-b6c7-d0d897d5aaed', '특이사항', '인터넷 연결 없이 작동', 1)
+VALUES ('ddd78e0c-cb44-4a87-b316-200b1ec02c5d', '7b4b4657-a993-4b86-9dbf-6e22e4be9960', '특이사항', '인터넷 연결 없이 작동', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7693,7 +7693,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('19ed40f0-7ae3-482a-ae94-42f5442774dc', 'c428c6b9-434f-4f27-b6c7-d0d897d5aaed', '기능', '코드 생성, 문제 분석, 구조 설계', 2)
+VALUES ('9bc67fb9-bc38-433b-a5bf-f0c759a17645', '7b4b4657-a993-4b86-9dbf-6e22e4be9960', '기능', '코드 생성, 문제 분석, 구조 설계', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7702,7 +7702,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('e37085dc-644f-4db3-804a-f534c795858d', '79e66b3e-c7b6-41e9-888b-fecc3bd5a7fd', '직업', '기억 보관사 (공식) / 메모리언 (대중 별명)', 1)
+VALUES ('17856f0f-938a-486b-8709-18d0ac780685', 'c5463700-b720-439a-b995-a0bc23bdad6b', '직업', '기억 보관사 (공식) / 메모리언 (대중 별명)', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7711,7 +7711,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('b6b81984-755e-4439-91e6-918f5b1d49a3', '79e66b3e-c7b6-41e9-888b-fecc3bd5a7fd', '버릇·특이사항', '운전을 하지 않음 (지하철 출퇴근). 안정제를 가지고 다니지만 거의 먹지 않음. 잠들기 전 여동생 셀카 사진을 꺼내 봄. 같은 시간, 같은 자리, 같은 메뉴를 반복하는 패턴형 생활. 최근 김밥에 우동을 추가하기 시작.', 2)
+VALUES ('9215a19f-859f-4930-ad14-c8c2e68fc7bd', 'c5463700-b720-439a-b995-a0bc23bdad6b', '버릇·특이사항', '운전을 하지 않음 (지하철 출퇴근). 안정제를 가지고 다니지만 거의 먹지 않음. 잠들기 전 여동생 셀카 사진을 꺼내 봄. 같은 시간, 같은 자리, 같은 메뉴를 반복하는 패턴형 생활. 최근 김밥에 우동을 추가하기 시작.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7720,7 +7720,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('3997480d-8c80-4bf4-a0cc-2a1fc2096642', '79e66b3e-c7b6-41e9-888b-fecc3bd5a7fd', '비공식 루트에 대한 태도', '보관사 간 비공식 기억 이전의 존재를 알고 있지만, 자기 기억을 맡기기 위해 그 루트를 사용하지 않기로 결정. 사용할 수 있는데도 거부하는 것이 그의 자기처벌의 핵심.', 3)
+VALUES ('ab607fbe-9805-4e4a-93ec-37ca5303475b', 'c5463700-b720-439a-b995-a0bc23bdad6b', '비공식 루트에 대한 태도', '보관사 간 비공식 기억 이전의 존재를 알고 있지만, 자기 기억을 맡기기 위해 그 루트를 사용하지 않기로 결정. 사용할 수 있는데도 거부하는 것이 그의 자기처벌의 핵심.', 3)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7729,7 +7729,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('90321849-27eb-4570-af4f-9172ff5327dc', '79e66b3e-c7b6-41e9-888b-fecc3bd5a7fd', '과거 사고 핵심', '23세, 대학교 3학년 여름. 면허 딴 지 6개월. 가족 여행 중 산길에서 반대편 트럭이 중앙선을 넘어옴. 패닉에 빠져 대응 실패. 아버지(조수석), 어머니(뒷좌석), 여동생(뒷좌석, 20세) 사망. 리운만 생존. 사고 후 4년간 추락, 27세에 보관사 자격 취득.', 4)
+VALUES ('b30602c1-52ec-4e60-988c-f37ef5de8db7', 'c5463700-b720-439a-b995-a0bc23bdad6b', '과거 사고 핵심', '23세, 대학교 3학년 여름. 면허 딴 지 6개월. 가족 여행 중 산길에서 반대편 트럭이 중앙선을 넘어옴. 패닉에 빠져 대응 실패. 아버지(조수석), 어머니(뒷좌석), 여동생(뒷좌석, 20세) 사망. 리운만 생존. 사고 후 4년간 추락, 27세에 보관사 자격 취득.', 4)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7738,7 +7738,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('cc15605d-2cfc-45ad-87d6-7f1768af9d82', '115a82eb-fdba-4110-be78-46d28d29ed66', '직업', '기억 보관사', 1)
+VALUES ('4e28a44f-229c-474a-8c05-7e1a91190f09', 'e8787dc2-549f-488e-997f-33e2e37784b9', '직업', '기억 보관사', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7747,7 +7747,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('511174d7-976d-4a12-a9d9-61b7a8f239ef', '115a82eb-fdba-4110-be78-46d28d29ed66', '한지섭과의 관계', '한지섭과 가까웠으며, 한지섭의 ''잘 우는 사람이 오래 간다''는 말을 기억하고 있음. 한지섭이 자주 데려갔던 술집의 단골.', 2)
+VALUES ('c7de9ddf-8fea-411e-96ff-84f7a1ddbad8', 'e8787dc2-549f-488e-997f-33e2e37784b9', '한지섭과의 관계', '한지섭과 가까웠으며, 한지섭의 ''잘 우는 사람이 오래 간다''는 말을 기억하고 있음. 한지섭이 자주 데려갔던 술집의 단골.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7756,7 +7756,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('168849ee-b7e9-4f36-9636-a2d0bda991ea', '115a82eb-fdba-4110-be78-46d28d29ed66', '힘든 의뢰 후 습관', '따뜻한 물로 30분 샤워, 안 나아지면 라면 끓여 먹음.', 3)
+VALUES ('70452bee-6389-4f63-9bbd-45e16cca3402', 'e8787dc2-549f-488e-997f-33e2e37784b9', '힘든 의뢰 후 습관', '따뜻한 물로 30분 샤워, 안 나아지면 라면 끓여 먹음.', 3)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7765,7 +7765,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('2ab8eb4d-4cdf-4765-bafb-e4c4669c96ee', 'c61dd717-caa4-43bb-baeb-84c5b79ca5a5', '직업', '한국기억보존관리원 본원 안내데스크 행정직', 1)
+VALUES ('86211111-18a0-4241-a2f3-f749fc98927d', '2d663b2d-d61d-4c59-bf3e-c88993b91a7c', '직업', '한국기억보존관리원 본원 안내데스크 행정직', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7774,7 +7774,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('6067ca78-e326-4c04-9bbb-1ff77512d89b', 'c61dd717-caa4-43bb-baeb-84c5b79ca5a5', '리운과의 관계', '5년간 매일 보리차를 따라줌. 리운은 최근 처음으로 ''오늘도 따뜻하네요'', ''내일도 따뜻하게 부탁드려요'', ''내일 봐요'' 같은 말을 하기 시작.', 2)
+VALUES ('c661fe88-d565-406a-ad2b-83efda7d3716', '2d663b2d-d61d-4c59-bf3e-c88993b91a7c', '리운과의 관계', '5년간 매일 보리차를 따라줌. 리운은 최근 처음으로 ''오늘도 따뜻하네요'', ''내일도 따뜻하게 부탁드려요'', ''내일 봐요'' 같은 말을 하기 시작.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7783,7 +7783,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('5d54a73c-a4f3-4297-b5f3-426d071fde7b', 'd80d16ef-699f-4f9b-8425-5a6e9f59c5ee', '직업', '기억 보관사 (사망)', 1)
+VALUES ('03402f81-ff39-439c-8ece-3fa53585bfb4', 'e1d7aa21-8281-4b15-bcc4-5243340c5371', '직업', '기억 보관사 (사망)', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7792,7 +7792,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('e94dba0c-31ef-4c4b-bf15-58dd88cc96b6', 'd80d16ef-699f-4f9b-8425-5a6e9f59c5ee', '리운에게 남긴 마지막 질문', '복도에서 마주쳤을 때 — ''리운 씨는 어떻게 버텨요?''', 2)
+VALUES ('3a527b47-d514-40a0-a9c1-e84549590610', 'e1d7aa21-8281-4b15-bcc4-5243340c5371', '리운에게 남긴 마지막 질문', '복도에서 마주쳤을 때 — ''리운 씨는 어떻게 버텨요?''', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7801,7 +7801,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('2a36ac73-ca74-4884-b3b3-9b6ba7ea810b', 'd80d16ef-699f-4f9b-8425-5a6e9f59c5ee', '도하에게 남긴 말', '''도하 씨는 잘 우네요. 우는 사람이 오래 가요. 안 우는 사람이 더 위험해요.''', 3)
+VALUES ('5a127eda-7af8-4698-ab22-19d43a32ce05', 'e1d7aa21-8281-4b15-bcc4-5243340c5371', '도하에게 남긴 말', '''도하 씨는 잘 우네요. 우는 사람이 오래 가요. 안 우는 사람이 더 위험해요.''', 3)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7810,7 +7810,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('12d1deb4-4d0e-4e32-80ed-06430517aaa8', 'facd89fb-343e-4ba2-9a46-db0c11ac1778', '직업', '한국기억보존관리원 본원장 / 1세대 보관사 (현재 의뢰 미수행)', 1)
+VALUES ('4b7ca3a2-2808-4348-a569-2e189403c648', '31a6489f-27f5-40fd-9283-85be0d3686ad', '직업', '한국기억보존관리원 본원장 / 1세대 보관사 (현재 의뢰 미수행)', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7819,7 +7819,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('8481953e-a395-4ada-8eef-f25dd60b54ef', 'facd89fb-343e-4ba2-9a46-db0c11ac1778', '1세대의 비밀', '보관사 간 비공식 기억 이전 관행을 처음 만들고 묵인해온 인물. 제도 초기에 보관사들이 너무 많이 무너지는 것을 보면서 동료들끼리 기억을 나누는 관행을 키워왔다.', 2)
+VALUES ('0c39eebd-e6c2-4c62-ab99-d0265decb1f0', '31a6489f-27f5-40fd-9283-85be0d3686ad', '1세대의 비밀', '보관사 간 비공식 기억 이전 관행을 처음 만들고 묵인해온 인물. 제도 초기에 보관사들이 너무 많이 무너지는 것을 보면서 동료들끼리 기억을 나누는 관행을 키워왔다.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7828,7 +7828,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('affc61db-1345-4e08-872a-7a28e11610e0', '922b9f3f-c488-4fcb-bd7c-ac82efac196b', '직업', '한국기억보존관리원 본원 의료지원실 보관사 전담 의사', 1)
+VALUES ('a0eaa966-c838-4e78-b6ac-ccc1d320aebe', '0f406d40-533e-46d6-9070-89d2846a5d9b', '직업', '한국기억보존관리원 본원 의료지원실 보관사 전담 의사', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7837,7 +7837,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('d90d23bc-67b8-41cb-81dd-76f42bdc8451', '922b9f3f-c488-4fcb-bd7c-ac82efac196b', '리운 검진 시 습관', '매번 ''잠은 잘 주무세요?'', ''최근에 우는 일은 있으셨어요?'' 같은 질문을 살짝 떠봄. 리운은 매번 ''괜찮습니다''라고 답함.', 2)
+VALUES ('0c83aba2-a25b-4d8a-9204-eee142692d69', '0f406d40-533e-46d6-9070-89d2846a5d9b', '리운 검진 시 습관', '매번 ''잠은 잘 주무세요?'', ''최근에 우는 일은 있으셨어요?'' 같은 질문을 살짝 떠봄. 리운은 매번 ''괜찮습니다''라고 답함.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7846,7 +7846,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('4d27c037-6ff8-4503-9a13-01a769258801', 'a3c01e9e-d6f8-4017-abb0-5f72624331d8', '직업', '한국기억보존관리원 본원 보안팀장 / 전직 경찰', 1)
+VALUES ('0f940ece-e451-47cb-a55e-ab6e52c2aa22', '842a4e96-0f9b-43c5-92c4-880e38b8f292', '직업', '한국기억보존관리원 본원 보안팀장 / 전직 경찰', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7855,7 +7855,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('1e50a42d-91e6-4a9b-bf9a-01b4f864b8da', '847a62cf-c0e7-4b46-a268-29fa0bc8ddbb', '직업', '기억 보관사 (신입, 1부 후반 발령 예정)', 1)
+VALUES ('6b6b216c-79ba-4b3a-aa02-b2f96445a035', 'd191cee4-b017-4fcc-aa9a-bc0545755033', '직업', '기억 보관사 (신입, 1부 후반 발령 예정)', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7864,7 +7864,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('1def54ad-9360-42dc-9cd4-2dbeb4e1e266', '847a62cf-c0e7-4b46-a268-29fa0bc8ddbb', '보관사가 된 이유', '어머니의 알츠하이머. ''잃어가는 사람들을 봤기 때문에, 지키는 사람이 되고 싶어서.''', 2)
+VALUES ('b992894b-9360-4af6-a346-b9d0c757bbc4', 'd191cee4-b017-4fcc-aa9a-bc0545755033', '보관사가 된 이유', '어머니의 알츠하이머. ''잃어가는 사람들을 봤기 때문에, 지키는 사람이 되고 싶어서.''', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7873,7 +7873,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('912c272c-7f3d-4e02-8796-1c702ef9e9aa', 'd0101bb6-0458-4eb1-b5df-30620a468714', '직업', '전직 다큐멘터리 PD', 1)
+VALUES ('6e98011b-d598-4bc4-a423-7f522e4b27bb', 'fafa11a3-2e6c-4cda-a3ff-eb3c496956e7', '직업', '전직 다큐멘터리 PD', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7882,7 +7882,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('ffb87bf5-a180-4d11-9529-efe586393f93', 'd0101bb6-0458-4eb1-b5df-30620a468714', '한지섭과의 관계', '다큐 인터뷰를 핑계로 만났지만 점점 친구가 됨. 한지섭이 마지막으로 무너지는 모습을 옆에서 봤고, 막지 못한 죄책감이 있음.', 2)
+VALUES ('058b2221-4ead-4570-9fc9-4ea187cac1ae', 'fafa11a3-2e6c-4cda-a3ff-eb3c496956e7', '한지섭과의 관계', '다큐 인터뷰를 핑계로 만났지만 점점 친구가 됨. 한지섭이 마지막으로 무너지는 모습을 옆에서 봤고, 막지 못한 죄책감이 있음.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7891,7 +7891,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('991f93dc-d79f-4d91-a2bf-d2466060ce4f', '29af1cb2-d314-4ce9-a647-b28091830fad', '리운에게 보낸 마지막 메시지', '''오빠 나 머리 잘랐어 어때''', 1)
+VALUES ('5de497f0-d8a4-4e09-be09-38284bf409da', 'f6625dff-71d8-47d4-9e1c-d6fce6465254', '리운에게 보낸 마지막 메시지', '''오빠 나 머리 잘랐어 어때''', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7900,7 +7900,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('a3ffda75-6a94-4ab0-8ff3-13c640a5c927', '29af1cb2-d314-4ce9-a647-b28091830fad', '사고 당시 디테일', '뒷좌석에서 어머니 귀에 이어폰 한쪽을 꽂아주며 노래를 들려주고 있었음. 리운은 그 노래를 평생 못 들음.', 2)
+VALUES ('be7f0a91-c037-44ab-b35e-9c53c39f5b55', 'f6625dff-71d8-47d4-9e1c-d6fce6465254', '사고 당시 디테일', '뒷좌석에서 어머니 귀에 이어폰 한쪽을 꽂아주며 노래를 들려주고 있었음. 리운은 그 노래를 평생 못 들음.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7909,7 +7909,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('93a0fde1-9236-4444-bd7f-50c36d99098d', 'e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '직업', '무직 (전직 편의점 알바). 현재 오션 스트리머.', 1)
+VALUES ('6e70f963-84bc-4f12-8e73-9ab9111dbc4e', 'a27eaac3-64f4-43cb-8880-4051f4b751bb', '직업', '무직 (전직 편의점 알바). 현재 오션 스트리머.', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7918,7 +7918,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('3f8ca480-2256-4e31-9eb0-898bc9b7892e', 'e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '능력', '신안(神眼) - 방송 중에만 발동. 채팅창 닉네임 너머로 그 사람의 과거, 현재, 미래가 환영으로 보인다. 방송 종료 시 신안이 닫힌다.', 2)
+VALUES ('d5f42221-8ace-4173-be49-778e8548189d', 'a27eaac3-64f4-43cb-8880-4051f4b751bb', '능력', '신안(神眼) - 방송 중에만 발동. 채팅창 닉네임 너머로 그 사람의 과거, 현재, 미래가 환영으로 보인다. 방송 종료 시 신안이 닫힌다.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7927,7 +7927,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('27b20209-4aa7-4202-b087-1815d7738163', 'e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '방송 말투', '접신 상태에서 평소와 전혀 다른 낮고 차가운 말투. ''시끄럽다'', ''쓸데없는 소리 하지 말고 볼 사람만 남아라'' 등 반말 사용.', 3)
+VALUES ('5151936e-fccb-45fb-9391-e5f58529790d', 'a27eaac3-64f4-43cb-8880-4051f4b751bb', '방송 말투', '접신 상태에서 평소와 전혀 다른 낮고 차가운 말투. ''시끄럽다'', ''쓸데없는 소리 하지 말고 볼 사람만 남아라'' 등 반말 사용.', 3)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7936,7 +7936,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('5bbc129a-841e-419c-ab0e-11bd4deb8b40', 'e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '복채 규칙', '물방울 500개. 많이 받으면(1000개) 두통, 공짜로 하려 해도 두통. 500개가 정확한 복채. 방송당 1명은 공짜로 봐줌 (본인이 선택).', 4)
+VALUES ('cb2e0e36-3d30-42bb-a689-313d2b6e18ce', 'a27eaac3-64f4-43cb-8880-4051f4b751bb', '복채 규칙', '물방울 500개. 많이 받으면(1000개) 두통, 공짜로 하려 해도 두통. 500개가 정확한 복채. 방송당 1명은 공짜로 봐줌 (본인이 선택).', 4)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7945,7 +7945,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('cc357f36-1ac5-43a6-98a0-53b0f4dff7f3', 'e7cf062f-2cdd-4c15-9a05-d0b128ead6b6', '신병 부작용', '신안을 무리하게 사용하면 코피, 전신 고통, 실신. 다음 날 회복 후 오히려 컨디션이 좋아짐.', 5)
+VALUES ('21c27a43-eab9-4cc5-8112-ab89d83c1982', 'a27eaac3-64f4-43cb-8880-4051f4b751bb', '신병 부작용', '신안을 무리하게 사용하면 코피, 전신 고통, 실신. 다음 날 회복 후 오히려 컨디션이 좋아짐.', 5)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7954,7 +7954,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('68ce0751-353a-4329-8188-2ac506c5ff99', '2a2c4cbc-074b-49e2-8f2e-a5c962484d64', '직업', '오션(Ocean) 스트리머. 몇 년 전부터 방송한 고인물.', 1)
+VALUES ('c5ee82ad-4646-4bb3-bdff-abacc2a6cb0a', '41d9524a-2ab1-4d2e-9549-73a067f28a98', '직업', '오션(Ocean) 스트리머. 몇 년 전부터 방송한 고인물.', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7963,7 +7963,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('a898689f-1e66-46e5-b369-4546898c3eaa', '2a2c4cbc-074b-49e2-8f2e-a5c962484d64', '역할', '지훈의 방송 입문 조력자. 장비 세팅, 시청자 유입(뻐꾸기), 방송 노하우 전달.', 2)
+VALUES ('21d7d144-42a1-41f0-a772-2a79f0603a16', '41d9524a-2ab1-4d2e-9549-73a067f28a98', '역할', '지훈의 방송 입문 조력자. 장비 세팅, 시청자 유입(뻐꾸기), 방송 노하우 전달.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7972,7 +7972,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('684a7545-ae4e-4150-8ac4-2db0c24021c3', '0725be12-8283-46f1-99e9-ad5b9262b8f0', '오션 닉네임', '29세무직', 1)
+VALUES ('218bf86a-51df-4f09-b712-dff24cdac28e', 'c6efc248-628b-4581-8d4c-0e600c6e152c', '오션 닉네임', '29세무직', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7981,7 +7981,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('8a436214-70ec-4543-ba86-e1fb4b4c90e6', '0725be12-8283-46f1-99e9-ad5b9262b8f0', '특이사항', '지훈이 경고하지 않았으면 905번 버스 사고로 사망했을 인물. 지훈의 신안이 진짜임을 증명한 첫 번째 사례.', 2)
+VALUES ('63c17c92-dac8-4978-a86b-adc94cc0e0d0', 'c6efc248-628b-4581-8d4c-0e600c6e152c', '특이사항', '지훈이 경고하지 않았으면 905번 버스 사고로 사망했을 인물. 지훈의 신안이 진짜임을 증명한 첫 번째 사례.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7990,7 +7990,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('ab0a02bd-29c7-4fc1-8161-41fb643ad32c', 'f2693cf6-3047-49f6-beb4-70a87caa0c4a', '오션 닉네임', '순살라면', 1)
+VALUES ('81af72b1-c4f4-4159-a0e1-87e373b054ae', '03e61841-dba8-4bae-a1a2-3ede5ab75818', '오션 닉네임', '순살라면', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -7999,7 +7999,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('61ac1390-93ff-415f-a8cd-cdfa8a8a6a96', 'f2693cf6-3047-49f6-beb4-70a87caa0c4a', '특이사항', '지훈이 성별(여자)을 맞힘. 남자친구가 모텔에서 다른 여자와 있는 것을 신안으로 확인. 예식장까지 잡은 상태에서 결별.', 2)
+VALUES ('ee5d6550-4df7-4121-a914-a60a1cec5f91', '03e61841-dba8-4bae-a1a2-3ede5ab75818', '특이사항', '지훈이 성별(여자)을 맞힘. 남자친구가 모텔에서 다른 여자와 있는 것을 신안으로 확인. 예식장까지 잡은 상태에서 결별.', 2)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -8008,7 +8008,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order)
-VALUES ('1e38292d-0e34-4901-8d85-4ff9394c42c7', '7e26868b-1c9b-45f4-b045-9016cbbb8067', '역할', '누나의 보호자 겸 증거 확보 담당. 영상통화 시 카메라를 들고 촬영.', 1)
+VALUES ('d1c9a36e-94d2-4351-bea9-2f3c9bba1e50', '5092f3e4-ecf4-4cd0-828b-72634bb6d38e', '역할', '누나의 보호자 겸 증거 확보 담당. 영상통화 시 카메라를 들고 촬영.', 1)
 ON CONFLICT (id) DO UPDATE SET
     character_id = EXCLUDED.character_id,
     field_name = EXCLUDED.field_name,
@@ -8017,7 +8017,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('31898e15-52a1-4cff-b859-40389f40ad37', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, 'AI 인터페이스', '강현우에게만 보이는 정체불명의 인터페이스로, 질문에 대한 즉각적인 답변과 코드, 구조 설계를 제공한다. 단순한 응답을 넘어 점점 사용자의 사고방식과 행동을 평가하고 방향을 제시하기 시작하며, 인터넷 연결 없이 작동하는 비정상적인 특징을 가진다.', 1)
+VALUES ('f042e004-3673-49c7-be65-f944afdc3662', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, 'AI 인터페이스', '강현우에게만 보이는 정체불명의 인터페이스로, 질문에 대한 즉각적인 답변과 코드, 구조 설계를 제공한다. 단순한 응답을 넘어 점점 사용자의 사고방식과 행동을 평가하고 방향을 제시하기 시작하며, 인터넷 연결 없이 작동하는 비정상적인 특징을 가진다.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8028,7 +8028,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('e419d324-c473-4bf9-bd04-2dfaec964150', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '31898e15-52a1-4cff-b859-40389f40ad37', 'AI 인터페이스 - 작동 방식', '사용자의 입력(질문, 코드, 문제 상황)을 기반으로 분석을 수행하고 최적의 해결책을 제시한다. 초반에는 단순한 오류 수정과 개념 설명에 집중하지만, 점점 복잡한 시스템 설계와 전략 제안까지 가능해진다.', 2)
+VALUES ('5f55e526-7347-4f60-927e-f6700bef04bf', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', 'f042e004-3673-49c7-be65-f944afdc3662', 'AI 인터페이스 - 작동 방식', '사용자의 입력(질문, 코드, 문제 상황)을 기반으로 분석을 수행하고 최적의 해결책을 제시한다. 초반에는 단순한 오류 수정과 개념 설명에 집중하지만, 점점 복잡한 시스템 설계와 전략 제안까지 가능해진다.', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8039,7 +8039,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('e073a4db-3daa-404e-9da2-167d84cc903e', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '31898e15-52a1-4cff-b859-40389f40ad37', 'AI 인터페이스 - 이상 현상', '일반적인 프로그램과 달리 응답 속도가 비정상적으로 빠르며, 특정 시점부터는 응답 지연이나 경고 메시지, 사용자 평가 등의 행동을 보인다. 이는 단순한 도구를 넘어선 존재일 가능성을 암시한다.', 3)
+VALUES ('68f70a22-911c-41aa-a28d-0754780fb3d1', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', 'f042e004-3673-49c7-be65-f944afdc3662', 'AI 인터페이스 - 이상 현상', '일반적인 프로그램과 달리 응답 속도가 비정상적으로 빠르며, 특정 시점부터는 응답 지연이나 경고 메시지, 사용자 평가 등의 행동을 보인다. 이는 단순한 도구를 넘어선 존재일 가능성을 암시한다.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8050,7 +8050,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('71874a6d-3afb-46d3-9730-92f80c690a18', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '1990년대 개발 환경', '인터넷이 제한적으로 보급된 시기로, 개발자들은 주로 공식 문서, 책, 예제 코드를 기반으로 문제를 해결한다. 검색 환경이 제한적이며, 정보 접근 속도가 느려 문제 해결에 많은 시간이 소요된다.', 4)
+VALUES ('a3564d43-1948-4137-bc82-d7bb53823497', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '1990년대 개발 환경', '인터넷이 제한적으로 보급된 시기로, 개발자들은 주로 공식 문서, 책, 예제 코드를 기반으로 문제를 해결한다. 검색 환경이 제한적이며, 정보 접근 속도가 느려 문제 해결에 많은 시간이 소요된다.', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8061,7 +8061,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('ce759de2-9bc8-4cd7-91cf-e2315aaeb2a1', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '회사 개발 문화', '문서 기반 학습과 정석적인 접근을 중시하는 환경으로, 효율보다는 안정성과 검증된 방법을 우선시한다. 빠른 해결보다 과정과 이해를 중요하게 여기며, 비정상적으로 빠른 결과는 의심의 대상이 된다.', 5)
+VALUES ('88e27e38-4cea-453c-ad81-4765e0d8ec3d', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '회사 개발 문화', '문서 기반 학습과 정석적인 접근을 중시하는 환경으로, 효율보다는 안정성과 검증된 방법을 우선시한다. 빠른 해결보다 과정과 이해를 중요하게 여기며, 비정상적으로 빠른 결과는 의심의 대상이 된다.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8072,7 +8072,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('9741904a-a6cd-4f0d-9ab2-147fe734b07d', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '데이터 처리 시스템 프로젝트', '로그 처리 및 데이터 분석을 위한 시스템 개선 프로젝트로, 기존 구조의 비효율성과 병목 현상을 해결하는 것이 목표다. 복잡한 구조와 높은 난이도로 인해 일반적으로 팀 단위로 진행되는 작업이다.', 6)
+VALUES ('249aa06c-f25d-4ba7-ae10-eff039cad444', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '데이터 처리 시스템 프로젝트', '로그 처리 및 데이터 분석을 위한 시스템 개선 프로젝트로, 기존 구조의 비효율성과 병목 현상을 해결하는 것이 목표다. 복잡한 구조와 높은 난이도로 인해 일반적으로 팀 단위로 진행되는 작업이다.', 6)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8083,7 +8083,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('ae5998b0-beef-44f2-bca6-b1162f35e478', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '개발자 성장 구조', '일반적인 개발자는 문제를 분석하고 문서를 참고하며 시행착오를 통해 실력을 쌓는다. 그러나 강현우는 AI 인터페이스를 통해 이 과정을 생략하고 결과 중심으로 성장하며, 이는 기존 개발 방식과 충돌을 일으킨다.', 7)
+VALUES ('e22587c2-49e3-42a4-860c-4ac065d7be40', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, '개발자 성장 구조', '일반적인 개발자는 문제를 분석하고 문서를 참고하며 시행착오를 통해 실력을 쌓는다. 그러나 강현우는 AI 인터페이스를 통해 이 과정을 생략하고 결과 중심으로 성장하며, 이는 기존 개발 방식과 충돌을 일으킨다.', 7)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8094,7 +8094,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('0519cad3-844d-4284-b162-a6f60762de04', 'e6791959-d322-41ce-b951-19c1541ebaf6', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, 'AI 의존성', '강현우가 문제 해결 과정에서 AI 인터페이스에 점점 더 의존하게 되는 현상으로, 스스로 사고하는 과정이 줄어들고 판단 능력이 약화될 가능성을 내포한다. 동시에 성과는 급격히 상승하는 양면성을 가진다.', 8)
+VALUES ('1b4f2af1-ad61-45d8-b4ed-a2ce8bcdd5cb', 'bb5e7be7-e7b0-4c43-b325-f19ab3ce5e13', '1b5188e5-2caf-450a-a519-313402437941', NULL, 'AI 의존성', '강현우가 문제 해결 과정에서 AI 인터페이스에 점점 더 의존하게 되는 현상으로, 스스로 사고하는 과정이 줄어들고 판단 능력이 약화될 가능성을 내포한다. 동시에 성과는 급격히 상승하는 양면성을 가진다.', 8)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8105,7 +8105,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('3f1a8fc2-d621-4c21-b04b-9db82fae2bd9', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '세계관 개요', '근미래(2031년). 기억을 추출·이식하는 기술이 개발되었으나, 기억의 감정·맥락·질감을 보존할 수 있는 저장 매체는 오직 인간의 뇌뿐이다. 디지털 매체에는 기억의 정보만 저장되고 감각은 소실되기 때문에 실용화에 실패했다. 이에 따라 타인의 기억을 자신의 뇌에 이식받아 보관하는 ''기억 보관사''라는 직업이 국가 자격 제도로 만들어졌다. 일반 대중은 보관사들을 ''메모리언''이라는 별명으로 부르며, 이 별명에는 존경과 거리감, 그리고 ''외계인 같다''는 은근한 배제의 뉘앙스가 함께 섞여 있다.', 1)
+VALUES ('9294b6cd-0f6e-4c1b-a61e-ac8093fc7e00', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '세계관 개요', '근미래(2031년). 기억을 추출·이식하는 기술이 개발되었으나, 기억의 감정·맥락·질감을 보존할 수 있는 저장 매체는 오직 인간의 뇌뿐이다. 디지털 매체에는 기억의 정보만 저장되고 감각은 소실되기 때문에 실용화에 실패했다. 이에 따라 타인의 기억을 자신의 뇌에 이식받아 보관하는 ''기억 보관사''라는 직업이 국가 자격 제도로 만들어졌다. 일반 대중은 보관사들을 ''메모리언''이라는 별명으로 부르며, 이 별명에는 존경과 거리감, 그리고 ''외계인 같다''는 은근한 배제의 뉘앙스가 함께 섞여 있다.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8116,7 +8116,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('71b3ac28-b476-4615-b514-c49fc49de31c', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '3f1a8fc2-d621-4c21-b04b-9db82fae2bd9', '한국기억보존관리원', '보건복지부 산하 특수공공기관. 2031년 설립. 정식 명칭은 ''한국기억보존관리원''이며 사람들은 줄여서 ''관리원''이라 부른다. 본원은 서울 종로구 소재 4층짜리 건물이며, 부산·대구·광주에 지원이 있다. 기억 보관사의 배치, 의뢰 관리, 보관사 건강 관리, 보안 업무를 총괄한다.', 2)
+VALUES ('4da22745-24c8-495c-96c0-727a730b416b', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '9294b6cd-0f6e-4c1b-a61e-ac8093fc7e00', '한국기억보존관리원', '보건복지부 산하 특수공공기관. 2031년 설립. 정식 명칭은 ''한국기억보존관리원''이며 사람들은 줄여서 ''관리원''이라 부른다. 본원은 서울 종로구 소재 4층짜리 건물이며, 부산·대구·광주에 지원이 있다. 기억 보관사의 배치, 의뢰 관리, 보관사 건강 관리, 보안 업무를 총괄한다.', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8127,7 +8127,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('a90484e9-db8b-470f-8afd-0df716cb78f0', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '71b3ac28-b476-4615-b514-c49fc49de31c', '본원 건물 구조', '1층: 의뢰인 접수처, 대기실(카페 같은 분위기로 의도적으로 따뜻하게 꾸며져 있음), 안내데스크. 2층: 행정실, 보안팀. 3층: 보관사 개인 사무실(각 보관사마다 개인 사무실 배정, 안쪽에 작은 이식실 딸려 있음). 4층: 의료지원실, 심리상담실. 외관은 평범한 사무용 빌딩이나 보안은 엄격하다.', 3)
+VALUES ('16fa1509-8bc2-4c6b-ab3e-1023a6c4151c', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '4da22745-24c8-495c-96c0-727a730b416b', '본원 건물 구조', '1층: 의뢰인 접수처, 대기실(카페 같은 분위기로 의도적으로 따뜻하게 꾸며져 있음), 안내데스크. 2층: 행정실, 보안팀. 3층: 보관사 개인 사무실(각 보관사마다 개인 사무실 배정, 안쪽에 작은 이식실 딸려 있음). 4층: 의료지원실, 심리상담실. 외관은 평범한 사무용 빌딩이나 보안은 엄격하다.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8138,7 +8138,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('5397f428-4580-40a0-a39b-4b3b158d2b6f', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '3f1a8fc2-d621-4c21-b04b-9db82fae2bd9', '기억 보관사 제도', '국가 자격. 전국에 서른두 명만 존재한다. 본원에 일곱 명(한지섭 사망 후 여섯 명), 지원에 다섯에서 여섯 명씩 배치. 보관사는 의뢰인의 기억을 자신의 뇌에 이식받아 보관하는 직업이며, 계약 형태에 따라 일시 보관·영구 보관·조건부 반환 등이 가능하다. 의뢰인들이 맡기는 기억은 대부분 고통스러운 것들(사고, 이별, 죄책감, 학대, 상실)이다.', 4)
+VALUES ('6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '9294b6cd-0f6e-4c1b-a61e-ac8093fc7e00', '기억 보관사 제도', '국가 자격. 전국에 서른두 명만 존재한다. 본원에 일곱 명(한지섭 사망 후 여섯 명), 지원에 다섯에서 여섯 명씩 배치. 보관사는 의뢰인의 기억을 자신의 뇌에 이식받아 보관하는 직업이며, 계약 형태에 따라 일시 보관·영구 보관·조건부 반환 등이 가능하다. 의뢰인들이 맡기는 기억은 대부분 고통스러운 것들(사고, 이별, 죄책감, 학대, 상실)이다.', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8149,7 +8149,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('6e970332-06b1-4ea5-9434-20c51c29d3bb', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '보관사의 직업적 대가', '타인의 기억을 받으면서 정체성 혼란이 누적된다. 내 감정인지 받은 감정인지 경계가 흐려지며, 보관사들의 평균 활동 기간은 짧고 정신적으로 무너지거나 직업을 떠나는 사례가 많다. 한지섭의 죽음이 이를 단적으로 보여준다.', 5)
+VALUES ('0fed8126-30f8-4574-a4aa-3119f95af4ef', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '보관사의 직업적 대가', '타인의 기억을 받으면서 정체성 혼란이 누적된다. 내 감정인지 받은 감정인지 경계가 흐려지며, 보관사들의 평균 활동 기간은 짧고 정신적으로 무너지거나 직업을 떠나는 사례가 많다. 한지섭의 죽음이 이를 단적으로 보여준다.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8160,7 +8160,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('f3f017b1-5ffd-4539-8557-65f15d8e1922', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '3f1a8fc2-d621-4c21-b04b-9db82fae2bd9', '기억 이식 기술', '뇌의 해마와 편도체에서 특정 기억의 신경 패턴을 읽어내고, 두 사람의 뇌파를 일시적으로 동기화시킨 상태에서 한쪽의 기억을 다른 쪽으로 옮기는 방식. 핵심 기술은 ''신경 패턴 동기화''. 기억은 단순한 정보가 아니라 감각·감정·맥락이 통째로 묶인 신경 패턴이므로, 이를 보존할 수 있는 매체는 같은 종류의 신경망, 즉 다른 사람의 뇌뿐이다.', 6)
+VALUES ('37747f4b-1c1f-4a34-af62-9bed7082c418', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '9294b6cd-0f6e-4c1b-a61e-ac8093fc7e00', '기억 이식 기술', '뇌의 해마와 편도체에서 특정 기억의 신경 패턴을 읽어내고, 두 사람의 뇌파를 일시적으로 동기화시킨 상태에서 한쪽의 기억을 다른 쪽으로 옮기는 방식. 핵심 기술은 ''신경 패턴 동기화''. 기억은 단순한 정보가 아니라 감각·감정·맥락이 통째로 묶인 신경 패턴이므로, 이를 보존할 수 있는 매체는 같은 종류의 신경망, 즉 다른 사람의 뇌뿐이다.', 6)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8171,7 +8171,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('9a2bf882-e2ba-4d1d-b9fc-b453f54e5f7e', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '기억의 기술적 제약 — 분리 불가', '기억은 신경망 안에서 맥락과 함께 묶여 있어, 한 사건의 한 순간만 따로 분리해서 추출할 수 없다. 한 마디를 지우려면 그 말이 나온 맥락 전체와 그 말이 가져온 결과들까지 함께 추출되어야 한다. 이 때문에 의뢰인이 원하는 것보다 더 넓은 범위의 기억이 보관 대상이 되며, 좋은 기억도 함께 사라질 수 있다.', 7)
+VALUES ('5d4cece0-7cc2-4ba7-be93-299af8ee25b9', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '기억의 기술적 제약 — 분리 불가', '기억은 신경망 안에서 맥락과 함께 묶여 있어, 한 사건의 한 순간만 따로 분리해서 추출할 수 없다. 한 마디를 지우려면 그 말이 나온 맥락 전체와 그 말이 가져온 결과들까지 함께 추출되어야 한다. 이 때문에 의뢰인이 원하는 것보다 더 넓은 범위의 기억이 보관 대상이 되며, 좋은 기억도 함께 사라질 수 있다.', 7)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8182,7 +8182,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('f7ca2c6f-a337-45b8-924d-3fc813e491a7', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '이식 장비', '노트북 정도 크기의 본체와, 양쪽 사람의 관자놀이에 부착하는 두 쌍의 실리콘 패드, 머리띠 형태의 고정 장치로 구성. 본체에 작은 화면이 있어 동기화 진행률과 기억 전송량이 실시간으로 표시된다. 이식 중 보관사는 자기 화면을 볼 수 없고 의뢰인 쪽 화면만 보임(의뢰인 안심용 설계).', 8)
+VALUES ('1e2774ac-e2a4-4499-9ce1-226478b86c62', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '이식 장비', '노트북 정도 크기의 본체와, 양쪽 사람의 관자놀이에 부착하는 두 쌍의 실리콘 패드, 머리띠 형태의 고정 장치로 구성. 본체에 작은 화면이 있어 동기화 진행률과 기억 전송량이 실시간으로 표시된다. 이식 중 보관사는 자기 화면을 볼 수 없고 의뢰인 쪽 화면만 보임(의뢰인 안심용 설계).', 8)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8193,7 +8193,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('cdf0aeae-f4a2-4b2f-a1c4-6a8825b4e867', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '이식 소요 시간', '기억의 양에 따라 다름. 평균 10~30분. 5년치 연애 같은 큰 기억은 20~25분, 짧지만 강렬한 트라우마 한 사건은 5~10분. 시간이 짧다고 가벼운 것은 아니며, 강도가 높은 기억은 짧아도 보관사에게 큰 부담을 준다.', 9)
+VALUES ('92ecb2ae-3b1b-4471-a7cc-2e5910f99bc0', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '이식 소요 시간', '기억의 양에 따라 다름. 평균 10~30분. 5년치 연애 같은 큰 기억은 20~25분, 짧지만 강렬한 트라우마 한 사건은 5~10분. 시간이 짧다고 가벼운 것은 아니며, 강도가 높은 기억은 짧아도 보관사에게 큰 부담을 준다.', 9)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8204,7 +8204,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('7a64eb7c-d6f7-46e2-af5c-48150c41f109', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '의뢰인의 이식 경험', '이식 중 의식이 있으며 약간의 어지러움과 기시감을 느낌. 이식 후 해당 기억 부분이 비어 있는 상태가 됨(''기억나지 않는다''가 아니라 ''기억 자체가 없다''). 주변 사람이 관련 사실을 말해도 전혀 떠올리지 못함. 부작용으로 이식 직후 약간의 두통과 멍한 상태가 24시간 지속되며, 드물게 우울감·공허감이 며칠 가는 경우도 있음.', 10)
+VALUES ('baa737cd-d79f-452a-9f24-00e88fddb5c4', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '의뢰인의 이식 경험', '이식 중 의식이 있으며 약간의 어지러움과 기시감을 느낌. 이식 후 해당 기억 부분이 비어 있는 상태가 됨(''기억나지 않는다''가 아니라 ''기억 자체가 없다''). 주변 사람이 관련 사실을 말해도 전혀 떠올리지 못함. 부작용으로 이식 직후 약간의 두통과 멍한 상태가 24시간 지속되며, 드물게 우울감·공허감이 며칠 가는 경우도 있음.', 10)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8215,7 +8215,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('68af219f-c566-48b4-bd56-250bcca5beb1', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '보관사의 이식 경험', '이식 중 의뢰인의 기억이 자기 머릿속으로 흘러들어오는 것을 직접 느낌. 영상뿐 아니라 감각과 감정까지 함께 들어옴. 이식 직후 기억이 ''아직 정리되지 않은'' 상태이며, 며칠에 걸쳐 자기 머릿속에서 새 기억이 자리를 잡음. 이 기간 동안 자기 감정과 받은 감정의 구별이 흐려지는 혼란을 겪으며, 보관사들은 이를 관리하는 자기만의 방법을 가지고 있다(운동, 술, 명상 등). 리운은 아무것도 안 하고 그냥 견딤.', 11)
+VALUES ('d966b59f-4409-4e9b-acee-b29aaac6400d', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '보관사의 이식 경험', '이식 중 의뢰인의 기억이 자기 머릿속으로 흘러들어오는 것을 직접 느낌. 영상뿐 아니라 감각과 감정까지 함께 들어옴. 이식 직후 기억이 ''아직 정리되지 않은'' 상태이며, 며칠에 걸쳐 자기 머릿속에서 새 기억이 자리를 잡음. 이 기간 동안 자기 감정과 받은 감정의 구별이 흐려지는 혼란을 겪으며, 보관사들은 이를 관리하는 자기만의 방법을 가지고 있다(운동, 술, 명상 등). 리운은 아무것도 안 하고 그냥 견딤.', 11)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8226,7 +8226,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('8903f092-c047-4312-89ed-9e6fcb06a5ce', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'f3f017b1-5ffd-4539-8557-65f15d8e1922', '보관 상태 확인', '이식 후 24시간 안에 보관사가 받은 기억을 한 번 ''훑어보는'' 절차. 기억이 제대로 보관되었는지, 손실된 부분은 없는지 확인하는 작업. 평소 1시간 이상 소요. 이식은 기계가 자동으로 수행하지만 확인은 보관사가 자기 의식으로 직접 들여다봐야 하기 때문에 시간이 더 걸린다. 형식적으로는 ''필요한 부분만'' 보지만, 사실상 한 번 훑으면 거의 모든 내용을 알게 된다. 보관사들 사이의 공공연한 비밀이며, 의뢰인에게는 알리지 않는다.', 12)
+VALUES ('8d4f4344-1106-48b4-84b2-3edac804b0a4', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '37747f4b-1c1f-4a34-af62-9bed7082c418', '보관 상태 확인', '이식 후 24시간 안에 보관사가 받은 기억을 한 번 ''훑어보는'' 절차. 기억이 제대로 보관되었는지, 손실된 부분은 없는지 확인하는 작업. 평소 1시간 이상 소요. 이식은 기계가 자동으로 수행하지만 확인은 보관사가 자기 의식으로 직접 들여다봐야 하기 때문에 시간이 더 걸린다. 형식적으로는 ''필요한 부분만'' 보지만, 사실상 한 번 훑으면 거의 모든 내용을 알게 된다. 보관사들 사이의 공공연한 비밀이며, 의뢰인에게는 알리지 않는다.', 12)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8237,7 +8237,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('ef1972e8-51ff-4121-9d62-623038f107f9', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '68af219f-c566-48b4-bd56-250bcca5beb1', '잔여감', '받은 기억의 감정이 일시적으로 보관사 자기 감정처럼 느껴지는 현상. 베테랑 보관사들은 ''잔여감''이라 부른다. 시간이 지나면 가라앉으며, 빠르면 몇 시간, 길면 며칠. 보관사의 컨디션이나 기억의 종류에 따라 잔여감의 깊이가 다르다.', 13)
+VALUES ('02e4f32f-b165-4392-a1a8-ced436293179', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', 'd966b59f-4409-4e9b-acee-b29aaac6400d', '잔여감', '받은 기억의 감정이 일시적으로 보관사 자기 감정처럼 느껴지는 현상. 베테랑 보관사들은 ''잔여감''이라 부른다. 시간이 지나면 가라앉으며, 빠르면 몇 시간, 길면 며칠. 보관사의 컨디션이나 기억의 종류에 따라 잔여감의 깊이가 다르다.', 13)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8248,7 +8248,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('2e19db20-a6b4-4d7a-ab98-3a10eadf5b46', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '영구 보관', '의뢰인이 기억을 돌려받을 의사 없이 영구히 맡기는 계약. 보관사가 사망할 때까지 그의 뇌 안에 존재하며, 보관사 사망 시 함께 소멸한다. ''위탁된 화장''에 비유할 수 있다.', 14)
+VALUES ('3d21a833-0a5c-4f56-9c87-e6e2658b718b', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '영구 보관', '의뢰인이 기억을 돌려받을 의사 없이 영구히 맡기는 계약. 보관사가 사망할 때까지 그의 뇌 안에 존재하며, 보관사 사망 시 함께 소멸한다. ''위탁된 화장''에 비유할 수 있다.', 14)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8259,7 +8259,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('95c4954a-3584-4b6e-a333-df7eda425405', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '일시 보관과 반환', '의뢰인이 일정 기간 후 기억을 돌려받는 계약. 반환 절차는 이식과 동일한 방식으로 진행. 돌려받은 기억은 원래보다 약간 더 객관적으로 느껴진다고 함(한 번 다른 사람을 거쳐 왔기 때문에 거리가 생김). 이것이 일시 보관의 치유 효과. 단, 대부분의 의뢰인은 돌려받았을 때 ''새로움''이나 ''설렘''을 기대하지만, 실제로는 기억이 원래 자리로 돌아가기만 할 뿐 새롭게 느껴지지 않는다. 기억은 어디로 갔다가 어디로 돌아오는 것이 아니라 그저 자기 자리에 있는 것이다.', 15)
+VALUES ('a5ab415b-a298-48d3-bfce-b57afa78dc24', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '일시 보관과 반환', '의뢰인이 일정 기간 후 기억을 돌려받는 계약. 반환 절차는 이식과 동일한 방식으로 진행. 돌려받은 기억은 원래보다 약간 더 객관적으로 느껴진다고 함(한 번 다른 사람을 거쳐 왔기 때문에 거리가 생김). 이것이 일시 보관의 치유 효과. 단, 대부분의 의뢰인은 돌려받았을 때 ''새로움''이나 ''설렘''을 기대하지만, 실제로는 기억이 원래 자리로 돌아가기만 할 뿐 새롭게 느껴지지 않는다. 기억은 어디로 갔다가 어디로 돌아오는 것이 아니라 그저 자기 자리에 있는 것이다.', 15)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8270,7 +8270,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('1cc7a962-a77b-4c3a-acb1-2646841adfb8', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '보관사 공식 규정', '보관사는 자기 기억을 타인에게 맡길 수 없다. 보관사 간 기억 이전은 전면 금지. 적발 시 자격 박탈. 보관사는 의뢰인의 행위에 대해 도덕적 판단을 하지 않으며, 의뢰인의 신체에 접촉하지 않는 것이 원칙. 의뢰인 정보는 익명이 원칙이며, 보관사가 알 수 있는 것은 나이·성별·의뢰 종류뿐이다. 의뢰 내용은 의뢰인 본인에게도 사후 공개하지 않음(영구 보관의 경우 의뢰 효과를 무효화할 수 있기 때문).', 16)
+VALUES ('ec6e8ebf-1e67-42e0-bf58-06e17508d4bb', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '보관사 공식 규정', '보관사는 자기 기억을 타인에게 맡길 수 없다. 보관사 간 기억 이전은 전면 금지. 적발 시 자격 박탈. 보관사는 의뢰인의 행위에 대해 도덕적 판단을 하지 않으며, 의뢰인의 신체에 접촉하지 않는 것이 원칙. 의뢰인 정보는 익명이 원칙이며, 보관사가 알 수 있는 것은 나이·성별·의뢰 종류뿐이다. 의뢰 내용은 의뢰인 본인에게도 사후 공개하지 않음(영구 보관의 경우 의뢰 효과를 무효화할 수 있기 때문).', 16)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8281,7 +8281,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('a619d6e3-7af4-4564-8d50-b4c7f609a053', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '비공식 루트 (보관사 간 기억 이전)', '공식적으로는 금지되어 있지만, 보관사들 사이에서 비밀리에 이루어지는 기억 이전 관행. 무너지기 직전의 보관사가 동료에게 가장 무거운 기억을 넘기는 일종의 생존 수단. 모든 보관사가 알고 있지만 입 밖에 내지 않으며, 이 비밀 자체가 보관사들을 묶는 동족의식이자 동시에 약점이다. 정선재 원장이 제도 초기에 이 관행을 처음 만든 사람 중 하나. 적발 시 자격 박탈이므로 누군가가 이 사실을 외부에 알리면 협박 카드가 될 수 있다. 리운은 이 루트의 존재를 알지만 자기 기억을 위해서는 절대 사용하지 않기로 결정했다.', 17)
+VALUES ('e842c1bb-916a-45de-87cf-55b5617bec03', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '비공식 루트 (보관사 간 기억 이전)', '공식적으로는 금지되어 있지만, 보관사들 사이에서 비밀리에 이루어지는 기억 이전 관행. 무너지기 직전의 보관사가 동료에게 가장 무거운 기억을 넘기는 일종의 생존 수단. 모든 보관사가 알고 있지만 입 밖에 내지 않으며, 이 비밀 자체가 보관사들을 묶는 동족의식이자 동시에 약점이다. 정선재 원장이 제도 초기에 이 관행을 처음 만든 사람 중 하나. 적발 시 자격 박탈이므로 누군가가 이 사실을 외부에 알리면 협박 카드가 될 수 있다. 리운은 이 루트의 존재를 알지만 자기 기억을 위해서는 절대 사용하지 않기로 결정했다.', 17)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8292,7 +8292,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('7804ddbf-28de-4ebd-99ab-88a9970efd9f', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '의뢰인 최소 나이', '보관사 제도에서 의뢰인의 최소 나이는 19세. 아동의 경우 보관 의뢰는 부모 동의와 별도 심의가 필요하며 절차가 복잡하다.', 18)
+VALUES ('53a0c48e-7bb5-44a3-9b3d-e11c2b84cdfe', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '의뢰인 최소 나이', '보관사 제도에서 의뢰인의 최소 나이는 19세. 아동의 경우 보관 의뢰는 부모 동의와 별도 심의가 필요하며 절차가 복잡하다.', 18)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8303,7 +8303,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('9bc6f808-0429-4e11-a8c4-97bf32d4075a', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '기업 의뢰', '산업 재해 후 회사 차원에서 직원들에게 보관사 의뢰를 권유하는 사례가 점점 늘어나고 있음. ''산재 후 패키지''로 자리 잡는 추세. 비용은 회사가 부담. 직원의 의지가 아니라 회사의 결정으로 오는 의뢰는 본질적으로 강요에 가깝다. 의뢰인 본인이 원하지 않으면 보관사가 미진행으로 처리할 수 있으며, 관리원에서 공식적으로 거절 의사를 전달해줄 수 있다.', 19)
+VALUES ('5b021f21-c25d-48c2-9568-89131a7b0e57', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '기업 의뢰', '산업 재해 후 회사 차원에서 직원들에게 보관사 의뢰를 권유하는 사례가 점점 늘어나고 있음. ''산재 후 패키지''로 자리 잡는 추세. 비용은 회사가 부담. 직원의 의지가 아니라 회사의 결정으로 오는 의뢰는 본질적으로 강요에 가깝다. 의뢰인 본인이 원하지 않으면 보관사가 미진행으로 처리할 수 있으며, 관리원에서 공식적으로 거절 의사를 전달해줄 수 있다.', 19)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8314,7 +8314,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('007e8cb3-9a6a-40df-954f-d77d09df3244', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '71b3ac28-b476-4615-b514-c49fc49de31c', '보관사 사무실 — 리운의 사무실', '3층 끝방. 다른 사무실들과 떨어진 위치(리운이 일부러 가장 구석을 골랐음). 깔끔함을 넘어 휑할 정도로 비어 있음. 책상 하나, 의자 두 개, 의뢰인용 소파, 책장 하나(업무 매뉴얼만 꽂혀 있음). 벽에 그림도 액자도 없음. 창문 하나가 동쪽으로 남. 의뢰인을 만나기 전 자기 표정을 점검하기 위한 작은 거울이 한쪽에 있음. 서랍 안에 빈 USB 케이스들이 가지런히 정리되어 있고(3년치 의뢰 흔적), 한지섭의 편지도 그 안에 보관. 최근 티슈 상자가 서류함 옆에서 의뢰인 쪽 책상 모서리로 옮겨졌다.', 20)
+VALUES ('26ad1987-e78f-4ea3-878a-50195017ae65', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '4da22745-24c8-495c-96c0-727a730b416b', '보관사 사무실 — 리운의 사무실', '3층 끝방. 다른 사무실들과 떨어진 위치(리운이 일부러 가장 구석을 골랐음). 깔끔함을 넘어 휑할 정도로 비어 있음. 책상 하나, 의자 두 개, 의뢰인용 소파, 책장 하나(업무 매뉴얼만 꽂혀 있음). 벽에 그림도 액자도 없음. 창문 하나가 동쪽으로 남. 의뢰인을 만나기 전 자기 표정을 점검하기 위한 작은 거울이 한쪽에 있음. 서랍 안에 빈 USB 케이스들이 가지런히 정리되어 있고(3년치 의뢰 흔적), 한지섭의 편지도 그 안에 보관. 최근 티슈 상자가 서류함 옆에서 의뢰인 쪽 책상 모서리로 옮겨졌다.', 20)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8325,7 +8325,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('72ef2fe0-b4e5-4b8b-8cad-2d586199ab11', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '5397f428-4580-40a0-a39b-4b3b158d2b6f', '보관사들의 미신', '의뢰가 아닌데도 사람의 강한 감정이 손을 통해 흘러들어올 때가 있다는 보관사들 사이의 미신. 과학적으로 증명된 적은 없지만 보관사들은 다 알고 있다. 만원 지하철에서 누군가의 손목이 닿았을 때 알 수 없는 슬픔이 훅 들어온다는 것. 리운은 이 때문에 7호선 다섯 번째 칸 끝자리(사람 손이 가장 적게 닿는 자리)를 골라 앉는다.', 21)
+VALUES ('cccba5f0-6899-484f-b664-899ff9dbaf34', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', '6eb66b77-e943-4c93-a7c0-286ecd09a9f4', '보관사들의 미신', '의뢰가 아닌데도 사람의 강한 감정이 손을 통해 흘러들어올 때가 있다는 보관사들 사이의 미신. 과학적으로 증명된 적은 없지만 보관사들은 다 알고 있다. 만원 지하철에서 누군가의 손목이 닿았을 때 알 수 없는 슬픔이 훅 들어온다는 것. 리운은 이 때문에 7호선 다섯 번째 칸 끝자리(사람 손이 가장 적게 닿는 자리)를 골라 앉는다.', 21)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8336,7 +8336,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('bb5b25ca-f1f5-4362-b610-4697dd1c95c7', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '리운의 사적 공간 — 오피스텔', '서울 마포구, 오피스텔 8층, 원룸 15평형. 리운이 일부러 작은 공간을 골랐다(사람이 채워야 할 공간이 적을수록 비어 있어도 티가 안 나니까). 침대 하나, 작은 책상, 옷장, 미니 냉장고. 식탁 없음(밥은 책상에서). TV 없음. 라디오 한 대(거의 안 켬). 책장에 업무 매뉴얼과 오래된 시집 몇 권(한 번도 펼쳐보지 않음). 벽에 아무것도 없음. 가족 사진도 없음. 침대 머리맡 서랍에 안정제 통과 여동생 셀카 사진 한 장이 있다. 최근 보리차 티백이 추가됨.', 22)
+VALUES ('8660f7df-bb6f-44f3-8067-f63063d8ff02', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '리운의 사적 공간 — 오피스텔', '서울 마포구, 오피스텔 8층, 원룸 15평형. 리운이 일부러 작은 공간을 골랐다(사람이 채워야 할 공간이 적을수록 비어 있어도 티가 안 나니까). 침대 하나, 작은 책상, 옷장, 미니 냉장고. 식탁 없음(밥은 책상에서). TV 없음. 라디오 한 대(거의 안 켬). 책장에 업무 매뉴얼과 오래된 시집 몇 권(한 번도 펼쳐보지 않음). 벽에 아무것도 없음. 가족 사진도 없음. 침대 머리맡 서랍에 안정제 통과 여동생 셀카 사진 한 장이 있다. 최근 보리차 티백이 추가됨.', 22)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8347,7 +8347,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('cfbf27eb-a0d5-4cff-9622-b064e3cb76a1', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '리운의 생활 패턴', '하루가 분 단위로 똑같음. 같은 시간 기상, 같은 지하철(7호선 다섯 번째 칸 끝자리), 같은 시간 점심(회사 근처 김밥집, 최근 우동이 추가됨), 같은 시간 퇴근, 같은 시간 취침. 운전을 하지 않음(면허증은 지갑에 있으나 운전대를 잡지 않음). 수면 평균 4~5시간, 자주 깸. 꿈을 거의 기억하지 못함(수면 중 꿈 회상 억제 — 무의식적 자기방어). 주말에는 토요일 한강 산책 2시간, 일요일은 거의 외출하지 않음. 친구 없음, 가까운 친척은 작은아버지 한 분뿐(1년에 한 번 명절 통화).', 23)
+VALUES ('4d63fefa-bf90-4380-a3d0-70e789f1183e', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '리운의 생활 패턴', '하루가 분 단위로 똑같음. 같은 시간 기상, 같은 지하철(7호선 다섯 번째 칸 끝자리), 같은 시간 점심(회사 근처 김밥집, 최근 우동이 추가됨), 같은 시간 퇴근, 같은 시간 취침. 운전을 하지 않음(면허증은 지갑에 있으나 운전대를 잡지 않음). 수면 평균 4~5시간, 자주 깸. 꿈을 거의 기억하지 못함(수면 중 꿈 회상 억제 — 무의식적 자기방어). 주말에는 토요일 한강 산책 2시간, 일요일은 거의 외출하지 않음. 친구 없음, 가까운 친척은 작은아버지 한 분뿐(1년에 한 번 명절 통화).', 23)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8358,7 +8358,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('ad1c4499-f6f3-4294-87fd-973d3c533cfe', 'cdbb4b94-767f-4baf-9ab4-a2e685c91690', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '전체 구조 (70~75화 예상)', '1부(1~20화): ''흔들리지 않는 사람''의 일상. 의뢰인 8사이클. 한지섭의 죽음으로 시작, 미세한 균열 누적, 조유라 발령, 리운의 첫 의뢰 거절로 마무리. 2부(21~40화): 균열의 시작. 조유라·윤재희 등장, 검은 원피스 여자 재등장, 비공식 루트 사건, ''나도 맡길 수 있는가''라는 질문. 3부(41~58화): 과거의 그림자. 윤재희가 옛 기사 발견, 리운의 가족과 사고 존재가 부분적으로 드러남, 정선재의 질문, 윤재희와의 여행에서 첫 고백. 4부(59~75화): 마주봄과 결말. 리운의 사고와 닮은 의뢰, 첫 무너짐, ''못 버티겠다''는 한 마디, 과거의 진실 전부 드러남, 기억을 용서하는 결말.', 24)
+VALUES ('92dec413-38ee-4356-96ae-202b65e03b41', '7ab0624e-63bd-408c-b16f-28d39d3e2fdc', '1b5188e5-2caf-450a-a519-313402437941', NULL, '전체 구조 (70~75화 예상)', '1부(1~20화): ''흔들리지 않는 사람''의 일상. 의뢰인 8사이클. 한지섭의 죽음으로 시작, 미세한 균열 누적, 조유라 발령, 리운의 첫 의뢰 거절로 마무리. 2부(21~40화): 균열의 시작. 조유라·윤재희 등장, 검은 원피스 여자 재등장, 비공식 루트 사건, ''나도 맡길 수 있는가''라는 질문. 3부(41~58화): 과거의 그림자. 윤재희가 옛 기사 발견, 리운의 가족과 사고 존재가 부분적으로 드러남, 정선재의 질문, 윤재희와의 여행에서 첫 고백. 4부(59~75화): 마주봄과 결말. 리운의 사고와 닮은 의뢰, 첫 무너짐, ''못 버티겠다''는 한 마디, 과거의 진실 전부 드러남, 기억을 용서하는 결말.', 24)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8369,7 +8369,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('fa560c8d-f4e6-422e-bc0e-7812e855538e', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '오션(Ocean) 방송 플랫폼', '작품 내 가상의 인터넷 방송 플랫폼. 실제 아프리카TV/트위치와 유사한 포지션. 스트리머가 개인 방송을 할 수 있으며, ''물방울''이라는 후원 시스템이 있다. 방송 시작 시 ''[만년취준생 님의 방송이 시작되었습니다.]'' 형태의 알림이 뜬다. 시청자 수가 실시간으로 표시되며, 즐겨찾기·구독·알림 설정 기능이 있다. 스트리머 전용 대회도 열리며, 참가 조건으로 최소 20시간 방송 이력이 필요하다.', 1)
+VALUES ('8acdf006-7515-44c1-82a5-8606e100d44e', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '오션(Ocean) 방송 플랫폼', '작품 내 가상의 인터넷 방송 플랫폼. 실제 아프리카TV/트위치와 유사한 포지션. 스트리머가 개인 방송을 할 수 있으며, ''물방울''이라는 후원 시스템이 있다. 방송 시작 시 ''[만년취준생 님의 방송이 시작되었습니다.]'' 형태의 알림이 뜬다. 시청자 수가 실시간으로 표시되며, 즐겨찾기·구독·알림 설정 기능이 있다. 스트리머 전용 대회도 열리며, 참가 조건으로 최소 20시간 방송 이력이 필요하다.', 1)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8380,7 +8380,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('43f45741-1b9d-43b7-a66e-064c0e0086e3', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'fa560c8d-f4e6-422e-bc0e-7812e855538e', '물방울 후원 시스템', '오션 플랫폼의 후원 화폐 단위. 시청자가 스트리머에게 물방울을 선물하면 ''[닉네임 님이 물방울 N개를 선물하셨습니다.]'' 알림과 함께 ''빠빵-'' 효과음이 울린다. 후원 시 메시지를 함께 남길 수 있다. 물방울 개수는 자유롭게 설정 가능(20개~500개 이상).', 2)
+VALUES ('b3ec2390-fcc9-44cc-8785-c1ad257b47b4', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '8acdf006-7515-44c1-82a5-8606e100d44e', '물방울 후원 시스템', '오션 플랫폼의 후원 화폐 단위. 시청자가 스트리머에게 물방울을 선물하면 ''[닉네임 님이 물방울 N개를 선물하셨습니다.]'' 알림과 함께 ''빠빵-'' 효과음이 울린다. 후원 시 메시지를 함께 남길 수 있다. 물방울 개수는 자유롭게 설정 가능(20개~500개 이상).', 2)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8391,7 +8391,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('11e26f64-2b3b-436b-a070-edcc422fcc08', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', 'fa560c8d-f4e6-422e-bc0e-7812e855538e', '뻐꾸기', '다른 스트리머의 방송으로 자기 시청자를 보내주는 행위. 김우식이 자기 방송을 일찍 끝내고 시청자들에게 박지훈의 방송을 보러 가달라고 한 것. 시청자 유입을 위한 스트리머 간 호의/교류 수단.', 3)
+VALUES ('1bd7ecac-2732-4069-8f35-82fa591644fb', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', '8acdf006-7515-44c1-82a5-8606e100d44e', '뻐꾸기', '다른 스트리머의 방송으로 자기 시청자를 보내주는 행위. 김우식이 자기 방송을 일찍 끝내고 시청자들에게 박지훈의 방송을 보러 가달라고 한 것. 시청자 유입을 위한 스트리머 간 호의/교류 수단.', 3)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8402,7 +8402,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('af838ee5-e5ce-4939-a021-b9eaff6031d8', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '인방갤 (인터넷방송 게시판)', '국내 대형 커뮤니티의 인터넷방송 관련 게시판. 방송 클립이나 화제가 되는 장면이 올라오는 곳. 만년취준생의 첫 방송 클립이 ''시청자 보고 면접 가면 죽는다고 예언한 스트리머''라는 제목으로 인기글에 올라감. 반응은 대체로 싸늘하지만 호기심을 유발하여 시청자 유입에 기여.', 4)
+VALUES ('df71daa7-8bbf-4285-8d7d-2381bd6976c6', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '인방갤 (인터넷방송 게시판)', '국내 대형 커뮤니티의 인터넷방송 관련 게시판. 방송 클립이나 화제가 되는 장면이 올라오는 곳. 만년취준생의 첫 방송 클립이 ''시청자 보고 면접 가면 죽는다고 예언한 스트리머''라는 제목으로 인기글에 올라감. 반응은 대체로 싸늘하지만 호기심을 유발하여 시청자 유입에 기여.', 4)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8413,7 +8413,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('4778642e-91ee-4712-b24c-5664c6f96ec2', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '신병(神病)', '무속에서 영적 존재와 연결되는 과정에서 겪는 신체적·정신적 변화. 박지훈은 방송 시작 버튼을 누르는 순간 신병이 처음 도짐. 증상: 온몸이 으슬으슬 떨림, 이마에 식은땀, 열이 순식간에 치솟음, 범상치 않은 기운이 몸속으로 빨려 들어옴. 신병 이후 신안(神眼)이 열림.', 5)
+VALUES ('ddb95676-b374-4d56-872e-194d22888b7d', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '신병(神病)', '무속에서 영적 존재와 연결되는 과정에서 겪는 신체적·정신적 변화. 박지훈은 방송 시작 버튼을 누르는 순간 신병이 처음 도짐. 증상: 온몸이 으슬으슬 떨림, 이마에 식은땀, 열이 순식간에 치솟음, 범상치 않은 기운이 몸속으로 빨려 들어옴. 신병 이후 신안(神眼)이 열림.', 5)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8424,7 +8424,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('27ac1b9b-e4cb-4d5c-8a74-216d2a62a9bc', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '4778642e-91ee-4712-b24c-5664c6f96ec2', '신안(神眼)', '신병을 통해 열린 영적 시각 능력. 채팅창 닉네임 너머로 그 사람의 과거·현재·미래가 환영(비전)으로 보인다. 핵심 제약: 인터넷 방송 중에만 작동. 방송 종료 시 신안이 닫히고, 밖에서 사람을 봐도 아무것도 보이지 않음. 과거는 사실적 장면(교통사고 등), 미래는 예언적 장면(버스 사고 등)으로 보임.', 6)
+VALUES ('e2d34180-74b5-40f6-b654-95fe563f1cb1', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', 'ddb95676-b374-4d56-872e-194d22888b7d', '신안(神眼)', '신병을 통해 열린 영적 시각 능력. 채팅창 닉네임 너머로 그 사람의 과거·현재·미래가 환영(비전)으로 보인다. 핵심 제약: 인터넷 방송 중에만 작동. 방송 종료 시 신안이 닫히고, 밖에서 사람을 봐도 아무것도 보이지 않음. 과거는 사실적 장면(교통사고 등), 미래는 예언적 장면(버스 사고 등)으로 보임.', 6)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8435,7 +8435,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('bd341c6f-f28b-45be-bd0a-3c4899f36728', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '27ac1b9b-e4cb-4d5c-8a74-216d2a62a9bc', '신안 부작용', '신안을 무리하게 사용하면 코피, 두통, 눈 충혈, 전신 고통이 발생하며 심할 경우 실신. 첫 방송에서 무리하여 실신 후 다음 날 완전 회복. 회복 후에는 오히려 평소보다 컨디션이 좋아짐(어깨 가벼움, 만성 피로 해소, 눈이 맑아짐).', 7)
+VALUES ('cd25a17c-7020-422c-94e9-5eaa62a1753d', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', 'e2d34180-74b5-40f6-b654-95fe563f1cb1', '신안 부작용', '신안을 무리하게 사용하면 코피, 두통, 눈 충혈, 전신 고통이 발생하며 심할 경우 실신. 첫 방송에서 무리하여 실신 후 다음 날 완전 회복. 회복 후에는 오히려 평소보다 컨디션이 좋아짐(어깨 가벼움, 만성 피로 해소, 눈이 맑아짐).', 7)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8446,7 +8446,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('674ede03-57ec-482e-bda7-ec19163e4241', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', '4778642e-91ee-4712-b24c-5664c6f96ec2', '접신 상태', '방송 중 신안이 열리면 박지훈의 말투와 성격이 변한다. 평소의 무기력한 29세 무직 청년에서, 낮게 깔린 차가운 목소리로 단호하게 말하는 인물로 변모. ''시끄럽다'', ''쓸데없는 소리 하지 말고 볼 사람만 남아라'' 등 반말 사용. 본인 의지보다 말이 먼저 튀어나오는 감각. 방송 종료 후 되돌아보면 낯설게 느껴짐.', 8)
+VALUES ('05087da9-3f82-4c49-9260-46a6f7572a17', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', 'ddb95676-b374-4d56-872e-194d22888b7d', '접신 상태', '방송 중 신안이 열리면 박지훈의 말투와 성격이 변한다. 평소의 무기력한 29세 무직 청년에서, 낮게 깔린 차가운 목소리로 단호하게 말하는 인물로 변모. ''시끄럽다'', ''쓸데없는 소리 하지 말고 볼 사람만 남아라'' 등 반말 사용. 본인 의지보다 말이 먼저 튀어나오는 감각. 방송 종료 후 되돌아보면 낯설게 느껴짐.', 8)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8457,7 +8457,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('a1debe70-ed5f-48bf-905f-dcf4eb566bf5', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '복채 규칙', '신점의 대가. 물방울 500개가 박지훈의 정확한 복채. 많이 받으려 하면(1000개) 두통이 발생하고, 공짜로 하려 해도 두통 발생. 500개에서만 두통이 없음. 신적 존재가 대가의 균형을 강제하는 것으로 추정. 추가 규칙: 방송당 1명은 공짜로 봐줌(본인이 선택). 선착순 예약제. 다음 방송부터 적용.', 9)
+VALUES ('e41252a9-eda0-48db-82b8-367106fa3fb6', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '복채 규칙', '신점의 대가. 물방울 500개가 박지훈의 정확한 복채. 많이 받으려 하면(1000개) 두통이 발생하고, 공짜로 하려 해도 두통 발생. 500개에서만 두통이 없음. 신적 존재가 대가의 균형을 강제하는 것으로 추정. 추가 규칙: 방송당 1명은 공짜로 봐줌(본인이 선택). 선착순 예약제. 다음 방송부터 적용.', 9)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,
@@ -8468,7 +8468,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now();
 
 INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order)
-VALUES ('bb11d967-68de-43b5-8461-a558a1184c70', '55d4a4e3-2a0e-458c-8546-8883be312f0a', 'c23a93ad-226c-4dd8-9c5c-13e486b2c206', NULL, '905번 버스 사고', '강진수(29세무직)가 오성전자 면접을 위해 타려던 버스. 횡단보도 앞에서 대형 트럭이 중심을 잃고 버스 옆구리를 들이받음. 유리 파편, 찢겨나간 차체, 사상자 발생. 강진수가 어머니 전화로 버스를 놓치지 않았다면 사망했을 사건. 박지훈의 신안이 실제로 작동함을 증명한 핵심 사건.', 10)
+VALUES ('74943483-64c0-42a4-b567-935e759168f1', '919037e5-ca18-438f-8dd3-27bf5cc31b82', '1b5188e5-2caf-450a-a519-313402437941', NULL, '905번 버스 사고', '강진수(29세무직)가 오성전자 면접을 위해 타려던 버스. 횡단보도 앞에서 대형 트럭이 중심을 잃고 버스 옆구리를 들이받음. 유리 파편, 찢겨나간 차체, 사상자 발생. 강진수가 어머니 전화로 버스를 놓치지 않았다면 사망했을 사건. 박지훈의 신안이 실제로 작동함을 증명한 핵심 사건.', 10)
 ON CONFLICT (id) DO UPDATE SET
     work_id = EXCLUDED.work_id,
     writer_id = EXCLUDED.writer_id,

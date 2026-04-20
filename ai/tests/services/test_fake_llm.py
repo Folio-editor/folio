@@ -41,6 +41,15 @@ async def test_stream_yields_non_empty_chunks():
 
 
 @pytest.mark.asyncio
+async def test_stream_accepts_model_override():
+    llm = FakeLLM()
+    chunks = [c async for c in llm.generate_stream("sys", "usr", model_override="opus")]
+    assert len(chunks) > 0
+    assert "".join(chunks).startswith("[fake draft]")
+
+
+
+@pytest.mark.asyncio
 async def test_generate_with_tools_returns_review_shape():
     llm = FakeLLM()
 

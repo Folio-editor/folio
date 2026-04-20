@@ -70,7 +70,7 @@ async def test_generate_json_parses_plain_json(monkeypatch: pytest.MonkeyPatch):
     )
     _install_fake_anthropic(monkeypatch, messages_api)
 
-    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku")
+    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus")
     result = await llm.generate_json("system prompt", "user prompt", '{"ok": true}')
 
     assert result == {"ok": True, "value": 1}
@@ -85,7 +85,7 @@ async def test_generate_json_strips_markdown_code_block(monkeypatch: pytest.Monk
     )
     _install_fake_anthropic(monkeypatch, messages_api)
 
-    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku")
+    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus")
     result = await llm.generate_json("system prompt", "user prompt", '{"value": 0}')
 
     assert result == {"value": 123}
@@ -93,14 +93,26 @@ async def test_generate_json_strips_markdown_code_block(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_generate_stream_yields_text_chunks(monkeypatch: pytest.MonkeyPatch):
-    messages_api = FakeMessagesAPI(responses=[], stream_chunks=["안", "녕", "하세요"])
+    messages_api = FakeMessagesAPI(responses=[], stream_chunks=["안녕", "하세요"])
     _install_fake_anthropic(monkeypatch, messages_api)
 
-    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku")
+    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus")
     chunks = [chunk async for chunk in llm.generate_stream("system", "user")]
 
-    assert chunks == ["안", "녕", "하세요"]
+    assert chunks == ["안녕", "하세요"]
     assert messages_api.stream_calls[0]["model"] == "sonnet"
+
+
+@pytest.mark.asyncio
+async def test_generate_stream_uses_model_override(monkeypatch: pytest.MonkeyPatch):
+    messages_api = FakeMessagesAPI(responses=[], stream_chunks=["op", "us"])
+    _install_fake_anthropic(monkeypatch, messages_api)
+
+    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus")
+    chunks = [chunk async for chunk in llm.generate_stream("system", "user", model_override="opus")]
+
+    assert chunks == ["op", "us"]
+    assert messages_api.stream_calls[0]["model"] == "opus"
 
 
 @pytest.mark.asyncio
@@ -119,7 +131,7 @@ async def test_generate_with_tools_handles_tool_loop(monkeypatch: pytest.MonkeyP
     )
     _install_fake_anthropic(monkeypatch, messages_api)
 
-    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku")
+    llm = llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus")
     tool_calls: list[tuple[str, dict]] = []
 
     async def tool_executor(name: str, inputs: dict):

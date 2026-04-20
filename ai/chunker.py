@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import tiktoken
+from tokenizer_compat import get_cl100k_base_encoding
 
-_ENCODING = tiktoken.get_encoding("cl100k_base")
+_ENCODING = get_cl100k_base_encoding()
 _SCENE_DELIMITER_LINE_RE = re.compile(r"^\s*(\*{3,}|-{3,})\s*$")
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?。！？]\s+")
 
