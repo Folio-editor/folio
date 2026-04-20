@@ -330,8 +330,20 @@ function renderContent(args: {
     );
   }
 
-  // episode / foreshadow / idea-archive
-  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot'>;
+  // episode: 원고 리스트
+  if (activity === 'episode' && selectedWorkId) {
+    return (
+      <EpisodeTreeList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+      />
+    );
+  }
+
+  // foreshadow / idea-archive
+  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot' | 'episode'>;
   return (
     <SectionItemList
       section={section}

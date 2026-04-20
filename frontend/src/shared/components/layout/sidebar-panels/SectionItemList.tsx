@@ -4,7 +4,7 @@ import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
 import { cn } from '../../../lib/cn';
 
 interface SectionItemListProps {
-  section: Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot'>;
+  section: Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot' | 'episode'>;
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
@@ -54,7 +54,11 @@ export function SectionItemList({
   return (
     <div className="flex flex-col gap-0.5 px-2 py-2">
       {rows.map((row) => {
-        const display = row.label?.trim() || PLACEHOLDER_LABELS[section];
+        const raw = row.label?.trim() || '';
+        const display =
+          section === 'idea-archive'
+            ? extractPlainText(raw) || PLACEHOLDER_LABELS[section]
+            : raw || PLACEHOLDER_LABELS[section];
         return (
           <button
             key={row.id}
@@ -77,25 +81,41 @@ export function SectionItemList({
 
 const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
   character: 'name',
-  episode: 'title',
   foreshadow: 'title',
   'idea-archive': 'content',
 };
 
 const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '등장인물이 없습니다.',
-  episode: '원고가 없습니다.',
   foreshadow: '복선이 없습니다.',
   'idea-archive': '아이디어가 없습니다.',
 };
 
 const PLACEHOLDER_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '(이름 없음)',
-  episode: '(제목 없음)',
   foreshadow: '(제목 없음)',
   'idea-archive': '(내용 없음)',
 };
 
 function escapeLike(input: string): string {
   return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/** TipTap JSON content에서 일반 텍스트만 추출 */
+function extractPlainText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const json = JSON.parse(raw);
+    return collectText(json).trim();
+  } catch {
+    return raw;
+  }
+}
+
+function collectText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const n = node as { text?: string; content?: unknown[] };
+  if (typeof n.text === 'string') return n.text;
+  if (Array.isArray(n.content)) return n.content.map(collectText).join(' ');
+  return '';
 }

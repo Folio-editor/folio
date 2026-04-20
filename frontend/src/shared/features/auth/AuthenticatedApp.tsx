@@ -12,9 +12,9 @@ import { CharacterOverviewAll } from '../character/CharacterOverviewAll';
 import { CharacterOverview } from '../character/CharacterOverview';
 import { CharacterNoteEditor } from '../character/CharacterNoteEditor';
 import { PlotOverview } from '../plot/PlotOverview';
-import { EpisodeListScreen } from '../episode/EpisodeListScreen';
+import { EpisodeOverview } from '../episode/EpisodeOverview';
 import { EpisodeEditScreen } from '../episode/EpisodeEditScreen';
-import { ForeshadowListScreen } from '../foreshadow/ForeshadowListScreen';
+import { ForeshadowOverview } from '../foreshadow/ForeshadowOverview';
 import { ForeshadowEditScreen } from '../foreshadow/ForeshadowEditScreen';
 import { IdeaArchiveListScreen } from '../idea-archive/IdeaArchiveListScreen';
 import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
@@ -156,6 +156,13 @@ export function AuthenticatedApp() {
     setActivity('home');
   };
 
+  /** 크로스 섹션 네비게이션 — 플롯↔원고 연결 이동 등 */
+  const handleNavigateTo = (section: WorkspaceSection, itemId: string | null) => {
+    setActivity(section);
+    setSelectedSection(section);
+    setSelectedItemId(itemId);
+  };
+
   return (
     <>
       <AppShell
@@ -228,6 +235,7 @@ interface RenderMainArgs {
   onSectionSelect: (section: WorkspaceSection) => void;
   onItemSelect: (id: string | null) => void;
   onWorkDeleted: () => void;
+  onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }
 
 function renderMain({
@@ -238,6 +246,7 @@ function renderMain({
   onSectionSelect,
   onItemSelect,
   onWorkDeleted,
+  onNavigateTo,
 }: RenderMainArgs) {
   if (!workId) {
     return <WorkspaceScreen onCreateWork={onCreateWork} />;
@@ -298,18 +307,18 @@ function renderMain({
       return null;
     }
     case 'plot':
-      return <PlotOverview workId={workId} />;
+      return <PlotOverview workId={workId} onNavigateTo={onNavigateTo} />;
     case 'episode':
       return itemId ? (
-        <EpisodeEditScreen key={itemId} id={itemId} onBack={back} />
+        <EpisodeEditScreen key={itemId} id={itemId} onBack={back} onNavigateTo={onNavigateTo} />
       ) : (
-        <EpisodeListScreen workId={workId} onSelect={onItemSelect} />
+        <EpisodeOverview workId={workId} onSelect={onItemSelect} />
       );
     case 'foreshadow':
       return itemId ? (
         <ForeshadowEditScreen key={itemId} id={itemId} onBack={back} />
       ) : (
-        <ForeshadowListScreen workId={workId} onSelect={onItemSelect} />
+        <ForeshadowOverview workId={workId} onSelect={onItemSelect} />
       );
     case 'idea-archive':
       return itemId ? (
