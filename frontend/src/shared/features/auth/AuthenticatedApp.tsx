@@ -210,6 +210,7 @@ export function AuthenticatedApp() {
             onSectionSelect: handleSectionSelect,
             onItemSelect: setSelectedItemId,
             onWorkDeleted: handleWorkDeleted,
+            onNavigateTo: handleNavigateTo,
           })
         )}
       </AppShell>
