@@ -3,10 +3,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { PowerSyncContext } from '@powersync/react';
 import { useAuthStore } from '../shared/stores/authStore';
 import { AuthenticatedApp } from '../shared/features/auth/AuthenticatedApp';
+import { ThemeProvider } from '../shared/components/ThemeProvider';
 import { db } from './sync/db';
-import { StoryZipConnector } from './sync/connector';
+import { FolioConnector } from './sync/connector';
 
-const connector = new StoryZipConnector();
+const connector = new FolioConnector();
 
 export function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -49,9 +50,11 @@ export function App() {
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-gray-500">
-        로딩 중...
-      </div>
+      <ThemeProvider>
+        <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+          로딩 중...
+        </div>
+      </ThemeProvider>
     );
   }
 
@@ -59,18 +62,22 @@ export function App() {
   // 로그인 화면은 AuthenticatedApp 내부의 게스트 배너에서 선택적으로 제공
   if (isAuthenticated || isGuest) {
     return (
-      <PowerSyncContext.Provider value={db}>
-        <MemoryRouter>
-          <AuthenticatedApp />
-        </MemoryRouter>
-      </PowerSyncContext.Provider>
+      <ThemeProvider>
+        <PowerSyncContext.Provider value={db}>
+          <MemoryRouter>
+            <AuthenticatedApp />
+          </MemoryRouter>
+        </PowerSyncContext.Provider>
+      </ThemeProvider>
     );
   }
 
   // restore 완료 후 isGuest도 false인 경우는 없어야 하지만 방어 처리
   return (
-    <div className="flex min-h-screen items-center justify-center text-gray-500">
-      초기화 중...
-    </div>
+    <ThemeProvider>
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        초기화 중...
+      </div>
+    </ThemeProvider>
   );
 }

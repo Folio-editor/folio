@@ -1,4 +1,4 @@
-import { ContentEditor } from '../../components/ui/ContentEditor';
+import { ContentEditor } from '../../components/editor/ContentEditor';
 
 interface WorldNoteEditorProps {
   noteId: string;

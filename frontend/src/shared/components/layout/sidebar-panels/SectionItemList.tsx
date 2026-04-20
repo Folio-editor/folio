@@ -4,7 +4,7 @@ import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
 import { cn } from '../../../lib/cn';
 
 interface SectionItemListProps {
-  section: Exclude<WorkspaceSection, 'plan' | 'world-note'>;
+  section: Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot'>;
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
@@ -45,7 +45,7 @@ export function SectionItemList({
 
   if (rows.length === 0) {
     return (
-      <p className="px-2 py-6 text-center text-xs text-gray-400">
+      <p className="px-2 py-6 text-center text-xs text-muted-foreground">
         {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
       </p>
     );
@@ -61,10 +61,10 @@ export function SectionItemList({
             type="button"
             onClick={() => onItemSelect(row.id)}
             className={cn(
-              'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100',
+              'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
               selectedItemId === row.id
-                ? 'bg-blue-50 font-medium text-blue-700'
-                : 'text-gray-700',
+                ? 'bg-primary/5 font-medium text-primary'
+                : 'text-sidebar-foreground',
             )}
           >
             {display}
@@ -77,7 +77,6 @@ export function SectionItemList({
 
 const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
   character: 'name',
-  plot: 'title',
   episode: 'title',
   foreshadow: 'title',
   'idea-archive': 'content',
@@ -85,7 +84,6 @@ const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
 
 const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '등장인물이 없습니다.',
-  plot: '플롯이 없습니다.',
   episode: '원고가 없습니다.',
   foreshadow: '복선이 없습니다.',
   'idea-archive': '아이디어가 없습니다.',
@@ -93,7 +91,6 @@ const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
 
 const PLACEHOLDER_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '(이름 없음)',
-  plot: '(제목 없음)',
   episode: '(제목 없음)',
   foreshadow: '(제목 없음)',
   'idea-archive': '(내용 없음)',

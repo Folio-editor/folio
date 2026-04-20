@@ -28,11 +28,11 @@ public class SwaggerConfig {
     private static final String BEARER_KEY = "BearerAuth";
 
     @Bean
-    public OpenAPI storyZipOpenAPI() {
+    public OpenAPI folioOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("StoryZip API")
-                        .description("StoryZip 웹소설 작가 플랫폼 백엔드 API 문서")
+                        .title("Folio API")
+                        .description("Folio 웹소설 작가 플랫폼 백엔드 API 문서")
                         .version("v1"))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_KEY))
                 .components(new Components().addSecuritySchemes(

@@ -42,7 +42,7 @@ const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
 export function ActivityBar({ activity, onActivityChange, workSelected }: ActivityBarProps) {
   return (
     <nav
-      className="flex w-14 shrink-0 flex-col items-center border-r border-gray-200 bg-gray-100 py-2"
+      className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-2"
       aria-label="액티비티 바"
     >
       {ACTIVITY_ORDER.map((item) => {
@@ -63,15 +63,15 @@ export function ActivityBar({ activity, onActivityChange, workSelected }: Activi
             className={cn(
               'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
               isActive && !isDisabled
-                ? 'text-gray-900'
-                : 'text-gray-500 hover:bg-gray-200 hover:text-gray-800',
+                ? 'text-sidebar-foreground'
+                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
               isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
             )}
           >
             {isActive && !isDisabled && (
               <span
                 aria-hidden
-                className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-blue-600"
+                className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
               />
             )}
             <Icon size={20} strokeWidth={1.75} />

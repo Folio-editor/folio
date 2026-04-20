@@ -35,18 +35,6 @@ public class Character {
     @Column(nullable = false, length = 100)
     private String age;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String appearance;
-
-    @Column(length = 10)
-    private String mbti;
-
-    @Column(columnDefinition = "TEXT")
-    private String personality;
-
-    @Column(columnDefinition = "TEXT")
-    private String content;
-
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
 

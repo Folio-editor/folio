@@ -1,6 +1,21 @@
 import { useQuery } from '@powersync/react';
-import { Plus } from 'lucide-react';
+import { GripVertical, Plus } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
+import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { cn } from '../../../lib/cn';
 
 interface WorkRow {
@@ -27,6 +42,10 @@ export function HomeWorkList({
   onNewWork,
 }: HomeWorkListProps) {
   const writerId = useWriterId();
+  const { reorderItems } = useLocalWrite();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
   const trimmed = searchTerm.trim();
   const sql = trimmed
     ? `SELECT id, title FROM work
@@ -43,32 +62,86 @@ export function HomeWorkList({
       <button
         type="button"
         onClick={onNewWork}
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100"
+        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
       >
         <Plus size={14} strokeWidth={2} />
         <span>새 작품</span>
       </button>
       {works.length === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-gray-400">
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '작품이 없습니다.'}
         </p>
       ) : (
-        works.map((work) => (
-          <button
-            key={work.id}
-            type="button"
-            onClick={() => onWorkSelect(work.id)}
-            className={cn(
-              'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-gray-100',
-              selectedWorkId === work.id
-                ? 'bg-blue-50 font-medium text-blue-700'
-                : 'text-gray-700',
-            )}
-          >
-            {work.title}
-          </button>
-        ))
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={(event: DragEndEvent) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            const oldIndex = works.findIndex((w) => w.id === active.id);
+            const newIndex = works.findIndex((w) => w.id === over.id);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const reordered = arrayMove(works, oldIndex, newIndex);
+            void reorderItems(
+              'work',
+              reordered.map((w, i) => ({ id: w.id, sortOrder: i * 1000 })),
+            );
+          }}
+        >
+          <SortableContext items={works.map((w) => w.id)} strategy={verticalListSortingStrategy}>
+            {works.map((work) => (
+              <SortableWorkItem
+                key={work.id}
+                work={work}
+                selected={selectedWorkId === work.id}
+                onSelect={() => onWorkSelect(work.id)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       )}
+    </div>
+  );
+}
+
+function SortableWorkItem({
+  work,
+  selected,
+  onSelect,
+}: {
+  work: WorkRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: work.id });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} className="group flex items-center">
+      <span
+        {...listeners}
+        className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <GripVertical size={12} className="text-muted-foreground" />
+      </span>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          'flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+          selected
+            ? 'bg-primary/5 font-medium text-primary'
+            : 'text-sidebar-foreground',
+        )}
+      >
+        {work.title}
+      </button>
     </div>
   );
 }

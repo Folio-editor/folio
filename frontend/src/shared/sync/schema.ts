@@ -1,5 +1,5 @@
 // ============================================================
-// PowerSync SQLite 스키마 — StoryZip
+// PowerSync SQLite 스키마 — Folio
 // ============================================================
 // PostgreSQL sync-rules.yaml 의 동기화 대상 테이블 12개를 정의한다.
 //
@@ -29,9 +29,19 @@ const plan = new Table({
   genres:          column.text,  // JSON array — 읽을 때 JSON.parse() 필요
   moods:           column.text,  // JSON array — 읽을 때 JSON.parse() 필요
   target_audience: column.text,
-  content:         column.text,
   created_at:      column.text,
   updated_at:      column.text,
+});
+
+// 기획서 하위 자유 문서 (1:N). 트리/parent_id 없음.
+const plan_note = new Table({
+  work_id:    column.text,
+  writer_id:  column.text,
+  title:      column.text,
+  content:    column.text,
+  sort_order: column.integer,
+  created_at: column.text,
+  updated_at: column.text,
 });
 
 const world_note = new Table({
@@ -52,13 +62,20 @@ const character = new Table({
   profile_image_url: column.text,
   gender:            column.text,
   age:               column.text,
-  appearance:        column.text,
-  mbti:              column.text,
-  personality:       column.text,
-  content:           column.text,
   sort_order:        column.integer,
   created_at:        column.text,
   updated_at:        column.text,
+});
+
+const character_note = new Table({
+  character_id: column.text,
+  writer_id:    column.text,
+  kind:         column.text,
+  title:        column.text,
+  content:      column.text,
+  sort_order:   column.integer,
+  created_at:   column.text,
+  updated_at:   column.text,
 });
 
 const character_custom_field = new Table({
@@ -141,8 +158,10 @@ const idea_archive = new Table({
 export const AppSchema = new Schema({
   work,
   plan,
+  plan_note,
   world_note,
   character,
+  character_note,
   character_custom_field,
   character_tag,
   plot,

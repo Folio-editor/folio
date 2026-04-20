@@ -1,4 +1,4 @@
-# StoryZip - Doppler 환경변수 관리 세팅 가이드
+# Folio - Doppler 환경변수 관리 세팅 가이드
 
 ## 개요
 

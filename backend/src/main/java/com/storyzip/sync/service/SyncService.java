@@ -37,8 +37,10 @@ public class SyncService {
 
     private final WorkRepository workRepo;
     private final PlanRepository planRepo;
+    private final PlanNoteRepository planNoteRepo;
     private final WorldNoteRepository worldNoteRepo;
     private final CharacterRepository characterRepo;
+    private final CharacterNoteRepository characterNoteRepo;
     private final CharacterCustomFieldRepository charCustomFieldRepo;
     private final CharacterTagRepository charTagRepo;
     private final PlotRepository plotRepo;
@@ -59,8 +61,10 @@ public class SyncService {
         switch (table) {
             case "work" -> processWork(op, id, data, writerId);
             case "plan" -> processPlan(op, id, data, writerId);
+            case "plan_note" -> processPlanNote(op, id, data, writerId);
             case "world_note" -> processWorldNote(op, id, data, writerId);
             case "character" -> processCharacter(op, id, data, writerId);
+            case "character_note" -> processCharacterNote(op, id, data, writerId);
             case "character_custom_field" -> processCharacterCustomField(op, id, data);
             case "character_tag" -> processCharacterTag(op, id, data);
             case "plot" -> processPlot(op, id, data, writerId);
@@ -119,11 +123,31 @@ public class SyncService {
         applyStr(data,  "genres",          e::setGenres);
         applyStr(data,  "moods",           e::setMoods);
         applyStr(data,  "target_audience", e::setTargetAudience);
-        applyStr(data,  "content",         e::setContent);
         applyDt(data,   "created_at",      e::setCreatedAt);
         e.setUpdatedAt(LocalDateTime.now());
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         planRepo.save(e);
+    }
+
+    // ── plan_note ────────────────────────────────────────────────
+    private void processPlanNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
+        if ("DELETE".equals(op)) { planNoteRepo.deleteById(id); return; }
+        PlanNote e = planNoteRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = PlanNote.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "work_id",    e::setWorkId);
+        applyStr(data,  "title",      e::setTitle);
+        applyStr(data,  "content",    e::setContent);
+        applyInt(data,  "sort_order", e::setSortOrder);
+        applyDt(data,   "created_at", e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getTitle() == null) e.setTitle("새 문서");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        planNoteRepo.save(e);
     }
 
     // ── world_note ───────────────────────────────────────────────
@@ -162,20 +186,38 @@ public class SyncService {
         applyStr(data,  "profile_image_url", e::setProfileImageUrl);
         applyStr(data,  "gender",            e::setGender);
         applyStr(data,  "age",               e::setAge);
-        applyStr(data,  "appearance",        e::setAppearance);
-        applyStr(data,  "mbti",              e::setMbti);
-        applyStr(data,  "personality",       e::setPersonality);
-        applyStr(data,  "content",           e::setContent);
         applyInt(data,  "sort_order",        e::setSortOrder);
         applyDt(data,   "created_at",        e::setCreatedAt);
         e.setUpdatedAt(LocalDateTime.now());
         if (e.getName() == null) e.setName("이름 없음");
         if (e.getGender() == null) e.setGender("미설정");
         if (e.getAge() == null) e.setAge("");
-        if (e.getAppearance() == null) e.setAppearance("");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         characterRepo.save(e);
+    }
+
+    // ── character_note ────────────────────────────────────────────
+    private void processCharacterNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
+        if ("DELETE".equals(op)) { characterNoteRepo.deleteById(id); return; }
+        CharacterNote e = characterNoteRepo.findById(id).orElse(null);
+        if (e == null) {
+            if ("PATCH".equals(op)) return;
+            e = CharacterNote.builder().id(id).build();
+        }
+        e.setWriterId(writerId);
+        applyUuid(data, "character_id", e::setCharacterId);
+        applyStr(data,  "kind",         e::setKind);
+        applyStr(data,  "title",        e::setTitle);
+        applyStr(data,  "content",      e::setContent);
+        applyInt(data,  "sort_order",   e::setSortOrder);
+        applyDt(data,   "created_at",   e::setCreatedAt);
+        e.setUpdatedAt(LocalDateTime.now());
+        if (e.getKind() == null) e.setKind("custom");
+        if (e.getTitle() == null) e.setTitle("새 문서");
+        if (e.getSortOrder() == null) e.setSortOrder(0);
+        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        characterNoteRepo.save(e);
     }
 
     // ── character_custom_field ────────────────────────────────────
