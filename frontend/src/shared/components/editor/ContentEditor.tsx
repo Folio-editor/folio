@@ -197,8 +197,20 @@ export function ContentEditor({
         <EditorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
 
-      {/* 본문 */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      {/* 본문 — 클릭 시 에디터 포커스 보장 */}
+      <div
+        className="min-h-0 flex-1 cursor-text overflow-y-auto px-8 py-6"
+        onMouseDown={() => {
+          // 에디터가 포커스를 잃은 상태에서 영역 어디든 클릭하면 포커스 복원
+          // TipTap 내부 클릭은 자체 처리하지만, blur 상태에서는 명시적 focus가 필요
+          if (editor && !editor.isFocused) {
+            // 약간의 지연으로 TipTap의 자체 클릭 처리와 충돌 방지
+            requestAnimationFrame(() => {
+              if (!editor.isFocused) editor.commands.focus();
+            });
+          }
+        }}
+      >
         <EditorContent editor={editor} style={{ minHeight: '100%', outline: 'none' }} />
         {editor && <EditorBubbleMenu editor={editor} />}
       </div>

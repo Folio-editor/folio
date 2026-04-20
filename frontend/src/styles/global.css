@@ -301,3 +301,33 @@ body {
 .dark .folio-editor .find-match-current {
   background: oklch(0.5 0.18 50);
 }
+
+/* ── 노트 카드 미리보기 (서식 유지) ── */
+.note-preview p {
+  margin: 0 0 0.25em;
+}
+.note-preview h1,
+.note-preview h2,
+.note-preview h3 {
+  font-size: inherit;
+  font-weight: 600;
+  margin: 0 0 0.25em;
+}
+.note-preview ul,
+.note-preview ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.note-preview blockquote {
+  margin: 0;
+  padding-left: 0.5em;
+  border-left: 2px solid var(--border);
+}
+.note-preview mark {
+  background-color: oklch(0.9 0.15 90);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dark .note-preview mark {
+  background-color: oklch(0.4 0.1 90);
+}

@@ -11,8 +11,7 @@ import { WorldNoteOverview } from '../world-note/WorldNoteOverview';
 import { CharacterOverviewAll } from '../character/CharacterOverviewAll';
 import { CharacterOverview } from '../character/CharacterOverview';
 import { CharacterNoteEditor } from '../character/CharacterNoteEditor';
-import { PlotListScreen } from '../plot/PlotListScreen';
-import { PlotEditScreen } from '../plot/PlotEditScreen';
+import { PlotOverview } from '../plot/PlotOverview';
 import { EpisodeListScreen } from '../episode/EpisodeListScreen';
 import { EpisodeEditScreen } from '../episode/EpisodeEditScreen';
 import { ForeshadowListScreen } from '../foreshadow/ForeshadowListScreen';
@@ -246,7 +245,7 @@ function renderMain({
       );
     case 'world-note':
       return itemId ? (
-        <WorldNoteScreen noteId={itemId} onBack={() => onItemSelect(null)} />
+        <WorldNoteScreen key={itemId} noteId={itemId} onBack={() => onItemSelect(null)} />
       ) : workId ? (
         <WorldNoteOverview workId={workId} onNoteSelect={onItemSelect} />
       ) : (
@@ -270,6 +269,7 @@ function renderMain({
         const noteId = itemId.slice(6);
         return (
           <CharacterNoteEditor
+            key={noteId}
             noteId={noteId}
             onBack={back}
           />
@@ -278,26 +278,22 @@ function renderMain({
       return null;
     }
     case 'plot':
-      return itemId ? (
-        <PlotEditScreen id={itemId} onBack={back} />
-      ) : (
-        <PlotListScreen workId={workId} onSelect={onItemSelect} />
-      );
+      return <PlotOverview workId={workId} />;
     case 'episode':
       return itemId ? (
-        <EpisodeEditScreen id={itemId} onBack={back} />
+        <EpisodeEditScreen key={itemId} id={itemId} onBack={back} />
       ) : (
         <EpisodeListScreen workId={workId} onSelect={onItemSelect} />
       );
     case 'foreshadow':
       return itemId ? (
-        <ForeshadowEditScreen id={itemId} onBack={back} />
+        <ForeshadowEditScreen key={itemId} id={itemId} onBack={back} />
       ) : (
         <ForeshadowListScreen workId={workId} onSelect={onItemSelect} />
       );
     case 'idea-archive':
       return itemId ? (
-        <IdeaArchiveEditScreen id={itemId} onBack={back} />
+        <IdeaArchiveEditScreen key={itemId} id={itemId} onBack={back} />
       ) : (
         <IdeaArchiveListScreen workId={workId} onSelect={onItemSelect} />
       );

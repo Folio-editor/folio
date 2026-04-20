@@ -247,14 +247,38 @@ export function useLocalWrite() {
       );
     },
 
-    // ── plot ────────────────────────────────────────────────
-    createPlot: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+    // ── character_tag ─────────────────────────────────────────
+    createCharacterTag: async (characterId: string, worldNoteId: string): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
+        `INSERT OR IGNORE INTO character_tag (id, character_id, world_note_id, created_at)
+         VALUES (?, ?, ?, ?)`,
+        [id, characterId, worldNoteId, now],
+      );
+      return id;
+    },
+    deleteCharacterTag: async (characterId: string, worldNoteId: string): Promise<void> => {
+      await db.execute(
+        'DELETE FROM character_tag WHERE character_id = ? AND world_note_id = ?',
+        [characterId, worldNoteId],
+      );
+    },
+
+    // ── plot ────────────────────────────────────────────────
+    createPlot: async (
+      workId: string,
+      title: string,
+      sortOrder: number,
+      parentId: string | null = null,
+    ): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const status = parentId ? '예정' : null;
+      await db.execute(
         `INSERT INTO plot (id, work_id, writer_id, parent_id, title, status, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, '예정', NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, parentId, title, status, sortOrder, now, now],
       );
       return id;
     },

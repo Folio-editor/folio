@@ -4,7 +4,7 @@ import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
 import { cn } from '../../../lib/cn';
 
 interface SectionItemListProps {
-  section: Exclude<WorkspaceSection, 'plan' | 'world-note'>;
+  section: Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot'>;
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
@@ -77,7 +77,6 @@ export function SectionItemList({
 
 const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
   character: 'name',
-  plot: 'title',
   episode: 'title',
   foreshadow: 'title',
   'idea-archive': 'content',
@@ -85,7 +84,6 @@ const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
 
 const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '등장인물이 없습니다.',
-  plot: '플롯이 없습니다.',
   episode: '원고가 없습니다.',
   foreshadow: '복선이 없습니다.',
   'idea-archive': '아이디어가 없습니다.',
@@ -93,7 +91,6 @@ const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
 
 const PLACEHOLDER_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '(이름 없음)',
-  plot: '(제목 없음)',
   episode: '(제목 없음)',
   foreshadow: '(제목 없음)',
   'idea-archive': '(내용 없음)',

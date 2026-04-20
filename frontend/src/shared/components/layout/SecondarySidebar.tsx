@@ -15,6 +15,7 @@ import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
+import { PlotTreeList } from './sidebar-panels/PlotTreeList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -302,8 +303,20 @@ function renderContent(args: {
     );
   }
 
-  // plot / episode / foreshadow / idea-archive
-  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character'>;
+  // plot: 막 > 회차 트리 리스트
+  if (activity === 'plot' && selectedWorkId) {
+    return (
+      <PlotTreeList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+      />
+    );
+  }
+
+  // episode / foreshadow / idea-archive
+  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot'>;
   return (
     <SectionItemList
       section={section}
