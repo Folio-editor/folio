@@ -22,6 +22,8 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
+import { SettingsScreen } from '../settings/SettingsScreen';
+import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
 import { Activity, WorkspaceSection } from '../../types/workspace';
 
 const SIDEBAR_MIN = 180;
@@ -45,6 +47,8 @@ export function AuthenticatedApp() {
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<WorkspaceSection | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [settingsMode, setSettingsMode] = useState(false);
+  const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
 
   const { createWork, createWorldNote, createPlanNote, ensureWorldNoteTemplates } = useLocalWrite();
@@ -77,16 +81,22 @@ export function AuthenticatedApp() {
     setRightPanelsWidth((w) => clamp(w + delta, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX));
 
   const handleActivityChange = (next: Activity) => {
-    // 접힌 상태에서 아이콘 클릭 → 자동 펼침 (VSCode 동작)
     if (sidebarCollapsed) setSidebarCollapsed(false);
+    setSettingsMode(false);
+    setSelectedSettingsItem(null);
     setActivity(next);
     setSelectedItemId(null);
     if (next === 'home') {
-      // home 으로 전환 시 섹션만 초기화 — 선택된 작품은 보존
       setSelectedSection(null);
     } else {
       setSelectedSection(next);
     }
+  };
+
+  const handleSettingsClick = () => {
+    if (sidebarCollapsed) setSidebarCollapsed(false);
+    setSettingsMode(true);
+    setSelectedSettingsItem('theme');
   };
 
   const handleWorkSelect = (id: string) => {
@@ -154,6 +164,8 @@ export function AuthenticatedApp() {
             activity={activity}
             onActivityChange={handleActivityChange}
             workSelected={selectedWorkId !== null}
+            settingsMode={settingsMode}
+            onSettingsClick={handleSettingsClick}
           />
         }
         sidebar={
@@ -170,6 +182,9 @@ export function AuthenticatedApp() {
               width={sidebarWidth}
               onWidthChange={resizeSidebar}
               onCollapse={() => setSidebarCollapsed(true)}
+              settingsMode={settingsMode}
+              selectedSettingsItem={selectedSettingsItem}
+              onSettingsItemSelect={setSelectedSettingsItem}
             />
           )
         }
@@ -177,15 +192,19 @@ export function AuthenticatedApp() {
           <RightPanels width={rightPanelsWidth} onWidthChange={resizeRightPanels} />
         }
       >
-        {renderMain({
-          workId: selectedWorkId,
-          section: selectedSection,
-          itemId: selectedItemId,
-          onCreateWork: handleNewWork,
-          onSectionSelect: handleSectionSelect,
-          onItemSelect: setSelectedItemId,
-          onWorkDeleted: handleWorkDeleted,
-        })}
+        {settingsMode && selectedSettingsItem ? (
+          <SettingsScreen settingsItemId={selectedSettingsItem} />
+        ) : (
+          renderMain({
+            workId: selectedWorkId,
+            section: selectedSection,
+            itemId: selectedItemId,
+            onCreateWork: handleNewWork,
+            onSectionSelect: handleSectionSelect,
+            onItemSelect: setSelectedItemId,
+            onWorkDeleted: handleWorkDeleted,
+          })
+        )}
       </AppShell>
 
       {resolver.showDialog && (
@@ -196,6 +215,7 @@ export function AuthenticatedApp() {
           onCancel={() => void resolver.cancel()}
         />
       )}
+
     </>
   );
 }

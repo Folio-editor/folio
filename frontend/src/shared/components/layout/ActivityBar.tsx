@@ -6,6 +6,7 @@ import {
   Home,
   Lightbulb,
   ScrollText,
+  Settings,
   Target,
   Users,
 } from 'lucide-react';
@@ -20,6 +21,8 @@ interface ActivityBarProps {
   activity: Activity;
   onActivityChange: (next: Activity) => void;
   workSelected: boolean;
+  settingsMode: boolean;
+  onSettingsClick: () => void;
 }
 
 const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
@@ -39,45 +42,70 @@ const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
  * - 섹션 아이콘은 workSelected=false 일 때 disabled
  * - 선택된 항목은 좌측 2px 인디케이터 + 진한 색상
  */
-export function ActivityBar({ activity, onActivityChange, workSelected }: ActivityBarProps) {
+export function ActivityBar({ activity, onActivityChange, workSelected, settingsMode, onSettingsClick }: ActivityBarProps) {
   return (
     <nav
-      className="flex w-14 shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar py-2"
+      className="flex w-14 shrink-0 flex-col items-center justify-between border-r border-sidebar-border bg-sidebar py-2"
       aria-label="액티비티 바"
     >
-      {ACTIVITY_ORDER.map((item) => {
-        const Icon = ACTIVITY_ICONS[item];
-        const isActive = activity === item;
-        const isDisabled = item !== 'home' && !workSelected;
-        const label = ACTIVITY_LABELS[item];
+      <div className="flex flex-col items-center">
+        {ACTIVITY_ORDER.map((item) => {
+          const Icon = ACTIVITY_ICONS[item];
+          const isActive = activity === item && !settingsMode;
+          const isDisabled = item !== 'home' && !workSelected;
+          const label = ACTIVITY_LABELS[item];
 
-        return (
-          <button
-            key={item}
-            type="button"
-            onClick={() => onActivityChange(item)}
-            disabled={isDisabled}
-            title={isDisabled ? '작품을 먼저 선택하세요' : label}
-            aria-label={label}
-            aria-current={isActive ? 'page' : undefined}
-            className={cn(
-              'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
-              isActive && !isDisabled
-                ? 'text-sidebar-foreground'
-                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
-            )}
-          >
-            {isActive && !isDisabled && (
-              <span
-                aria-hidden
-                className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
-              />
-            )}
-            <Icon size={20} strokeWidth={1.75} />
-          </button>
-        );
-      })}
+          return (
+            <button
+              key={item}
+              type="button"
+              onClick={() => onActivityChange(item)}
+              disabled={isDisabled}
+              title={isDisabled ? '작품을 먼저 선택하세요' : label}
+              aria-label={label}
+              aria-current={isActive ? 'page' : undefined}
+              className={cn(
+                'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+                isActive && !isDisabled
+                  ? 'text-sidebar-foreground'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+              )}
+            >
+              {isActive && !isDisabled && (
+                <span
+                  aria-hidden
+                  className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+                />
+              )}
+              <Icon size={20} strokeWidth={1.75} />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col items-center pb-1">
+        <button
+          type="button"
+          onClick={onSettingsClick}
+          aria-label="설정"
+          title="설정"
+          className={cn(
+            'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+            settingsMode
+              ? 'text-sidebar-foreground'
+              : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+          )}
+        >
+          {settingsMode && (
+            <span
+              aria-hidden
+              className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+            />
+          )}
+          <Settings size={20} strokeWidth={1.75} />
+        </button>
+      </div>
     </nav>
   );
 }

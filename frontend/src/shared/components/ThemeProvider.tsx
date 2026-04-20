@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '../stores/themeStore';
+import { useAppearanceStore } from '../stores/appearanceStore';
+import { SERVICE_FONTS } from '../config/fonts';
 
-/**
- * <html> 태그에 light/dark class를 적용.
- * system 모드일 때는 OS prefers-color-scheme을 따른다.
- */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const theme = useThemeStore((s) => s.theme);
+  const colorTheme = useAppearanceStore((s) => s.colorTheme);
+  const serviceFont = useAppearanceStore((s) => s.serviceFont);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -21,7 +21,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // system mode — follow OS preference
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     apply(mq.matches ? 'dark' : 'light');
 
@@ -29,6 +28,35 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    Array.from(root.classList)
+      .filter((cls) => cls.startsWith('theme-'))
+      .forEach((cls) => root.classList.remove(cls));
+
+    if (colorTheme !== 'default') {
+      root.classList.add(`theme-${colorTheme}`);
+    }
+  }, [colorTheme]);
+
+  useEffect(() => {
+    const fontDef = SERVICE_FONTS.find((f) => f.id === serviceFont);
+    if (!fontDef) return;
+
+    if (fontDef.url) {
+      const linkId = `folio-font-${fontDef.id}`;
+      if (!document.getElementById(linkId)) {
+        const link = document.createElement('link');
+        link.id = linkId;
+        link.rel = 'stylesheet';
+        link.href = fontDef.url;
+        document.head.appendChild(link);
+      }
+    }
+
+    document.body.style.fontFamily = fontDef.fontFamily;
+  }, [serviceFont]);
 
   return <>{children}</>;
 }
