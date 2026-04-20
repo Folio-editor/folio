@@ -1,5 +1,10 @@
+# Docker run notes
+# Run these from the project root after Docker Desktop starts:
+# Start: docker compose -f infra/dev/docker-compose.dev.yml up -d
+# Stop:  docker compose -f infra/dev/docker-compose.dev.yml down
+#
 # ============================================================
-# FastAPI (uvicorn) 이미지
+# FastAPI (uvicorn) image
 # ============================================================
 FROM python:3.12-slim AS base
 
