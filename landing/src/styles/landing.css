@@ -1,0 +1,981 @@
+/* Folio Landing v3 — 1:1 port of folio-landing-v3.html */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.folio-landing {
+  --bg: #ffffff;
+  --ink: #111111;
+  --ink-mid: #6b6b6b;
+  --ink-faint: #e5e5e5;
+  --ink-border: #d4d4d4;
+  --accent: #a01818;
+  --serif: 'Noto Serif KR', 'Nanum Myeongjo', Georgia, serif;
+  --sans: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  --nav-h: 56px;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+.folio-landing *,
+.folio-landing *::before,
+.folio-landing *::after {
+  box-sizing: border-box;
+}
+.folio-landing .sans {
+  font-family: var(--sans);
+}
+
+/* ── Top Navigation ───────────────────────────────────── */
+.folio-landing .nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: var(--nav-h);
+  width: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(10px);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--ink-border);
+}
+.folio-landing .nav-inner {
+  max-width: 1100px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.folio-landing .nav-brand {
+  font-family: var(--sans);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.folio-landing .nav-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-left: 2px;
+  transform: translateY(-7px);
+}
+.folio-landing .nav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.folio-landing .nav-link {
+  color: var(--ink-mid);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.folio-landing .nav-link:hover {
+  color: var(--ink);
+}
+.folio-landing .nav-cta {
+  color: var(--bg);
+  background: var(--ink);
+  padding: 8px 14px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.folio-landing .nav-cta:hover {
+  opacity: 0.85;
+}
+
+/* ── Hero (first viewport) ────────────────────────────── */
+.folio-landing .hero {
+  min-height: calc(88vh - var(--nav-h));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem 3rem;
+  text-align: center;
+  position: relative;
+}
+.folio-landing .hero-rule {
+  width: 40px;
+  height: 1px;
+  background: var(--ink);
+  opacity: 0.4;
+  margin-bottom: 2.5rem;
+}
+.folio-landing .hero-hook {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin-bottom: 2.5rem;
+  color: var(--ink-mid);
+}
+.folio-landing .hero-brand {
+  font-family: var(--sans);
+  font-size: 88px;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  margin-bottom: 0.75rem;
+}
+.folio-landing .hero-sub {
+  font-size: 15px;
+  color: var(--ink-mid);
+  font-style: italic;
+  letter-spacing: 0.02em;
+  margin-bottom: 2.5rem;
+}
+.folio-landing .hero-tagline {
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+  color: #333;
+  max-width: 460px;
+}
+.folio-landing .cta-group {
+  display: inline-flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.folio-landing .cta {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 14px 32px;
+  border: 1.5px solid var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.folio-landing .cta-primary {
+  background: var(--ink);
+  color: var(--bg);
+}
+.folio-landing .cta-primary:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+.folio-landing .cta-ghost {
+  background: var(--bg);
+  color: var(--ink);
+}
+.folio-landing .cta-ghost:hover {
+  background: var(--ink);
+  color: var(--bg);
+}
+.folio-landing .hero-cue {
+  position: absolute;
+  bottom: 2.5rem;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  animation: folioPulse 2s ease-in-out infinite;
+}
+.folio-landing .hero-cue::after {
+  content: '↓';
+  font-size: 14px;
+}
+@keyframes folioPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folio-landing .hero-cue {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ── Prologue Label ───────────────────────────────────── */
+.folio-landing .prologue-label {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 10vh 2rem 0;
+  text-align: center;
+}
+.folio-landing .prologue-rule {
+  height: 4px;
+  width: 320px;
+  max-width: 70%;
+  margin: 0 auto 1.5rem;
+  border-top: 1.2px solid var(--ink);
+  border-bottom: 0.5px solid var(--ink);
+}
+.folio-landing .prologue-meta {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  font-weight: 300;
+  margin-bottom: 0.75rem;
+}
+.folio-landing .prologue-title {
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--ink-mid);
+  letter-spacing: 0.02em;
+}
+
+/* ── Scroll-Ink (prose lines) ─────────────────────────── */
+.folio-landing .fill-line {
+  display: block;
+  background-color: var(--ink-faint);
+  background-image: linear-gradient(90deg, var(--ink) 50%, var(--ink-faint) 60%);
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  will-change: background-size;
+}
+@media (prefers-reduced-motion: reduce) {
+  .folio-landing .fill-line {
+    background-size: 200% 100% !important;
+  }
+}
+
+/* ── Prose ────────────────────────────────────────────── */
+.folio-landing .prose {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 6vh 2rem 12vh;
+  font-size: 23px;
+  line-height: 2;
+  letter-spacing: -0.005em;
+}
+.folio-landing .prose p {
+  margin: 0 0 1.5em;
+}
+.folio-landing .prose p:last-child {
+  margin-bottom: 0;
+}
+.folio-landing .whisper {
+  padding-left: 1.5rem;
+  border-left: 2px solid var(--accent);
+  font-style: italic;
+  margin-left: 0.5rem;
+}
+
+/* ── Chapter Head (shared) ────────────────────────────── */
+.folio-landing .chapter-head {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 8vh 2rem 0;
+}
+.folio-landing .chapter-head-inner {
+  display: flex;
+  align-items: baseline;
+  gap: 2rem;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 1.5rem;
+}
+.folio-landing .chapter-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  font-weight: 400;
+  flex: 0 0 auto;
+}
+.folio-landing .chapter-heading {
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+
+/* ── Chapter I · Tools (scroll reveal) ────────────────── */
+.folio-landing .tool-section {
+  min-height: 85vh;
+  display: flex;
+  align-items: center;
+  padding: 4vh 2rem;
+}
+.folio-landing .tool-inner {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 4rem;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
+  align-items: center;
+}
+.folio-landing .tool-mockup {
+  background: #fafafa;
+  border: 1px solid var(--ink-border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  min-height: 360px;
+}
+.folio-landing .tool-text {
+  padding-left: 1rem;
+}
+.folio-landing .tool-num {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--ink-mid);
+  margin-bottom: 1.25rem;
+}
+.folio-landing .tool-keyword {
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin-bottom: 1.25rem;
+}
+.folio-landing .tool-oneline {
+  font-size: 17px;
+  line-height: 1.6;
+  color: #333;
+  margin-bottom: 2rem;
+}
+.folio-landing .tool-metric {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  letter-spacing: 0.02em;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ink-border);
+}
+.folio-landing .tool-metric strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Mockup internals */
+.folio-landing .mock-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--ink-border);
+  margin-bottom: 1rem;
+}
+.folio-landing .mock-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d4d4d4;
+}
+.folio-landing .mock-tabs {
+  display: flex;
+  gap: 1.25rem;
+  margin-left: 1rem;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+.folio-landing .mock-tab-active {
+  color: var(--ink);
+  font-weight: 500;
+}
+.folio-landing .mock-content {
+  font-family: var(--serif);
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink);
+}
+.folio-landing .mock-content p {
+  margin: 0;
+}
+.folio-landing .mock-content-sm {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.folio-landing .mock-note {
+  color: #6b6b6b;
+  font-size: 11px;
+  font-family: var(--sans);
+}
+.folio-landing .hl-name {
+  background: rgba(160, 24, 24, 0.08);
+  border-bottom: 1.5px solid var(--accent);
+  padding: 1px 2px;
+}
+.folio-landing .typo {
+  text-decoration: underline wavy #ca8a04;
+  text-underline-offset: 3px;
+}
+.folio-landing .mock-card {
+  border: 1px solid var(--ink-border);
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+  background: #fff;
+}
+.folio-landing .mock-card:last-child {
+  margin-bottom: 0;
+}
+.folio-landing .mock-card.subtle {
+  background: #f7f7f7;
+}
+.folio-landing .mock-card-label {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 0.5rem;
+}
+.folio-landing .mock-draft-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Warn icon (AI Inspection) */
+.folio-landing .mock-warn {
+  color: var(--accent);
+  font-family: var(--sans);
+}
+
+/* Import Auto-Organize mockup (Tool 03) */
+.folio-landing .mock-import-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ink-border);
+}
+.folio-landing .mock-import-title {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+}
+.folio-landing .mock-import-meta {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-mid);
+  letter-spacing: 0.15em;
+}
+.folio-landing .mock-check {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+.folio-landing .mock-import-banner {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: #111;
+}
+.folio-landing .mock-result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.folio-landing .mock-result-item {
+  border: 1px solid var(--ink-border);
+  padding: 0.65rem 0.8rem;
+  background: #fff;
+}
+.folio-landing .mock-result-count {
+  font-family: var(--sans);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.15rem;
+}
+.folio-landing .mock-result-name {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-mid);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.folio-landing .mock-result-sample {
+  font-family: var(--sans);
+  font-size: 10px;
+  color: var(--ink-mid);
+  margin-top: 0.4rem;
+  line-height: 1.6;
+}
+
+/* ── Auto Carousel (Extra tools, v5) ──────────────────── */
+.folio-landing .carousel-wrap {
+  max-width: 1000px;
+  margin: 5rem auto 0;
+  padding: 0 2rem;
+}
+.folio-landing .carousel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  gap: 2rem;
+}
+.folio-landing .carousel-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+}
+.folio-landing .carousel-heading {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.folio-landing .carousel-dots {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.folio-landing .carousel-dot {
+  width: 24px;
+  height: 2px;
+  background: var(--ink-faint);
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s;
+  padding: 0;
+}
+.folio-landing .carousel-dot.active {
+  background: var(--ink);
+}
+.folio-landing .carousel-viewport {
+  overflow: hidden;
+  position: relative;
+}
+.folio-landing .carousel-track {
+  display: flex;
+  transition: transform 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.folio-landing .carousel-page {
+  flex: 0 0 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+.folio-landing .carousel-card {
+  border: 1px solid var(--ink-border);
+  padding: 1.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+  transition: border-color 0.15s;
+  background: var(--bg);
+}
+.folio-landing .carousel-card:hover {
+  border-color: var(--ink);
+}
+.folio-landing .carousel-card-num {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--ink-mid);
+  margin-bottom: 1.25rem;
+}
+.folio-landing .carousel-card-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.85rem;
+  line-height: 1.25;
+}
+.folio-landing .carousel-card-desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #333;
+  margin-bottom: auto;
+}
+.folio-landing .carousel-card-meta {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-mid);
+  padding-top: 1rem;
+  border-top: 1px solid var(--ink-border);
+  margin-top: 1.25rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .folio-landing .carousel-track {
+    transition: none !important;
+  }
+}
+
+/* ── Chapter wrapper (II·III·IV) ──────────────────────── */
+.folio-landing .chapter {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 4vh 2rem 2vh;
+}
+
+/* Flow (Chapter II) */
+.folio-landing .flow {
+  margin-top: 2rem;
+  border-top: 1px solid var(--ink);
+}
+.folio-landing .flow-row {
+  display: grid;
+  grid-template-columns: 80px 140px 1fr;
+  align-items: center;
+  gap: 2rem;
+  padding: 1.75rem 0.5rem;
+  border-bottom: 1px solid var(--ink-border);
+}
+.folio-landing .flow-num {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--ink-mid);
+}
+.folio-landing .flow-key {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.folio-landing .flow-desc {
+  font-size: 14px;
+  color: var(--ink-mid);
+  line-height: 1.5;
+}
+
+/* Pricing (Chapter III) */
+.folio-landing .pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--ink);
+  max-width: 800px;
+  margin: 2rem auto 0;
+}
+.folio-landing .price-cell {
+  padding: 2.5rem 2.25rem;
+  border-right: 1px solid var(--ink-border);
+  position: relative;
+}
+.folio-landing .price-cell:last-child {
+  border-right: none;
+}
+.folio-landing .price-cell.featured {
+  background: #fafafa;
+}
+.folio-landing .price-cell.featured::before {
+  content: '추천';
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 3px 8px;
+}
+.folio-landing .price-name {
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 1.25rem;
+}
+.folio-landing .price-num {
+  font-family: var(--sans);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+.folio-landing .price-period {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  margin-bottom: 1.75rem;
+}
+.folio-landing .price-cta {
+  display: inline-block;
+  padding: 10px 24px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid var(--ink);
+  text-decoration: none;
+  margin-bottom: 2rem;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.folio-landing .price-cta.primary {
+  background: var(--ink);
+  color: var(--bg);
+}
+.folio-landing .price-cta.primary:hover {
+  background: transparent;
+  color: var(--ink);
+}
+.folio-landing .price-cta.ghost {
+  background: transparent;
+  color: var(--ink);
+}
+.folio-landing .price-cta.ghost:hover {
+  background: var(--ink);
+  color: var(--bg);
+}
+.folio-landing .price-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 2;
+  color: #333;
+}
+.folio-landing .price-list li::before {
+  content: '—';
+  color: var(--ink-mid);
+  margin-right: 0.6rem;
+}
+
+/* FAQ (Chapter IV) */
+.folio-landing .faq-list {
+  margin-top: 2rem;
+  border-top: 1px solid var(--ink);
+}
+.folio-landing .faq-item {
+  border-bottom: 1px solid var(--ink-border);
+}
+.folio-landing .faq-item summary {
+  padding: 1.5rem 0;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 40px 1fr auto auto;
+  align-items: baseline;
+  gap: 1.25rem;
+  list-style: none;
+}
+.folio-landing .faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.folio-landing .faq-num {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: var(--ink-mid);
+}
+.folio-landing .faq-q {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.folio-landing .faq-short {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+}
+.folio-landing .faq-toggle {
+  font-family: var(--sans);
+  font-size: 18px;
+  color: var(--ink-mid);
+  font-weight: 300;
+  transition: transform 0.2s;
+}
+.folio-landing .faq-item[open] .faq-toggle {
+  transform: rotate(45deg);
+}
+.folio-landing .faq-a {
+  padding: 0 0 1.75rem 40px;
+  margin: 0 1.25rem 0 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #333;
+  max-width: 680px;
+}
+
+/* ── Fin Footer ───────────────────────────────────────── */
+.folio-landing .fin {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12vh 2rem 6vh;
+  text-align: center;
+}
+.folio-landing .fin-rule {
+  height: 4px;
+  max-width: 520px;
+  margin: 0 auto 1.5rem;
+  border-top: 0.5px solid var(--ink);
+  border-bottom: 1.2px solid var(--ink);
+}
+.folio-landing .fin-mark {
+  font-size: 14px;
+  color: var(--ink-mid);
+  letter-spacing: 0.25em;
+  margin-bottom: 2rem;
+}
+.folio-landing .fin-meta {
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+  line-height: 2;
+}
+
+/* ── Scroll reveal initial state ──────────────────────── */
+.folio-landing .reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(40px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .folio-landing .reveal-on-scroll {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Mobile ≤720px ────────────────────────────────────── */
+@media (max-width: 720px) {
+  .folio-landing .nav-inner {
+    padding: 0 1.25rem;
+  }
+  .folio-landing .nav-links {
+    gap: 0.85rem;
+  }
+  .folio-landing .nav-link {
+    display: none;
+  }
+
+  .folio-landing .hero {
+    padding: 3rem 1.5rem 5rem;
+    min-height: calc(90vh - var(--nav-h));
+  }
+  .folio-landing .hero-hook {
+    font-size: 18px;
+  }
+  .folio-landing .hero-brand {
+    font-size: 64px;
+  }
+  .folio-landing .hero-tagline {
+    font-size: 15px;
+  }
+  .folio-landing .hero-cue {
+    bottom: 1.5rem;
+  }
+
+  .folio-landing .prologue-label {
+    padding: 8vh 1.5rem 0;
+  }
+  .folio-landing .prose {
+    padding: 5vh 1.5rem 8vh;
+    font-size: 18px;
+    line-height: 1.95;
+  }
+  .folio-landing .whisper {
+    padding-left: 1rem;
+    margin-left: 0;
+  }
+
+  .folio-landing .chapter-head {
+    padding: 6vh 1.25rem 0;
+  }
+  .folio-landing .chapter-head-inner {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+  .folio-landing .chapter-heading {
+    font-size: 26px;
+  }
+  .folio-landing .chapter {
+    padding: 3vh 1.25rem 2vh;
+  }
+
+  .folio-landing .tool-section {
+    min-height: auto;
+    padding: 8vh 1.25rem;
+  }
+  .folio-landing .tool-inner {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  .folio-landing .tool-text {
+    padding-left: 0;
+  }
+  .folio-landing .tool-keyword {
+    font-size: 26px;
+  }
+  .folio-landing .tool-oneline {
+    font-size: 15px;
+  }
+
+  .folio-landing .carousel-wrap {
+    padding: 0 1.25rem;
+    margin-top: 3rem;
+  }
+  .folio-landing .carousel-head {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .folio-landing .carousel-page {
+    grid-template-columns: 1fr;
+  }
+
+  .folio-landing .flow-row {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    padding: 1.25rem 0;
+  }
+
+  .folio-landing .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+  .folio-landing .price-cell {
+    border-right: none;
+    border-bottom: 1px solid var(--ink-border);
+  }
+  .folio-landing .price-cell:last-child {
+    border-bottom: none;
+  }
+
+  .folio-landing .faq-item summary {
+    grid-template-columns: 32px 1fr auto;
+    gap: 0.75rem;
+  }
+  .folio-landing .faq-short {
+    display: none;
+  }
+  .folio-landing .faq-a {
+    padding-left: 32px;
+  }
+
+  .folio-landing .fin {
+    padding: 8vh 1.25rem 4vh;
+  }
+}
