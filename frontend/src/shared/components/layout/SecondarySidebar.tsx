@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { LogOut, Search } from 'lucide-react';
+import { ChevronsLeft, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -10,10 +11,13 @@ import {
 } from '../../types/workspace';
 import { Input } from '../ui/Input';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
-import { PlanPanel } from './sidebar-panels/PlanPanel';
+import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
+import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
+import { PlotTreeList } from './sidebar-panels/PlotTreeList';
 import { SyncStatusBar } from './SyncStatusBar';
+import { ResizeHandle } from './ResizeHandle';
 
 interface SecondarySidebarProps {
   activity: Activity;
@@ -22,7 +26,11 @@ interface SecondarySidebarProps {
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
-  onNewWorldNote: () => void;
+  onNewWorldNote: (parentId?: string | null) => void;
+  onNewPlanNote: () => void;
+  width: number;
+  onWidthChange: (delta: number) => void;
+  onCollapse: () => void;
 }
 
 interface WorkTitleRow {
@@ -53,6 +61,10 @@ export function SecondarySidebar({
   onItemSelect,
   onNewWork,
   onNewWorldNote,
+  onNewPlanNote,
+  width,
+  onWidthChange,
+  onCollapse,
 }: SecondarySidebarProps) {
   const writerId = useWriterId();
   const isGuest = useIsGuest();
@@ -61,6 +73,8 @@ export function SecondarySidebar({
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
 
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
   const [searchTerm, setSearchTerm] = useState('');
 
   // activity 전환 시 검색어 초기화
@@ -80,44 +94,63 @@ export function SecondarySidebar({
 
   const header =
     activity === 'home'
-      ? '작품'
+      ? 'Folio'
       : workTitle
         ? workTitle
         : '작품 미선택';
 
-  const subHeader = activity === 'home' ? null : ACTIVITY_LABELS[activity];
+  const subHeader = ACTIVITY_LABELS[activity];
 
   const handleLoginClick = () => void login();
 
+  const cycleTheme = () => {
+    const order: Theme[] = ['light', 'dark', 'system'];
+    setTheme(order[(order.indexOf(theme) + 1) % order.length]);
+  };
+
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-gray-200 bg-white text-sm">
-      {/* 헤더 */}
-      <div className="shrink-0 border-b border-gray-200 px-4 py-3">
-        <div className="truncate text-sm font-semibold text-gray-900">{header}</div>
-        {subHeader && (
-          <div className="mt-0.5 truncate text-xs text-gray-500">{subHeader}</div>
-        )}
+    <aside
+      style={{ width }}
+      className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
+    >
+      {/* 헤더 — 메인 패널 h-12와 높이 일치 */}
+      <div className="flex h-12 shrink-0 items-center border-b border-sidebar-border px-4">
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-sidebar-foreground">{header}</div>
+            {subHeader && (
+              <div className="truncate text-[11px] text-muted-foreground">{subHeader}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="사이드바 접기"
+            title="사이드바 접기"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <ChevronsLeft size={14} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       {/* 검색 */}
-      {activity !== 'plan' && (
-        <div className="shrink-0 border-b border-gray-100 px-3 py-2">
-          <div className="relative">
-            <Search
-              size={14}
-              strokeWidth={2}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <Input
-              type="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.currentTarget.value)}
-              placeholder="검색"
-              className="pl-7 text-xs"
-            />
-          </div>
+      <div className="shrink-0 border-b border-sidebar-border/50 px-3 py-2">
+        <div className="relative">
+          <Search
+            size={14}
+            strokeWidth={2}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.currentTarget.value)}
+            placeholder="검색"
+            className="pl-7 text-xs"
+          />
         </div>
-      )}
+      </div>
 
       {/* 콘텐츠 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -130,6 +163,7 @@ export function SecondarySidebar({
           onItemSelect,
           onNewWork,
           onNewWorldNote,
+          onNewPlanNote,
         })}
       </div>
 
@@ -137,45 +171,56 @@ export function SecondarySidebar({
       <SyncStatusBar />
 
       {/* 프로필 풋터 */}
-      <div className="shrink-0 border-t border-gray-200 p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         {isGuest ? (
-          <button
-            type="button"
-            onClick={handleLoginClick}
-            disabled={isLoggingIn}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs">
-              ○
-            </span>
-            <span className="truncate text-xs">
-              {isLoggingIn ? '로그인 중…' : '게스트 — 로그인'}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoginClick}
+              disabled={isLoggingIn}
+              className="flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-muted-foreground hover:bg-sidebar-accent disabled:opacity-50"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs">
+                ○
+              </span>
+              <span className="truncate text-xs">
+                {isLoggingIn ? '로그인 중…' : '게스트 — 로그인'}
+              </span>
+            </button>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
+          </div>
         ) : (
           <div className="flex items-center gap-2 px-2 py-1.5">
             {writer?.profileImageUrl ? (
               <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
             ) : (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs text-blue-600">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">
                 ●
               </span>
             )}
-            <span className="flex-1 truncate text-xs text-gray-700">
+            <span className="flex-1 truncate text-xs text-sidebar-foreground">
               {writer?.nickname ?? writer?.email ?? ''}
             </span>
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
             <button
               type="button"
               onClick={() => void logout()}
               aria-label="로그아웃"
               title="로그아웃"
-              className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <LogOut size={14} strokeWidth={2} />
             </button>
           </div>
         )}
       </div>
+
+      {/* 리사이즈 핸들 (우측 엣지) */}
+      <ResizeHandle
+        side="right"
+        onResize={onWidthChange}
+        ariaLabel="사이드바 너비 조절"
+      />
     </aside>
   );
 }
@@ -188,7 +233,8 @@ function renderContent(args: {
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
-  onNewWorldNote: () => void;
+  onNewWorldNote: (parentId?: string | null) => void;
+  onNewPlanNote: () => void;
 }) {
   const {
     activity,
@@ -199,6 +245,7 @@ function renderContent(args: {
     onItemSelect,
     onNewWork,
     onNewWorldNote,
+    onNewPlanNote,
   } = args;
 
   if (activity === 'home') {
@@ -214,14 +261,22 @@ function renderContent(args: {
 
   if (!selectedWorkId) {
     return (
-      <p className="px-4 py-6 text-center text-xs text-gray-400">
+      <p className="px-4 py-6 text-center text-xs text-muted-foreground">
         좌측 홈(🏠)에서 작품을 먼저 선택하세요.
       </p>
     );
   }
 
   if (activity === 'plan') {
-    return <PlanPanel />;
+    return (
+      <PlanNoteList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+        onNewPlanNote={onNewPlanNote}
+      />
+    );
   }
 
   if (activity === 'world-note') {
@@ -236,8 +291,32 @@ function renderContent(args: {
     );
   }
 
-  // character / plot / episode / foreshadow / idea-archive
-  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note'>;
+  // character: 인물 트리 리스트 (인물 목록 + 선택 시 하위 노트 펼침)
+  if (activity === 'character' && selectedWorkId) {
+    return (
+      <CharacterNoteList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+      />
+    );
+  }
+
+  // plot: 막 > 회차 트리 리스트
+  if (activity === 'plot' && selectedWorkId) {
+    return (
+      <PlotTreeList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+      />
+    );
+  }
+
+  // episode / foreshadow / idea-archive
+  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot'>;
   return (
     <SectionItemList
       section={section}
@@ -246,5 +325,26 @@ function renderContent(args: {
       selectedItemId={selectedItemId}
       onItemSelect={onItemSelect}
     />
+  );
+}
+
+const THEME_LABEL: Record<Theme, string> = {
+  light: '라이트',
+  dark: '다크',
+  system: '시스템',
+};
+
+function ThemeToggle({ theme, onCycle }: { theme: Theme; onCycle: () => void }) {
+  const Icon = theme === 'dark' ? Moon : theme === 'system' ? Monitor : Sun;
+  return (
+    <button
+      type="button"
+      onClick={onCycle}
+      aria-label={`테마: ${THEME_LABEL[theme]}`}
+      title={`테마: ${THEME_LABEL[theme]}`}
+      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+    >
+      <Icon size={14} strokeWidth={2} />
+    </button>
   );
 }

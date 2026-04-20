@@ -39,9 +39,6 @@ public class Plan {
     @Column(name = "target_audience", length = 200)
     private String targetAudience;
 
-    @Column(columnDefinition = "TEXT")
-    private String content;
-
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

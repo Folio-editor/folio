@@ -1,18 +1,18 @@
 # ============================================================
-# StoryZip Backend - 운영 이미지
+# Folio Backend - 운영 이미지
 #
 # 멀티스테이지 빌드:
 #   1) builder: Gradle 빌드 (의존성 캐시 레이어 분리)
 #   2) runtime: JRE만 포함한 슬림 이미지
 #
 # 빌드:
-#   docker build -t storyzip-backend:latest .
+#   docker build -t folio-backend:latest .
 #
 # 실행 (단독):
 #   docker run --rm -p 8080:8080 \
 #     -e SPRING_PROFILES_ACTIVE=prod \
 #     -e DB_HOST=... -e DB_PASSWORD=... ... \
-#     storyzip-backend:latest
+#     folio-backend:latest
 # ============================================================
 
 # ---------- Build stage ----------

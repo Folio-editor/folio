@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import tiktoken
+from tokenizer_compat import get_cl100k_base_encoding
 
-_enc = tiktoken.get_encoding("cl100k_base")
+_enc = get_cl100k_base_encoding()
 
 MIN_TOKENS = 500
 MAX_TOKENS = 1000

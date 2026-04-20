@@ -1,4 +1,4 @@
-# StoryZip — Google OAuth 인증 구현 문서
+# Folio — Google OAuth 인증 구현 문서
 
 ## 개요
 

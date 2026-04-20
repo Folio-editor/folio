@@ -1,9 +1,10 @@
 [project]
-name = "storyzip-ai"
+name = "folio-ai"
 version = "0.1.0"
-description = "StoryZip AI server (FastAPI + Celery)"
+description = "Folio AI server (FastAPI + Celery)"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.40.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
@@ -22,7 +23,6 @@ db = [
     "alembic>=1.13",
 ]
 llm = [
-    "anthropic>=0.39",
     "openai>=1.54",
     "tiktoken>=0.8",
     "tenacity>=9.0",

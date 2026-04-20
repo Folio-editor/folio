@@ -29,8 +29,10 @@ export type SyncDecision = 'use-server' | 'use-local' | null;
 const WRITER_ID_TABLES = [
   'work',
   'plan',
+  'plan_note',
   'world_note',
   'character',
+  'character_note',
   'plot',
   'episode',
   'foreshadow',
@@ -110,7 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   restore: async () => {
     set({ isRestoring: true, error: null });
     try {
-      const result = await window.storyzip.auth.tryRestore();
+      const result = await window.folio.auth.tryRestore();
       if (result) {
         // 자동 복원: 이미 결정 끝난 기존 사용자 → 서버 우선으로 즉시 결정 확정.
         // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
@@ -136,8 +138,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   enterGuestMode: async () => {
     const [guestWriterId, lastKnownWriterId] = await Promise.all([
-      window.storyzip.auth.getGuestId(),
-      window.storyzip.auth.getLastKnownWriterId(),
+      window.folio.auth.getGuestId(),
+      window.folio.auth.getLastKnownWriterId(),
     ]);
     // 로그인 경험이 있으면 lastKnownWriterId로 이전 데이터 계속 표시 (로컬 퍼스트).
     // 없으면 게스트 UUID 사용.
@@ -155,28 +157,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   /**
-   * Google 로그인 — OAuth만 수행하고 connect는 시작하지 않는다.
-   * isNewUser는 응답에서 보관, 이후 useSyncResolver가 로컬 데이터 카운트와 함께
-   * resolveSyncDecision()을 호출해 connect를 허용한다.
+   * Google 로그인 — OAuth 완료 후 React state 를 갱신한다.
+   *
+   * 신규 가입자(isNewUser=true): 로컬 게스트 데이터를 안전하게 사용자 소유로 재매핑하는 것이
+   * 확정 결정이므로, **writer 상태 변경 이전에 UPDATE writer_id 를 먼저 실행**한다.
+   * 이렇게 해야 useQuery 의 첫 재필터링(writer_id = new user.id) 시점에 이미 로컬 행이
+   * 매핑되어 있어 UI 가 깜빡이지 않는다 (login → useSyncResolver 사이 렌더 틈 제거).
+   *
+   * 기존 회원(isNewUser=false): 로컬 게스트 데이터와 서버 데이터가 충돌할 수 있으므로
+   * 기존대로 syncDecision=null 로 남겨두고 useSyncResolver + 다이얼로그가 결정한다.
    */
   login: async () => {
     const currentGuestId = get().guestWriterId;
     set({ isLoggingIn: true, error: null });
     try {
-      const result = await window.storyzip.auth.loginWithGoogle();
-      // lastKnownWriterId는 여기서 건드리지 않는다 — 아직 사용자가 SyncDecisionDialog에서
-      // 취소할 수 있는 단계. resolveSyncDecision이 확정된 후에만 커밋한다.
+      const result = await window.folio.auth.loginWithGoogle();
+
+      // 신규 가입자 + 게스트 UUID 있으면 pre-state 재매핑으로 UI 깜빡임 제거
+      const shouldPreRemap =
+        result.isNewUser &&
+        !!currentGuestId &&
+        result.writer.id !== currentGuestId;
+
+      if (shouldPreRemap && currentGuestId) {
+        try {
+          await db.writeTransaction(async (tx) => {
+            for (const table of WRITER_ID_TABLES) {
+              await tx.execute(
+                `UPDATE ${table} SET writer_id = ? WHERE writer_id = ?`,
+                [result.writer.id, currentGuestId],
+              );
+            }
+          });
+          console.log(
+            `[sync] login-time remap: ${currentGuestId} → ${result.writer.id}`,
+          );
+        } catch (e) {
+          console.warn('[AuthStore] login-time remap 실패:', e);
+        }
+      }
+
       set({
         writer: result.writer,
-        // 로그인 직전의 guestWriterId를 previousGuestId로 이동 — useSyncResolver가 조회에 사용
         guestWriterId: null,
-        previousGuestId: currentGuestId,
+        // 신규 가입자는 위에서 이미 재매핑 완료 → previousGuestId 보관 불필요
+        // 기존 회원은 useSyncResolver 의 countRowsByWriter 참조용으로 유지
+        previousGuestId: shouldPreRemap ? null : currentGuestId,
         isAuthenticated: true,
         isGuest: false,
         isLoggingIn: false,
         isNewUser: result.isNewUser,
-        syncDecision: null, // ← connect 금지 상태에서 시작
+        // 신규 가입자: 재매핑 끝났으므로 즉시 connect 허용 (use-local 확정)
+        // 기존 회원: 다이얼로그 결정 대기
+        syncDecision: shouldPreRemap ? 'use-local' : null,
+        // 신규 가입자: lastKnownWriterId 즉시 커밋 (로그아웃 후에도 로컬 데이터 유지)
+        lastKnownWriterId: shouldPreRemap
+          ? result.writer.id
+          : get().lastKnownWriterId,
       });
+
+      // 신규 가입자 lastKnownWriterId 파일 영속
+      if (shouldPreRemap) {
+        try {
+          await window.folio.auth.commitLastKnownWriterId(result.writer.id);
+        } catch (e) {
+          console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
+        }
+      }
     } catch (e) {
       set({ isLoggingIn: false, error: (e as Error).message });
     }
@@ -218,7 +265,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
     if (writer) {
       try {
-        await window.storyzip.auth.commitLastKnownWriterId(writer.id);
+        await window.folio.auth.commitLastKnownWriterId(writer.id);
       } catch (e) {
         console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
       }
@@ -227,9 +274,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await window.storyzip.auth.logout();
+      await window.folio.auth.logout();
     } finally {
-      const guestWriterId = get().guestWriterId ?? (await window.storyzip.auth.getGuestId());
+      const guestWriterId = get().guestWriterId ?? (await window.folio.auth.getGuestId());
       // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
       // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.
       set({
@@ -245,7 +292,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   subscribeSessionEvents: () =>
-    window.storyzip.auth.onSessionExpired(() => {
+    window.folio.auth.onSessionExpired(() => {
       // Main에서 이미 로컬 토큰을 정리한 상태. 클라이언트 상태도 게스트 모드로 전환.
       console.warn('[auth] 세션 만료 감지 — 게스트 모드로 전환');
       void get().logout();

@@ -3,7 +3,7 @@ import { cn } from '../../lib/cn';
 
 type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
+const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
   { className, rows = 3, ...rest },
   ref,
 ) {
@@ -12,10 +12,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       ref={ref}
       rows={rows}
       className={cn(
-        'w-full resize-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50',
+        'flex w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...rest}
     />
   );
 });
+
+export { Textarea };

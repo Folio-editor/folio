@@ -3,14 +3,13 @@ from celery import Celery
 from app.config import settings
 
 celery_app = Celery(
-    "storyzip_ai",
+    "folio_ai",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
     include=[
         "app.tasks._ping",
         "app.tasks.chunk_and_embed",
         "app.tasks.generate_summary",
-        "app.tasks.extract_items",
     ],
 )
 
@@ -27,7 +26,6 @@ celery_app.conf.update(
         "app.tasks.ping_task": {"queue": "indexing"},
         "app.tasks.chunk_and_embed": {"queue": "indexing"},
         "app.tasks.generate_summary": {"queue": "indexing"},
-        "app.tasks.extract_items": {"queue": "indexing"},
         "app.tasks.generate_draft": {"queue": "draft"},
         "app.tasks.run_review": {"queue": "review"},
     },

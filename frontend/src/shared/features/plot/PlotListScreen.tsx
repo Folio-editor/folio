@@ -2,7 +2,7 @@ import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface PlotListScreenProps {
   workId: string;
@@ -16,9 +16,9 @@ interface PlotRow {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  '예정': 'bg-gray-100 text-gray-600',
-  '작성중': 'bg-blue-100 text-blue-700',
-  '완료': 'bg-green-100 text-green-700',
+  '예정': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  '작성중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  '완료': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
 };
 
 export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
@@ -38,14 +38,14 @@ export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="플롯"
-        description="줄거리 구조와 회차별 전개를 설계합니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 플롯</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">플롯</h2>}
+        subtitle="줄거리 구조와 회차별 전개를 설계합니다"
+        trailing={<Button onClick={() => void handleNew()}>+ 새 플롯</Button>}
       />
       <div className="flex-1 overflow-y-auto p-6">
         {items.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">아직 플롯이 없습니다.</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">아직 플롯이 없습니다.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {items.map((item, idx) => (
@@ -53,15 +53,15 @@ export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
                 key={item.id}
                 type="button"
                 onClick={() => onSelect(item.id)}
-                className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-400 hover:shadow-sm"
+                className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-ring hover:shadow-sm"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-6 text-xs text-gray-400">#{idx + 1}</span>
-                  <span className="text-sm font-medium text-gray-800">{item.title}</span>
+                  <span className="w-6 text-xs text-muted-foreground">#{idx + 1}</span>
+                  <span className="text-sm font-medium text-foreground">{item.title}</span>
                 </div>
                 {item.status && (
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[item.status] ?? 'bg-gray-100'}`}
+                    className={`rounded-full px-2 py-0.5 text-xs ${STATUS_COLOR[item.status] ?? 'bg-muted'}`}
                   >
                     {item.status}
                   </span>

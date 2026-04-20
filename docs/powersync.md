@@ -1,8 +1,8 @@
-# StoryZip — PowerSync 통합 가이드
+# Folio — PowerSync 통합 가이드
 
 > **최종 갱신**: 2026-04-16
 > **범위**: PowerSync 미들웨어의 인프라 · 동기화 규칙 · 백엔드 업로드 API · 프론트엔드 Connector · 로컬 SQLite 스키마
-> **대상 독자**: 프로젝트 입문자. 이 한 문서로 PowerSync가 어떻게 StoryZip 안에서 동작하는지 파악할 수 있도록 구성
+> **대상 독자**: 프로젝트 입문자. 이 한 문서로 PowerSync가 어떻게 Folio 안에서 동작하는지 파악할 수 있도록 구성
 
 > 구 [sync-backend.md](./sync-backend.md) · [sync-frontend.md](./sync-frontend.md)는 본 문서로 통합되었습니다.
 
@@ -34,7 +34,7 @@
 
 **PowerSync**는 PostgreSQL의 WAL(Write-Ahead Log)을 구독해 **클라이언트 로컬 SQLite**와 **서버 PostgreSQL**을 양방향 동기화해주는 오픈소스 미들웨어다.
 
-StoryZip은 "사용자는 네트워크 없이도 원고를 쓰고, 연결되면 자동 백업된다"는 **offline-first** 서비스다. 이 요구에 맞는 구성:
+Folio는 "사용자는 네트워크 없이도 원고를 쓰고, 연결되면 자동 백업된다"는 **offline-first** 서비스다. 이 요구에 맞는 구성:
 
 - **모든 읽기·쓰기는 로컬 SQLite에 먼저 반영** → UI는 네트워크와 무관하게 0ms 응답
 - **PowerSync가 로컬 변경을 큐잉 → 서버에 배치 업로드** → at-least-once + 멱등 UPSERT로 무손실
@@ -59,7 +59,7 @@ UI → POST /works → 서버 → DB → UI refetch
 ```
 → 네트워크 없으면 UI 멈춤, 재시도 로직 각 호출마다 필요.
 
-StoryZip(PowerSync):
+Folio(PowerSync):
 ```
 UI → db.execute(INSERT) → SQLite (즉시) + ps_crud 큐
                        → PowerSync가 uploadData 자동 트리거
@@ -83,7 +83,7 @@ UI → db.execute(INSERT) → SQLite (즉시) + ps_crud 큐
 │  PowerSyncDatabase (WASM SQLite + OPFS)                          │
 │    ├─ ps_crud  — 로컬 쓰기 큐 (upload 대기)                        │
 │    ├─ ps_oplog — sync down 체크포인트                              │
-│    ├─ connect(StoryZipConnector)                                  │
+│    ├─ connect(FolioConnector)                                  │
 │    │    ├─ fetchCredentials()  → JWT + endpoint                   │
 │    │    └─ uploadData()        → POST /api/v1/sync/upload (배치)  │
 │    └─ sync stream ◀────────────────────────────────────────┐      │
@@ -488,7 +488,7 @@ if (import.meta.env.DEV) {
 
 > **실제 `.db` 파일은 디스크에 보이지 않는다.** OPFS(Origin Private File System) 또는 IndexedDB에 저장된다. 내부 구조는 `@powersync/web`이 관리.
 
-### 8.2 `StoryZipConnector` — PowerSync SDK 콜백 2개
+### 8.2 `FolioConnector` — PowerSync SDK 콜백 2개
 
 [frontend/src/renderer/sync/connector.ts](../frontend/src/renderer/sync/connector.ts):
 
@@ -496,7 +496,7 @@ if (import.meta.env.DEV) {
 // Windows IPv6 localhost 회피
 const POWERSYNC_URL = import.meta.env.VITE_POWERSYNC_URL ?? 'http://127.0.0.1:8090';
 
-export class StoryZipConnector implements PowerSyncBackendConnector {
+export class FolioConnector implements PowerSyncBackendConnector {
   /** PowerSync 서비스 WS 연결용 JWT + endpoint 반환 */
   async fetchCredentials() {
     let token = await window.storyzip.auth.getAccessToken();

@@ -68,8 +68,8 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
-        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, content, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
         [id, workId, writerId, now, now],
       );
       return id;
@@ -81,7 +81,6 @@ export function useLocalWrite() {
         genres: string | null;
         moods: string | null;
         target_audience: string | null;
-        content: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -95,14 +94,64 @@ export function useLocalWrite() {
       );
     },
 
+    // ── plan_note (work당 1:N 자유 문서) ────────────────────
+    createPlanNote: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, title, sortOrder, now, now],
+      );
+      return id;
+    },
+    updatePlanNoteTitle: async (id: string, title: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE plan_note SET title = ?, updated_at = ? WHERE id = ?`,
+        [title, now, id],
+      );
+    },
+    updatePlanNoteContent: async (id: string, content: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE plan_note SET content = ?, updated_at = ? WHERE id = ?`,
+        [content, now, id],
+      );
+    },
+
     // ── world_note ─────────────────────────────────────────
-    createWorldNote: async (workId: string, name: string, sortOrder: number): Promise<string> => {
+    /** 세계관 최초 진입 시 기본 템플릿 5개 자동 생성 (이미 문서가 있으면 skip) */
+    ensureWorldNoteTemplates: async (workId: string): Promise<void> => {
+      const result = await db.execute(
+        'SELECT COUNT(*) AS cnt FROM world_note WHERE work_id = ? AND writer_id = ?',
+        [workId, writerId],
+      );
+      const count = (result.rows?._array as { cnt: number }[] | undefined)?.[0]?.cnt ?? 0;
+      if (count > 0) return;
+
+      const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
+      const now = new Date().toISOString();
+      for (let i = 0; i < templates.length; i++) {
+        await db.execute(
+          `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+          [crypto.randomUUID(), workId, writerId, templates[i], i, now, now],
+        );
+      }
+    },
+    createWorldNote: async (
+      workId: string,
+      name: string,
+      sortOrder: number,
+      parentId?: string | null,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, name, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, parentId ?? null, name, sortOrder, now, now],
       );
       return id;
     },
@@ -127,15 +176,14 @@ export function useLocalWrite() {
       name: string,
       gender: string,
       age: string,
-      appearance: string,
       sortOrder: number,
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
-        `INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, appearance, mbti, personality, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)`,
-        [id, workId, writerId, name, gender, age, appearance, sortOrder, now, now],
+        `INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, name, gender, age, sortOrder, now, now],
       );
       return id;
     },
@@ -145,10 +193,6 @@ export function useLocalWrite() {
         name: string;
         gender: string;
         age: string;
-        appearance: string;
-        mbti: string | null;
-        personality: string | null;
-        content: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -162,14 +206,79 @@ export function useLocalWrite() {
       );
     },
 
-    // ── plot ────────────────────────────────────────────────
-    createPlot: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+    // ── character_note ───────────────────────────────────────
+    /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
+    ensureCharacterNotes: async (characterId: string): Promise<void> => {
+      const now = new Date().toISOString();
+      // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
+      await db.execute(
+        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         SELECT ?, ?, ?, 'appearance', '외형', NULL, 0, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
+        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+      );
+      await db.execute(
+        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         SELECT ?, ?, ?, 'personality', '성격', NULL, 1, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
+        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+      );
+    },
+    createCharacterNote: async (characterId: string, title: string, sortOrder: number): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
+        `INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, 'custom', ?, NULL, ?, ?, ?)`,
+        [id, characterId, writerId, title, sortOrder, now, now],
+      );
+      return id;
+    },
+    updateCharacterNoteTitle: async (id: string, title: string): Promise<void> => {
+      await db.execute(
+        'UPDATE character_note SET title = ?, updated_at = ? WHERE id = ?',
+        [title, new Date().toISOString(), id],
+      );
+    },
+    updateCharacterNoteContent: async (id: string, content: string): Promise<void> => {
+      await db.execute(
+        'UPDATE character_note SET content = ?, updated_at = ? WHERE id = ?',
+        [content, new Date().toISOString(), id],
+      );
+    },
+
+    // ── character_tag ─────────────────────────────────────────
+    createCharacterTag: async (characterId: string, worldNoteId: string): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT OR IGNORE INTO character_tag (id, character_id, world_note_id, created_at)
+         VALUES (?, ?, ?, ?)`,
+        [id, characterId, worldNoteId, now],
+      );
+      return id;
+    },
+    deleteCharacterTag: async (characterId: string, worldNoteId: string): Promise<void> => {
+      await db.execute(
+        'DELETE FROM character_tag WHERE character_id = ? AND world_note_id = ?',
+        [characterId, worldNoteId],
+      );
+    },
+
+    // ── plot ────────────────────────────────────────────────
+    createPlot: async (
+      workId: string,
+      title: string,
+      sortOrder: number,
+      parentId: string | null = null,
+    ): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const status = parentId ? '예정' : null;
+      await db.execute(
         `INSERT INTO plot (id, work_id, writer_id, parent_id, title, status, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, '예정', NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, parentId, title, status, sortOrder, now, now],
       );
       return id;
     },
@@ -283,6 +392,37 @@ export function useLocalWrite() {
       await db.execute(
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
+      );
+    },
+
+    // ── 정렬/이동 ──────────────────────────────────────────
+    /** 범용 sort_order 일괄 업데이트 — 트랜잭션으로 처리 */
+    reorderItems: async (
+      table: string,
+      items: { id: string; sortOrder: number }[],
+    ): Promise<void> => {
+      if (items.length === 0) return;
+      const now = new Date().toISOString();
+      await db.writeTransaction(async (tx) => {
+        for (const item of items) {
+          await tx.execute(
+            `UPDATE ${table} SET sort_order = ?, updated_at = ? WHERE id = ?`,
+            [item.sortOrder, now, item.id],
+          );
+        }
+      });
+    },
+
+    /** 세계관 전용 — parent_id 이동 + sort_order 변경 */
+    moveWorldNote: async (
+      id: string,
+      newParentId: string | null,
+      sortOrder: number,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        'UPDATE world_note SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+        [newParentId, sortOrder, now, id],
       );
     },
   };
