@@ -45,7 +45,6 @@
 - `[BE]` Google OAuth 2.0 콜백 처리 + JWT 발급 API
 - `[BE]` Access Token / Refresh Token 발급 및 검증
 - `[FE]` OS 자격증명 저장소(keytar) 토큰 보관 (Electron)
-- `[FE]` 브라우저 저장소 토큰 보관 (Web)
 
 #### S01-2. 자동 로그인 / 토큰 갱신
 - `[FE]` 앱 실행 시 저장된 토큰으로 자동 로그인

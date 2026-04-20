@@ -1,6 +1,20 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { cn } from '../../../lib/cn';
@@ -19,11 +33,8 @@ interface CharacterNoteRow {
 interface CharacterNoteListProps {
   workId: string;
   searchTerm: string;
-  selectedCharacterId: string | null;
-  selectedNoteId: string | null;
-  onCharacterSelect: (id: string) => void;
-  onNoteSelect: (id: string | null) => void;
-  onNewCharacterNote: () => void;
+  selectedItemId: string | null;
+  onItemSelect: (id: string | null) => void;
 }
 
 /**
@@ -40,13 +51,41 @@ interface CharacterNoteListProps {
 export function CharacterNoteList({
   workId,
   searchTerm,
-  selectedCharacterId,
-  selectedNoteId,
-  onCharacterSelect,
-  onNoteSelect,
-  onNewCharacterNote,
+  selectedItemId,
+  onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
+  const { reorderItems } = useLocalWrite();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  // Parse prefix routing
+  const selectedCharId = selectedItemId?.startsWith('char:') ? selectedItemId.slice(5) : null;
+  const selectedNoteId = selectedItemId?.startsWith('cnote:') ? selectedItemId.slice(6) : null;
+
+  // Track which character is expanded
+  const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
+
+  // Auto-expand when a character is selected via prefix
+  useEffect(() => {
+    if (selectedCharId) {
+      setExpandedCharId(selectedCharId);
+    }
+  }, [selectedCharId]);
+
+  // Auto-expand parent character when a note is selected
+  const { data: noteParentRows = [] } = useQuery<{ character_id: string }>(
+    selectedNoteId
+      ? `SELECT character_id FROM character_note WHERE id = ?`
+      : `SELECT '' AS character_id WHERE 0`,
+    selectedNoteId ? [selectedNoteId] : [],
+  );
+  useEffect(() => {
+    if (noteParentRows.length > 0 && noteParentRows[0].character_id) {
+      setExpandedCharId(noteParentRows[0].character_id);
+    }
+  }, [noteParentRows]);
 
   const trimmed = searchTerm.trim();
   const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
@@ -68,20 +107,70 @@ export function CharacterNoteList({
 
   return (
     <div className="flex flex-col gap-0.5 px-2 py-2">
-      {characters.map((char) => (
-        <CharacterTreeItem
-          key={char.id}
-          character={char}
-          isExpanded={selectedCharacterId === char.id}
-          selectedNoteId={selectedCharacterId === char.id ? selectedNoteId : null}
-          onCharacterClick={() => {
-            onNoteSelect(null);
-            onCharacterSelect(char.id);
-          }}
-          onNoteSelect={onNoteSelect}
-          onNewNote={onNewCharacterNote}
-        />
-      ))}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={(event: DragEndEvent) => {
+          const { active, over } = event;
+          if (!over || active.id === over.id) return;
+          const oldIndex = characters.findIndex((c) => c.id === active.id);
+          const newIndex = characters.findIndex((c) => c.id === over.id);
+          if (oldIndex === -1 || newIndex === -1) return;
+          const reordered = arrayMove(characters, oldIndex, newIndex);
+          void reorderItems(
+            'character',
+            reordered.map((c, i) => ({ id: c.id, sortOrder: i * 1000 })),
+          );
+        }}
+      >
+        <SortableContext items={characters.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+          {characters.map((char) => (
+            <SortableCharacterItem
+              key={char.id}
+              character={char}
+              isExpanded={expandedCharId === char.id}
+              selectedNoteId={expandedCharId === char.id ? selectedNoteId : null}
+              onCharacterClick={() => {
+                if (expandedCharId === char.id) {
+                  setExpandedCharId(null);
+                  onItemSelect(null);
+                } else {
+                  setExpandedCharId(char.id);
+                  onItemSelect('char:' + char.id);
+                }
+              }}
+              onNoteSelect={(noteId) => onItemSelect('cnote:' + noteId)}
+              onNewNote={() => {/* handled inline */}}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
+    </div>
+  );
+}
+
+interface CharacterTreeItemProps {
+  character: CharacterRow;
+  isExpanded: boolean;
+  selectedNoteId: string | null;
+  onCharacterClick: () => void;
+  onNoteSelect: (id: string) => void;
+  onNewNote: () => void;
+}
+
+function SortableCharacterItem(props: CharacterTreeItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.character.id });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <CharacterTreeItem {...props} dragListeners={listeners} />
     </div>
   );
 }
@@ -93,16 +182,21 @@ function CharacterTreeItem({
   onCharacterClick,
   onNoteSelect,
   onNewNote,
-}: {
-  character: CharacterRow;
-  isExpanded: boolean;
-  selectedNoteId: string | null;
-  onCharacterClick: () => void;
-  onNoteSelect: (id: string) => void;
-  onNewNote: () => void;
-}) {
+  dragListeners,
+}: CharacterTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateCharacterNoteTitle } = useLocalWrite();
+  const { updateCharacterNoteTitle, createCharacterNote, reorderItems } = useLocalWrite();
+  const noteSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+  const [creatingNote, setCreatingNote] = useState(false);
+
+  const handleCreateNote = async (name: string) => {
+    setCreatingNote(false);
+    if (!name.trim()) return;
+    const id = await createCharacterNote(character.id, name.trim(), Date.now());
+    onNoteSelect(id);
+  };
 
   const { data: notes = [] } = useQuery<CharacterNoteRow>(
     isExpanded
@@ -116,51 +210,130 @@ function CharacterTreeItem({
   return (
     <div>
       {/* 인물 이름 (루트 노드) */}
-      <button
-        type="button"
-        onClick={onCharacterClick}
-        className={cn(
-          'flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-          isExpanded && !selectedNoteId
-            ? 'bg-primary/5 font-medium text-primary'
-            : isExpanded
-              ? 'font-medium text-sidebar-foreground'
-              : 'text-sidebar-foreground',
+      <div className="group flex items-center">
+        {dragListeners && (
+          <span
+            {...dragListeners}
+            className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <GripVertical size={12} className="text-muted-foreground" />
+          </span>
         )}
-      >
-        <ChevronRight
-          size={12}
-          strokeWidth={2}
+        <button
+          type="button"
+          onClick={onCharacterClick}
           className={cn(
-            'shrink-0 transition-transform',
-            isExpanded && 'rotate-90',
+            'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+            isExpanded && !selectedNoteId
+              ? 'bg-primary/5 font-medium text-primary'
+              : isExpanded
+                ? 'font-medium text-sidebar-foreground'
+                : 'text-sidebar-foreground',
           )}
-        />
-        {character.name?.trim() || '(이름 없음)'}
-      </button>
+        >
+          <ChevronRight
+            size={12}
+            strokeWidth={2}
+            className={cn(
+              'shrink-0 transition-transform',
+              isExpanded && 'rotate-90',
+            )}
+          />
+          {character.name?.trim() || '(이름 없음)'}
+        </button>
+      </div>
 
       {/* 하위 노트 (트리 자식) */}
-      {isExpanded && (
-        <div className="ml-3 border-l border-border/50 pl-2">
-          {notes.map((note) => (
-            <NoteItem
-              key={note.id}
-              note={note}
-              selected={selectedNoteId === note.id}
-              onSelect={() => onNoteSelect(note.id)}
-              onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
-            />
-          ))}
-          <button
-            type="button"
-            onClick={onNewNote}
-            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-sidebar-accent"
-          >
-            <Plus size={12} strokeWidth={2} />
-            <span>새 문서</span>
-          </button>
-        </div>
-      )}
+      {isExpanded && (() => {
+        const fixedNotes = notes.filter((n) => n.kind === 'appearance' || n.kind === 'personality');
+        const customNotes = notes.filter((n) => n.kind !== 'appearance' && n.kind !== 'personality');
+        return (
+          <div className="ml-3 border-l border-border/50 pl-2">
+            {/* 고정 노트 (드래그 불가) */}
+            {fixedNotes.map((note) => (
+              <NoteItem
+                key={note.id}
+                note={note}
+                selected={selectedNoteId === note.id}
+                onSelect={() => onNoteSelect(note.id)}
+                onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
+              />
+            ))}
+            {/* 커스텀 노트 (드래그 가능) */}
+            {customNotes.length > 0 && (
+              <DndContext
+                sensors={noteSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(event: DragEndEvent) => {
+                  const { active, over } = event;
+                  if (!over || active.id === over.id) return;
+                  const oldIndex = customNotes.findIndex((n) => n.id === active.id);
+                  const newIndex = customNotes.findIndex((n) => n.id === over.id);
+                  if (oldIndex === -1 || newIndex === -1) return;
+                  const reordered = arrayMove(customNotes, oldIndex, newIndex);
+                  // offset by fixedNotes.length so custom notes sort after fixed ones
+                  void reorderItems(
+                    'character_note',
+                    reordered.map((n, i) => ({
+                      id: n.id,
+                      sortOrder: (fixedNotes.length + i) * 1000,
+                    })),
+                  );
+                }}
+              >
+                <SortableContext items={customNotes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+                  {customNotes.map((note) => (
+                    <SortableNoteItem
+                      key={note.id}
+                      note={note}
+                      selected={selectedNoteId === note.id}
+                      onSelect={() => onNoteSelect(note.id)}
+                      onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
+            {creatingNote && (
+              <InlineCreateInput
+                placeholder="문서 이름을 입력하세요"
+                onConfirm={(name) => void handleCreateNote(name)}
+                onCancel={() => setCreatingNote(false)}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setCreatingNote(true)}
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md bg-primary/15 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/25"
+            >
+              <Plus size={11} strokeWidth={2} />
+              <span>새 문서</span>
+            </button>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function SortableNoteItem(props: {
+  note: CharacterNoteRow;
+  selected: boolean;
+  onSelect: () => void;
+  onRename: (title: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.note.id });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <NoteItem {...props} dragListeners={listeners} />
     </div>
   );
 }
@@ -170,11 +343,13 @@ function NoteItem({
   selected,
   onSelect,
   onRename,
+  dragListeners,
 }: {
   note: CharacterNoteRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  dragListeners?: Record<string, unknown>;
 }) {
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
   const [editing, setEditing] = useState(false);
@@ -222,20 +397,67 @@ function NoteItem({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      onDoubleClick={isFixed ? undefined : () => setEditing(true)}
-      title={isFixed ? undefined : '더블클릭으로 이름 변경'}
-      className={cn(
-        'w-full truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
-        selected
-          ? 'bg-primary/5 font-medium text-primary'
-          : 'text-sidebar-foreground',
+    <div className="group flex items-center">
+      {dragListeners && !isFixed && (
+        <span
+          {...dragListeners}
+          className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <GripVertical size={12} className="text-muted-foreground" />
+        </span>
       )}
-    >
-      {note.title?.trim() || '(제목 없음)'}
-    </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        onDoubleClick={isFixed ? undefined : () => setEditing(true)}
+        title={isFixed ? undefined : '더블클릭으로 이름 변경'}
+        className={cn(
+          'flex-1 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
+          selected
+            ? 'bg-primary/5 font-medium text-primary'
+            : 'text-sidebar-foreground',
+        )}
+      >
+        {note.title?.trim() || '(제목 없음)'}
+      </button>
+    </div>
+  );
+}
+
+function InlineCreateInput({
+  placeholder,
+  onConfirm,
+  onCancel,
+}: {
+  placeholder: string;
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); onConfirm(value); }
+    else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => { if (value.trim()) onConfirm(value); else onCancel(); }}
+      onKeyDown={handleKeyDown}
+      placeholder={placeholder}
+      maxLength={200}
+      className="w-full rounded-md border border-ring bg-background px-2 py-0.5 text-xs text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
+    />
   );
 }
 

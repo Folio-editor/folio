@@ -4,9 +4,9 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
-interface CharacterListScreenProps {
+interface CharacterOverviewAllProps {
   workId: string;
-  onSelect: (id: string) => void;
+  onSelect: (prefixedId: string) => void;
 }
 
 interface CharacterRow {
@@ -16,7 +16,7 @@ interface CharacterRow {
   age: string;
 }
 
-export function CharacterListScreen({ workId, onSelect }: CharacterListScreenProps) {
+export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllProps) {
   const writerId = useWriterId();
   const { createCharacter } = useLocalWrite();
   const { data: items = [] } = useQuery<CharacterRow>(
@@ -28,7 +28,7 @@ export function CharacterListScreen({ workId, onSelect }: CharacterListScreenPro
 
   const handleNew = async () => {
     const id = await createCharacter(workId, '새 인물', '미설정', '', items.length);
-    onSelect(id);
+    onSelect('char:' + id);
   };
 
   return (
@@ -47,7 +47,7 @@ export function CharacterListScreen({ workId, onSelect }: CharacterListScreenPro
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onSelect(item.id)}
+                onClick={() => onSelect('char:' + item.id)}
                 className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:shadow-sm"
               >
                 <div className="mb-1 text-base font-semibold text-foreground">{item.name}</div>

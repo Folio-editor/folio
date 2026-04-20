@@ -25,11 +25,8 @@ interface SecondarySidebarProps {
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
-  onNewWorldNote: () => void;
+  onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
-  selectedCharacterNoteId: string | null;
-  onCharacterNoteSelect: (id: string | null) => void;
-  onNewCharacterNote: () => void;
   width: number;
   onWidthChange: (delta: number) => void;
   onCollapse: () => void;
@@ -64,9 +61,6 @@ export function SecondarySidebar({
   onNewWork,
   onNewWorldNote,
   onNewPlanNote,
-  selectedCharacterNoteId,
-  onCharacterNoteSelect,
-  onNewCharacterNote,
   width,
   onWidthChange,
   onCollapse,
@@ -169,9 +163,6 @@ export function SecondarySidebar({
           onNewWork,
           onNewWorldNote,
           onNewPlanNote,
-          selectedCharacterNoteId,
-          onCharacterNoteSelect,
-          onNewCharacterNote,
         })}
       </div>
 
@@ -241,11 +232,8 @@ function renderContent(args: {
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
   onNewWork: () => void;
-  onNewWorldNote: () => void;
+  onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
-  selectedCharacterNoteId: string | null;
-  onCharacterNoteSelect: (id: string | null) => void;
-  onNewCharacterNote: () => void;
 }) {
   const {
     activity,
@@ -257,9 +245,6 @@ function renderContent(args: {
     onNewWork,
     onNewWorldNote,
     onNewPlanNote,
-    selectedCharacterNoteId,
-    onCharacterNoteSelect,
-    onNewCharacterNote,
   } = args;
 
   if (activity === 'home') {
@@ -311,11 +296,8 @@ function renderContent(args: {
       <CharacterNoteList
         workId={selectedWorkId}
         searchTerm={searchTerm}
-        selectedCharacterId={selectedItemId}
-        selectedNoteId={selectedCharacterNoteId}
-        onCharacterSelect={onItemSelect}
-        onNoteSelect={onCharacterNoteSelect}
-        onNewCharacterNote={onNewCharacterNote}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
       />
     );
   }

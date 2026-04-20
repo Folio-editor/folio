@@ -121,13 +121,37 @@ export function useLocalWrite() {
     },
 
     // ── world_note ─────────────────────────────────────────
-    createWorldNote: async (workId: string, name: string, sortOrder: number): Promise<string> => {
+    /** 세계관 최초 진입 시 기본 템플릿 5개 자동 생성 (이미 문서가 있으면 skip) */
+    ensureWorldNoteTemplates: async (workId: string): Promise<void> => {
+      const result = await db.execute(
+        'SELECT COUNT(*) AS cnt FROM world_note WHERE work_id = ? AND writer_id = ?',
+        [workId, writerId],
+      );
+      const count = (result.rows?._array as { cnt: number }[] | undefined)?.[0]?.cnt ?? 0;
+      if (count > 0) return;
+
+      const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
+      const now = new Date().toISOString();
+      for (let i = 0; i < templates.length; i++) {
+        await db.execute(
+          `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+          [crypto.randomUUID(), workId, writerId, templates[i], i, now, now],
+        );
+      }
+    },
+    createWorldNote: async (
+      workId: string,
+      name: string,
+      sortOrder: number,
+      parentId?: string | null,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, name, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, parentId ?? null, name, sortOrder, now, now],
       );
       return id;
     },
@@ -344,6 +368,37 @@ export function useLocalWrite() {
       await db.execute(
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
+      );
+    },
+
+    // ── 정렬/이동 ──────────────────────────────────────────
+    /** 범용 sort_order 일괄 업데이트 — 트랜잭션으로 처리 */
+    reorderItems: async (
+      table: string,
+      items: { id: string; sortOrder: number }[],
+    ): Promise<void> => {
+      if (items.length === 0) return;
+      const now = new Date().toISOString();
+      await db.writeTransaction(async (tx) => {
+        for (const item of items) {
+          await tx.execute(
+            `UPDATE ${table} SET sort_order = ?, updated_at = ? WHERE id = ?`,
+            [item.sortOrder, now, item.id],
+          );
+        }
+      });
+    },
+
+    /** 세계관 전용 — parent_id 이동 + sort_order 변경 */
+    moveWorldNote: async (
+      id: string,
+      newParentId: string | null,
+      sortOrder: number,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        'UPDATE world_note SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+        [newParentId, sortOrder, now, id],
       );
     },
   };

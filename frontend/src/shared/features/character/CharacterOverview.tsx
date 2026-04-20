@@ -6,14 +6,11 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-import { ContentEditor } from '../../components/editor/ContentEditor';
 
-interface CharacterEditScreenProps {
-  id: string;
-  noteId: string | null;
+interface CharacterOverviewProps {
+  characterId: string;
   onBack: () => void;
-  onNoteBack: () => void;
-  onNoteSelect: (id: string) => void;
+  onNoteSelect: (noteId: string) => void;
 }
 
 interface CharacterRow {
@@ -23,21 +20,11 @@ interface CharacterRow {
   age: string;
 }
 
-interface CharacterNoteRow {
-  id: string;
-  title: string;
-  content: string | null;
-}
-
 interface NoteSummaryRow {
   id: string;
   kind: string;
   title: string;
   content: string | null;
-}
-
-interface CharacterNameRow {
-  name: string;
 }
 
 const GENDER_OPTIONS = [
@@ -47,36 +34,11 @@ const GENDER_OPTIONS = [
   { value: '기타', label: '기타' },
 ];
 
-export function CharacterEditScreen({
-  id,
-  noteId,
-  onBack,
-  onNoteBack,
-  onNoteSelect,
-}: CharacterEditScreenProps) {
-  if (noteId) {
-    return <NoteEditor characterId={id} noteId={noteId} onNoteBack={onNoteBack} />;
-  }
-  return (
-    <CharacterOverview
-      characterId={id}
-      onBack={onBack}
-      onNoteSelect={onNoteSelect}
-    />
-  );
-}
-
-/* ── 인물 개요 + 하위 문서 요약 카드 ── */
-
-function CharacterOverview({
+export function CharacterOverview({
   characterId,
   onBack,
   onNoteSelect,
-}: {
-  characterId: string;
-  onBack: () => void;
-  onNoteSelect: (id: string) => void;
-}) {
+}: CharacterOverviewProps) {
   const { ensureCharacterNotes } = useLocalWrite();
 
   const { data: rows = [] } = useQuery<CharacterRow>(
@@ -252,88 +214,4 @@ function collectText(node: unknown): string {
   if (typeof n.text === 'string') return n.text;
   if (Array.isArray(n.content)) return n.content.map(collectText).join('');
   return '';
-}
-
-/* ── 서브 노트 편집 ── */
-
-function NoteEditor({
-  characterId,
-  noteId,
-  onNoteBack,
-}: {
-  characterId: string;
-  noteId: string;
-  onNoteBack: () => void;
-}) {
-  const { updateCharacterNoteContent, updateCharacterNoteTitle } = useLocalWrite();
-
-  const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
-    `SELECT id, title, content FROM character_note WHERE id = ?`,
-    [noteId],
-  );
-  const note = noteRows[0];
-
-  const { data: nameRows = [] } = useQuery<CharacterNameRow>(
-    `SELECT name FROM character WHERE id = ?`,
-    [characterId],
-  );
-  const characterName = nameRows[0]?.name ?? '';
-
-  if (!note) {
-    return <div className="p-8 text-sm text-muted-foreground">문서를 불러오는 중…</div>;
-  }
-
-  return (
-    <NoteEditorInner
-      key={noteId}
-      note={note}
-      characterName={characterName}
-      onNoteBack={onNoteBack}
-      onTitleChange={(title) => void updateCharacterNoteTitle(noteId, title)}
-      onContentChange={(content) => void updateCharacterNoteContent(noteId, content)}
-    />
-  );
-}
-
-function NoteEditorInner({
-  note,
-  characterName,
-  onNoteBack,
-  onTitleChange,
-  onContentChange,
-}: {
-  note: CharacterNoteRow;
-  characterName: string;
-  onNoteBack: () => void;
-  onTitleChange: (title: string) => void;
-  onContentChange: (content: string) => void;
-}) {
-  const title = useDeferredText(note.id, note.title, onTitleChange);
-
-  return (
-    <div className="flex h-full flex-col">
-      <MainPanelHeader
-        leading={<IconButton onClick={onNoteBack} title="인물로 돌아가기">←</IconButton>}
-        title={
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm text-muted-foreground">{characterName}</span>
-            <span className="text-sm text-muted-foreground">{'>'}</span>
-            <Input
-              value={title.value}
-              onChange={(e) => title.onChange(e.target.value)}
-              onBlur={title.onBlur}
-              placeholder="문서 제목"
-              className="min-w-0 flex-1 border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
-            />
-          </div>
-        }
-      />
-      <ContentEditor
-        itemId={note.id}
-        initialContent={note.content}
-        placeholder="내용을 작성하세요…"
-        onUpdate={onContentChange}
-      />
-    </div>
-  );
 }

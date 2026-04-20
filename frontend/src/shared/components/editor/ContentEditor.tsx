@@ -50,6 +50,11 @@ export function ContentEditor({
   onCharCountChange,
 }: ContentEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onUpdateRef = useRef(onUpdate);
+  const onCharCountChangeRef = useRef(onCharCountChange);
+  onUpdateRef.current = onUpdate;
+  onCharCountChangeRef.current = onCharCountChange;
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [charCount, setCharCount] = useState(0);
   const [wordCount, setWordCount] = useState(0);
@@ -96,11 +101,11 @@ export function ContentEditor({
         const words = ed.storage.characterCount?.words?.() ?? 0;
         setCharCount(chars);
         setWordCount(words);
-        if (onCharCountChange) onCharCountChange(chars);
+        if (onCharCountChangeRef.current) onCharCountChangeRef.current(chars);
 
         const emit = () => {
           const json = JSON.stringify(ed.getJSON());
-          onUpdate(json);
+          onUpdateRef.current(json);
           setSaveStatus('saved');
         };
 
@@ -125,8 +130,13 @@ export function ContentEditor({
     setWordCount(words);
   }, [editor, itemId]);
 
-  // itemId 변경 시 콘텐츠 교체
+  // itemId 변경 시 콘텐츠 교체 + 진행 중인 debounce 취소
   useEffect(() => {
+    // 이전 문서의 debounce 타이머가 새 문서 내용을 덮어쓰는 것을 방지
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     if (!editor || editor.isDestroyed) return;
     editor.commands.setContent(parseContent(initialContent), { emitUpdate: false });
     setSaveStatus('idle');
