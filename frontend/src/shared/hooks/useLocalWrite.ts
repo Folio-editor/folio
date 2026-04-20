@@ -298,7 +298,11 @@ export function useLocalWrite() {
     },
 
     // ── episode ─────────────────────────────────────────────
-    createEpisode: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+    createEpisode: async (
+      workId: string,
+      title: string,
+      sortOrder: number,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
@@ -424,6 +428,53 @@ export function useLocalWrite() {
         'UPDATE world_note SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
         [newParentId, sortOrder, now, id],
       );
+    },
+
+    /** 원고 sort_order 변경 */
+    moveEpisode: async (
+      id: string,
+      sortOrder: number,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        'UPDATE episode SET sort_order = ?, updated_at = ? WHERE id = ?',
+        [sortOrder, now, id],
+      );
+    },
+
+    // ── plot_episode_link ──────────────────────────────────
+    linkPlotEpisode: async (plotId: string, episodeId: string): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.execute(
+        'INSERT INTO plot_episode_link (id, plot_id, episode_id, created_at) VALUES (?, ?, ?, ?)',
+        [id, plotId, episodeId, now],
+      );
+      return id;
+    },
+    unlinkPlotEpisode: async (linkId: string): Promise<void> => {
+      await db.execute('DELETE FROM plot_episode_link WHERE id = ?', [linkId]);
+    },
+
+    // ── foreshadow_link ────────────────────────────────────
+    createForeshadowLink: async (
+      foreshadowId: string,
+      linkType: string,
+      episodeId: string | null,
+      plotId: string | null,
+      contextMemo: string | null = null,
+    ): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT INTO foreshadow_link (id, foreshadow_id, link_type, episode_id, plot_id, context_memo, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, foreshadowId, linkType, episodeId, plotId, contextMemo, now],
+      );
+      return id;
+    },
+    deleteForeshadowLink: async (linkId: string): Promise<void> => {
+      await db.execute('DELETE FROM foreshadow_link WHERE id = ?', [linkId]);
     },
   };
 }

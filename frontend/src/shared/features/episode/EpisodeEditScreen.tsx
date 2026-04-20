@@ -1,4 +1,7 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
+import { ArrowLeft, Link2, Link2Off, Plus, Search } from 'lucide-react';
+import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
@@ -6,10 +9,12 @@ import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import type { WorkspaceSection } from '../../types/workspace';
 
 interface EpisodeEditScreenProps {
   id: string;
   onBack: () => void;
+  onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }
 
 interface EpisodeRow {
@@ -20,6 +25,17 @@ interface EpisodeRow {
   word_count: number;
 }
 
+interface LinkRow {
+  link_id: string;
+  plot_id: string;
+  plot_title: string;
+}
+
+interface UnlinkedPlotRow {
+  id: string;
+  title: string;
+}
+
 const STATUS_OPTIONS = [
   { value: '미작성', label: '미작성' },
   { value: '초고', label: '초고' },
@@ -27,7 +43,7 @@ const STATUS_OPTIONS = [
   { value: '완성', label: '완성' },
 ];
 
-export function EpisodeEditScreen({ id, onBack }: EpisodeEditScreenProps) {
+export function EpisodeEditScreen({ id, onBack, onNavigateTo }: EpisodeEditScreenProps) {
   const { data: rows = [] } = useQuery<EpisodeRow>(
     `SELECT id, title, status, content, word_count FROM episode WHERE id = ?`,
     [id],
@@ -38,10 +54,18 @@ export function EpisodeEditScreen({ id, onBack }: EpisodeEditScreenProps) {
     return <div className="p-8 text-sm text-muted-foreground">회차를 불러오는 중…</div>;
   }
 
-  return <EpisodeEditor key={id} item={item} onBack={onBack} />;
+  return <EpisodeEditor key={id} item={item} onBack={onBack} onNavigateTo={onNavigateTo} />;
 }
 
-function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void }) {
+function EpisodeEditor({
+  item,
+  onBack,
+  onNavigateTo,
+}: {
+  item: EpisodeRow;
+  onBack: () => void;
+  onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
+}) {
   const { updateEpisode } = useLocalWrite();
   const { id } = item;
 
@@ -50,7 +74,7 @@ function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void 
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={<IconButton onClick={onBack} title="목록으로">←</IconButton>}
+        leading={<IconButton onClick={onBack} title="목록으로"><ArrowLeft className="h-4 w-4" /></IconButton>}
         title={
           <Input
             value={title.value}
@@ -61,7 +85,8 @@ function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void 
           />
         }
         trailing={
-          <>
+          <div className="flex items-center gap-2">
+            <PlotLinkIndicator episodeId={id} episodeTitle={item.title} onNavigateTo={onNavigateTo} />
             <span className="text-xs text-muted-foreground">{item.word_count.toLocaleString()}자</span>
             <div className="w-28">
               <Select
@@ -70,7 +95,7 @@ function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void 
                 onChange={(e) => void updateEpisode(id, { status: e.target.value })}
               />
             </div>
-          </>
+          </div>
         }
       />
       <ContentEditor
@@ -80,6 +105,199 @@ function EpisodeEditor({ item, onBack }: { item: EpisodeRow; onBack: () => void 
         onUpdate={(content) => void updateEpisode(id, { content })}
         onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
       />
+    </div>
+  );
+}
+
+/* ── 플롯 연결 표시 ── */
+
+function PlotLinkIndicator({
+  episodeId,
+  episodeTitle,
+  onNavigateTo,
+}: {
+  episodeId: string;
+  episodeTitle: string;
+  onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
+}) {
+  const { linkPlotEpisode, unlinkPlotEpisode, createPlot } = useLocalWrite();
+  const [showModal, setShowModal] = useState(false);
+
+  const { data: linkRows = [] } = useQuery<LinkRow>(
+    `SELECT pel.id AS link_id, pel.plot_id, p.title AS plot_title
+     FROM plot_episode_link pel
+     JOIN plot p ON p.id = pel.plot_id
+     WHERE pel.episode_id = ?`,
+    [episodeId],
+  );
+  const link = linkRows[0] ?? null;
+
+  const { data: episodeInfo = [] } = useQuery<{ work_id: string }>(
+    `SELECT work_id FROM episode WHERE id = ?`,
+    [episodeId],
+  );
+  const workId = episodeInfo[0]?.work_id;
+
+  const doCreatePlotAndLink = async () => {
+    if (!workId) return;
+    const plotId = await createPlot(workId, episodeTitle, Date.now());
+    await linkPlotEpisode(plotId, episodeId);
+  };
+
+  const handleUnlink = async () => {
+    if (!link) return;
+    await unlinkPlotEpisode(link.link_id);
+  };
+
+  const handleLinkSelected = async (plotId: string) => {
+    await linkPlotEpisode(plotId, episodeId);
+    setShowModal(false);
+  };
+
+  if (link) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Link2 size={12} className="text-primary/70" />
+        <button
+          type="button"
+          onClick={() => onNavigateTo('plot', null)}
+          title={`플롯 보기: ${link.plot_title}`}
+          className="max-w-32 truncate text-xs text-primary/70 transition-colors hover:text-primary hover:underline"
+        >
+          {link.plot_title}
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleUnlink()}
+          title="플롯 연결 해제"
+          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Link2Off size={12} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => void doCreatePlotAndLink()}
+          title="같은 제목으로 플롯 생성 후 연결"
+          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <span className="flex items-center gap-1">
+            <Plus size={10} />
+            플롯 생성
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowModal(true)}
+          title="기존 플롯과 연결"
+          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <span className="flex items-center gap-1">
+            <Link2 size={10} />
+            플롯 연결
+          </span>
+        </button>
+      </div>
+
+      {showModal && workId && (
+        <PlotLinkModal
+          workId={workId}
+          onSelect={handleLinkSelected}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/* ── 플롯 연결 모달 ── */
+
+function PlotLinkModal({
+  workId,
+  onSelect,
+  onClose,
+}: {
+  workId: string;
+  onSelect: (plotId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const writerId = useWriterId();
+  const [search, setSearch] = useState('');
+
+  // 아직 연결되지 않은 플롯 회차 목록
+  const { data: plots = [] } = useQuery<UnlinkedPlotRow>(
+    `SELECT p.id, p.title FROM plot p
+     WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NOT NULL
+       AND p.id NOT IN (SELECT plot_id FROM plot_episode_link)
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
+    [workId, writerId],
+  );
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return plots;
+    return plots.filter((p) => p.title.toLowerCase().includes(term));
+  }, [plots, search]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="w-80 rounded-lg border border-border bg-background p-4 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-3 text-sm font-semibold text-foreground">플롯 연결</h3>
+
+        <div className="relative mb-3">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            placeholder="플롯 제목 검색"
+            className="pl-7 text-xs"
+          />
+        </div>
+
+        <div className="max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              {plots.length === 0 ? '연결 가능한 플롯이 없습니다.' : '검색 결과가 없습니다.'}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {filtered.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => void onSelect(p.id)}
+                  className="truncate rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-primary/10"
+                >
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+          >
+            취소
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

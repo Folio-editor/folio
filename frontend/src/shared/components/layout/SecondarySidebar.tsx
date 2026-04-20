@@ -16,6 +16,7 @@ import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
 import { PlotTreeList } from './sidebar-panels/PlotTreeList';
+import { EpisodeTreeList } from './sidebar-panels/EpisodeTreeList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -315,8 +316,20 @@ function renderContent(args: {
     );
   }
 
-  // episode / foreshadow / idea-archive
-  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot'>;
+  // episode: 원고 리스트
+  if (activity === 'episode' && selectedWorkId) {
+    return (
+      <EpisodeTreeList
+        workId={selectedWorkId}
+        searchTerm={searchTerm}
+        selectedItemId={selectedItemId}
+        onItemSelect={onItemSelect}
+      />
+    );
+  }
+
+  // foreshadow / idea-archive
+  const section = activity as Exclude<WorkspaceSection, 'plan' | 'world-note' | 'character' | 'plot' | 'episode'>;
   return (
     <SectionItemList
       section={section}
