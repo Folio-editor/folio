@@ -6,8 +6,10 @@ import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
 import com.storyzip.payment.dto.PaymentResponse;
+import com.storyzip.payment.dto.RefundResponse;
 import com.storyzip.payment.dto.TokenWalletResponse;
 import com.storyzip.payment.service.PaymentService;
+import com.storyzip.payment.service.RefundService;
 import com.storyzip.payment.service.TokenWalletService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final RefundService refundService;
     private final TokenWalletService tokenWalletService;
 
     /** 결제 요청 생성 — 프론트가 이 응답의 orderId/amount로 토스 결제창을 연다. */
@@ -49,6 +52,15 @@ public class PaymentController {
             @PathVariable String orderId) {
         UUID writerId = requireWriterId(authentication);
         return ResponseEntity.ok(paymentService.getByOrderId(writerId, orderId));
+    }
+
+    /** 환불 — 24시간 이내 전액, 이후 잔여 일수 비례 부분 환불. */
+    @PostMapping("/{orderId}/refund")
+    public ResponseEntity<RefundResponse> refund(
+            Authentication authentication,
+            @PathVariable String orderId) {
+        UUID writerId = requireWriterId(authentication);
+        return ResponseEntity.ok(refundService.refund(writerId, orderId));
     }
 
     @GetMapping("/wallet")

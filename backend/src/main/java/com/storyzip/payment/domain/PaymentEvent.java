@@ -42,6 +42,9 @@ public class PaymentEvent {
     @Column(nullable = false, columnDefinition = "jsonb")
     private String payload;
 
+    @Column(name = "consumed", nullable = false)
+    private boolean consumed;
+
     @CreatedDate
     @Column(name = "processed_at", nullable = false, updatable = false)
     private LocalDateTime processedAt;
@@ -51,5 +54,10 @@ public class PaymentEvent {
         this.eventId = eventId;
         this.eventType = eventType;
         this.payload = payload;
+        this.consumed = false;
+    }
+
+    public void markConsumed() {
+        this.consumed = true;
     }
 }
