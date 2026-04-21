@@ -1,6 +1,8 @@
 import { useQuery } from '@powersync/react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -49,7 +51,9 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
     `SELECT id, content, tag, created_at FROM idea_archive WHERE id = ?`,
     [id],
   );
-  const { updateIdea } = useLocalWrite();
+  const { updateIdea, deleteIdeaArchive } = useLocalWrite();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const idea = rows[0];
 
   if (!idea) {
@@ -77,6 +81,14 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
                 onChange={(e) => void updateIdea(id, { tag: e.target.value || null })}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="아이디어 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
           </div>
         }
         meta={
@@ -93,6 +105,23 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
         placeholder="떠오른 아이디어를 자유롭게 적어두세요…"
         onUpdate={(content) => void updateIdea(id, { content })}
       />
+
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="아이디어 삭제"
+          message="이 아이디어가 영구 삭제됩니다."
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteIdeaArchive(id).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }

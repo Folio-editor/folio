@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus } from 'lucide-react';
+import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
+import { setupDragTransfer } from '../../../lib/dragTransfer';
 
 interface NoteRow {
   id: string;
@@ -40,7 +42,9 @@ export function PlanNoteList({
   onNewPlanNote,
 }: PlanNoteListProps) {
   const writerId = useWriterId();
-  const { updatePlanNoteTitle, reorderItems } = useLocalWrite();
+  const { updatePlanNoteTitle, reorderItems, deletePlanNote } = useLocalWrite();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -118,10 +122,26 @@ export function PlanNoteList({
                 selected={selectedItemId === note.id}
                 onSelect={() => onItemSelect(note.id)}
                 onRename={(title) => void updatePlanNoteTitle(note.id, title)}
+                onDelete={() => setDeleteTarget({ id: note.id, title: note.title })}
               />
             ))}
           </SortableContext>
         </DndContext>
+      )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="문서 삭제"
+          message={`"${deleteTarget.title || '(제목 없음)'}"`+ ' 문서가 영구 삭제됩니다.'}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deletePlanNote(deleteTarget.id).then(() => {
+              setDeleteTarget(null);
+              setDeleteBusy(false);
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
@@ -181,6 +201,7 @@ function SortableNoteItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
@@ -205,12 +226,14 @@ function NoteItem({
   selected,
   onSelect,
   onRename,
+  onDelete,
   dragListeners,
 }: {
   note: NoteRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -258,7 +281,11 @@ function NoteItem({
   }
 
   return (
-    <div className="group flex items-center">
+    <div
+      className="group flex items-center"
+      draggable="true"
+      onDragStart={(e) => setupDragTransfer(e, 'plan_note', note.id, note.title)}
+    >
       {dragListeners && (
         <span
           {...dragListeners}
@@ -280,6 +307,14 @@ function NoteItem({
         )}
       >
         {note.title?.trim() || '(제목 없음)'}
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="삭제"
+        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 size={12} strokeWidth={1.75} />
       </button>
     </div>
   );

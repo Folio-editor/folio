@@ -18,11 +18,12 @@ import { ForeshadowOverview } from '../foreshadow/ForeshadowOverview';
 import { ForeshadowEditScreen } from '../foreshadow/ForeshadowEditScreen';
 import { IdeaArchiveListScreen } from '../idea-archive/IdeaArchiveListScreen';
 import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
+import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
-import { Activity, WorkspaceSection } from '../../types/workspace';
+import { Activity, WorkspaceSection, AuxPanelItem, AUX_DRAG_MIME } from '../../types/workspace';
 
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 480;
@@ -71,6 +72,74 @@ export function AuthenticatedApp() {
     288,
   );
 
+  // ── 우측 보조 패널 상태 ──
+  const [auxPanels, setAuxPanels] = usePersistentState<AuxPanelItem[]>(
+    'folio.ui.auxPanels',
+    [],
+  );
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
+  const [rightPanelVisible, setRightPanelVisible] = usePersistentState(
+    'folio.ui.rightPanelVisible',
+    false,
+  );
+  const toggleRightPanel = () => setRightPanelVisible((v) => !v);
+
+  const addAuxPanel = (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => {
+    setAuxPanels((prev) => {
+      if (prev.some((p) => p.docType === item.docType && p.docId === item.docId)) return prev;
+      const newItem = { ...item, id: crypto.randomUUID(), collapsed: false };
+      if (index !== undefined && index >= 0 && index <= prev.length) {
+        const next = [...prev];
+        next.splice(index, 0, newItem);
+        return next;
+      }
+      return [...prev, newItem];
+    });
+  };
+  const removeAuxPanel = (panelId: string) =>
+    setAuxPanels((prev) => prev.filter((p) => p.id !== panelId));
+  const reorderAuxPanels = (reordered: AuxPanelItem[]) =>
+    setAuxPanels(reordered);
+  const toggleAuxPanelCollapse = (panelId: string) =>
+    setAuxPanels((prev) =>
+      prev.map((p) => (p.id === panelId ? { ...p, collapsed: !p.collapsed } : p)),
+    );
+
+  // 단축키: Ctrl+Shift+B → 우측 패널 토글
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'B') {
+        e.preventDefault();
+        toggleRightPanel();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [toggleRightPanel]);
+
+  // 드래그 시 자동으로 우측 패널 표시
+  const addAuxPanelAndShow = (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => {
+    if (!rightPanelVisible) setRightPanelVisible(true);
+    addAuxPanel(item, index);
+  };
+
+  // 문서 드래그 감지 — 패널 0개일 때도 드롭 존 표시
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes(AUX_DRAG_MIME)) setIsDraggingDoc(true);
+    };
+    const onDragEnd = () => setIsDraggingDoc(false);
+    const onDrop = () => setIsDraggingDoc(false);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragend', onDragEnd);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragend', onDragEnd);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []);
+
   const resizeSidebar = (delta: number) =>
     setSidebarWidth((w) => clamp(w + delta, SIDEBAR_MIN, SIDEBAR_MAX));
   const resizeRightPanels = (delta: number) =>
@@ -81,8 +150,8 @@ export function AuthenticatedApp() {
     if (sidebarCollapsed) setSidebarCollapsed(false);
     setActivity(next);
     setSelectedItemId(null);
-    if (next === 'home') {
-      // home 으로 전환 시 섹션만 초기화 — 선택된 작품은 보존
+    if (next === 'home' || next === 'trash' || next === 'ai') {
+      // home/trash/ai 로 전환 시 섹션만 초기화 — 선택된 작품은 보존
       setSelectedSection(null);
     } else {
       setSelectedSection(next);
@@ -164,7 +233,7 @@ export function AuthenticatedApp() {
           />
         }
         sidebar={
-          sidebarCollapsed ? null : (
+          sidebarCollapsed || activity === 'trash' || activity === 'ai' ? null : (
             <SecondarySidebar
               activity={activity}
               selectedWorkId={selectedWorkId}
@@ -180,11 +249,25 @@ export function AuthenticatedApp() {
             />
           )
         }
+        rightPanelToggle={toggleRightPanel}
+        rightPanelVisible={rightPanelVisible}
         rightPanels={
-          <RightPanels width={rightPanelsWidth} onWidthChange={resizeRightPanels} />
+          rightPanelVisible || isDraggingDoc ? (
+            <RightPanels
+              width={rightPanelsWidth}
+              onWidthChange={resizeRightPanels}
+              panels={auxPanels}
+              onAddPanel={addAuxPanelAndShow}
+              onRemovePanel={removeAuxPanel}
+              onReorderPanels={reorderAuxPanels}
+              onToggleCollapse={toggleAuxPanelCollapse}
+              isDraggingDoc={isDraggingDoc}
+            />
+          ) : null
         }
       >
         {renderMain({
+          activity,
           workId: selectedWorkId,
           section: selectedSection,
           itemId: selectedItemId,
@@ -209,6 +292,7 @@ export function AuthenticatedApp() {
 }
 
 interface RenderMainArgs {
+  activity: Activity;
   workId: string | null;
   section: WorkspaceSection | null;
   itemId: string | null;
@@ -220,6 +304,7 @@ interface RenderMainArgs {
 }
 
 function renderMain({
+  activity,
   workId,
   section,
   itemId,
@@ -229,6 +314,12 @@ function renderMain({
   onWorkDeleted,
   onNavigateTo,
 }: RenderMainArgs) {
+  if (activity === 'trash') {
+    return <TrashScreen />;
+  }
+  if (activity === 'ai') {
+    return <AiPlaceholder />;
+  }
   if (!workId) {
     return <WorkspaceScreen onCreateWork={onCreateWork} />;
   }
@@ -314,6 +405,19 @@ function EmptyDetail({ message }: { message: string }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
       {message}
+    </div>
+  );
+}
+
+function AiPlaceholder() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+      <span className="text-4xl">🤖</span>
+      <h2 className="text-base font-semibold text-foreground">AI 도구</h2>
+      <p className="text-sm text-muted-foreground">
+        설정 충돌 분석, 톤 일관성 검사, 문장 제안, 줄거리 요약 등<br />
+        AI 기능이 이곳에서 제공될 예정입니다.
+      </p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
+import { setupDragTransfer } from '../../../lib/dragTransfer';
 
 interface CharacterRow {
   id: string;
@@ -185,7 +187,9 @@ function CharacterTreeItem({
   dragListeners,
 }: CharacterTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateCharacterNoteTitle, createCharacterNote, reorderItems } = useLocalWrite();
+  const { updateCharacterNoteTitle, createCharacterNote, reorderItems, deleteCharacterNote } = useLocalWrite();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const noteSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
@@ -210,7 +214,11 @@ function CharacterTreeItem({
   return (
     <div>
       {/* 인물 이름 (루트 노드) */}
-      <div className="group flex items-center">
+      <div
+        className="group flex items-center"
+        draggable="true"
+        onDragStart={(e) => setupDragTransfer(e, 'character', character.id, character.name)}
+      >
         {dragListeners && (
           <span
             {...dragListeners}
@@ -257,6 +265,7 @@ function CharacterTreeItem({
                 selected={selectedNoteId === note.id}
                 onSelect={() => onNoteSelect(note.id)}
                 onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
+                onDelete={() => {/* 고정 노트는 삭제 불가 */}}
               />
             ))}
             {/* 커스텀 노트 (드래그 가능) */}
@@ -289,6 +298,7 @@ function CharacterTreeItem({
                       selected={selectedNoteId === note.id}
                       onSelect={() => onNoteSelect(note.id)}
                       onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
+                      onDelete={() => setDeleteTarget({ id: note.id, title: note.title })}
                     />
                   ))}
                 </SortableContext>
@@ -312,6 +322,21 @@ function CharacterTreeItem({
           </div>
         );
       })()}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="문서 삭제"
+          message={`"${deleteTarget.title || '(제목 없음)'}"`+ ' 문서가 영구 삭제됩니다.'}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteCharacterNote(deleteTarget.id).then(() => {
+              setDeleteTarget(null);
+              setDeleteBusy(false);
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -321,6 +346,7 @@ function SortableNoteItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
@@ -343,12 +369,14 @@ function NoteItem({
   selected,
   onSelect,
   onRename,
+  onDelete,
   dragListeners,
 }: {
   note: CharacterNoteRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
@@ -397,7 +425,14 @@ function NoteItem({
   }
 
   return (
-    <div className="group flex items-center">
+    <div
+      className="group flex items-center"
+      draggable={!isFixed}
+      onDragStart={(e) => {
+        if (isFixed) { e.preventDefault(); return; }
+        setupDragTransfer(e, 'character_note', note.id, note.title);
+      }}
+    >
       {dragListeners && !isFixed && (
         <span
           {...dragListeners}
@@ -420,6 +455,16 @@ function NoteItem({
       >
         {note.title?.trim() || '(제목 없음)'}
       </button>
+      {!isFixed && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="삭제"
+          className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 size={12} strokeWidth={1.75} />
+        </button>
+      )}
     </div>
   );
 }

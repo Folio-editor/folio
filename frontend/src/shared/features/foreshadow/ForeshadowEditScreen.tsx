@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
@@ -92,8 +93,10 @@ export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) 
 }
 
 function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () => void }) {
-  const { updateForeshadow } = useLocalWrite();
+  const { updateForeshadow, deleteForeshadow } = useLocalWrite();
   const { id } = item;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const title = useDeferredText(id, item.title, (v) =>
     void updateForeshadow(id, { title: v }),
@@ -113,17 +116,27 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
           />
         }
         trailing={
-          <div className="flex w-64 gap-2">
-            <Select
-              options={IMPORTANCE_OPTIONS}
-              value={item.importance}
-              onChange={(e) => void updateForeshadow(id, { importance: e.target.value })}
-            />
-            <Select
-              options={STATUS_OPTIONS}
-              value={item.status}
-              onChange={(e) => void updateForeshadow(id, { status: e.target.value })}
-            />
+          <div className="flex items-center gap-2">
+            <div className="flex w-64 gap-2">
+              <Select
+                options={IMPORTANCE_OPTIONS}
+                value={item.importance}
+                onChange={(e) => void updateForeshadow(id, { importance: e.target.value })}
+              />
+              <Select
+                options={STATUS_OPTIONS}
+                value={item.status}
+                onChange={(e) => void updateForeshadow(id, { status: e.target.value })}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="복선 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
           </div>
         }
       />
@@ -140,6 +153,23 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
 
       {/* 복선 연결 관리 */}
       <LinkManagementSection foreshadowId={id} workId={item.work_id} />
+
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="복선 삭제"
+          message={`"${item.title}" 복선과 연결된 링크가 영구 삭제됩니다.`}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteForeshadow(id).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }
