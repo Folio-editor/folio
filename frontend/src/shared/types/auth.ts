@@ -22,7 +22,7 @@ export interface LoginResult {
 /**
  * Preload contextBridge로 renderer에 노출되는 API.
  */
-export interface StoryZipAuthApi {
+export interface FolioAuthApi {
   loginWithGoogle: () => Promise<LoginResult>;
   logout: () => Promise<void>;
   tryRestore: () => Promise<LoginResult | null>;
@@ -47,13 +47,13 @@ export interface StoryZipAuthApi {
   onSessionExpired: (callback: () => void) => () => void;
 }
 
-export interface StoryZipApi {
+export interface FolioApi {
   platform: 'electron' | 'web';
-  auth: StoryZipAuthApi;
+  auth: FolioAuthApi;
 }
 
 declare global {
   interface Window {
-    storyzip: StoryZipApi;
+    folio: FolioApi;
   }
 }

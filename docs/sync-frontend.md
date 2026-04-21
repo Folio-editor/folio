@@ -8,7 +8,7 @@ PowerSync 관련 프론트엔드 구현(Connector · 로컬 SQLite 스키마 · 
 |------|-----------|
 | 전체 데이터 흐름 (read / write up / sync down) | [§3](./powersync.md#3-3가지-데이터-흐름) |
 | `db` 싱글턴 + DevTools `__db` | [§8.1](./powersync.md#81-싱글턴-db-인스턴스) |
-| `StoryZipConnector` (fetchCredentials + uploadData) | [§8.2](./powersync.md#82-storyzipconnector--powersync-sdk-콜백-2개) |
+| `FolioConnector` (fetchCredentials + uploadData) | [§8.2](./powersync.md#82-folioconnector--powersync-sdk-콜백-2개) |
 | Vite WASM Worker 설정 | [§8.3](./powersync.md#83-vite-설정--wasm-worker) |
 | 로컬 SQLite 스키마 (12 테이블) | [§9](./powersync.md#9-로컬-sqlite-스키마) |
 | `useLocalWrite` 쓰기 헬퍼 | [§10.1](./powersync.md#101-쓰기--uselocalwrite) |

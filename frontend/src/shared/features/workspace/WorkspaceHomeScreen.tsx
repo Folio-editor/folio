@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
-import { Select } from '../../components/ui/Select';
 import { Textarea } from '../../components/ui/Textarea';
 import { Button } from '../../components/ui/Button';
 import { SECTION_ICONS, SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
+import { cn } from '../../lib/cn';
+import planDocumentPencilIcon from '../../assets/images/workspace/planning.png';
+import worldBooksIcon from '../../assets/images/workspace/universe.png';
+import characterPeopleIcon from '../../assets/images/workspace/characters.png';
+import plotOpenBookIcon from '../../assets/images/workspace/plot.png';
+import episodeDocumentPencilIcon from '../../assets/images/workspace/manuscript.png';
+import foreshadowMagnifierIcon from '../../assets/images/workspace/foreshadowing.png';
+import ideaLightbulbIcon from '../../assets/images/workspace/idea.png';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
@@ -51,10 +58,22 @@ const STATUS_OPTIONS = [
   { value: '휴재', label: '휴재' },
 ];
 
-const STATUS_COLOR: Record<string, string> = {
-  연재중: 'bg-blue-100 text-blue-700',
-  완결: 'bg-green-100 text-green-700',
-  휴재: 'bg-yellow-100 text-yellow-700',
+const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
+  연재중: {
+    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+    dot: 'bg-blue-500',
+    item: 'hover:bg-blue-50',
+  },
+  완결: {
+    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    dot: 'bg-emerald-500',
+    item: 'hover:bg-emerald-50',
+  },
+  휴재: {
+    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+    dot: 'bg-amber-500',
+    item: 'hover:bg-amber-50',
+  },
 };
 
 /**
@@ -78,7 +97,7 @@ export function WorkspaceHomeScreen({
   const work = works[0];
 
   if (!work) {
-    return <div className="p-8 text-sm text-gray-500">작품을 불러오는 중…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">작품을 불러오는 중…</div>;
   }
 
   return (
@@ -134,55 +153,53 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* 작품 메타데이터 에디터 */}
-      <section className="border-b border-gray-200 px-10 pb-6 pt-8">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="flex-1">
+      <section className="border-b border-border bg-gradient-to-b from-background to-muted/10 px-10 pb-8 pt-9">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-5 flex items-start justify-between gap-6">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-ring" />
+                Work Overview
+              </div>
             <input
               value={title.value}
               onChange={(e) => title.onChange(e.target.value)}
               onBlur={title.onBlur}
               placeholder="작품 제목"
               maxLength={200}
-              className="w-full border-0 bg-transparent px-0 py-1 text-2xl font-bold text-gray-900 placeholder-gray-300 outline-none focus:ring-0"
+                className="w-full border-0 bg-transparent px-0 py-0.5 text-3xl font-bold tracking-tight text-foreground placeholder-muted-foreground/40 outline-none focus:ring-0"
             />
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-xs text-gray-400">작가</span>
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">작가</span>
               <input
                 value={authorName.value}
                 onChange={(e) => authorName.onChange(e.target.value)}
                 onBlur={authorName.onBlur}
                 placeholder="작가명을 입력하세요"
                 maxLength={100}
-                className="flex-1 border-0 bg-transparent px-0 py-0 text-sm text-gray-700 placeholder-gray-300 outline-none focus:ring-0"
+                  className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 font-medium text-foreground placeholder-muted-foreground/45 outline-none focus:ring-0"
               />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Select
-              options={STATUS_OPTIONS}
-              value={
-                STATUS_OPTIONS.some((o) => o.value === work.status)
-                  ? work.status
-                  : '연재중'
-              }
-              onChange={(e) => handleStatusChange(e.target.value)}
-              className={`w-28 font-medium ${STATUS_COLOR[work.status] ?? ''}`}
-              aria-label="연재 상태"
+            <div className="flex shrink-0 items-center gap-2 pt-1">
+            <StatusDropdown
+              value={STATUS_OPTIONS.some((o) => o.value === work.status) ? work.status : '연재중'}
+              onChange={handleStatusChange}
             />
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
               aria-label="작품 삭제"
               title="작품 삭제"
-              className="rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
             >
               <Trash2 size={16} strokeWidth={1.75} />
             </button>
           </div>
         </div>
 
-        <div className="mb-3">
-          <label className="mb-1 block text-xs font-medium text-gray-500">
+          <div className="rounded-xl border border-border bg-background/80 p-4 shadow-sm">
+            <label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground">
             작품 소개
           </label>
           <Textarea
@@ -191,31 +208,88 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
             onChange={(e) => description.onChange(e.target.value)}
             onBlur={description.onBlur}
             placeholder="한 줄 소개나 줄거리를 자유롭게 작성하세요."
+              className="min-h-20 resize-none border-0 bg-transparent px-0 py-0 text-sm leading-7 shadow-none outline-none placeholder:text-muted-foreground/45 focus:ring-0"
           />
         </div>
 
-        <div className="flex gap-4 text-xs text-gray-400">
-          <span>생성 {formatDate(work.created_at)}</span>
-          <span>최근 수정 {formatDate(work.updated_at)}</span>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-background px-3 py-1">
+              생성 {formatDate(work.created_at)}
+            </span>
+            <span className="rounded-full border border-border bg-background px-3 py-1">
+              최근 수정 {formatDate(work.updated_at)}
+            </span>
+          </div>
         </div>
       </section>
 
       {/* 섹션 네비게이션 */}
-      <section className="px-10 py-6">
-        <h2 className="mb-3 text-sm font-semibold text-gray-700">바로가기</h2>
+      <section className="px-10 py-8">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">바로가기</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {SECTIONS.map((section) => (
             <button
               key={section}
               type="button"
               onClick={() => onSectionSelect(section)}
-              className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:bg-blue-50"
+              className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
             >
-              <span className="text-2xl">{SECTION_ICONS[section]}</span>
-              <span className="mt-2 text-sm font-medium text-gray-900">
+              {section === 'plan' ? (
+                <img
+                  src={planDocumentPencilIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'world-note' ? (
+                <img
+                  src={worldBooksIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'character' ? (
+                <img
+                  src={characterPeopleIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'plot' ? (
+                <img
+                  src={plotOpenBookIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'episode' ? (
+                <img
+                  src={episodeDocumentPencilIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'foreshadow' ? (
+                <img
+                  src={foreshadowMagnifierIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'idea-archive' ? (
+                <img
+                  src={ideaLightbulbIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : (
+                <span className="text-2xl">{SECTION_ICONS[section]}</span>
+              )}
+              <span className="mt-2 text-sm font-medium text-foreground">
                 {SECTION_LABELS[section]}
               </span>
-              <span className="mt-1 text-xs text-gray-500">
+              <span className="mt-1 text-xs text-muted-foreground">
                 {SECTION_DESCRIPTIONS[section]}
               </span>
             </button>
@@ -236,6 +310,83 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
   );
 }
 
+function StatusDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentStyle = STATUS_STYLES[value] ?? STATUS_STYLES.연재중;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex h-9 w-28 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
+          currentStyle.button,
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <span className={cn('h-1.5 w-1.5 rounded-full', currentStyle.dot)} />
+          {value}
+        </span>
+        <ChevronDown
+          size={15}
+          strokeWidth={1.8}
+          className={cn('transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="연재 상태"
+          className="absolute right-0 top-full z-30 mt-2 w-28 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
+        >
+          {STATUS_OPTIONS.map((option) => {
+            const selected = option.value === value;
+            const style = STATUS_STYLES[option.value] ?? STATUS_STYLES.연재중;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
+                  style.item,
+                  selected && 'bg-muted font-medium',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
+                  {option.label}
+                </span>
+                {selected && <Check size={14} strokeWidth={2} className="text-muted-foreground" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface DeleteConfirmDialogProps {
   title: string;
   busy: boolean;
@@ -246,19 +397,21 @@ interface DeleteConfirmDialogProps {
 function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirmDialogProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
-        <h3 className="text-base font-semibold text-gray-900">작품 삭제</h3>
-        <p className="mt-2 text-sm text-gray-600">
-          <span className="font-medium text-gray-900">&ldquo;{title}&rdquo;</span> 과 그에
-          속한 모든 기획·세계관·캐릭터·플롯·원고·복선·아이디어가 <strong>영구 삭제</strong>됩니다.
+      <div className="w-full max-w-md rounded-lg bg-background p-5 shadow-lg">
+        <h3 className="text-base font-semibold text-foreground">휴지통으로 이동</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">&ldquo;{title}&rdquo;</span> 이(가)
+          휴지통으로 이동됩니다.
         </p>
-        <p className="mt-1 text-xs text-red-600">이 작업은 되돌릴 수 없습니다.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다.
+        </p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          <Button variant="outline" onClick={onCancel} disabled={busy}>
             취소
           </Button>
-          <Button variant="danger" onClick={onConfirm} disabled={busy}>
-            {busy ? '삭제 중…' : '영구 삭제'}
+          <Button variant="destructive" onClick={onConfirm} disabled={busy}>
+            {busy ? '이동 중…' : '휴지통으로 이동'}
           </Button>
         </div>
       </div>

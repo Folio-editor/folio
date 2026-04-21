@@ -11,7 +11,7 @@ import { AppSchema } from '@shared/sync/schema';
 export const db = new PowerSyncDatabase({
   schema: AppSchema,
   database: {
-    dbFilename: 'storyzip.db',
+    dbFilename: 'folio.db',
     // OPFS 지원 환경(Electron/Chrome): OPFS에 저장
     // 미지원 환경: IndexedDB 자동 폴백 (@powersync/web 내부 처리)
   },

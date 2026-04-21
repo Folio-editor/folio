@@ -1,4 +1,4 @@
-# StoryZip — 프론트엔드 OAuth 로그인 구현
+# Folio — 프론트엔드 OAuth 로그인 구현
 
 ## 개요
 

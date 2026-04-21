@@ -1,4 +1,4 @@
-# StoryZip Backend (Spring Boot)
+# Folio Backend (Spring Boot)
 
 ## 기술 스택
 

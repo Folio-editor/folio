@@ -69,10 +69,10 @@ export function SyncStatusBar() {
 }
 
 const STATE_STYLES: Record<BarState, string> = {
-  active: 'border-blue-100 bg-blue-50 text-blue-700',
-  idle: 'border-gray-100 bg-gray-50 text-gray-500',
-  error: 'border-red-100 bg-red-50 text-red-700',
-  offline: 'border-gray-100 bg-gray-50 text-gray-400',
+  active: 'border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400',
+  idle: 'border-border/50 bg-muted/50 text-muted-foreground',
+  error: 'border-red-100 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400',
+  offline: 'border-border/50 bg-muted/50 text-muted-foreground/70',
 };
 
 function resolveView(args: {

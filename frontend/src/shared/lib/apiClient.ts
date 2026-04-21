@@ -25,7 +25,7 @@ async function request<T>(
   init: RequestInit = {},
   retry = true,
 ): Promise<T> {
-  const token = await window.storyzip.auth.getAccessToken();
+  const token = await window.folio.auth.getAccessToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (init.body && !headers.has('Content-Type')) {
@@ -35,7 +35,7 @@ async function request<T>(
   const response = await fetch(`${apiUrl()}${path}`, { ...init, headers });
 
   if (response.status === 401 && retry) {
-    const restored = await window.storyzip.auth.tryRestore();
+    const restored = await window.folio.auth.tryRestore();
     if (restored) {
       // body를 새 객체로 재구성 — ReadableStream/FormData 등 1회성 body 재사용 방지
       return request<T>(path, { ...init, body: init.body }, false);

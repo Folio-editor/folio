@@ -15,6 +15,7 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.db.models.episode_summary import EpisodeSummary
 from app.services.providers import get_llm
+from app.services.text_extractor import extract_plain_text
 
 SYSTEM_PROMPT = (
     "당신은 웹소설 회차 요약 전문가입니다. "
@@ -35,7 +36,7 @@ SCHEMA_HINT = """{
 async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> dict:
     llm = get_llm()
 
-    user_prompt = f"아래 회차 본문을 분석하세요:\n\n{content}"
+    user_prompt = f"아래 회차 본문을 분석하세요:\n\n{extract_plain_text(content)}"
     result = await llm.generate_json(SYSTEM_PROMPT, user_prompt, SCHEMA_HINT)
 
     raw_json = json.dumps(result, ensure_ascii=False)

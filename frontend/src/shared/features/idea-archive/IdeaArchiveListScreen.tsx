@@ -1,8 +1,11 @@
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
+import { Lightbulb, Send } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
-import { Button } from '../../components/ui/Button';
-import { SectionHeader } from '../../components/layout/SectionHeader';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { TAG_LIST, TAG_COLOR } from './ideaConstants';
+import { extractText, textToTiptap, timeAgo } from './ideaUtils';
 
 interface IdeaArchiveListScreenProps {
   workId: string;
@@ -19,6 +22,10 @@ interface IdeaRow {
 export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScreenProps) {
   const writerId = useWriterId();
   const { createIdea } = useLocalWrite();
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [inputText, setInputText] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
   const { data: ideas = [] } = useQuery<IdeaRow>(
     `SELECT id, content, tag, updated_at FROM idea_archive
      WHERE work_id = ? AND writer_id = ?
@@ -26,40 +33,141 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
     [workId, writerId],
   );
 
-  const handleNew = async () => {
-    const id = await createIdea(workId, '', null, ideas.length);
-    onSelect(id);
+  const filteredIdeas = activeTag ? ideas.filter((i) => i.tag === activeTag) : ideas;
+
+  const handleSubmit = async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) return;
+    const content = textToTiptap(trimmed);
+    await createIdea(workId, content, activeTag, ideas.length);
+    setInputText('');
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSubmit();
+    }
   };
 
   return (
     <div className="flex h-full flex-col">
-      <SectionHeader
-        title="아이디어 아카이브"
-        description="영감, 좋은 문장, 표현을 모아둡니다"
-        actions={<Button onClick={() => void handleNew()}>+ 새 아이디어</Button>}
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">아이디어</h2>}
+        subtitle="영감과 좋은 문장을 저장합니다"
       />
+
+      {/* 태그 필터 바 */}
+      <div className="shrink-0 border-b border-border/50 bg-muted/30 px-6 py-2">
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              activeTag === null
+                ? 'bg-foreground/10 text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setActiveTag(null)}
+          >
+            전체
+          </button>
+          {TAG_LIST.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                activeTag === tag
+                  ? TAG_COLOR[tag]
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 입력 바 — 필터 바 바로 아래 */}
+      <div className="shrink-0 border-b border-border px-6 py-3">
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              activeTag
+                ? `"${activeTag}" 아이디어를 입력하고 Enter…`
+                : '아이디어를 입력하고 Enter…'
+            }
+            rows={2}
+            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {activeTag && (
+            <span
+              className={`absolute left-3 top-2.5 rounded-full px-2 py-0.5 text-[10px] ${TAG_COLOR[activeTag]} pointer-events-none`}
+              style={{ transform: inputText ? 'scale(0)' : 'scale(1)', transition: 'transform 0.15s' }}
+            >
+              {activeTag}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={!inputText.trim()}
+            className="absolute bottom-3 right-3 rounded p-1 text-muted-foreground transition-colors hover:text-primary disabled:opacity-30"
+            title="등록 (Enter)"
+          >
+            <Send size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* 카드 그리드 */}
       <div className="flex-1 overflow-y-auto p-6">
-        {ideas.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">
-            아직 아이디어가 없습니다.
-          </p>
+        {filteredIdeas.length === 0 ? (
+          ideas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Lightbulb className="mb-4 h-10 w-10 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                아직 아이디어가 없습니다
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground/70">
+                위 입력란에 떠오르는 영감을 기록해보세요
+              </p>
+            </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              &ldquo;{activeTag}&rdquo; 태그의 아이디어가 없습니다
+            </p>
+          )
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {ideas.map((idea) => (
+            {filteredIdeas.map((idea) => (
               <button
                 key={idea.id}
                 type="button"
                 onClick={() => onSelect(idea.id)}
-                className="flex flex-col items-start rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-400 hover:shadow-sm"
+                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-all hover:border-ring hover:shadow-md"
               >
                 {idea.tag && (
-                  <span className="mb-2 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">
+                  <span
+                    className={`mb-2 rounded-full px-2 py-0.5 text-xs ${TAG_COLOR[idea.tag] ?? 'bg-muted'}`}
+                  >
                     {idea.tag}
                   </span>
                 )}
-                <p className="line-clamp-4 text-sm text-gray-700">
+                <p className="line-clamp-4 text-sm text-foreground">
                   {extractText(idea.content) || '(빈 아이디어)'}
                 </p>
+                {idea.updated_at && (
+                  <span className="mt-3 self-end text-xs text-muted-foreground">
+                    {timeAgo(idea.updated_at)}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -69,20 +177,3 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
   );
 }
 
-function extractText(raw: string): string {
-  if (!raw) return '';
-  try {
-    const json = JSON.parse(raw);
-    return collectText(json).trim();
-  } catch {
-    return raw;
-  }
-}
-
-function collectText(node: unknown): string {
-  if (!node || typeof node !== 'object') return '';
-  const n = node as { text?: string; content?: unknown[] };
-  if (typeof n.text === 'string') return n.text;
-  if (Array.isArray(n.content)) return n.content.map(collectText).join(' ');
-  return '';
-}

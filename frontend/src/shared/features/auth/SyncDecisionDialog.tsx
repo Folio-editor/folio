@@ -42,15 +42,15 @@ export function SyncDecisionDialog({
       }}
     >
       <div
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-semibold text-gray-900">기존 계정으로 로그인</h3>
-        <p className="mt-2 text-sm text-gray-600">
+        <h3 className="text-lg font-semibold text-foreground">기존 계정으로 로그인</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
           이미 사용 중인 계정입니다. 다른 기기에서 작업한 데이터가 있을 수 있어
           <strong className="px-1">서버 데이터를 우선</strong>합니다.
         </p>
-        <p className="mt-2 text-sm text-red-600">
+        <p className="mt-2 text-sm text-destructive">
           게스트로 작성한 로컬 항목 <strong>{guestRowCount.toLocaleString()}건은 폐기됩니다.</strong>
         </p>
 
@@ -59,13 +59,13 @@ export function SyncDecisionDialog({
             type="button"
             disabled={busy}
             onClick={onUseServer}
-            className="w-full rounded-lg border border-blue-200 bg-blue-50 p-4 text-left transition-colors hover:border-blue-400 hover:bg-blue-100 disabled:opacity-50"
+            className="w-full rounded-lg border border-primary/20 bg-primary/5 p-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:opacity-50"
           >
             <div className="flex items-center gap-2">
               <span className="text-base">☁️</span>
-              <span className="text-sm font-semibold text-blue-900">서버 데이터로 시작</span>
+              <span className="text-sm font-semibold text-primary">서버 데이터로 시작</span>
             </div>
-            <p className="mt-1 pl-6 text-xs text-blue-800">
+            <p className="mt-1 pl-6 text-xs text-primary">
               로컬 임시 데이터를 폐기하고 클라우드 데이터를 불러옵니다.
             </p>
           </button>

@@ -1,6 +1,6 @@
 spring:
   application:
-    name: storyzip-backend
+    name: folio-backend
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   mvc:
@@ -32,7 +32,7 @@ jwt:
   access-expiry: ${JWT_ACCESS_EXPIRY:1800}
   refresh-expiry: ${JWT_REFRESH_EXPIRY:1209600}
   audience: ${PS_JWT_AUDIENCE:powersync-dev}
-  key-id: ${PS_JWT_KID:storyzip-dev}
+  key-id: ${PS_JWT_KID:folio-dev}
 
 # Google OAuth
 google:

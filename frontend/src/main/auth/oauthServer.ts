@@ -99,7 +99,7 @@ function respondHtml(res: http.ServerResponse, message: string) {
   res.end(`
     <!doctype html>
     <html lang="ko">
-      <head><meta charset="utf-8"><title>StoryZip</title></head>
+      <head><meta charset="utf-8"><title>Folio</title></head>
       <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;">
         <div style="text-align:center;">
           <h2>${message}</h2>
