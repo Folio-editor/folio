@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import {
   DndContext,
@@ -15,6 +15,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import {
+  ArrowLeft,
   BotMessageSquare,
   ChevronDown,
   ChevronRight,
@@ -24,14 +25,21 @@ import {
   GripVertical,
   Lightbulb,
   Pencil,
+  Send,
+  Trash2,
   X,
 } from 'lucide-react';
 import { ResizeHandle } from './ResizeHandle';
 import { AuxDocViewer } from './AuxDocViewer';
 import { ContentEditor } from '../editor/ContentEditor';
+import { Select } from '../ui/Select';
+import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useWriterId } from '../../hooks/useWriterId';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
+import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
+import { extractText, textToTiptap, timeAgo } from '../../features/idea-archive/ideaUtils';
 import { cn } from '../../lib/cn';
 
 interface RightPanelsProps {
@@ -272,6 +280,16 @@ function DocsTabContent({
 /* ── Idea 탭 ── */
 
 function IdeaTabContent({ selectedWorkId }: { selectedWorkId: string | null }) {
+  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+
+  useEffect(() => {
+    setView('list');
+    setSelectedIdeaId(null);
+    setActiveTag(null);
+  }, [selectedWorkId]);
+
   if (!selectedWorkId) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 text-center text-sm text-muted-foreground">
@@ -280,12 +298,275 @@ function IdeaTabContent({ selectedWorkId }: { selectedWorkId: string | null }) {
     );
   }
 
+  if (view === 'detail' && selectedIdeaId) {
+    return (
+      <IdeaPanelDetail
+        id={selectedIdeaId}
+        onBack={() => {
+          setView('list');
+          setSelectedIdeaId(null);
+        }}
+      />
+    );
+  }
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <Lightbulb size={32} className="text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">
-        아이디어 노트 기능이 이곳에서 제공될 예정입니다.
-      </p>
+    <IdeaPanelList
+      workId={selectedWorkId}
+      activeTag={activeTag}
+      onTagChange={setActiveTag}
+      onSelect={(id) => {
+        setSelectedIdeaId(id);
+        setView('detail');
+      }}
+    />
+  );
+}
+
+interface IdeaRow {
+  id: string;
+  content: string;
+  tag: string | null;
+  updated_at: string;
+}
+
+function IdeaPanelList({
+  workId,
+  activeTag,
+  onTagChange,
+  onSelect,
+}: {
+  workId: string;
+  activeTag: string | null;
+  onTagChange: (tag: string | null) => void;
+  onSelect: (id: string) => void;
+}) {
+  const writerId = useWriterId();
+  const { createIdea } = useLocalWrite();
+  const [inputText, setInputText] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { data: ideas = [] } = useQuery<IdeaRow>(
+    `SELECT id, content, tag, updated_at FROM idea_archive
+     WHERE work_id = ? AND writer_id = ?
+     ORDER BY sort_order ASC, created_at DESC`,
+    [workId, writerId],
+  );
+
+  const filteredIdeas = activeTag ? ideas.filter((i) => i.tag === activeTag) : ideas;
+
+  const handleSubmit = async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) return;
+    const content = textToTiptap(trimmed);
+    await createIdea(workId, content, activeTag, ideas.length);
+    setInputText('');
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSubmit();
+    }
+  };
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* 태그 필터 바 */}
+      <div className="shrink-0 border-b border-border/50 px-2 py-1.5">
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              activeTag === null
+                ? 'bg-foreground/10 text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => onTagChange(null)}
+          >
+            전체
+          </button>
+          {TAG_LIST.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                activeTag === tag
+                  ? TAG_COLOR[tag]
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => onTagChange(activeTag === tag ? null : tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 인라인 생성 입력 */}
+      <div className="shrink-0 border-b border-border px-2 py-2">
+        <div className="relative">
+          <textarea
+            ref={inputRef}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              activeTag
+                ? `"${activeTag}" 아이디어… (Enter)`
+                : '아이디어 메모… (Enter)'
+            }
+            rows={2}
+            className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 pr-8 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={() => void handleSubmit()}
+            disabled={!inputText.trim()}
+            className="absolute bottom-2 right-2 rounded p-0.5 text-muted-foreground transition-colors hover:text-primary disabled:opacity-30"
+            title="등록 (Enter)"
+          >
+            <Send size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* 카드 리스트 */}
+      <div className="flex-1 overflow-y-auto p-2">
+        {filteredIdeas.length === 0 ? (
+          ideas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <Lightbulb className="mb-2 h-7 w-7 text-muted-foreground/40" />
+              <p className="text-xs text-muted-foreground">아직 아이디어가 없습니다</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground/60">위 입력란에 기록해보세요</p>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              &ldquo;{activeTag}&rdquo; 태그의 아이디어가 없습니다
+            </p>
+          )
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {filteredIdeas.map((idea) => (
+              <button
+                key={idea.id}
+                type="button"
+                onClick={() => onSelect(idea.id)}
+                className="flex flex-col items-start rounded-md border border-border bg-background p-2.5 text-left transition-all hover:border-ring hover:shadow-sm"
+              >
+                <div className="flex w-full items-center justify-between gap-1 mb-1">
+                  {idea.tag ? (
+                    <span className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${TAG_COLOR[idea.tag] ?? 'bg-muted'}`}>
+                      {idea.tag}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  {idea.updated_at && (
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {timeAgo(idea.updated_at)}
+                    </span>
+                  )}
+                </div>
+                <p className="line-clamp-2 text-xs text-foreground">
+                  {extractText(idea.content) || '(빈 아이디어)'}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface IdeaDetailRow {
+  id: string;
+  content: string | null;
+  tag: string | null;
+}
+
+function IdeaPanelDetail({ id, onBack }: { id: string; onBack: () => void }) {
+  const { data: rows = [] } = useQuery<IdeaDetailRow>(
+    `SELECT id, content, tag FROM idea_archive WHERE id = ?`,
+    [id],
+  );
+  const { updateIdea, deleteIdeaArchive } = useLocalWrite();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const loaded = rows.length > 0;
+  const idea = rows[0];
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* compact 헤더 */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          title="목록으로"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft size={13} />
+        </button>
+        <span className="flex-1 truncate text-xs font-medium text-foreground">아이디어</span>
+        {idea?.tag && (
+          <span className={`h-2 w-2 shrink-0 rounded-full ${TAG_DOT_COLOR[idea.tag] ?? ''}`} />
+        )}
+        <div className="w-20 shrink-0">
+          <Select
+            options={TAG_OPTIONS}
+            value={idea?.tag ?? ''}
+            onChange={(e) => void updateIdea(id, { tag: e.target.value || null })}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          title="아이디어 삭제"
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      {/* 에디터 */}
+      {!loaded ? (
+        <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+          불러오는 중…
+        </div>
+      ) : (
+        <ContentEditor
+          key={id}
+          itemId={id}
+          initialContent={idea?.content ?? null}
+          placeholder="떠오른 아이디어를 자유롭게 적어두세요…"
+          onUpdate={(content) => void updateIdea(id, { content })}
+          debounceMs={1500}
+          showStatusBar={false}
+          compact
+        />
+      )}
+
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="아이디어 삭제"
+          message="이 아이디어가 영구 삭제됩니다."
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteIdeaArchive(id).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }

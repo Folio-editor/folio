@@ -4,6 +4,8 @@ import { Lightbulb, Send } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { TAG_LIST, TAG_COLOR } from './ideaConstants';
+import { extractText, textToTiptap, timeAgo } from './ideaUtils';
 
 interface IdeaArchiveListScreenProps {
   workId: string;
@@ -15,37 +17,6 @@ interface IdeaRow {
   content: string;
   tag: string | null;
   updated_at: string;
-}
-
-const TAG_LIST = ['문장', '장면', '설정', '반전', '대사'] as const;
-
-const TAG_COLOR: Record<string, string> = {
-  '문장': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  '장면': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '설정': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  '반전': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  '대사': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-};
-
-function timeAgo(iso: string): string {
-  if (!iso) return '';
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return '방금 전';
-  if (minutes < 60) return `${minutes}분 전`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}일 전`;
-  const months = Math.floor(days / 30);
-  return `${months}개월 전`;
-}
-
-function textToTiptap(text: string): string {
-  return JSON.stringify({
-    type: 'doc',
-    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
-  });
 }
 
 export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScreenProps) {
@@ -206,20 +177,3 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
   );
 }
 
-function extractText(raw: string): string {
-  if (!raw) return '';
-  try {
-    const json = JSON.parse(raw);
-    return collectText(json).trim();
-  } catch {
-    return raw;
-  }
-}
-
-function collectText(node: unknown): string {
-  if (!node || typeof node !== 'object') return '';
-  const n = node as { text?: string; content?: unknown[] };
-  if (typeof n.text === 'string') return n.text;
-  if (Array.isArray(n.content)) return n.content.map(collectText).join(' ');
-  return '';
-}

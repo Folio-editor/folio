@@ -7,6 +7,7 @@ import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { TAG_OPTIONS, TAG_DOT_COLOR } from './ideaConstants';
 
 interface IdeaArchiveEditScreenProps {
   id: string;
@@ -19,23 +20,6 @@ interface IdeaRow {
   tag: string | null;
   created_at: string;
 }
-
-const TAG_OPTIONS = [
-  { value: '', label: '태그 없음' },
-  { value: '문장', label: '문장' },
-  { value: '장면', label: '장면' },
-  { value: '설정', label: '설정' },
-  { value: '반전', label: '반전' },
-  { value: '대사', label: '대사' },
-];
-
-const TAG_DOT_COLOR: Record<string, string> = {
-  '문장': 'bg-amber-400',
-  '장면': 'bg-blue-400',
-  '설정': 'bg-purple-400',
-  '반전': 'bg-red-400',
-  '대사': 'bg-green-400',
-};
 
 function formatDate(iso: string): string {
   if (!iso) return '';
