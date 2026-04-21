@@ -153,30 +153,35 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* 작품 메타데이터 에디터 */}
-      <section className="border-b border-border px-10 pb-6 pt-8">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="flex-1">
+      <section className="border-b border-border bg-gradient-to-b from-background to-muted/10 px-10 pb-8 pt-9">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-5 flex items-start justify-between gap-6">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-ring" />
+                Work Overview
+              </div>
             <input
               value={title.value}
               onChange={(e) => title.onChange(e.target.value)}
               onBlur={title.onBlur}
               placeholder="작품 제목"
               maxLength={200}
-              className="w-full border-0 bg-transparent px-0 py-1 text-2xl font-bold text-foreground placeholder-muted-foreground/50 outline-none focus:ring-0"
+                className="w-full border-0 bg-transparent px-0 py-0.5 text-3xl font-bold tracking-tight text-foreground placeholder-muted-foreground/40 outline-none focus:ring-0"
             />
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">작가</span>
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">작가</span>
               <input
                 value={authorName.value}
                 onChange={(e) => authorName.onChange(e.target.value)}
                 onBlur={authorName.onBlur}
                 placeholder="작가명을 입력하세요"
                 maxLength={100}
-                className="flex-1 border-0 bg-transparent px-0 py-0 text-sm text-foreground placeholder-muted-foreground/50 outline-none focus:ring-0"
+                  className="min-w-0 flex-1 border-0 bg-transparent px-0 py-0 font-medium text-foreground placeholder-muted-foreground/45 outline-none focus:ring-0"
               />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 pt-1">
             <StatusDropdown
               value={STATUS_OPTIONS.some((o) => o.value === work.status) ? work.status : '연재중'}
               onChange={handleStatusChange}
@@ -193,8 +198,8 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
           </div>
         </div>
 
-        <div className="mb-3">
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <div className="rounded-xl border border-border bg-background/80 p-4 shadow-sm">
+            <label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground">
             작품 소개
           </label>
           <Textarea
@@ -203,17 +208,23 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
             onChange={(e) => description.onChange(e.target.value)}
             onBlur={description.onBlur}
             placeholder="한 줄 소개나 줄거리를 자유롭게 작성하세요."
+              className="min-h-20 resize-none border-0 bg-transparent px-0 py-0 text-sm leading-7 shadow-none outline-none placeholder:text-muted-foreground/45 focus:ring-0"
           />
         </div>
 
-        <div className="flex gap-4 text-xs text-muted-foreground">
-          <span>생성 {formatDate(work.created_at)}</span>
-          <span>최근 수정 {formatDate(work.updated_at)}</span>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-background px-3 py-1">
+              생성 {formatDate(work.created_at)}
+            </span>
+            <span className="rounded-full border border-border bg-background px-3 py-1">
+              최근 수정 {formatDate(work.updated_at)}
+            </span>
+          </div>
         </div>
       </section>
 
       {/* 섹션 네비게이션 */}
-      <section className="px-10 py-6">
+      <section className="px-10 py-8">
         <h2 className="mb-3 text-sm font-semibold text-foreground">바로가기</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {SECTIONS.map((section) => (
