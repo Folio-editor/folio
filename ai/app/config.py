@@ -1,3 +1,5 @@
+import os
+
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -44,7 +46,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     embedding_model: str = Field(default="text-embedding-3-small", validation_alias="EMBEDDING_MODEL")
     claude_sonnet_model: str = Field(
-        default="claude-sonnet-4-5",
+        default="claude-sonnet-4-6",
         validation_alias="CLAUDE_SONNET_MODEL",
     )
     claude_haiku_model: str = Field(
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
         validation_alias="CLAUDE_HAIKU_MODEL",
     )
     claude_opus_model: str = Field(
-        default="claude-opus-4-5-20250514",
+        default="claude-opus-4-7",
         validation_alias="CLAUDE_OPUS_MODEL",
     )
 
@@ -62,6 +64,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def populate_composed_urls(self) -> "Settings":
+        if not self.anthropic_api_key:
+            self.anthropic_api_key = os.getenv("CLAUDE_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
         if not self.database_url:
             self.database_url = self._build_database_url()
         if not self.redis_url:
