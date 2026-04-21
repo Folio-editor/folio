@@ -442,9 +442,6 @@ export function useLocalWrite() {
     deleteCharacterNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM character_note WHERE id = ?`, [id]);
     },
-    deletePlot: async (id: string): Promise<void> => {
-      await db.execute(`DELETE FROM plot WHERE id = ?`, [id]);
-    },
     deleteWorldNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM world_note WHERE id = ?`, [id]);
     },

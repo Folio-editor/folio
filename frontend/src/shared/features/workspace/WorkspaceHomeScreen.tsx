@@ -4,6 +4,8 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft,
   BookOpenText,
+  Check,
+  ChevronDown,
   ClipboardList,
   Globe,
   KeyRound,
@@ -15,10 +17,10 @@ import {
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
-import { Select } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
+import { cn } from '../../lib/cn';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
@@ -63,10 +65,22 @@ const STATUS_OPTIONS = [
   { value: '휴재', label: '휴재' },
 ];
 
-const STATUS_COLOR: Record<string, string> = {
-  연재중: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  완결: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  휴재: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
+  연재중: {
+    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+    dot: 'bg-blue-500',
+    item: 'hover:bg-blue-50',
+  },
+  완결: {
+    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    dot: 'bg-emerald-500',
+    item: 'hover:bg-emerald-50',
+  },
+  휴재: {
+    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+    dot: 'bg-amber-500',
+    item: 'hover:bg-amber-50',
+  },
 };
 
 const SECTION_ICON: Record<WorkspaceSection, LucideIcon> = {
@@ -200,16 +214,9 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-              <Select
-                options={STATUS_OPTIONS}
-                value={
-                  STATUS_OPTIONS.some((o) => o.value === work.status)
-                    ? work.status
-                    : '연재중'
-                }
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className={`w-28 font-medium ${STATUS_COLOR[work.status] ?? ''}`}
-                aria-label="연재 상태"
+              <StatusDropdown
+                value={STATUS_OPTIONS.some((o) => o.value === work.status) ? work.status : '연재중'}
+                onChange={handleStatusChange}
               />
               <button
                 type="button"
@@ -315,6 +322,83 @@ function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirm
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatusDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentStyle = STATUS_STYLES[value] ?? STATUS_STYLES.연재중;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex h-9 w-28 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
+          currentStyle.button,
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <span className={cn('h-1.5 w-1.5 rounded-full', currentStyle.dot)} />
+          {value}
+        </span>
+        <ChevronDown
+          size={15}
+          strokeWidth={1.8}
+          className={cn('transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="연재 상태"
+          className="absolute right-0 top-full z-30 mt-2 w-28 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
+        >
+          {STATUS_OPTIONS.map((option) => {
+            const selected = option.value === value;
+            const style = STATUS_STYLES[option.value] ?? STATUS_STYLES.연재중;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
+                  style.item,
+                  selected && 'bg-muted font-medium',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
+                  {option.label}
+                </span>
+                {selected && <Check size={14} strokeWidth={2} className="text-muted-foreground" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
