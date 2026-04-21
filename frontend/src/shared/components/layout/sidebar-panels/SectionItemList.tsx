@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -47,8 +47,9 @@ export function SectionItemList({
   onItemSelect,
 }: SectionItemListProps) {
   const writerId = useWriterId();
-  const { reorderItems, deleteForeshadow, deleteIdeaArchive } = useLocalWrite();
+  const { reorderItems, createForeshadow, deleteForeshadow, deleteIdeaArchive } = useLocalWrite();
   const sensors = useSensors(useSensor(HandleOnlyPointerSensor));
+  const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const table = SECTION_TABLES[section];
@@ -65,56 +66,81 @@ export function SectionItemList({
 
   const { data: rows = [] } = useQuery<Row>(sql, params);
 
-  if (rows.length === 0) {
-    return (
-      <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-        {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
-      </p>
-    );
-  }
+  const handleCreateForeshadow = async (name: string) => {
+    setCreating(false);
+    const title = name.trim();
+    if (!title) return;
+    const id = await createForeshadow(workId, title, '중', rows.length);
+    onItemSelect(id);
+  };
 
   return (
     <div className="flex flex-col gap-0.5 px-2 py-2">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={(event: DragEndEvent) => {
-          const { active, over } = event;
-          if (!over || active.id === over.id) return;
-          const oldIndex = rows.findIndex((row) => row.id === active.id);
-          const newIndex = rows.findIndex((row) => row.id === over.id);
-          if (oldIndex === -1 || newIndex === -1) return;
-          const reordered = arrayMove(rows, oldIndex, newIndex);
-          void reorderItems(
-            table,
-            reordered.map((row, i) => ({ id: row.id, sortOrder: i * 1000 })),
-          );
-        }}
-      >
-        <SortableContext items={rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
-          {rows.map((row) => {
-            const raw = row.label?.trim() || '';
-            const display =
-              section === 'idea-archive'
-                ? extractPlainText(raw) || PLACEHOLDER_LABELS[section]
-                : raw || PLACEHOLDER_LABELS[section];
-            return (
-              <SortableSectionItem
-                key={row.id}
-                id={row.id}
-                label={display}
-                selected={selectedItemId === row.id}
-                onSelect={() => onItemSelect(row.id)}
-                onDelete={
-                  section === 'foreshadow' || section === 'idea-archive'
-                    ? () => setDeleteTarget({ id: row.id, label: display })
-                    : null
-                }
-              />
+      {section === 'foreshadow' && (
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <Plus size={14} strokeWidth={2} />
+          <span>새 복선</span>
+        </button>
+      )}
+
+      {creating && (
+        <InlineCreateInput
+          placeholder="복선 제목을 입력하세요"
+          onConfirm={(name) => void handleCreateForeshadow(name)}
+          onCancel={() => setCreating(false)}
+        />
+      )}
+
+      {rows.length === 0 && !creating ? (
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+          {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
+        </p>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={(event: DragEndEvent) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            const oldIndex = rows.findIndex((row) => row.id === active.id);
+            const newIndex = rows.findIndex((row) => row.id === over.id);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const reordered = arrayMove(rows, oldIndex, newIndex);
+            void reorderItems(
+              table,
+              reordered.map((row, i) => ({ id: row.id, sortOrder: i * 1000 })),
             );
-          })}
-        </SortableContext>
-      </DndContext>
+          }}
+        >
+          <SortableContext items={rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
+            {rows.map((row) => {
+              const raw = row.label?.trim() || '';
+              const display =
+                section === 'idea-archive'
+                  ? extractPlainText(raw) || PLACEHOLDER_LABELS[section]
+                  : raw || PLACEHOLDER_LABELS[section];
+              return (
+                <SortableSectionItem
+                  key={row.id}
+                  id={row.id}
+                  label={display}
+                  selected={selectedItemId === row.id}
+                  onSelect={() => onItemSelect(row.id)}
+                  onDelete={
+                    section === 'foreshadow' || section === 'idea-archive'
+                      ? () => setDeleteTarget({ id: row.id, label: display })
+                      : null
+                  }
+                />
+              );
+            })}
+          </SortableContext>
+        </DndContext>
+      )}
       {deleteTarget && (
         <DeleteConfirmDialog
           title={DELETE_LABELS[section]}
@@ -141,6 +167,51 @@ export function SectionItemList({
         />
       )}
     </div>
+  );
+}
+
+function InlineCreateInput({
+  placeholder,
+  onConfirm,
+  onCancel,
+}: {
+  placeholder: string;
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onConfirm(value);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel();
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        if (value.trim()) onConfirm(value);
+        else onCancel();
+      }}
+      onKeyDown={handleKeyDown}
+      placeholder={placeholder}
+      maxLength={200}
+      className="mb-1 h-9 w-full rounded-lg border border-ring bg-background px-3 text-sm text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
+    />
   );
 }
 

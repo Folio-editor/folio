@@ -57,10 +57,11 @@ export function CharacterNoteList({
   onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
-  const { reorderItems } = useLocalWrite();
+  const { reorderItems, createCharacter, ensureCharacterNotes } = useLocalWrite();
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
+  const [creatingCharacter, setCreatingCharacter] = useState(false);
 
   // Parse prefix routing
   const selectedCharId = selectedItemId?.startsWith('char:') ? selectedItemId.slice(5) : null;
@@ -99,16 +100,41 @@ export function CharacterNoteList({
     : [workId, writerId];
   const { data: characters = [] } = useQuery<CharacterRow>(sql, params);
 
-  if (characters.length === 0) {
-    return (
-      <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-        {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
-      </p>
-    );
-  }
+  const handleCreateCharacter = async (name: string) => {
+    setCreatingCharacter(false);
+    const nextName = name.trim();
+    if (!nextName) return;
+    const id = await createCharacter(workId, nextName, '미설정', '', characters.length);
+    await ensureCharacterNotes(id);
+    setExpandedCharId(id);
+    onItemSelect('char:' + id);
+  };
 
   return (
     <div className="flex flex-col gap-0.5 px-2 py-2">
+      <button
+        type="button"
+        onClick={() => setCreatingCharacter(true)}
+        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+      >
+        <Plus size={14} strokeWidth={2} />
+        <span>새 인물</span>
+      </button>
+
+      {creatingCharacter && (
+        <InlineCreateInput
+          placeholder="인물 이름을 입력하세요"
+          onConfirm={(name) => void handleCreateCharacter(name)}
+          onCancel={() => setCreatingCharacter(false)}
+        />
+      )}
+
+      {characters.length === 0 && !creatingCharacter && (
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+          {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
+        </p>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
