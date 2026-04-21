@@ -514,6 +514,10 @@ export function useLocalWrite() {
     unlinkPlotEpisode: async (linkId: string): Promise<void> => {
       await db.execute('DELETE FROM plot_episode_link WHERE id = ?', [linkId]);
     },
+    deletePlot: async (id: string): Promise<void> => {
+      await db.execute('DELETE FROM plot_episode_link WHERE plot_id = ?', [id]);
+      await db.execute('DELETE FROM plot WHERE id = ?', [id]);
+    },
 
     // ── foreshadow_link ────────────────────────────────────
     createForeshadowLink: async (
