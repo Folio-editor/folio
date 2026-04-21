@@ -4,10 +4,10 @@ import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -44,7 +44,7 @@ export function HomeWorkList({
   const writerId = useWriterId();
   const { reorderItems } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const trimmed = searchTerm.trim();
   const sql = trimmed
@@ -113,7 +113,7 @@ function SortableWorkItem({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: work.id });
   const style = {
     transform: transform
@@ -123,9 +123,10 @@ function SortableWorkItem({
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes} className="group flex items-center">
+    <div ref={setNodeRef} style={style} className="group flex items-center">
       <span
         {...listeners}
+        data-dnd-handle
         className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <GripVertical size={12} className="text-muted-foreground" />

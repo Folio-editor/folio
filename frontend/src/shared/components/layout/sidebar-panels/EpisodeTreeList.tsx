@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus } from 'lucide-react';
+import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -17,7 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
+import { setupDragTransfer } from '../../../lib/dragTransfer';
 
 interface EpisodeRow {
   id: string;
@@ -55,11 +57,13 @@ export function EpisodeTreeList({
   onItemSelect,
 }: EpisodeTreeListProps) {
   const writerId = useWriterId();
-  const { createEpisode, updateEpisode, reorderItems } = useLocalWrite();
+  const { createEpisode, updateEpisode, reorderItems, trashEpisode } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
+  const [trashTarget, setTrashTarget] = useState<{ id: string; title: string } | null>(null);
+  const [trashBusy, setTrashBusy] = useState(false);
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
@@ -126,10 +130,29 @@ export function EpisodeTreeList({
                 selected={selectedItemId === ep.id}
                 onSelect={() => onItemSelect(ep.id)}
                 onRename={(title) => void updateEpisode(ep.id, { title })}
+                onTrash={() => setTrashTarget({ id: ep.id, title: ep.title })}
               />
             ))}
           </SortableContext>
         </DndContext>
+      )}
+      {trashTarget && (
+        <DeleteConfirmDialog
+          title="휴지통으로 이동"
+          message={`"${trashTarget.title || '(제목 없음)'}"`+ ' 원고가 휴지통으로 이동됩니다.'}
+          warning="30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다."
+          confirmLabel="휴지통으로 이동"
+          busyLabel="이동 중…"
+          busy={trashBusy}
+          onConfirm={() => {
+            setTrashBusy(true);
+            void trashEpisode(trashTarget.id).then(() => {
+              setTrashTarget(null);
+              setTrashBusy(false);
+            });
+          }}
+          onCancel={() => setTrashTarget(null)}
+        />
       )}
     </div>
   );
@@ -143,8 +166,9 @@ function SortableEpisodeItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onTrash: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.episode.id });
   const style = {
     transform: transform
@@ -154,7 +178,7 @@ function SortableEpisodeItem(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <EpisodeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -165,12 +189,14 @@ function EpisodeItem({
   selected,
   onSelect,
   onRename,
+  onTrash,
   dragListeners,
 }: {
   episode: EpisodeRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onTrash: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -218,10 +244,15 @@ function EpisodeItem({
   }
 
   return (
-    <div className="group flex items-center">
+    <div
+      className="group flex items-center"
+      draggable="true"
+      onDragStart={(e) => setupDragTransfer(e, 'episode', episode.id, episode.title)}
+    >
       {dragListeners && (
         <span
           {...dragListeners}
+          data-dnd-handle
           className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <GripVertical size={12} className="text-muted-foreground" />
@@ -256,6 +287,14 @@ function EpisodeItem({
             />
           )}
         </span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onTrash(); }}
+        title="휴지통으로 이동"
+        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 size={12} strokeWidth={1.75} />
       </button>
     </div>
   );

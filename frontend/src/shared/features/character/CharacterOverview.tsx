@@ -5,10 +5,11 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
-import { LayoutGrid, List } from 'lucide-react';
+import { LayoutGrid, List, Trash2 } from 'lucide-react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
@@ -92,7 +93,7 @@ function CharacterOverviewInner({
   onBack: () => void;
   onNoteSelect: (id: string) => void;
 }) {
-  const { updateCharacter, createCharacterTag, deleteCharacterTag } = useLocalWrite();
+  const { updateCharacter, createCharacterTag, deleteCharacterTag, deleteCharacter } = useLocalWrite();
   const writerId = useWriterId();
   const { id } = character;
 
@@ -105,6 +106,8 @@ function CharacterOverviewInner({
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const { data: notes = [] } = useQuery<NoteSummaryRow>(
     `SELECT id, kind, title, content FROM character_note
@@ -142,7 +145,19 @@ function CharacterOverviewInner({
             className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
           />
         }
-        trailing={<ViewToggle mode={viewMode} onChange={setViewMode} />}
+        trailing={
+          <div className="flex items-center gap-2">
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="캐릭터 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
+        }
         meta={
           <div className="flex items-center gap-4">
             <label className="text-xs text-muted-foreground">성별</label>
@@ -233,6 +248,23 @@ function CharacterOverviewInner({
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="캐릭터 삭제"
+          message={`"${character.name}" 캐릭터와 관련 문서가 영구 삭제됩니다.`}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteCharacter(id).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }

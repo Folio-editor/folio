@@ -47,12 +47,27 @@ export function useLocalWrite() {
       );
     },
     /**
-     * 작품 완전 삭제.
-     * 백엔드 FK ON DELETE CASCADE로 연관 엔티티(plan, world_note, character, plot,
-     * episode, foreshadow, idea_archive 등)가 서버 측에서 자동 정리된다.
+     * 작품 소프트 삭제 — status를 'trashed'로 변경하여 휴지통으로 이동.
+     * 30일 후 백엔드 배치 작업으로 영구 삭제된다.
      */
     deleteWork: async (id: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE work SET status = 'trashed', updated_at = ? WHERE id = ?`,
+        [now, id],
+      );
+    },
+    /** 휴지통에서 영구 삭제 — 실제 DELETE. CASCADE로 하위 엔티티 자동 정리. */
+    permanentDeleteWork: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM work WHERE id = ?`, [id]);
+    },
+    /** 휴지통에서 작품 복원 — status를 '연재중'으로 되돌린다. */
+    restoreWork: async (id: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE work SET status = '연재중', updated_at = ? WHERE id = ?`,
+        [now, id],
+      );
     },
 
     // ── plan (work당 1개) ────────────────────────────────────
@@ -332,6 +347,27 @@ export function useLocalWrite() {
       );
     },
 
+    /** 원고 소프트 삭제 — status를 'trashed'로 변경. */
+    trashEpisode: async (id: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE episode SET status = 'trashed', updated_at = ? WHERE id = ?`,
+        [now, id],
+      );
+    },
+    /** 휴지통에서 원고 영구 삭제. */
+    permanentDeleteEpisode: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM episode WHERE id = ?`, [id]);
+    },
+    /** 휴지통에서 원고 복원 — status를 '미작성'으로 되돌린다. */
+    restoreEpisode: async (id: string): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE episode SET status = '미작성', updated_at = ? WHERE id = ?`,
+        [now, id],
+      );
+    },
+
     // ── foreshadow ─────────────────────────────────────────
     createForeshadow: async (
       workId: string,
@@ -397,6 +433,29 @@ export function useLocalWrite() {
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+    },
+
+    // ── 하드 삭제 ──────────────────────────────────────────
+    deleteCharacter: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM character WHERE id = ?`, [id]);
+    },
+    deleteCharacterNote: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM character_note WHERE id = ?`, [id]);
+    },
+    deletePlot: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM plot WHERE id = ?`, [id]);
+    },
+    deleteWorldNote: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM world_note WHERE id = ?`, [id]);
+    },
+    deletePlanNote: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM plan_note WHERE id = ?`, [id]);
+    },
+    deleteForeshadow: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM foreshadow WHERE id = ?`, [id]);
+    },
+    deleteIdeaArchive: async (id: string): Promise<void> => {
+      await db.execute(`DELETE FROM idea_archive WHERE id = ?`, [id]);
     },
 
     // ── 정렬/이동 ──────────────────────────────────────────
