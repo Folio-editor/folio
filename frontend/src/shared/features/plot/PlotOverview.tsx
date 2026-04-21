@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@powersync/react';
 import {
   ChevronDown,
@@ -35,6 +35,7 @@ import type { WorkspaceSection } from '../../types/workspace';
 
 interface PlotOverviewProps {
   workId: string;
+  selectedItemId: string | null;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }
 
@@ -78,10 +79,12 @@ const STATUS_COLOR: Record<string, string> = {
 
 const STATUS_OPTIONS = ['예정', '작성중', '완료'];
 
-export function PlotOverview({ workId, onNavigateTo }: PlotOverviewProps) {
+export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverviewProps) {
   const writerId = useWriterId();
   const { createPlot } = useLocalWrite();
   const [collapsedActs, setCollapsedActs] = useState<Set<string>>(new Set());
+  const actRefs = useRef(new Map<string, HTMLDivElement>());
+  const episodeRefs = useRef(new Map<string, HTMLDivElement>());
 
   const { data: acts = [] } = useQuery<ActRow>(
     `SELECT id, title, content FROM plot
@@ -123,6 +126,43 @@ export function PlotOverview({ workId, onNavigateTo }: PlotOverviewProps) {
     }
     return map;
   }, [links]);
+
+  const registerActRef = useCallback((actId: string, node: HTMLDivElement | null) => {
+    if (node) actRefs.current.set(actId, node);
+    else actRefs.current.delete(actId);
+  }, []);
+
+  const registerEpisodeRef = useCallback((episodeId: string, node: HTMLDivElement | null) => {
+    if (node) episodeRefs.current.set(episodeId, node);
+    else episodeRefs.current.delete(episodeId);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedItemId) return;
+    const selectedEpisode = episodes.find((episode) => episode.id === selectedItemId);
+    if (!selectedEpisode) return;
+
+    setCollapsedActs((prev) => {
+      if (!prev.has(selectedEpisode.parent_id)) return prev;
+      const next = new Set(prev);
+      next.delete(selectedEpisode.parent_id);
+      return next;
+    });
+  }, [episodes, selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedItemId) return;
+
+    const scrollTarget =
+      episodeRefs.current.get(selectedItemId) ?? actRefs.current.get(selectedItemId);
+    if (!scrollTarget) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [acts, collapsedActs, episodes, selectedItemId]);
 
   const toggleCollapse = (actId: string) => {
     setCollapsedActs((prev) => {
@@ -169,6 +209,9 @@ export function PlotOverview({ workId, onNavigateTo }: PlotOverviewProps) {
                 isCollapsed={collapsedActs.has(act.id)}
                 onToggle={() => toggleCollapse(act.id)}
                 onNewEpisode={() => void handleNewEpisode(act.id)}
+                selectedItemId={selectedItemId}
+                registerActRef={registerActRef}
+                registerEpisodeRef={registerEpisodeRef}
                 onNavigateTo={onNavigateTo}
               />
             ))}
@@ -189,6 +232,9 @@ function ActSection({
   isCollapsed,
   onToggle,
   onNewEpisode,
+  selectedItemId,
+  registerActRef,
+  registerEpisodeRef,
   onNavigateTo,
 }: {
   workId: string;
@@ -198,6 +244,9 @@ function ActSection({
   isCollapsed: boolean;
   onToggle: () => void;
   onNewEpisode: () => void;
+  selectedItemId: string | null;
+  registerActRef: (actId: string, node: HTMLDivElement | null) => void;
+  registerEpisodeRef: (episodeId: string, node: HTMLDivElement | null) => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }) {
   const { updatePlot, reorderItems, deletePlot } = useLocalWrite();
@@ -221,7 +270,13 @@ function ActSection({
   }, [actDraft, act.content, act.id, updatePlot]);
 
   return (
-    <div className="rounded-lg border border-border bg-background shadow-sm">
+    <div
+      ref={(node) => registerActRef(act.id, node)}
+      className={cn(
+        'rounded-lg border border-border bg-background shadow-sm',
+        selectedItemId === act.id && 'ring-2 ring-primary/30',
+      )}
+    >
       {/* 막 헤더 */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <button
@@ -295,6 +350,8 @@ function ActSection({
                       episode={ep}
                       link={linkByPlot.get(ep.id)}
                       isLast={i === episodes.length - 1}
+                      selected={selectedItemId === ep.id}
+                      registerEpisodeRef={registerEpisodeRef}
                       onNavigateTo={onNavigateTo}
                     />
                   ))}
@@ -332,6 +389,8 @@ interface TimelineCardProps {
   episode: PlotEpisodeRow;
   link?: LinkInfo;
   isLast: boolean;
+  selected: boolean;
+  registerEpisodeRef: (episodeId: string, node: HTMLDivElement | null) => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }
 
@@ -360,6 +419,8 @@ function TimelineCard({
   episode,
   link,
   isLast,
+  selected,
+  registerEpisodeRef,
   onNavigateTo,
   dragListeners,
 }: TimelineCardProps & {
@@ -412,7 +473,10 @@ function TimelineCard({
   };
 
   return (
-    <div className="relative pb-4 pl-7">
+    <div
+      ref={(node) => registerEpisodeRef(episode.id, node)}
+      className="relative pb-4 pl-7"
+    >
       {/* 타임라인 세로선 */}
       {!isLast && (
         <div className="absolute bottom-0 left-[7px] top-0 w-px bg-border" />
@@ -436,7 +500,10 @@ function TimelineCard({
       {/* 카드 */}
       <div
         {...dragListeners}
-        className="cursor-grab rounded-lg border border-border bg-card p-3 transition-shadow hover:shadow-sm active:cursor-grabbing"
+        className={cn(
+          'cursor-grab rounded-lg border border-border bg-card p-3 transition-shadow hover:shadow-sm active:cursor-grabbing',
+          selected && 'ring-2 ring-primary/30',
+        )}
       >
         {/* 상단: 토글 + 제목 + 상태 뱃지 */}
         <div className="flex items-center gap-2">
