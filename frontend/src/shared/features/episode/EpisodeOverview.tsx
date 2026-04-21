@@ -1,14 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@powersync/react';
 import { generateHTML } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
-import { LayoutGrid, Link2, List, Plus } from 'lucide-react';
+import { Link2, Plus } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { Button } from '../../components/ui/Button';
+import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
 
@@ -30,6 +32,7 @@ interface EpisodeRow {
   status: string;
   word_count: number;
   content: string | null;
+  updated_at: string;
 }
 
 interface LinkRow {
@@ -47,10 +50,10 @@ const STATUS_COLOR: Record<string, string> = {
 export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
   const writerId = useWriterId();
   const { createEpisode } = useLocalWrite();
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = usePersistentState<'grid' | 'list'>('folio.ui.view-mode.episode', 'list');
 
   const { data: episodes = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, word_count, content FROM episode
+    `SELECT id, title, status, word_count, content, updated_at FROM episode
      WHERE work_id = ? AND writer_id = ? AND status != 'trashed'
      ORDER BY sort_order ASC, created_at ASC`,
     [workId, writerId],
@@ -115,12 +118,11 @@ export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-1">
-            {episodes.map((ep, idx) => (
+          <div className="flex flex-col gap-2">
+            {episodes.map((ep) => (
               <EpisodeListItem
                 key={ep.id}
                 episode={ep}
-                index={idx}
                 plotTitle={linkByEpisode.get(ep.id)}
                 onClick={() => onSelect(ep.id)}
               />
@@ -155,29 +157,6 @@ function EpisodeCard({
         {episode.title?.trim() || '(제목 없음)'}
       </span>
 
-      <div className="mt-1.5 flex items-center gap-2">
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-[10px]',
-            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
-          )}
-        >
-          {episode.status}
-        </span>
-        {episode.word_count > 0 && (
-          <span className="text-[10px] text-muted-foreground">
-            {episode.word_count.toLocaleString()}자
-          </span>
-        )}
-      </div>
-
-      {plotTitle && (
-        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary/70">
-          <Link2 size={10} />
-          <span className="truncate">{plotTitle}</span>
-        </div>
-      )}
-
       {previewHtml ? (
         <div
           className="note-preview mt-2 line-clamp-3 text-xs text-muted-foreground"
@@ -185,6 +164,28 @@ function EpisodeCard({
         />
       ) : (
         <p className="mt-2 text-xs text-muted-foreground/50">내용 없음</p>
+      )}
+
+      <div className="mt-3 flex w-full items-center gap-1.5 text-[10px] text-muted-foreground">
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5',
+            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+          )}
+        >
+          {episode.status}
+        </span>
+        <span>·</span>
+        <span>{episode.word_count.toLocaleString()}자</span>
+        <span>·</span>
+        <span>{formatRelativeTime(episode.updated_at)}</span>
+      </div>
+
+      {plotTitle && (
+        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary/70">
+          <Link2 size={10} />
+          <span className="truncate">{plotTitle}</span>
+        </div>
       )}
     </button>
   );
@@ -194,91 +195,79 @@ function EpisodeCard({
 
 function EpisodeListItem({
   episode,
-  index,
   plotTitle,
   onClick,
 }: {
   episode: EpisodeRow;
-  index: number;
   plotTitle?: string;
   onClick: () => void;
 }) {
+  const previewHtml = useMemo(() => contentToHtml(episode.content), [episode.content]);
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3 text-left transition-colors hover:border-ring hover:bg-primary/5"
+      className="flex flex-col items-start rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-ring hover:bg-primary/5"
     >
-      <div className="flex items-center gap-3">
-        <span className="w-8 text-xs text-muted-foreground">#{index + 1}</span>
+      <div className="flex w-full items-start justify-between gap-3">
         <span className="text-sm font-medium text-foreground">
           {episode.title?.trim() || '(제목 없음)'}
         </span>
-        {plotTitle && (
-          <span className="flex items-center gap-1 text-[10px] text-primary/70">
-            <Link2 size={10} />
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span
+            className={cn(
+              'rounded-full px-2 py-0.5',
+              STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+            )}
+          >
+            {episode.status}
           </span>
+          <span>·</span>
+          <span>{episode.word_count.toLocaleString()}자</span>
+        </div>
+      </div>
+
+      <div className="flex w-full items-end justify-between gap-3 mt-1">
+        {previewHtml ? (
+          <div
+            className="note-preview line-clamp-1 min-w-0 flex-1 text-xs text-muted-foreground"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground/50">내용 없음</span>
         )}
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-muted-foreground">
-          {episode.word_count.toLocaleString()}자
-        </span>
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-xs',
-            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
-          )}
-        >
-          {episode.status}
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          {formatRelativeTime(episode.updated_at)}
         </span>
       </div>
+
+      {plotTitle && (
+        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary/70">
+          <Link2 size={10} />
+          <span className="truncate">{plotTitle}</span>
+        </div>
+      )}
     </button>
   );
 }
 
-/* ── 뷰 모드 토글 ── */
-
-function ViewToggle({
-  mode,
-  onChange,
-}: {
-  mode: 'grid' | 'list';
-  onChange: (mode: 'grid' | 'list') => void;
-}) {
-  return (
-    <div className="flex items-center rounded-md border border-border">
-      <button
-        type="button"
-        onClick={() => onChange('grid')}
-        title="그리드 보기"
-        className={cn(
-          'flex h-7 w-7 items-center justify-center rounded-l-md transition-colors',
-          mode === 'grid'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        <LayoutGrid size={14} />
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange('list')}
-        title="리스트 보기"
-        className={cn(
-          'flex h-7 w-7 items-center justify-center rounded-r-md transition-colors',
-          mode === 'list'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        <List size={14} />
-      </button>
-    </div>
-  );
-}
-
 /* ── 유틸 ── */
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '방금 전';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}분 전`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}일 전`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}개월 전`;
+  return `${Math.floor(months / 12)}년 전`;
+}
 
 function contentToHtml(raw: string | null): string {
   if (!raw) return '';

@@ -4,7 +4,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { ActivityBar } from '../../components/layout/ActivityBar';
 import { SecondarySidebar } from '../../components/layout/SecondarySidebar';
 import { RightPanels } from '../../components/layout/RightPanels';
-import { WorkspaceScreen } from '../workspace/WorkspaceScreen';
+import { WorkspaceHomeOverview } from '../workspace/WorkspaceHomeOverview';
 import { WorkspaceHomeScreen } from '../workspace/WorkspaceHomeScreen';
 import { PlanSectionShell } from '../plan/PlanSectionShell';
 import { WorldNoteScreen } from '../world-note/WorldNoteScreen';
@@ -307,7 +307,7 @@ export function AuthenticatedApp() {
               selectedItemId={selectedItemId}
               onWorkSelect={handleWorkSelect}
               onItemSelect={setSelectedItemId}
-              onNewWork={handleNewWorkReset}
+              onNewWork={(title: string) => void handleNewWork(title)}
               onNewWorldNote={(parentId?: string | null) => void handleNewWorldNote(parentId)}
               onNewPlanNote={() => void handleNewPlanNote()}
               width={sidebarWidth}
@@ -350,6 +350,8 @@ export function AuthenticatedApp() {
             workId: selectedWorkId,
             section: selectedSection,
             itemId: selectedItemId,
+            onSelectWork: handleWorkSelect,
+            onDeselectWork: handleNewWorkReset,
             onCreateWork: handleNewWork,
             onSectionSelect: handleSectionSelect,
             onItemSelect: setSelectedItemId,
@@ -377,6 +379,8 @@ interface RenderMainArgs {
   workId: string | null;
   section: WorkspaceSection | null;
   itemId: string | null;
+  onSelectWork: (id: string) => void;
+  onDeselectWork: () => void;
   onCreateWork: (title: string) => Promise<void>;
   onSectionSelect: (section: WorkspaceSection) => void;
   onItemSelect: (id: string | null) => void;
@@ -389,6 +393,8 @@ function renderMain({
   workId,
   section,
   itemId,
+  onSelectWork,
+  onDeselectWork,
   onCreateWork,
   onSectionSelect,
   onItemSelect,
@@ -399,7 +405,7 @@ function renderMain({
     return <TrashScreen />;
   }
   if (!workId) {
-    return <WorkspaceScreen onCreateWork={onCreateWork} />;
+    return <WorkspaceHomeOverview onSelectWork={onSelectWork} onCreateWork={onCreateWork} />;
   }
   if (!section) {
     return (
@@ -407,6 +413,7 @@ function renderMain({
         workId={workId}
         onSectionSelect={onSectionSelect}
         onDeleted={onWorkDeleted}
+        onBack={onDeselectWork}
       />
     );
   }
@@ -419,6 +426,7 @@ function renderMain({
         <PlanSectionShell
           workId={workId}
           selectedItemId={itemId}
+          onItemSelect={onItemSelect}
           onItemBack={back}
         />
       );

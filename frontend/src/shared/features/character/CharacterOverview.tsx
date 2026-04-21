@@ -5,8 +5,10 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
-import { LayoutGrid, List, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { ViewToggle } from '../../components/ui/ViewToggle';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
@@ -14,7 +16,6 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-import { cn } from '../../lib/cn';
 
 /** generateHTML용 최소 확장 세트 (에디터 전체 확장 불필요, 렌더링용) */
 const previewExtensions = [
@@ -104,7 +105,7 @@ function CharacterOverviewInner({
     void updateCharacter(id, { age: v }),
   );
 
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = usePersistentState<'grid' | 'list'>('folio.ui.view-mode.character', 'list');
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -322,47 +323,6 @@ function contentToHtml(raw: string | null): string {
   } catch {
     return '';
   }
-}
-
-/* ── 뷰 모드 토글 ── */
-
-function ViewToggle({
-  mode,
-  onChange,
-}: {
-  mode: 'grid' | 'list';
-  onChange: (mode: 'grid' | 'list') => void;
-}) {
-  return (
-    <div className="flex items-center rounded-md border border-border">
-      <button
-        type="button"
-        onClick={() => onChange('grid')}
-        title="그리드 보기"
-        className={cn(
-          'flex h-7 w-7 items-center justify-center rounded-l-md transition-colors',
-          mode === 'grid'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        <LayoutGrid size={14} />
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange('list')}
-        title="리스트 보기"
-        className={cn(
-          'flex h-7 w-7 items-center justify-center rounded-r-md transition-colors',
-          mode === 'list'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        <List size={14} />
-      </button>
-    </div>
-  );
 }
 
 /* ── 태그 선택기 ── */

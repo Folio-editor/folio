@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Link2, Link2Off, Plus, Search } from 'lucide-react';
+import { ArrowLeft, Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import type { WorkspaceSection } from '../../types/workspace';
@@ -66,8 +67,10 @@ function EpisodeEditor({
   onBack: () => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }) {
-  const { updateEpisode } = useLocalWrite();
+  const { updateEpisode, trashEpisode } = useLocalWrite();
   const { id } = item;
+  const [confirmTrash, setConfirmTrash] = useState(false);
+  const [trashBusy, setTrashBusy] = useState(false);
 
   const title = useDeferredText(id, item.title, (v) => void updateEpisode(id, { title: v }));
 
@@ -95,9 +98,36 @@ function EpisodeEditor({
                 onChange={(e) => void updateEpisode(id, { status: e.target.value })}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => setConfirmTrash(true)}
+              title="휴지통으로 이동"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
           </div>
         }
       />
+      {confirmTrash && (
+        <DeleteConfirmDialog
+          title="휴지통으로 이동"
+          message={`"${item.title || '(제목 없음)'}" 원고가 휴지통으로 이동됩니다.`}
+          warning="30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다."
+          confirmLabel="휴지통으로 이동"
+          busyLabel="이동 중…"
+          busy={trashBusy}
+          onConfirm={() => {
+            setTrashBusy(true);
+            void trashEpisode(id).then(() => {
+              setTrashBusy(false);
+              setConfirmTrash(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmTrash(false)}
+        />
+      )}
       <ContentEditor
         itemId={id}
         initialContent={item.content}

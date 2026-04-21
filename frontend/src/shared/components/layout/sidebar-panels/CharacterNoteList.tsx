@@ -57,7 +57,9 @@ export function CharacterNoteList({
   onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
-  const { reorderItems } = useLocalWrite();
+  const { createCharacter, reorderItems } = useLocalWrite();
+  const [creating, setCreating] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -99,16 +101,59 @@ export function CharacterNoteList({
     : [workId, writerId];
   const { data: characters = [] } = useQuery<CharacterRow>(sql, params);
 
-  if (characters.length === 0) {
-    return (
-      <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-        {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
-      </p>
-    );
-  }
+  const handleCreateChar = () => {
+    const trimmedTitle = createTitle.trim();
+    setCreating(false);
+    setCreateTitle('');
+    if (!trimmedTitle) return;
+    void (async () => {
+      const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
+      onItemSelect('char:' + id);
+    })();
+  };
+
+  const handleCreateCancel = () => {
+    setCreating(false);
+    setCreateTitle('');
+  };
+
+  const handleCreateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); handleCreateChar(); }
+    if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
+  };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {creating ? (
+          <input
+            autoFocus
+            type="text"
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            onKeyDown={handleCreateKeyDown}
+            onBlur={handleCreateCancel}
+            placeholder="인물 이름을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 인물</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
+      {characters.length === 0 && !creating ? (
+        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+          {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
+        </p>
+      ) : (
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -147,6 +192,8 @@ export function CharacterNoteList({
           ))}
         </SortableContext>
       </DndContext>
+      )}
+      </div>
     </div>
   );
 }

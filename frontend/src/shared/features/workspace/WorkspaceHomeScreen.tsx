@@ -1,25 +1,30 @@
 import { useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { Trash2 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  BookOpenText,
+  ClipboardList,
+  Globe,
+  KeyRound,
+  Lightbulb,
+  Route,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Select } from '../../components/ui/Select';
-import { Textarea } from '../../components/ui/Textarea';
 import { Button } from '../../components/ui/Button';
-import { SECTION_ICONS, SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
-import planDocumentPencilIcon from '../../assets/images/workspace/planning.png';
-import worldBooksIcon from '../../assets/images/workspace/universe.png';
-import characterPeopleIcon from '../../assets/images/workspace/characters.png';
-import plotOpenBookIcon from '../../assets/images/workspace/plot.png';
-import episodeDocumentPencilIcon from '../../assets/images/workspace/manuscript.png';
-import foreshadowMagnifierIcon from '../../assets/images/workspace/foreshadowing.png';
-import ideaLightbulbIcon from '../../assets/images/workspace/idea.png';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
   onSectionSelect: (section: WorkspaceSection) => void;
   onDeleted: () => void;
+  onBack: () => void;
 }
 
 interface WorkRow {
@@ -64,6 +69,16 @@ const STATUS_COLOR: Record<string, string> = {
   휴재: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
 };
 
+const SECTION_ICON: Record<WorkspaceSection, LucideIcon> = {
+  plan: ClipboardList,
+  'world-note': Globe,
+  character: Users,
+  plot: Route,
+  episode: BookOpenText,
+  foreshadow: KeyRound,
+  'idea-archive': Lightbulb,
+};
+
 /**
  * 작품 허브 — ERD work 테이블 전 필드를 즉시 편집 가능한 에디터 형태로 제공.
  * - title / author_name / description: useDeferredText + onBlur commit
@@ -75,6 +90,7 @@ export function WorkspaceHomeScreen({
   workId,
   onSectionSelect,
   onDeleted,
+  onBack,
 }: WorkspaceHomeScreenProps) {
   const writerId = useWriterId();
   const { data: works = [] } = useQuery<WorkRow>(
@@ -94,6 +110,7 @@ export function WorkspaceHomeScreen({
       work={work}
       onSectionSelect={onSectionSelect}
       onDeleted={onDeleted}
+      onBack={onBack}
     />
   );
 }
@@ -102,9 +119,10 @@ interface WorkspaceEditorProps {
   work: WorkRow;
   onSectionSelect: (section: WorkspaceSection) => void;
   onDeleted: () => void;
+  onBack: () => void;
 }
 
-function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorProps) {
+function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: WorkspaceEditorProps) {
   const { updateWork, deleteWork } = useLocalWrite();
   const { id } = work;
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -139,9 +157,25 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      {/* 작품 메타데이터 에디터 */}
-      <section className="border-b border-border px-10 pb-6 pt-8">
+    <div className="flex h-full flex-col">
+      <MainPanelHeader
+        leading={
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="작품 목록으로 돌아가기"
+            title="작품 목록으로 돌아가기"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowLeft size={14} strokeWidth={2} />
+          </button>
+        }
+        title={<span className="text-lg font-semibold">홈</span>}
+        subtitle={work.title?.trim() || '작품 허브'}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-10 py-8">
+        {/* 작품 메타데이터 에디터 */}
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex-1">
             <input
@@ -164,122 +198,81 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
               />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Select
-              options={STATUS_OPTIONS}
-              value={
-                STATUS_OPTIONS.some((o) => o.value === work.status)
-                  ? work.status
-                  : '연재중'
-              }
-              onChange={(e) => handleStatusChange(e.target.value)}
-              className={`w-28 font-medium ${STATUS_COLOR[work.status] ?? ''}`}
-              aria-label="연재 상태"
-            />
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(true)}
-              aria-label="작품 삭제"
-              title="작품 삭제"
-              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-            >
-              <Trash2 size={16} strokeWidth={1.75} />
-            </button>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <Select
+                options={STATUS_OPTIONS}
+                value={
+                  STATUS_OPTIONS.some((o) => o.value === work.status)
+                    ? work.status
+                    : '연재중'
+                }
+                onChange={(e) => handleStatusChange(e.target.value)}
+                className={`w-28 font-medium ${STATUS_COLOR[work.status] ?? ''}`}
+                aria-label="연재 상태"
+              />
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
+                aria-label="작품 삭제"
+                title="작품 삭제"
+                className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+              >
+                <Trash2 size={16} strokeWidth={1.75} />
+              </button>
+            </div>
+            <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
+              <span>생성 {formatDate(work.created_at)}</span>
+              <span>수정 {formatDate(work.updated_at)}</span>
+            </div>
           </div>
         </div>
 
-        <div className="mb-3">
+        {/* 작품 소개 — 테두리 없이 자연스럽게 */}
+        <div className="mb-4">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
             작품 소개
           </label>
-          <Textarea
-            rows={3}
+          <textarea
             value={description.value}
-            onChange={(e) => description.onChange(e.target.value)}
+            onChange={(e) => {
+              description.onChange(e.target.value);
+              autoGrow(e.target);
+            }}
             onBlur={description.onBlur}
+            onFocus={(e) => autoGrow(e.target)}
+            ref={(el) => { if (el) autoGrow(el); }}
             placeholder="한 줄 소개나 줄거리를 자유롭게 작성하세요."
+            className="w-full resize-none overflow-hidden border-0 bg-transparent px-0 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:ring-0"
           />
         </div>
 
-        <div className="flex gap-4 text-xs text-muted-foreground">
-          <span>생성 {formatDate(work.created_at)}</span>
-          <span>최근 수정 {formatDate(work.updated_at)}</span>
-        </div>
-      </section>
+        {/* 스페이서 — 바로가기 카드를 바닥 쪽으로 밀어냄 */}
+        <div className="flex-1" />
 
-      {/* 섹션 네비게이션 */}
-      <section className="px-10 py-6">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">바로가기</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {SECTIONS.map((section) => (
-            <button
-              key={section}
-              type="button"
-              onClick={() => onSectionSelect(section)}
-              className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
-            >
-              {section === 'plan' ? (
-                <img
-                  src={planDocumentPencilIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'world-note' ? (
-                <img
-                  src={worldBooksIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'character' ? (
-                <img
-                  src={characterPeopleIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'plot' ? (
-                <img
-                  src={plotOpenBookIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'episode' ? (
-                <img
-                  src={episodeDocumentPencilIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'foreshadow' ? (
-                <img
-                  src={foreshadowMagnifierIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : section === 'idea-archive' ? (
-                <img
-                  src={ideaLightbulbIcon}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-8 w-8 object-contain"
-                />
-              ) : (
-                <span className="text-2xl">{SECTION_ICONS[section]}</span>
-              )}
-              <span className="mt-2 text-sm font-medium text-foreground">
-                {SECTION_LABELS[section]}
-              </span>
-              <span className="mt-1 text-xs text-muted-foreground">
-                {SECTION_DESCRIPTIONS[section]}
-              </span>
-            </button>
-          ))}
+        {/* 섹션 바로가기 */}
+        <div className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
+          {SECTIONS.map((section) => {
+            const Icon = SECTION_ICON[section];
+            return (
+              <button
+                key={section}
+                type="button"
+                onClick={() => onSectionSelect(section)}
+                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
+              >
+                <Icon size={24} strokeWidth={1.5} className="text-muted-foreground" />
+                <span className="mt-2 text-sm font-medium text-foreground">
+                  {SECTION_LABELS[section]}
+                </span>
+                <span className="mt-1 text-xs text-muted-foreground">
+                  {SECTION_DESCRIPTIONS[section]}
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </section>
+      </div>
 
       {/* 삭제 확인 다이얼로그 */}
       {confirmOpen && (
@@ -324,6 +317,11 @@ function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirm
       </div>
     </div>
   );
+}
+
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
 }
 
 function formatDate(iso: string): string {

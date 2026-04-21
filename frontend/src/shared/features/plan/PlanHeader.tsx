@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface PlanHeaderProps {
   /** plan_note 가 선택된 상태면 브레드크럼 + 문서 제목 표시 */
@@ -8,6 +9,7 @@ interface PlanHeaderProps {
     id: string;
     title: string;
     onTitleChange: (title: string) => void;
+    onDelete: () => Promise<void>;
     onBack: () => void;
   };
 }
@@ -18,7 +20,11 @@ interface PlanHeaderProps {
  * - 하위 문서 선택: "← 기획 / 문서제목"
  */
 export function PlanHeader({ currentNote }: PlanHeaderProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   return (
+    <>
     <MainPanelHeader
       leading={
         currentNote ? (
@@ -49,7 +55,36 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
         )
       }
       subtitle={currentNote ? undefined : '작품의 방향성과 정체성을 정의합니다'}
+      trailing={
+        currentNote ? (
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            title="문서 삭제"
+            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+          >
+            <Trash2 size={16} strokeWidth={1.75} />
+          </button>
+        ) : undefined
+      }
     />
+    {confirmDelete && currentNote && (
+      <DeleteConfirmDialog
+        title="문서 삭제"
+        message={`"${currentNote.title || '(제목 없음)'}" 문서가 영구 삭제됩니다.`}
+        busy={deleteBusy}
+        onConfirm={() => {
+          setDeleteBusy(true);
+          void currentNote.onDelete().then(() => {
+            setDeleteBusy(false);
+            setConfirmDelete(false);
+            currentNote.onBack();
+          });
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    )}
+    </>
   );
 }
 
