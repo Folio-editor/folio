@@ -6,6 +6,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.text_extractor import extract_plain_text
 
 
 async def get_plot(session: AsyncSession, ctx: WriterContext) -> list[dict]:
@@ -23,7 +24,7 @@ async def get_plot(session: AsyncSession, ctx: WriterContext) -> list[dict]:
             "id": str(row[0]),
             "title": row[1],
             "status": row[2],
-            "content": row[3],
+            "content": extract_plain_text(row[3]),
             "parent_id": str(row[4]) if row[4] else None,
         }
         for row in r.fetchall()
