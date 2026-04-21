@@ -8,6 +8,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.text_extractor import extract_plain_text
 
 
 async def list_characters(session: AsyncSession, ctx: WriterContext) -> list[dict]:
@@ -47,7 +48,7 @@ async def get_character(session: AsyncSession, ctx: WriterContext, *, name: str)
         "appearance": row[4],
         "mbti": row[5],
         "personality": row[6],
-        "content": row[7],
+        "content": extract_plain_text(row[7]),
     }
 
     cf = await session.execute(

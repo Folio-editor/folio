@@ -1,6 +1,6 @@
-"""POST /v1/pipelines/episode — 회차 인덱싱 파이프라인 트리거.
+"""POST /v1/pipelines/episode 인덱싱 파이프라인 트리거.
 
-chain: chunk_and_embed → generate_summary → extract_items
+chain: chunk_and_embed -> generate_summary
 """
 
 from celery import chain
@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from app.middleware.auth import require_internal_api_key
 from app.tasks.chunk_and_embed import chunk_and_embed_task
 from app.tasks.generate_summary import generate_summary_task
-from app.tasks.extract_items import extract_items_task
 
 router = APIRouter(
     prefix="/pipelines",
@@ -38,7 +37,6 @@ async def trigger_episode_pipeline(req: EpisodePipelineRequest):
     pipeline = chain(
         chunk_and_embed_task.s(*args),
         generate_summary_task.si(*args),
-        extract_items_task.s(),
     )
     result = pipeline.apply_async()
     return EpisodePipelineResponse(task_id=result.id)

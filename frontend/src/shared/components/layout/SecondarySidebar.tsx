@@ -17,6 +17,7 @@ import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
 import { PlotTreeList } from './sidebar-panels/PlotTreeList';
 import { EpisodeTreeList } from './sidebar-panels/EpisodeTreeList';
+import { SettingsList, type SettingsItemId } from './sidebar-panels/SettingsList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -32,6 +33,9 @@ interface SecondarySidebarProps {
   width: number;
   onWidthChange: (delta: number) => void;
   onCollapse: () => void;
+  settingsMode?: boolean;
+  selectedSettingsItem?: SettingsItemId | null;
+  onSettingsItemSelect?: (id: SettingsItemId) => void;
 }
 
 interface WorkTitleRow {
@@ -66,6 +70,9 @@ export function SecondarySidebar({
   width,
   onWidthChange,
   onCollapse,
+  settingsMode,
+  selectedSettingsItem,
+  onSettingsItemSelect,
 }: SecondarySidebarProps) {
   const writerId = useWriterId();
   const isGuest = useIsGuest();
@@ -93,14 +100,15 @@ export function SecondarySidebar({
   );
   const workTitle = workTitleRows[0]?.title ?? null;
 
-  const header =
-    activity === 'home'
+  const header = settingsMode
+    ? 'Folio'
+    : activity === 'home'
       ? 'Folio'
       : workTitle
         ? workTitle
         : '작품 미선택';
 
-  const subHeader = ACTIVITY_LABELS[activity];
+  const subHeader = settingsMode ? '설정' : ACTIVITY_LABELS[activity];
 
   const handleLoginClick = () => void login();
 
@@ -155,17 +163,24 @@ export function SecondarySidebar({
 
       {/* 콘텐츠 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {renderContent({
-          activity,
-          selectedWorkId,
-          selectedItemId,
-          searchTerm,
-          onWorkSelect,
-          onItemSelect,
-          onNewWork,
-          onNewWorldNote,
-          onNewPlanNote,
-        })}
+        {settingsMode ? (
+          <SettingsList
+            selectedItemId={selectedSettingsItem ?? null}
+            onItemSelect={onSettingsItemSelect ?? (() => {})}
+          />
+        ) : (
+          renderContent({
+            activity,
+            selectedWorkId,
+            selectedItemId,
+            searchTerm,
+            onWorkSelect,
+            onItemSelect,
+            onNewWork,
+            onNewWorldNote,
+            onNewPlanNote,
+          })
+        )}
       </div>
 
       {/* 동기화 상태 바 */}

@@ -333,4 +333,70 @@ CREATE INDEX idx_export_writer ON export(writer_id);
 -- JSONB 인덱스
 CREATE INDEX idx_plan_genres ON plan USING GIN (genres);
 CREATE INDEX idx_plan_moods ON plan USING GIN (moods);
+
+-- ============ AI 테이블 ============
+CREATE TABLE episode_chunk (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id    UUID NOT NULL REFERENCES episode(id) ON DELETE CASCADE,
+    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    chunk_index   INTEGER NOT NULL,
+    content       TEXT NOT NULL,
+    embedding     VECTOR(1536) NOT NULL,
+    token_count   INTEGER NOT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (episode_id, chunk_index)
+);
+
+CREATE TABLE episode_summary (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id    UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
+    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    summary       TEXT NOT NULL,
+    is_confirmed  BOOLEAN NOT NULL DEFAULT false,
+    model_used    VARCHAR(50),
+    raw_result    TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE extraction_suggestion (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id           UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    work_id             UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    episode_id          UUID REFERENCES episode(id) ON DELETE SET NULL,
+    entity_type         VARCHAR(30) NOT NULL
+        CHECK (entity_type IN ('character','world_note','term')),
+    suggested_name      VARCHAR(200) NOT NULL,
+    payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status              VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','confirmed','rejected')),
+    confirmed_target_id UUID,
+    created_at          TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE (work_id, entity_type, suggested_name)
+);
+
+CREATE TRIGGER trg_episode_summary_updated_at
+    BEFORE UPDATE ON episode_summary
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_extraction_suggestion_updated_at
+    BEFORE UPDATE ON extraction_suggestion
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE INDEX idx_episode_chunk_embedding
+    ON episode_chunk USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);
+CREATE INDEX idx_episode_chunk_work     ON episode_chunk(work_id);
+CREATE INDEX idx_episode_chunk_writer   ON episode_chunk(writer_id);
+CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
+CREATE INDEX idx_episode_summary_work_confirmed
+    ON episode_summary(work_id, is_confirmed);
+CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
+CREATE INDEX idx_extraction_suggestion_work_status
+    ON extraction_suggestion(work_id, status);
+CREATE INDEX idx_extraction_suggestion_writer  ON extraction_suggestion(writer_id);
+CREATE INDEX idx_extraction_suggestion_episode ON extraction_suggestion(episode_id);
  

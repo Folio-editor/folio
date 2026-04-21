@@ -31,5 +31,6 @@ def get_llm() -> LLMProvider:
             api_key=settings.anthropic_api_key,
             sonnet_model=settings.claude_sonnet_model,
             haiku_model=settings.claude_haiku_model,
+            opus_model=settings.claude_opus_model,
         )
     raise ValueError(f"unknown LLM_PROVIDER: {provider}")
