@@ -398,18 +398,20 @@ function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirm
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="w-full max-w-md rounded-lg bg-background p-5 shadow-lg">
-        <h3 className="text-base font-semibold text-foreground">작품 삭제</h3>
+        <h3 className="text-base font-semibold text-foreground">휴지통으로 이동</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">&ldquo;{title}&rdquo;</span> 과 그에
-          속한 모든 기획·세계관·캐릭터·플롯·원고·복선·아이디어가 <strong>영구 삭제</strong>됩니다.
+          <span className="font-medium text-foreground">&ldquo;{title}&rdquo;</span> 이(가)
+          휴지통으로 이동됩니다.
         </p>
-        <p className="mt-1 text-xs text-destructive">이 작업은 되돌릴 수 없습니다.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다.
+        </p>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onCancel} disabled={busy}>
             취소
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={busy}>
-            {busy ? '삭제 중…' : '영구 삭제'}
+            {busy ? '이동 중…' : '휴지통으로 이동'}
           </Button>
         </div>
       </div>

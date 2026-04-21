@@ -34,6 +34,8 @@ interface ContentEditorProps {
   debounceMs?: number;
   className?: string;
   showStatusBar?: boolean;
+  /** 컴팩트 모드 — 툴바/설정/찾기 숨김, 단축키 전용 편집 (우측 사이드바용) */
+  compact?: boolean;
   onCharCountChange?: (count: number) => void;
 }
 
@@ -47,6 +49,7 @@ export function ContentEditor({
   debounceMs = DEFAULT_DEBOUNCE_MS,
   className,
   showStatusBar = true,
+  compact = false,
   onCharCountChange,
 }: ContentEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -175,27 +178,31 @@ export function ContentEditor({
 
   return (
     <div className={wrapperClasses} style={editorStyle}>
-      {/* 툴바 */}
-      <EditorToolbar
-        editor={editor}
-        onToggleFindReplace={() => setFindReplaceOpen((v) => !v)}
-        onToggleShortcutHelp={() => setShortcutHelpOpen(true)}
-        onToggleSettings={() => setSettingsOpen((v) => !v)}
-      />
+      {/* 툴바 — compact 모드에서는 숨김 (단축키 전용 편집) */}
+      {!compact && (
+        <>
+          <EditorToolbar
+            editor={editor}
+            onToggleFindReplace={() => setFindReplaceOpen((v) => !v)}
+            onToggleShortcutHelp={() => setShortcutHelpOpen(true)}
+            onToggleSettings={() => setSettingsOpen((v) => !v)}
+          />
 
-      {/* 찾기/바꾸기 */}
-      {editor && (
-        <EditorFindReplace
-          editor={editor}
-          open={findReplaceOpen}
-          onClose={() => setFindReplaceOpen(false)}
-        />
+          {/* 찾기/바꾸기 */}
+          {editor && (
+            <EditorFindReplace
+              editor={editor}
+              open={findReplaceOpen}
+              onClose={() => setFindReplaceOpen(false)}
+            />
+          )}
+
+          {/* 설정 패널 (relative container) */}
+          <div className="relative">
+            <EditorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          </div>
+        </>
       )}
-
-      {/* 설정 패널 (relative container) */}
-      <div className="relative">
-        <EditorSettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      </div>
 
       {/* 본문 — 클릭 시 에디터 포커스 보장 */}
       <div

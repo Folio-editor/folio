@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -17,7 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
+import { setupDragTransfer } from '../../../lib/dragTransfer';
 
 interface PlotRow {
   id: string;
@@ -57,7 +59,7 @@ export function PlotTreeList({
   const writerId = useWriterId();
   const { createPlot, reorderItems } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
 
@@ -175,7 +177,7 @@ interface ActItemProps {
 }
 
 function SortableActItem(props: ActItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.act.id });
   const style = {
     transform: transform
@@ -185,7 +187,7 @@ function SortableActItem(props: ActItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <ActTreeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -202,12 +204,14 @@ function ActTreeItem({
   dragListeners,
 }: ActItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { createPlot, updatePlot, reorderItems } = useLocalWrite();
+  const { createPlot, updatePlot, reorderItems, deletePlot } = useLocalWrite();
   const childSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const isExpanded = expandedIds.has(act.id);
   const isSelected = selectedItemId === act.id;
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(act.title);
@@ -269,10 +273,15 @@ function ActTreeItem({
           className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
         />
       ) : (
-        <div className="group flex items-center">
+        <div
+          className="group flex items-center"
+          draggable="true"
+          onDragStart={(e) => setupDragTransfer(e, 'plot', act.id, act.title)}
+        >
           {dragListeners && (
             <span
               {...dragListeners}
+              data-dnd-handle
               className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <GripVertical size={12} className="text-muted-foreground" />
@@ -304,6 +313,14 @@ function ActTreeItem({
             />
             {act.title?.trim() || '(제목 없음)'}
           </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: act.id, title: act.title }); }}
+            title="삭제"
+            className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 size={12} strokeWidth={1.75} />
+          </button>
         </div>
       )}
 
@@ -334,6 +351,7 @@ function ActTreeItem({
                     selected={selectedItemId === ep.id}
                     onSelect={() => onItemSelect(ep.id)}
                     onRename={(title) => void updatePlot(ep.id, { title })}
+                    onDelete={() => setDeleteTarget({ id: ep.id, title: ep.title })}
                   />
                 ))}
               </SortableContext>
@@ -358,6 +376,21 @@ function ActTreeItem({
           </button>
         </div>
       )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="플롯 삭제"
+          message={`"${deleteTarget.title || '(제목 없음)'}"`+ ' 항목과 하위 회차가 영구 삭제됩니다.'}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deletePlot(deleteTarget.id).then(() => {
+              setDeleteTarget(null);
+              setDeleteBusy(false);
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -369,8 +402,9 @@ function SortableEpisodeItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.episode.id });
   const style = {
     transform: transform
@@ -380,7 +414,7 @@ function SortableEpisodeItem(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <EpisodeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -391,12 +425,14 @@ function EpisodeItem({
   selected,
   onSelect,
   onRename,
+  onDelete,
   dragListeners,
 }: {
   episode: PlotRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
+  onDelete: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -444,7 +480,11 @@ function EpisodeItem({
   }
 
   return (
-    <div className="group flex items-center">
+    <div
+      className="group flex items-center"
+      draggable="true"
+      onDragStart={(e) => setupDragTransfer(e, 'plot', episode.id, episode.title)}
+    >
       {dragListeners && (
         <span
           {...dragListeners}
@@ -475,6 +515,14 @@ function EpisodeItem({
             title={episode.status}
           />
         )}
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="삭제"
+        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 size={12} strokeWidth={1.75} />
       </button>
     </div>
   );

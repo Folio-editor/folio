@@ -275,6 +275,10 @@ function renderContent(args: {
     );
   }
 
+  if (activity === 'trash') {
+    return null;
+  }
+
   if (!selectedWorkId) {
     return (
       <p className="px-4 py-6 text-center text-xs text-muted-foreground">

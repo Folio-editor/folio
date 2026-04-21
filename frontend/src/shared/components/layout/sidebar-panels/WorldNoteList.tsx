@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -17,7 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
+import { setupDragTransfer } from '../../../lib/dragTransfer';
 
 interface NoteRow {
   id: string;
@@ -44,7 +46,7 @@ export function WorldNoteList({
   const writerId = useWriterId();
   const { createWorldNote, reorderItems } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
 
@@ -163,7 +165,7 @@ interface WorldNoteTreeItemProps {
 }
 
 function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
   const style = {
     transform: transform
@@ -173,7 +175,7 @@ function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <WorldNoteTreeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -191,9 +193,11 @@ function WorldNoteTreeItem({
   dragListeners,
 }: WorldNoteTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateWorldNoteName, createWorldNote, reorderItems } = useLocalWrite();
+  const { updateWorldNoteName, createWorldNote, reorderItems, deleteWorldNote } = useLocalWrite();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const childSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const isExpanded = expandedIds.has(note.id);
   const isSelected = selectedItemId === note.id;
@@ -258,10 +262,15 @@ function WorldNoteTreeItem({
           className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
         />
       ) : (
-        <div className="group flex items-center">
+        <div
+          className="group flex items-center"
+          draggable="true"
+          onDragStart={(e) => setupDragTransfer(e, 'world_note', note.id, note.name)}
+        >
           {dragListeners && (
             <span
               {...dragListeners}
+              data-dnd-handle
               className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <GripVertical size={12} className="text-muted-foreground" />
@@ -294,6 +303,14 @@ function WorldNoteTreeItem({
               />
             )}
             {note.name?.trim() || '(이름 없음)'}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: note.id, name: note.name }); }}
+            title="삭제"
+            className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 size={12} strokeWidth={1.75} />
           </button>
         </div>
       )}
@@ -360,6 +377,21 @@ function WorldNoteTreeItem({
           </button>
           )}
         </div>
+      )}
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="문서 삭제"
+          message={`"${deleteTarget.name || '(이름 없음)'}"`+ ' 문서와 하위 문서가 영구 삭제됩니다.'}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteWorldNote(deleteTarget.id).then(() => {
+              setDeleteTarget(null);
+              setDeleteBusy(false);
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
