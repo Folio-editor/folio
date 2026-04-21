@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -55,10 +55,46 @@ const STATUS_OPTIONS = [
 ];
 
 const IMPORTANCE_OPTIONS = [
-  { value: '상', label: '중요도: 상' },
-  { value: '중', label: '중요도: 중' },
-  { value: '하', label: '중요도: 하' },
+  { value: '상', label: '중요도 : 상' },
+  { value: '중', label: '중요도 : 중' },
+  { value: '하', label: '중요도 : 하' },
 ];
+
+const IMPORTANCE_STYLES: Record<string, { button: string; dot: string; item: string }> = {
+  상: {
+    button: 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
+    dot: 'bg-rose-500',
+    item: 'hover:bg-rose-50',
+  },
+  중: {
+    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+    dot: 'bg-amber-500',
+    item: 'hover:bg-amber-50',
+  },
+  하: {
+    button: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100',
+    dot: 'bg-sky-500',
+    item: 'hover:bg-sky-50',
+  },
+};
+
+const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
+  진행중: {
+    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+    dot: 'bg-blue-500',
+    item: 'hover:bg-blue-50',
+  },
+  완결: {
+    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    dot: 'bg-emerald-500',
+    item: 'hover:bg-emerald-50',
+  },
+  폐기: {
+    button: 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
+    dot: 'bg-slate-400',
+    item: 'hover:bg-slate-50',
+  },
+};
 
 const LINK_TYPE_OPTIONS = [
   { value: 'plant', label: '심기' },
@@ -117,16 +153,30 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
         }
         trailing={
           <div className="flex items-center gap-2">
-            <div className="flex w-64 gap-2">
-              <Select
+            <div className="flex gap-2">
+              <ForeshadowDropdown
+                value={
+                  IMPORTANCE_OPTIONS.some((o) => o.value === item.importance)
+                    ? item.importance
+                    : '중'
+                }
                 options={IMPORTANCE_OPTIONS}
-                value={item.importance}
-                onChange={(e) => void updateForeshadow(id, { importance: e.target.value })}
+                styles={IMPORTANCE_STYLES}
+                fallback="중"
+                ariaLabel="복선 중요도"
+                onChange={(importance) => void updateForeshadow(id, { importance })}
               />
-              <Select
+              <ForeshadowDropdown
+                value={
+                  STATUS_OPTIONS.some((o) => o.value === item.status)
+                    ? item.status
+                    : '진행중'
+                }
                 options={STATUS_OPTIONS}
-                value={item.status}
-                onChange={(e) => void updateForeshadow(id, { status: e.target.value })}
+                styles={STATUS_STYLES}
+                fallback="진행중"
+                ariaLabel="복선 상태"
+                onChange={(status) => void updateForeshadow(id, { status })}
               />
             </div>
             <button
@@ -169,6 +219,92 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
           }}
           onCancel={() => setConfirmDelete(false)}
         />
+      )}
+    </div>
+  );
+}
+
+function ForeshadowDropdown({
+  value,
+  options,
+  styles,
+  fallback,
+  ariaLabel,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  styles: Record<string, { button: string; dot: string; item: string }>;
+  fallback: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentStyle = styles[value] ?? styles[fallback];
+  const currentLabel = options.find((option) => option.value === value)?.label ?? value;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex h-9 w-32 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
+          currentStyle.button,
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', currentStyle.dot)} />
+          <span className="truncate">{currentLabel}</span>
+        </span>
+        <ChevronDown
+          size={15}
+          strokeWidth={1.8}
+          className={cn('shrink-0 transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label={ariaLabel}
+          className="absolute right-0 top-full z-30 mt-2 w-32 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
+        >
+          {options.map((option) => {
+            const selected = option.value === value;
+            const style = styles[option.value] ?? styles[fallback];
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
+                  style.item,
+                  selected && 'bg-muted font-medium',
+                )}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)} />
+                  <span className="truncate">{option.label}</span>
+                </span>
+                {selected && <Check size={14} strokeWidth={2} className="shrink-0 text-muted-foreground" />}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
