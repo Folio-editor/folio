@@ -457,7 +457,13 @@ function renderMain({
       return null;
     }
     case 'plot':
-      return <PlotOverview workId={workId} onNavigateTo={onNavigateTo} />;
+      return (
+        <PlotOverview
+          workId={workId}
+          selectedItemId={itemId}
+          onNavigateTo={onNavigateTo}
+        />
+      );
     case 'episode':
       return itemId ? (
         <EpisodeEditScreen key={itemId} id={itemId} onBack={back} onNavigateTo={onNavigateTo} />
