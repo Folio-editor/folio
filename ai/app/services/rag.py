@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.config import settings
 from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
+from app.services.text_extractor import extract_plain_text
 
 TOKEN_BUDGET = 28_000
 
@@ -103,7 +104,7 @@ async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
         if row[3]:
             parts.append(f"성격:{row[3]}")
         if row[4]:
-            parts.append(f"설명:{row[4][:200]}")
+            parts.append(f"설명:{extract_plain_text(row[4])[:200]}")
         lines.append(" / ".join(parts))
     return "\n".join(lines)
 
@@ -121,7 +122,7 @@ async def _fetch_world_notes(session: AsyncSession, work_id: str) -> str:
         return ""
     lines = []
     for row in rows:
-        content = row[1][:300] if row[1] else ""
+        content = extract_plain_text(row[1])[:300] if row[1] else ""
         lines.append(f"- {row[0]}: {content}")
     return "\n".join(lines)
 
@@ -141,7 +142,7 @@ async def _fetch_foreshadows(session: AsyncSession, work_id: str) -> str:
     for row in rows:
         status = row[1] or "unknown"
         importance = row[2] or ""
-        content = row[3][:200] if row[3] else ""
+        content = extract_plain_text(row[3])[:200] if row[3] else ""
         lines.append(f"- [{status}] {row[0]} (중요도:{importance}) {content}")
     return "\n".join(lines)
 
@@ -160,7 +161,7 @@ async def _fetch_storyline(
     parts = []
     if rows:
         for row in rows:
-            content = row[1][:300] if row[1] else ""
+            content = extract_plain_text(row[1])[:300] if row[1] else ""
             parts.append(f"- {row[0]}: {content}")
     if storyline:
         parts.append(f"\n이번 회차 방향: {storyline}")
@@ -205,7 +206,7 @@ async def _fetch_recent_raw(
         return ""
     lines = []
     for row in reversed(rows):
-        content = row[2] or ""
+        content = extract_plain_text(row[2])
         lines.append(f"=== {row[0]}화: {row[1]} ===\n{content}")
     return "\n\n".join(lines)
 
