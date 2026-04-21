@@ -1,9 +1,10 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { Lightbulb, Send } from 'lucide-react';
+import { Lightbulb, Send, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { TAG_LIST, TAG_COLOR } from './ideaConstants';
 import { extractText, textToTiptap, timeAgo } from './ideaUtils';
 
@@ -22,9 +23,11 @@ interface IdeaRow {
 
 export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScreenProps) {
   const writerId = useWriterId();
-  const { createIdea } = useLocalWrite();
+  const { createIdea, deleteIdeaArchive } = useLocalWrite();
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: ideas = [] } = useQuery<IdeaRow>(
@@ -149,13 +152,33 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
           )
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredIdeas.map((idea) => (
-              <button
+            {filteredIdeas.map((idea) => {
+              const plainText = extractText(idea.content) || '(빈 아이디어)';
+              return (
+              <div
                 key={idea.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(idea.id)}
-                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-all hover:border-ring hover:shadow-md"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(idea.id);
+                  }
+                }}
+                className="group relative flex cursor-pointer flex-col items-start rounded-lg border border-border bg-background p-4 pr-10 text-left transition-all hover:border-ring hover:shadow-md"
               >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget({ id: idea.id, label: plainText });
+                  }}
+                  title="삭제"
+                  className="absolute right-3 top-3 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                >
+                  <Trash2 size={14} strokeWidth={1.75} />
+                </button>
                 {idea.tag && (
                   <span
                     className={`mb-2 rounded-full px-2 py-0.5 text-xs ${TAG_COLOR[idea.tag] ?? 'bg-muted'}`}
@@ -164,18 +187,38 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
                   </span>
                 )}
                 <p className="line-clamp-4 text-sm text-foreground">
-                  {extractText(idea.content) || '(빈 아이디어)'}
+                  {plainText}
                 </p>
                 {idea.updated_at && (
                   <span className="mt-3 self-end text-xs text-muted-foreground">
                     {timeAgo(idea.updated_at)}
                   </span>
                 )}
-              </button>
-            ))}
+              </div>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {deleteTarget && (
+        <DeleteConfirmDialog
+          title="아이디어 삭제"
+          message={`"${deleteTarget.label}" 아이디어를 삭제합니다.`}
+          warning="이 작업은 되돌릴 수 없습니다."
+          confirmLabel="삭제"
+          busyLabel="삭제 중..."
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void deleteIdeaArchive(deleteTarget.id).then(() => {
+              setDeleteTarget(null);
+              setDeleteBusy(false);
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }
