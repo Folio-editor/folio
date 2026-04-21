@@ -6,6 +6,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.text_extractor import extract_plain_text
 
 
 async def list_world_notes(session: AsyncSession, ctx: WriterContext) -> list[dict]:
@@ -40,5 +41,5 @@ async def get_world_note(session: AsyncSession, ctx: WriterContext, *, name: str
         "id": str(row[0]),
         "name": row[1],
         "parent_id": str(row[2]) if row[2] else None,
-        "content": row[3],
+        "content": extract_plain_text(row[3]),
     }

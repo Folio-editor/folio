@@ -6,6 +6,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.text_extractor import extract_plain_text
 
 
 async def get_plan(session: AsyncSession, ctx: WriterContext) -> dict | None:
@@ -26,5 +27,5 @@ async def get_plan(session: AsyncSession, ctx: WriterContext) -> dict | None:
         "genres": row[2],
         "moods": row[3],
         "target_audience": row[4],
-        "content": row[5],
+        "content": extract_plain_text(row[5]),
     }

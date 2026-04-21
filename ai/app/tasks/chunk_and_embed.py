@@ -14,11 +14,12 @@ from app.config import settings
 from app.db.models.episode_chunk import EpisodeChunk
 from app.services.chunker import chunk_text, count_tokens
 from app.services.providers import get_embedder
+from app.services.text_extractor import extract_plain_text
 
 
 async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> int:
     embedder = get_embedder()
-    chunks = chunk_text(content)
+    chunks = chunk_text(extract_plain_text(content))
     if not chunks:
         return 0
 
