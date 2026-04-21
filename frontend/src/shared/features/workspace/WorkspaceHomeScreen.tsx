@@ -8,6 +8,13 @@ import { Select } from '../../components/ui/Select';
 import { Textarea } from '../../components/ui/Textarea';
 import { Button } from '../../components/ui/Button';
 import { SECTION_ICONS, SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
+import planDocumentPencilIcon from '../../assets/images/workspace/planning.png';
+import worldBooksIcon from '../../assets/images/workspace/universe.png';
+import characterPeopleIcon from '../../assets/images/workspace/characters.png';
+import plotOpenBookIcon from '../../assets/images/workspace/plot.png';
+import episodeDocumentPencilIcon from '../../assets/images/workspace/manuscript.png';
+import foreshadowMagnifierIcon from '../../assets/images/workspace/foreshadowing.png';
+import ideaLightbulbIcon from '../../assets/images/workspace/idea.png';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
@@ -211,7 +218,58 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted }: WorkspaceEditorPr
               onClick={() => onSectionSelect(section)}
               className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
             >
-              <span className="text-2xl">{SECTION_ICONS[section]}</span>
+              {section === 'plan' ? (
+                <img
+                  src={planDocumentPencilIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'world-note' ? (
+                <img
+                  src={worldBooksIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'character' ? (
+                <img
+                  src={characterPeopleIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'plot' ? (
+                <img
+                  src={plotOpenBookIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'episode' ? (
+                <img
+                  src={episodeDocumentPencilIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'foreshadow' ? (
+                <img
+                  src={foreshadowMagnifierIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : section === 'idea-archive' ? (
+                <img
+                  src={ideaLightbulbIcon}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-8 w-8 object-contain"
+                />
+              ) : (
+                <span className="text-2xl">{SECTION_ICONS[section]}</span>
+              )}
               <span className="mt-2 text-sm font-medium text-foreground">
                 {SECTION_LABELS[section]}
               </span>
