@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
-import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import type { WorkspaceSection } from '../../types/workspace';
+import { cn } from '../../lib/cn';
 
 interface EpisodeEditScreenProps {
   id: string;
@@ -43,6 +43,29 @@ const STATUS_OPTIONS = [
   { value: '퇴고', label: '퇴고' },
   { value: '완성', label: '완성' },
 ];
+
+const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
+  미작성: {
+    button: 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
+    dot: 'bg-slate-400',
+    item: 'hover:bg-slate-50',
+  },
+  초고: {
+    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+    dot: 'bg-amber-500',
+    item: 'hover:bg-amber-50',
+  },
+  퇴고: {
+    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
+    dot: 'bg-blue-500',
+    item: 'hover:bg-blue-50',
+  },
+  완성: {
+    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    dot: 'bg-emerald-500',
+    item: 'hover:bg-emerald-50',
+  },
+};
 
 export function EpisodeEditScreen({ id, onBack, onNavigateTo }: EpisodeEditScreenProps) {
   const { data: rows = [] } = useQuery<EpisodeRow>(
@@ -88,16 +111,15 @@ function EpisodeEditor({
           />
         }
         trailing={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <PlotLinkIndicator episodeId={id} episodeTitle={item.title} onNavigateTo={onNavigateTo} />
-            <span className="text-xs text-muted-foreground">{item.word_count.toLocaleString()}자</span>
-            <div className="w-28">
-              <Select
-                options={STATUS_OPTIONS}
-                value={item.status}
-                onChange={(e) => void updateEpisode(id, { status: e.target.value })}
-              />
-            </div>
+            <span className="mr-1 text-xs text-muted-foreground">
+              {item.word_count.toLocaleString()}자
+            </span>
+            <EpisodeStatusDropdown
+              value={STATUS_OPTIONS.some((o) => o.value === item.status) ? item.status : '미작성'}
+              onChange={(status) => void updateEpisode(id, { status })}
+            />
             <button
               type="button"
               onClick={() => setConfirmTrash(true)}
@@ -135,6 +157,83 @@ function EpisodeEditor({
         onUpdate={(content) => void updateEpisode(id, { content })}
         onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
       />
+    </div>
+  );
+}
+
+function EpisodeStatusDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentStyle = STATUS_STYLES[value] ?? STATUS_STYLES.미작성;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex h-9 w-28 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
+          currentStyle.button,
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <span className={cn('h-1.5 w-1.5 rounded-full', currentStyle.dot)} />
+          {value}
+        </span>
+        <ChevronDown
+          size={15}
+          strokeWidth={1.8}
+          className={cn('transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="원고 상태"
+          className="absolute right-0 top-full z-30 mt-2 w-28 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
+        >
+          {STATUS_OPTIONS.map((option) => {
+            const selected = option.value === value;
+            const style = STATUS_STYLES[option.value] ?? STATUS_STYLES.미작성;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
+                  style.item,
+                  selected && 'bg-muted font-medium',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
+                  {option.label}
+                </span>
+                {selected && <Check size={14} strokeWidth={2} className="text-muted-foreground" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

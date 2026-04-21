@@ -57,12 +57,13 @@ export function CharacterNoteList({
   onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
-  const { createCharacter, reorderItems } = useLocalWrite();
+  const { createCharacter, ensureCharacterNotes, reorderItems } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
+  const [creatingCharacter, setCreatingCharacter] = useState(false);
 
   // Parse prefix routing
   const selectedCharId = selectedItemId?.startsWith('char:') ? selectedItemId.slice(5) : null;
@@ -108,6 +109,8 @@ export function CharacterNoteList({
     if (!trimmedTitle) return;
     void (async () => {
       const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
+      await ensureCharacterNotes(id);
+      setExpandedCharId(id);
       onItemSelect('char:' + id);
     })();
   };

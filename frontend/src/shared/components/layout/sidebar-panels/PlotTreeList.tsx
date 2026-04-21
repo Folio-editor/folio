@@ -587,7 +587,7 @@ function InlineCreateInput({
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
       maxLength={200}
-      className="w-full rounded-md border border-ring bg-background px-2 py-0.5 text-xs text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
+      className="mb-1 h-9 w-full rounded-lg border border-ring bg-background px-3 text-sm text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
     />
   );
 }

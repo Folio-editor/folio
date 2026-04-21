@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import { cn } from '../../../lib/cn';
 
 interface SectionItemListProps {
@@ -153,6 +154,12 @@ const PLACEHOLDER_LABELS: Record<SectionItemListProps['section'], string> = {
   character: '(이름 없음)',
   foreshadow: '(제목 없음)',
   'idea-archive': '(내용 없음)',
+};
+
+const DELETE_LABELS: Record<SectionItemListProps['section'], string> = {
+  character: '삭제',
+  foreshadow: '복선 삭제',
+  'idea-archive': '아이디어 삭제',
 };
 
 function escapeLike(input: string): string {
