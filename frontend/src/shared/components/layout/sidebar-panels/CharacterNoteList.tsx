@@ -5,10 +5,10 @@ import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -59,7 +59,7 @@ export function CharacterNoteList({
   const writerId = useWriterId();
   const { reorderItems } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
 
   // Parse prefix routing
@@ -161,7 +161,7 @@ interface CharacterTreeItemProps {
 }
 
 function SortableCharacterItem(props: CharacterTreeItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.character.id });
   const style = {
     transform: transform
@@ -171,7 +171,7 @@ function SortableCharacterItem(props: CharacterTreeItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <CharacterTreeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -191,7 +191,7 @@ function CharacterTreeItem({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const noteSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creatingNote, setCreatingNote] = useState(false);
 
@@ -222,6 +222,7 @@ function CharacterTreeItem({
         {dragListeners && (
           <span
             {...dragListeners}
+            data-dnd-handle
             className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <GripVertical size={12} className="text-muted-foreground" />
@@ -348,7 +349,7 @@ function SortableNoteItem(props: {
   onRename: (title: string) => void;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
   const style = {
     transform: transform
@@ -358,7 +359,7 @@ function SortableNoteItem(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <NoteItem {...props} dragListeners={listeners} />
     </div>
   );

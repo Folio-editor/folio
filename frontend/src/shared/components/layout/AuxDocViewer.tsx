@@ -40,6 +40,7 @@ const DOC_QUERIES: Record<AuxDocType, string> = {
   character_note: 'SELECT title, content FROM character_note WHERE id = ?',
   plot: 'SELECT title, content FROM plot WHERE id = ?',
   character: 'SELECT name AS title, gender, age, content FROM character WHERE id = ?',
+  foreshadow: 'SELECT title, content FROM foreshadow WHERE id = ?',
 };
 
 const CHILD_QUERIES: Partial<Record<AuxDocType, { sql: string; docType: AuxDocType }>> = {

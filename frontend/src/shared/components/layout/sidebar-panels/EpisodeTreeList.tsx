@@ -5,10 +5,10 @@ import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -59,7 +59,7 @@ export function EpisodeTreeList({
   const writerId = useWriterId();
   const { createEpisode, updateEpisode, reorderItems, trashEpisode } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
   const [trashTarget, setTrashTarget] = useState<{ id: string; title: string } | null>(null);
@@ -168,7 +168,7 @@ function SortableEpisodeItem(props: {
   onRename: (title: string) => void;
   onTrash: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.episode.id });
   const style = {
     transform: transform
@@ -178,7 +178,7 @@ function SortableEpisodeItem(props: {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <EpisodeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -252,6 +252,7 @@ function EpisodeItem({
       {dragListeners && (
         <span
           {...dragListeners}
+          data-dnd-handle
           className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <GripVertical size={12} className="text-muted-foreground" />

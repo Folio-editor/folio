@@ -5,10 +5,10 @@ import {
   DndContext,
   closestCenter,
   type DragEndEvent,
-  PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -46,7 +46,7 @@ export function WorldNoteList({
   const writerId = useWriterId();
   const { createWorldNote, reorderItems } = useLocalWrite();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
 
@@ -165,7 +165,7 @@ interface WorldNoteTreeItemProps {
 }
 
 function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+  const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
   const style = {
     transform: transform
@@ -175,7 +175,7 @@ function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
     opacity: isDragging ? 0.5 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div ref={setNodeRef} style={style}>
       <WorldNoteTreeItem {...props} dragListeners={listeners} />
     </div>
   );
@@ -197,7 +197,7 @@ function WorldNoteTreeItem({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const childSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(HandleOnlyPointerSensor),
   );
   const isExpanded = expandedIds.has(note.id);
   const isSelected = selectedItemId === note.id;
@@ -270,6 +270,7 @@ function WorldNoteTreeItem({
           {dragListeners && (
             <span
               {...dragListeners}
+              data-dnd-handle
               className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <GripVertical size={12} className="text-muted-foreground" />

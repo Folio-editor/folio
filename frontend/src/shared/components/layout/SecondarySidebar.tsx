@@ -260,7 +260,7 @@ function renderContent(args: {
     );
   }
 
-  if (activity === 'trash' || activity === 'ai') {
+  if (activity === 'trash') {
     return null;
   }
 

@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   BookOpenText,
-  BotMessageSquare,
   ClipboardList,
   Route,
   Globe,
@@ -34,7 +33,6 @@ const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
   episode: BookOpenText,
   foreshadow: KeyRound,
   'idea-archive': Lightbulb,
-  ai: BotMessageSquare,
   trash: Trash2,
 };
 
@@ -50,7 +48,7 @@ export function ActivityBar({ activity, onActivityChange, workSelected }: Activi
   const renderButton = (item: Activity) => {
     const Icon = ACTIVITY_ICONS[item];
     const isActive = activity === item;
-    const alwaysEnabled = item === 'home' || item === 'trash' || item === 'ai';
+    const alwaysEnabled = item === 'home' || item === 'trash';
     const isDisabled = !alwaysEnabled && !workSelected;
     const label = ACTIVITY_LABELS[item];
 
@@ -93,7 +91,7 @@ export function ActivityBar({ activity, onActivityChange, workSelected }: Activi
       {/* 스페이서 — 하단 아이콘을 바닥으로 밀어냄 */}
       <div className="flex-1" />
 
-      {/* 하단: AI 도구 + 휴지통 */}
+      {/* 하단: 휴지통 */}
       {ACTIVITY_ORDER_BOTTOM.map(renderButton)}
     </nav>
   );

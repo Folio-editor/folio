@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { usePowerSync } from '@powersync/react';
 import { AppShell } from '../../components/layout/AppShell';
 import { ActivityBar } from '../../components/layout/ActivityBar';
 import { SecondarySidebar } from '../../components/layout/SecondarySidebar';
@@ -23,7 +24,10 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
-import { Activity, WorkspaceSection, AuxPanelItem, AUX_DRAG_MIME } from '../../types/workspace';
+import {
+  Activity, WorkspaceSection, AuxPanelItem, AUX_DRAG_MIME,
+  type RightPanelTab, docTypeToRoute, currentDocToAuxItem,
+} from '../../types/workspace';
 
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 480;
@@ -42,6 +46,7 @@ const clamp = (v: number, min: number, max: number) =>
  * useSyncResolver는 로그인 직후 sync 의사결정을 자동/수동으로 처리한다.
  */
 export function AuthenticatedApp() {
+  const db = usePowerSync();
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<WorkspaceSection | null>(null);
@@ -82,6 +87,10 @@ export function AuthenticatedApp() {
     'folio.ui.rightPanelVisible',
     false,
   );
+  const [rightPanelTab, setRightPanelTab] = usePersistentState<RightPanelTab>(
+    'folio.ui.rightPanelTab',
+    'docs',
+  );
   const toggleRightPanel = () => setRightPanelVisible((v) => !v);
 
   const addAuxPanel = (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => {
@@ -104,6 +113,51 @@ export function AuthenticatedApp() {
     setAuxPanels((prev) =>
       prev.map((p) => (p.id === panelId ? { ...p, collapsed: !p.collapsed } : p)),
     );
+
+  // 현재 본문 문서의 제목을 로컬 DB에서 조회
+  const fetchCurrentDocTitle = async (): Promise<string> => {
+    if (!selectedSection || !selectedItemId) return '';
+    const TITLE_QUERIES: Partial<Record<WorkspaceSection, { sql: string; id: string }>> = {
+      'episode':    { sql: 'SELECT title FROM episode WHERE id = ?',        id: selectedItemId },
+      'world-note': { sql: 'SELECT name AS title FROM world_note WHERE id = ?', id: selectedItemId },
+      'plan':       { sql: 'SELECT title FROM plan_note WHERE id = ?',      id: selectedItemId },
+      'foreshadow': { sql: 'SELECT title FROM foreshadow WHERE id = ?',     id: selectedItemId },
+      'character':  selectedItemId.startsWith('cnote:')
+        ? { sql: 'SELECT title FROM character_note WHERE id = ?', id: selectedItemId.slice(6) }
+        : selectedItemId.startsWith('char:')
+          ? { sql: 'SELECT name AS title FROM character WHERE id = ?', id: selectedItemId.slice(5) }
+          : undefined,
+    };
+    const q = TITLE_QUERIES[selectedSection];
+    if (!q) return '';
+    try {
+      const result = await db.execute(q.sql, [q.id]);
+      return (result.rows?._array as { title: string }[])?.[0]?.title ?? '';
+    } catch {
+      return '';
+    }
+  };
+
+  // 우측 패널 문서를 본문으로 열기 (swap)
+  const handleOpenInMain = async (panel: AuxPanelItem) => {
+    const route = docTypeToRoute(panel.docType, panel.docId);
+    if (!route) return;
+
+    // 1. 현재 본문 문서를 우측 패널에 추가 (제목 조회 후)
+    if (selectedSection && selectedItemId) {
+      const title = await fetchCurrentDocTitle();
+      const currentAux = currentDocToAuxItem(selectedSection, selectedItemId, title);
+      if (currentAux) addAuxPanel(currentAux);
+    }
+
+    // 2. 대상 문서를 본문으로 열기
+    setActivity(route.activity);
+    setSelectedSection(route.section);
+    setSelectedItemId(route.itemId);
+
+    // 3. 우측 패널에서 해당 문서 제거
+    removeAuxPanel(panel.id);
+  };
 
   // 단축키: Ctrl+Shift+B → 우측 패널 토글
   useEffect(() => {
@@ -150,8 +204,8 @@ export function AuthenticatedApp() {
     if (sidebarCollapsed) setSidebarCollapsed(false);
     setActivity(next);
     setSelectedItemId(null);
-    if (next === 'home' || next === 'trash' || next === 'ai') {
-      // home/trash/ai 로 전환 시 섹션만 초기화 — 선택된 작품은 보존
+    if (next === 'home' || next === 'trash') {
+      // home/trash 로 전환 시 섹션만 초기화 — 선택된 작품은 보존
       setSelectedSection(null);
     } else {
       setSelectedSection(next);
@@ -233,7 +287,7 @@ export function AuthenticatedApp() {
           />
         }
         sidebar={
-          sidebarCollapsed || activity === 'trash' || activity === 'ai' ? null : (
+          sidebarCollapsed || activity === 'trash' ? null : (
             <SecondarySidebar
               activity={activity}
               selectedWorkId={selectedWorkId}
@@ -261,7 +315,13 @@ export function AuthenticatedApp() {
               onRemovePanel={removeAuxPanel}
               onReorderPanels={reorderAuxPanels}
               onToggleCollapse={toggleAuxPanelCollapse}
+              onOpenInMain={handleOpenInMain}
               isDraggingDoc={isDraggingDoc}
+              activeTab={rightPanelTab}
+              onTabChange={setRightPanelTab}
+              selectedWorkId={selectedWorkId}
+              mainSection={selectedSection}
+              mainItemId={selectedItemId}
             />
           ) : null
         }
@@ -316,9 +376,6 @@ function renderMain({
 }: RenderMainArgs) {
   if (activity === 'trash') {
     return <TrashScreen />;
-  }
-  if (activity === 'ai') {
-    return <AiPlaceholder />;
   }
   if (!workId) {
     return <WorkspaceScreen onCreateWork={onCreateWork} />;
@@ -405,19 +462,6 @@ function EmptyDetail({ message }: { message: string }) {
   return (
     <div className="flex h-full items-center justify-center px-8 text-center text-sm text-muted-foreground">
       {message}
-    </div>
-  );
-}
-
-function AiPlaceholder() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-      <span className="text-4xl">🤖</span>
-      <h2 className="text-base font-semibold text-foreground">AI 도구</h2>
-      <p className="text-sm text-muted-foreground">
-        설정 충돌 분석, 톤 일관성 검사, 문장 제안, 줄거리 요약 등<br />
-        AI 기능이 이곳에서 제공될 예정입니다.
-      </p>
     </div>
   );
 }
