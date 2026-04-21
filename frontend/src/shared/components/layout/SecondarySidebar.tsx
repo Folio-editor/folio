@@ -16,6 +16,7 @@ import { WorldNoteList } from './sidebar-panels/WorldNoteList';
 import { SectionItemList } from './sidebar-panels/SectionItemList';
 import { CharacterNoteList } from './sidebar-panels/CharacterNoteList';
 import { PlotTreeList } from './sidebar-panels/PlotTreeList';
+import { EpisodeTreeList } from './sidebar-panels/EpisodeTreeList';
 import { SettingsList, type SettingsItemId } from './sidebar-panels/SettingsList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
