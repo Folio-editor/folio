@@ -108,6 +108,7 @@ deploy-production:
 
         # 6. 헬스체크
         BACKEND_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8081 || echo 8082 )
+        AI_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8091 || echo 8092 )
         WEB_PORT=\$( [ "\$NEXT" = "blue" ] && echo 3001 || echo 3002 )
 
         echo "Waiting for health checks..."
@@ -121,6 +122,17 @@ deploy-production:
           if [ \$i -eq 30 ]; then HEALTH_OK=false; echo "Backend health check failed!"; fi
           sleep 2
         done
+
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 20); do
+            if curl -sf http://localhost:\${AI_PORT}/v1/health > /dev/null 2>&1; then
+              echo "AI healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 20 ]; then HEALTH_OK=false; echo "AI health check failed!"; fi
+            sleep 2
+          done
+        fi
 
         if [ "\$HEALTH_OK" = true ]; then
           for i in \$(seq 1 15); do
