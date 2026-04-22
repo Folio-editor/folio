@@ -67,8 +67,8 @@ test-ai:
   image: python:3.13-slim
   before_script:
     - cd ai
-    - pip install --upgrade pip
-    - pip install -e ".[dev]"
+    - pip3 install --upgrade pip
+    - pip3 install -e ".[dev]"
   script:
     - ruff check .
     - pytest -x --tb=short
