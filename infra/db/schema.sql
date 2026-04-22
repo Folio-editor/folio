@@ -58,6 +58,7 @@ CREATE TABLE subscription (
     billing_key     VARCHAR(200) NOT NULL,
     plan            VARCHAR(50) NOT NULL,
     monthly_tokens  INTEGER NOT NULL,
+    monthly_amount  BIGINT NOT NULL DEFAULT 0,
     status          VARCHAR(20) NOT NULL,
     next_billing_at TIMESTAMP NOT NULL,
     last_payment_at TIMESTAMP,

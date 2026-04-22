@@ -107,3 +107,4 @@ services:
 networks:
   folio-net:
     external: true
+    name: folio-net
