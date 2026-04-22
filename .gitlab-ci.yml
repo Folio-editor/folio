@@ -71,6 +71,7 @@ deploy-production:
 
         # 1. 소스 코드 최신화
         cd /opt/folio/S14P31F203
+        git stash --include-untracked 2>/dev/null || true
         git fetch origin master
         git checkout master
         git pull origin master
