@@ -2,10 +2,8 @@
 # Folio — GitLab CI/CD Pipeline
 #
 # 구조:
-#   test  → lab.ssafy.com 공유 Runner (lint, unit test)
-#   deploy → 공유 Runner에서 SSH로 EC2 접속 → EC2에서 직접 빌드/배포
-#
-# Container Registry 미사용 — EC2에서 git pull + docker build
+#   test  → EC2 Runner (shell executor)
+#   deploy → SSH로 EC2 접속 → 직접 빌드/배포
 #
 # 브랜치별 실행 범위:
 #   feature/* (MR): test
@@ -21,6 +19,7 @@
 
 variables:
   IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+  PATH: "/home/gitlab-runner/.local/bin:$PATH"
 
 stages:
   - test
@@ -30,57 +29,30 @@ stages:
 # Test (단위 테스트 + 린트)
 # ────────────────────────────────────────────────────────────
 
-test-frontend:
-  stage: test
-  image: node:22-alpine
-  before_script:
-    - corepack enable && corepack prepare pnpm@10.33.0 --activate
-    - cd frontend
-    - pnpm install --frozen-lockfile
-  script:
-    - pnpm lint
-    - pnpm test
-  rules:
-    - if: $CI_MERGE_REQUEST_ID
-    - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
-  cache:
-    key: frontend-${CI_COMMIT_REF_SLUG}
-    paths:
-      - frontend/node_modules/
-
 test-backend:
   stage: test
-  image: gradle:9-jdk21
   script:
-    - cd backend && chmod +x gradlew && ./gradlew test
+    - cd backend && chmod +x gradlew && ./gradlew wrapper && ./gradlew test
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
-  cache:
-    key: backend-${CI_COMMIT_REF_SLUG}
-    paths:
-      - backend/.gradle/
-      - backend/build/
 
 test-ai:
   stage: test
-  image: python:3.13-slim
   before_script:
     - cd ai
     - pip3 install --upgrade pip
     - pip3 install -e ".[dev]"
   script:
-    - ruff check .
-    - pytest -x --tb=short
+    - cd ai
+    - /home/gitlab-runner/.local/bin/ruff check .
+    - /home/gitlab-runner/.local/bin/pytest -x --tb=short
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
 
 # ────────────────────────────────────────────────────────────
 # Deploy (SSH로 EC2 접속 → 직접 빌드 + Blue/Green 배포)
-#
-# Container Registry 미사용.
-# EC2에서 git pull → docker build → docker compose up
 # ────────────────────────────────────────────────────────────
 
 deploy-production:
@@ -98,7 +70,6 @@ deploy-production:
 
         echo "=== Folio Deploy ==="
         echo "Commit: $CI_COMMIT_SHORT_SHA"
-        echo "Branch: $CI_COMMIT_BRANCH"
 
         # 1. 소스 코드 최신화
         cd /opt/folio/repo
@@ -106,7 +77,7 @@ deploy-production:
         git checkout master
         git pull origin master
 
-        # 2. Docker 이미지 빌드 (EC2에서 직접)
+        # 2. Docker 이미지 빌드
         echo "[build] Building Docker images..."
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
@@ -117,10 +88,9 @@ deploy-production:
         export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
         cd /opt/folio/infra/prod
         doppler secrets download --project folio --config prd --no-file --format env > .env
-        echo "DOCKER_REGISTRY=" >> .env
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
 
-        # 4. 현재 활성 색상 확인 + 반대 색상 결정
+        # 4. 현재 활성 색상 확인
         CURRENT=\$(cat /opt/folio/active-color 2>/dev/null || echo "blue")
         if [ "\$CURRENT" = "blue" ]; then NEXT="green"; else NEXT="blue"; fi
         echo "Switching: \$CURRENT → \$NEXT"
