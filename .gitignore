@@ -1,0 +1,91 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# Vite
+vite.config.ts.timestamp-*
+
+# Electron Forge
+.webpack/
+.vite/
+
+# Electron packaged app
+release/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# AI / Claude
+.claude/
+
+# Docker Compose 개인 override (포트 노출 등)
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Playwright
+test-results/
+playwright-report/
+
+# SQLite (local dev data)
+*.sqlite
+*.sqlite3
+*.db
+
+# Docker volumes
+docker-data/
+
+# Java / Spring Boot
+*.jar
+*.war
+*.class
+target/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Python / FastAPI
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Misc
+*.tgz
+*.zip
+*.tar.gz
+tmp/
+temp/

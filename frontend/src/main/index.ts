@@ -1,0 +1,82 @@
+import { app, BrowserWindow, ipcMain } from 'electron';
+import path from 'node:path';
+import started from 'electron-squirrel-startup';
+import {
+  loginWithGoogle,
+  logout,
+  tryRestoreLogin,
+  getAccessToken,
+  tokenRefreshScheduler,
+  getLastKnownWriterId,
+  commitLastKnownWriterId,
+} from './auth/googleOAuth';
+import { getOrCreateGuestId } from './auth/guestId';
+
+if (started) {
+  app.quit();
+}
+
+const createWindow = () => {
+  const mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    mainWindow.loadFile(
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+    );
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.webContents.openDevTools();
+  }
+};
+
+function registerAuthHandlers() {
+  ipcMain.handle('auth:login', async () => loginWithGoogle());
+  ipcMain.handle('auth:logout', async () => logout());
+  ipcMain.handle('auth:tryRestore', async () => tryRestoreLogin());
+  ipcMain.handle('auth:getAccessToken', () => getAccessToken());
+  ipcMain.handle('auth:getGuestId', () => getOrCreateGuestId());
+  ipcMain.handle('auth:getLastKnownWriterId', () => getLastKnownWriterId());
+  ipcMain.handle('auth:commitLastKnownWriterId', (_e, writerId: string) =>
+    commitLastKnownWriterId(writerId),
+  );
+}
+
+app.on('ready', () => {
+  registerAuthHandlers();
+  // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
+  tokenRefreshScheduler.on('session-expired', () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('auth:session-expired');
+    }
+  });
+  createWindow();
+});
+
+app.on('before-quit', () => {
+  tokenRefreshScheduler.stop();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});

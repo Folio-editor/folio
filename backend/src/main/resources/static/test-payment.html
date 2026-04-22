@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Folio 결제 테스트</title>
+    <script src="https://js.tosspayments.com/v1/payment"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
+        h1 { margin-bottom: 8px; }
+        p.lead { color: #666; margin-top: 0; }
+        section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        label { display: block; font-weight: 600; margin: 12px 0 4px; }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+        textarea { min-height: 80px; font-family: ui-monospace, Consolas, monospace; }
+        button { background: #3182f6; color: white; border: 0; padding: 10px 16px; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .log { background: #f9fafb; padding: 12px; border-radius: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+        .ok { color: #10b981; }
+        .err { color: #ef4444; }
+        small { color: #666; }
+    </style>
+</head>
+<body>
+
+<h1>Folio 결제 테스트</h1>
+<p class="lead">
+    로컬 백엔드 (<code>localhost:8080</code>) + 토스 문서용 테스트 키 기반 결제 E2E.<br>
+    <small>실제 돈은 안 나감. 카드번호 아무거나 입력해도 됨.</small>
+</p>
+
+<section>
+    <h3>1. 로그인 (dev JWT 발급)</h3>
+    <label>이메일</label>
+    <input id="email" value="test@storyzip.app">
+    <button onclick="devLogin()">로그인</button>
+    <div class="log" id="loginLog">아직 로그인 전</div>
+</section>
+
+<section>
+    <h3>2. 결제 시작</h3>
+    <label>토큰 패키지</label>
+    <select id="packageCode">
+        <option value="TOKEN_5000">TOKEN_5000 (2,900원 / 5,000 토큰)</option>
+        <option value="TOKEN_20000">TOKEN_20000 (9,900원 / 20,000 토큰)</option>
+        <option value="TOKEN_50000">TOKEN_50000 (19,900원 / 50,000 토큰)</option>
+    </select>
+    <button id="payBtn" onclick="startPayment()" disabled>결제창 열기</button>
+    <div class="log" id="payLog">로그인 먼저 하세요</div>
+</section>
+
+<section>
+    <h3>3. 승인 결과</h3>
+    <p><small>토스 결제 성공 후 이 페이지로 돌아오면 자동으로 백엔드 confirm API를 호출합니다.</small></p>
+    <div class="log" id="confirmLog">결제 대기 중…</div>
+</section>
+
+<section>
+    <h3>4. 지갑 조회</h3>
+    <button onclick="fetchWallet()" id="walletBtn" disabled>내 토큰 잔액 보기</button>
+    <div class="log" id="walletLog">—</div>
+</section>
+
+<script>
+    // 클라이언트 키는 백엔드에서 동적으로 받음 (.env의 TOSS_CLIENT_KEY 기반)
+    let TOSS_CLIENT_KEY = null;
+    const API_BASE = "http://localhost:8080";
+
+    async function loadClientKey() {
+        const res = await fetch(API_BASE + "/api/v1/payments/dev/client-key");
+        const { clientKey } = await res.json();
+        TOSS_CLIENT_KEY = clientKey;
+    }
+
+    // ============ 상태 & 헬퍼 ============
+    function loadToken() { return sessionStorage.getItem("accessToken"); }
+    function saveToken(t) { sessionStorage.setItem("accessToken", t); }
+    function log(id, text, cls) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = "log" + (cls ? " " + cls : "");
+    }
+    function authHeaders() {
+        return { "Content-Type": "application/json", "Authorization": "Bearer " + loadToken() };
+    }
+
+    // ============ 1. dev 로그인 ============
+    async function devLogin() {
+        const email = document.getElementById("email").value;
+        try {
+            const res = await fetch(API_BASE + "/api/v1/auth/dev/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email })
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
+            const data = await res.json();
+            saveToken(data.accessToken);
+            sessionStorage.setItem("writerId", data.writerId);
+            log("loginLog", "✅ JWT 발급 완료\nwriterId: " + data.writerId + "\ntoken: " + data.accessToken.substring(0, 40) + "...", "ok");
+            document.getElementById("payBtn").disabled = false;
+            document.getElementById("walletBtn").disabled = false;
+        } catch (e) {
+            log("loginLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // ============ 2. 결제 시작 ============
+    async function startPayment() {
+        const packageCode = document.getElementById("packageCode").value;
+        try {
+            if (!TOSS_CLIENT_KEY) await loadClientKey();
+            // 2-1. 백엔드에 주문 생성 요청
+            const res = await fetch(API_BASE + "/api/v1/payments", {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ packageCode })
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
+            const order = await res.json();
+            log("payLog", "✅ 주문 생성\n" + JSON.stringify(order, null, 2), "ok");
+
+            // 2-2. 토스 결제창 열기
+            sessionStorage.setItem("pendingOrderId", order.orderId);
+            const params = {
+                amount: Number(order.amount),
+                orderId: String(order.orderId),
+                orderName: String(order.orderName),
+                customerName: "테스트유저",
+                customerKey: "writer_" + (sessionStorage.getItem("writerId") || "anon"),
+                successUrl: window.location.origin + "/test-payment.html?result=success",
+                failUrl: window.location.origin + "/test-payment.html?result=fail"
+            };
+            log("payLog", "✅ 주문 생성\n" + JSON.stringify(order, null, 2)
+                + "\n\n→ 토스 전달 파라미터:\n" + JSON.stringify(params, null, 2), "ok");
+
+            const tossPayments = TossPayments(TOSS_CLIENT_KEY);
+            await tossPayments.requestPayment("카드", params);
+        } catch (e) {
+            const msg = (e && e.code ? e.code + ": " : "") + (e && e.message ? e.message : String(e));
+            log("payLog", "❌ " + msg + "\n\n" + JSON.stringify(e, Object.getOwnPropertyNames(e || {}), 2), "err");
+            console.error("Toss error object:", e);
+        }
+    }
+
+    // ============ 3. 결제창에서 돌아온 후 자동 confirm ============
+    async function handleRedirect() {
+        const params = new URLSearchParams(window.location.search);
+        const result = params.get("result");
+        if (!result) return;
+
+        if (result === "fail") {
+            log("confirmLog", "❌ 결제 실패\ncode: " + params.get("code") + "\nmessage: " + params.get("message"), "err");
+            return;
+        }
+
+        const paymentKey = params.get("paymentKey");
+        const orderId = params.get("orderId");
+        const amount = parseInt(params.get("amount"), 10);
+        log("confirmLog", "⏳ 백엔드 confirm 호출 중…\npaymentKey: " + paymentKey + "\norderId: " + orderId + "\namount: " + amount);
+
+        try {
+            const res = await fetch(API_BASE + "/api/v1/payments/confirm", {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ paymentKey, orderId, amount })
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("confirmLog", "✅ 결제 승인 완료!\n" + JSON.stringify(JSON.parse(text), null, 2), "ok");
+            await fetchWallet();
+        } catch (e) {
+            log("confirmLog", "❌ confirm 실패\n" + e.message, "err");
+        }
+    }
+
+    // ============ 4. 지갑 조회 ============
+    async function fetchWallet() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/payments/wallet", { headers: authHeaders() });
+            if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
+            const wallet = await res.json();
+            log("walletLog", JSON.stringify(wallet, null, 2), "ok");
+        } catch (e) {
+            log("walletLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // 페이지 로드 시 토큰 자동 복원 + 리다이렉트 처리
+    window.addEventListener("load", () => {
+        if (loadToken()) {
+            log("loginLog", "♻️ 이전 세션 토큰 복원됨", "ok");
+            document.getElementById("payBtn").disabled = false;
+            document.getElementById("walletBtn").disabled = false;
+            handleRedirect();
+        }
+    });
+</script>
+
+</body>
+</html>

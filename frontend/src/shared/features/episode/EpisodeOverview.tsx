@@ -1,0 +1,291 @@
+import { useMemo, useState } from 'react';
+import { useQuery } from '@powersync/react';
+import { generateHTML } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
+import Highlight from '@tiptap/extension-highlight';
+import TextAlign from '@tiptap/extension-text-align';
+import { LayoutGrid, Link2, List, Plus } from 'lucide-react';
+import { useWriterId } from '../../hooks/useWriterId';
+import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { Button } from '../../components/ui/Button';
+import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { cn } from '../../lib/cn';
+
+const previewExtensions = [
+  StarterKit.configure({ code: false, codeBlock: false }),
+  Underline,
+  Highlight.configure({ multicolor: false }),
+  TextAlign.configure({ types: ['heading', 'paragraph'] }),
+];
+
+interface EpisodeOverviewProps {
+  workId: string;
+  onSelect: (id: string) => void;
+}
+
+interface EpisodeRow {
+  id: string;
+  title: string;
+  status: string;
+  word_count: number;
+  content: string | null;
+}
+
+interface LinkRow {
+  episode_id: string;
+  plot_title: string;
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  '미작성': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  '초고': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  '퇴고': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  '완성': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+};
+
+export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
+  const writerId = useWriterId();
+  const { createEpisode } = useLocalWrite();
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  const { data: episodes = [] } = useQuery<EpisodeRow>(
+    `SELECT id, title, status, word_count, content FROM episode
+     WHERE work_id = ? AND writer_id = ? AND status != 'trashed'
+     ORDER BY sort_order ASC, created_at ASC`,
+    [workId, writerId],
+  );
+
+  const { data: links = [] } = useQuery<LinkRow>(
+    `SELECT pel.episode_id, p.title AS plot_title
+     FROM plot_episode_link pel
+     JOIN plot p ON p.id = pel.plot_id`,
+  );
+
+  const linkByEpisode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const link of links) {
+      map.set(link.episode_id, link.plot_title);
+    }
+    return map;
+  }, [links]);
+
+  const handleNew = async () => {
+    const title = `${episodes.length + 1}화`;
+    const id = await createEpisode(workId, title, episodes.length);
+    onSelect(id);
+  };
+
+  const totalWords = episodes.reduce((sum, ep) => sum + ep.word_count, 0);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <MainPanelHeader
+        title={<h2 className="text-lg font-semibold">원고</h2>}
+        subtitle="실제 본문을 집필합니다"
+        trailing={
+          <div className="flex items-center gap-2">
+            {episodes.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {episodes.length}편 · {totalWords.toLocaleString()}자
+              </span>
+            )}
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
+            <Button size="sm" onClick={() => void handleNew()}>
+              <Plus className="h-4 w-4" />새 원고
+            </Button>
+          </div>
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {episodes.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground">
+            아직 원고가 없습니다. 새 원고를 추가하여 집필을 시작하세요.
+          </p>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {episodes.map((ep) => (
+              <EpisodeCard
+                key={ep.id}
+                episode={ep}
+                plotTitle={linkByEpisode.get(ep.id)}
+                onClick={() => onSelect(ep.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {episodes.map((ep, idx) => (
+              <EpisodeListItem
+                key={ep.id}
+                episode={ep}
+                index={idx}
+                plotTitle={linkByEpisode.get(ep.id)}
+                onClick={() => onSelect(ep.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── 회차 카드 (그리드) ── */
+
+function EpisodeCard({
+  episode,
+  plotTitle,
+  onClick,
+}: {
+  episode: EpisodeRow;
+  plotTitle?: string;
+  onClick: () => void;
+}) {
+  const previewHtml = useMemo(() => contentToHtml(episode.content), [episode.content]);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-start rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
+    >
+      <span className="text-sm font-medium text-foreground">
+        {episode.title?.trim() || '(제목 없음)'}
+      </span>
+
+      <div className="mt-1.5 flex items-center gap-2">
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-[10px]',
+            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+          )}
+        >
+          {episode.status}
+        </span>
+        {episode.word_count > 0 && (
+          <span className="text-[10px] text-muted-foreground">
+            {episode.word_count.toLocaleString()}자
+          </span>
+        )}
+      </div>
+
+      {plotTitle && (
+        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary/70">
+          <Link2 size={10} />
+          <span className="truncate">{plotTitle}</span>
+        </div>
+      )}
+
+      {previewHtml ? (
+        <div
+          className="note-preview mt-2 line-clamp-3 text-xs text-muted-foreground"
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground/50">내용 없음</p>
+      )}
+    </button>
+  );
+}
+
+/* ── 회차 리스트 항목 ── */
+
+function EpisodeListItem({
+  episode,
+  index,
+  plotTitle,
+  onClick,
+}: {
+  episode: EpisodeRow;
+  index: number;
+  plotTitle?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center justify-between rounded-md border border-border bg-card px-4 py-3 text-left transition-colors hover:border-ring hover:bg-primary/5"
+    >
+      <div className="flex items-center gap-3">
+        <span className="w-8 text-xs text-muted-foreground">#{index + 1}</span>
+        <span className="text-sm font-medium text-foreground">
+          {episode.title?.trim() || '(제목 없음)'}
+        </span>
+        {plotTitle && (
+          <span className="flex items-center gap-1 text-[10px] text-primary/70">
+            <Link2 size={10} />
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-muted-foreground">
+          {episode.word_count.toLocaleString()}자
+        </span>
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-xs',
+            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+          )}
+        >
+          {episode.status}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/* ── 뷰 모드 토글 ── */
+
+function ViewToggle({
+  mode,
+  onChange,
+}: {
+  mode: 'grid' | 'list';
+  onChange: (mode: 'grid' | 'list') => void;
+}) {
+  return (
+    <div className="flex items-center rounded-md border border-border">
+      <button
+        type="button"
+        onClick={() => onChange('grid')}
+        title="그리드 보기"
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-l-md transition-colors',
+          mode === 'grid'
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <LayoutGrid size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('list')}
+        title="리스트 보기"
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-r-md transition-colors',
+          mode === 'list'
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <List size={14} />
+      </button>
+    </div>
+  );
+}
+
+/* ── 유틸 ── */
+
+function contentToHtml(raw: string | null): string {
+  if (!raw) return '';
+  try {
+    const json = JSON.parse(raw);
+    return generateHTML(json, previewExtensions);
+  } catch {
+    return '';
+  }
+}
