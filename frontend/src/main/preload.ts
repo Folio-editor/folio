@@ -22,6 +22,10 @@ const api: FolioApi = {
       return () => ipcRenderer.removeListener('auth:session-expired', listener);
     },
   },
+  spellcheck: {
+    syncDictionaryWords: (words: string[]) =>
+      ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
 };
 
 contextBridge.exposeInMainWorld('folio', api);
