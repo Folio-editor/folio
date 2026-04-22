@@ -60,6 +60,7 @@ deploy-production:
   stage: deploy
   before_script:
     - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    - chmod 400 $SSH_PRIVATE_KEY
   script:
     - |
       ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
@@ -69,7 +70,7 @@ deploy-production:
         echo "Commit: $CI_COMMIT_SHORT_SHA"
 
         # 1. 소스 코드 최신화
-        cd /opt/folio/repo
+        cd /opt/folio/S14P31F203
         git fetch origin master
         git checkout master
         git pull origin master
@@ -83,7 +84,7 @@ deploy-production:
 
         # 3. Doppler에서 시크릿 다운로드
         export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
-        cd /opt/folio/infra/prod
+        cd /opt/folio/S14P31F203/infra/prod
         doppler secrets download --project folio --config prd --no-file --format env > .env
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
 
