@@ -60,6 +60,7 @@ deploy-production:
   stage: deploy
   before_script:
     - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    - chmod 400 $SSH_PRIVATE_KEY
   script:
     - |
       ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
