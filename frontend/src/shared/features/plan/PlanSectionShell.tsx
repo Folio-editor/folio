@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { generateHTML } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { ChevronDown, Plus } from 'lucide-react';
@@ -18,7 +17,6 @@ import { TagEditModal } from './TagEditModal';
 
 const previewExtensions = [
   StarterKit.configure({ code: false, codeBlock: false }),
-  Underline,
   Highlight.configure({ multicolor: false }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];

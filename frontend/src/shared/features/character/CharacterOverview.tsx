@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { generateHTML } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { Trash2 } from 'lucide-react';
@@ -20,7 +19,6 @@ import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 /** generateHTML용 최소 확장 세트 (에디터 전체 확장 불필요, 렌더링용) */
 const previewExtensions = [
   StarterKit.configure({ code: false, codeBlock: false }),
-  Underline,
   Highlight.configure({ multicolor: false }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];

@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useQuery } from '@powersync/react';
 import { generateHTML } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import { Link2, Plus } from 'lucide-react';
@@ -16,7 +15,6 @@ import { cn } from '../../lib/cn';
 
 const previewExtensions = [
   StarterKit.configure({ code: false, codeBlock: false }),
-  Underline,
   Highlight.configure({ multicolor: false }),
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];

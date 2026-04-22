@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
@@ -76,7 +75,6 @@ export function ContentEditor({
           codeBlock: false,
         }),
         Placeholder.configure({ placeholder }),
-        Underline,
         Highlight.configure({ multicolor: false }),
         Typography,
         CharacterCount,
