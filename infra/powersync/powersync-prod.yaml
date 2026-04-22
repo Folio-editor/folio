@@ -1,0 +1,46 @@
+# ============================================================
+# PowerSync Service Config — prod
+#
+# dev와 차이점:
+#   - JWT kid: folio-prod (prod 전용)
+#   - audience: powersync-prod
+#   - 로깅: warn 레벨
+#   - 환경변수: PS_DATA_SOURCE_URI, PS_MONGO_URI, PS_JWT_K
+# ============================================================
+
+# 원본 DB (logical replication 구독 대상)
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+# 동기화 버킷 메타 저장소
+storage:
+  type: mongodb
+  uri: !env PS_MONGO_URI
+
+# API 서버 포트 (컨테이너 내부)
+port: 8080
+
+# Sync rule 파일 경로
+sync_config:
+  path: /app/sync-rules.yaml
+
+# 클라이언트 JWT 인증
+# - Spring Boot가 발급한 Access Token(HS256) 검증
+# - prod 전환 시 RS256/JWKS로 교체 가능
+client_auth:
+  jwks:
+    keys:
+      - kty: 'oct'
+        alg: 'HS256'
+        kid: 'folio-prod'
+        k: !env PS_JWT_K
+  audience: ['powersync-prod']
+
+# 로깅 (prod는 warn 이상만)
+system:
+  logging:
+    level: warn
+    format: json

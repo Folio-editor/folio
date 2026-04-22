@@ -8,7 +8,6 @@ import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
-import TextStyle from '@tiptap/extension-color';
 import Link from '@tiptap/extension-link';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';

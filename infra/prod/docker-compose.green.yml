@@ -1,0 +1,109 @@
+# ============================================================
+# Folio — Green 앱 인스턴스
+#
+# 사용법:
+#   docker compose -f docker-compose.yml -f docker-compose.green.yml up -d
+# ============================================================
+services:
+  spring-boot-green:
+    image: folio-backend:${IMAGE_TAG:-latest}
+    container_name: folio-backend-green
+    ports:
+      - "8082:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      DB_HOST: postgresql
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      AI_SERVER_URL: http://fastapi-green:8000
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: always
+    networks:
+      - folio-net
+
+  fastapi-green:
+    image: folio-ai:${IMAGE_TAG:-latest}
+    container_name: folio-ai-green
+    ports:
+      - "8092:8000"
+    environment:
+      APP_ENV: prod
+      APP_PORT: 8000
+      INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
+      DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: always
+    networks:
+      - folio-net
+
+  celery-worker-green:
+    image: folio-celery-worker:${IMAGE_TAG:-latest}
+    container_name: folio-celery-worker-green
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    networks:
+      - folio-net
+
+  react-web-green:
+    image: folio-web:${IMAGE_TAG:-latest}
+    container_name: folio-web-green
+    ports:
+      - "3002:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: always
+    networks:
+      - folio-net
+
+networks:
+  folio-net:
+    external: true
