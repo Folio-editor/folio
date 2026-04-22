@@ -104,7 +104,7 @@ export function SectionItemList({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
       {rows.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
@@ -122,7 +122,7 @@ export function SectionItemList({
               type="button"
               onClick={() => onItemSelect(row.id)}
               className={cn(
-                'truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                'block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
                 selectedItemId === row.id
                   ? 'bg-primary/5 font-medium text-primary'
                   : 'text-sidebar-foreground',
