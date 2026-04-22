@@ -52,7 +52,7 @@ test-backend:
   stage: test
   image: gradle:9-jdk21
   script:
-    - cd backend && ./gradlew test
+    - cd backend && chmod +x gradlew && ./gradlew test
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
