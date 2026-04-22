@@ -127,10 +127,10 @@ deploy-production:
           sleep 2
         done
 
-        # 7. Nginx upstream 전환
+        # 7. Nginx upstream 전환 + 재시작
         cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
-        docker compose -f docker-compose.yml exec -T nginx nginx -s reload
-        sleep 3
+        docker compose -f docker-compose.yml restart nginx
+        sleep 5
 
         # 8. 이전 색상 종료
         docker compose -f docker-compose.\${CURRENT}.yml --env-file .env down || true
