@@ -44,7 +44,7 @@ test-ai:
     - export PATH="/home/gitlab-runner/.local/bin:$PATH"
     - cd ai
     - pip3 install --upgrade pip
-    - pip3 install -e ".[dev]"
+    - pip3 install -e ".[dev,llm,db]"
   script:
     - ruff check . || echo "[warn] ruff lint issues found, skipping for now"
     - pytest -x --tb=short
