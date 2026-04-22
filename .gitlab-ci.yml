@@ -84,6 +84,7 @@ deploy-production:
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
+        docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
 
         # 3. Doppler에서 시크릿 다운로드
         export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
@@ -146,4 +147,3 @@ deploy-production:
     - if: $CI_COMMIT_BRANCH == "master"
   environment:
     name: production
-  when: manual
