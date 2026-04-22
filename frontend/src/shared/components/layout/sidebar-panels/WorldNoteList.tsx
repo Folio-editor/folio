@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 
@@ -217,9 +216,7 @@ function WorldNoteTreeItem({
   dragListeners,
 }: WorldNoteTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateWorldNoteName, createWorldNote, reorderItems, deleteWorldNote } = useLocalWrite();
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const { updateWorldNoteName, createWorldNote, reorderItems } = useLocalWrite();
   const childSensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -328,14 +325,6 @@ function WorldNoteTreeItem({
             )}
             {note.name?.trim() || '(이름 없음)'}
           </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: note.id, name: note.name }); }}
-            title="삭제"
-            className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 size={12} strokeWidth={1.75} />
-          </button>
         </div>
       )}
 
@@ -401,21 +390,6 @@ function WorldNoteTreeItem({
           </button>
           )}
         </div>
-      )}
-      {deleteTarget && (
-        <DeleteConfirmDialog
-          title="문서 삭제"
-          message={`"${deleteTarget.name || '(이름 없음)'}"`+ ' 문서와 하위 문서가 영구 삭제됩니다.'}
-          busy={deleteBusy}
-          onConfirm={() => {
-            setDeleteBusy(true);
-            void deleteWorldNote(deleteTarget.id).then(() => {
-              setDeleteTarget(null);
-              setDeleteBusy(false);
-            });
-          }}
-          onCancel={() => setDeleteTarget(null)}
-        />
       )}
     </div>
   );

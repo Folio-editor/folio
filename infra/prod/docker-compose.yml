@@ -145,4 +145,5 @@ services:
 
 networks:
   folio-net:
+    name: folio-net
     driver: bridge
