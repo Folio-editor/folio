@@ -1,35 +1,51 @@
 # ============================================================
-# 테스트용 인프라 (CI / 통합 테스트)
+# Folio — 통합테스트 환경 (CI / 로컬 통합 테스트)
 #
-# - 개발 DB와 포트 충돌 방지를 위해 5433 / 6380 사용
-# - tmpfs로 데이터 영속화 안 함 (테스트마다 깨끗한 상태)
+# 전체 서비스를 컨테이너로 기동하여 연동 검증.
+# 데이터는 tmpfs로 매 실행마다 초기화 (깨끗한 상태 보장).
 #
 # 사용법:
-#   cd infra/test
-#   cp ../.env.test.example .env
-#   docker compose -f docker-compose.test.yml --env-file .env up -d
+#   cd <project-root>
+#   doppler run -c test -- docker compose -f infra/test/docker-compose.test.yml up -d
+#   # 또는 CI에서:
+#   doppler secrets download --config test --no-file --format env > .env
+#   docker compose -f infra/test/docker-compose.test.yml --env-file .env up -d
+#
+# 정리:
+#   docker compose -f infra/test/docker-compose.test.yml down -v
 # ============================================================
 services:
+  # ─── 인프라 서비스 ─────────────────────────────────────────────
   postgresql-test:
-    image: postgres:16-alpine
-    container_name: storyzip-postgresql-test
+    image: pgvector/pgvector:pg17
+    container_name: folio-postgresql-test
     ports:
       - "${DB_PORT:-5433}:5432"
     environment:
-      POSTGRES_USER: ${DB_USERNAME:-storyzip}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-storyzip_test}
-      POSTGRES_DB: ${DB_NAME:-storyzip_test}
+      POSTGRES_USER: ${DB_USERNAME:-folio}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-folio_test}
+      POSTGRES_DB: ${DB_NAME:-folio_test}
     tmpfs:
       - /var/lib/postgresql/data
+    volumes:
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../db/powersync-init.sql:/docker-entrypoint-initdb.d/02-powersync.sql:ro
+    command: >
+      postgres
+        -c wal_level=logical
+        -c max_replication_slots=4
+        -c max_wal_senders=4
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-storyzip}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-folio}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - folio-test-net
 
   redis-test:
-    image: redis:7-alpine
-    container_name: storyzip-redis-test
+    image: redis:8-alpine
+    container_name: folio-redis-test
     ports:
       - "${REDIS_PORT:-6380}:6379"
     tmpfs:
@@ -39,3 +55,145 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - folio-test-net
+
+  mongo-test:
+    image: mongo:8
+    container_name: folio-mongo-test
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval
+        "try { rs.status().ok }
+         catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo-test:27017'}]}).ok }"
+      interval: 5s
+      timeout: 30s
+      start_period: 10s
+      retries: 30
+    networks:
+      - folio-test-net
+
+  powersync-test:
+    image: journeyapps/powersync-service:latest
+    container_name: folio-powersync-test
+    depends_on:
+      postgresql-test:
+        condition: service_healthy
+      mongo-test:
+        condition: service_healthy
+    volumes:
+      - ../powersync/powersync.yaml:/app/powersync.yaml:ro
+      - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
+    environment:
+      PS_DATA_SOURCE_URI: postgresql://powersync_repl:storyzip_repl_dev@postgresql-test:5432/${DB_NAME:-folio_test}
+      PS_MONGO_URI: mongodb://mongo-test:27017/powersync
+      PS_JWT_K: ${PS_JWT_K:-dGVzdC1zZWNyZXQtcGxlYXNlLWNoYW5nZS10aGlzLXRvLWEtbG9uZy1yYW5kb20tc3RyaW5nLTMyY2hhcnM}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:8080/probes/liveness').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - folio-test-net
+
+  # ─── 애플리케이션 서비스 ────────────────────────────────────────
+  spring-boot-test:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: folio-backend-test
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      SERVER_PORT: 8080
+      DB_HOST: postgresql-test
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-folio_test}
+      DB_USERNAME: ${DB_USERNAME:-folio}
+      DB_PASSWORD: ${DB_PASSWORD:-folio_test}
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      JWT_SECRET: ${JWT_SECRET:-test-secret-please-change-this-to-a-long-random-string-32chars}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-test}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-test}
+      AI_SERVER_URL: http://fastapi-test:8000
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-test-internal-key}
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    depends_on:
+      postgresql-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - folio-test-net
+
+  fastapi-test:
+    build:
+      context: ../../ai
+      dockerfile: Dockerfile
+    container_name: folio-ai-test
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: test
+      APP_PORT: 8000
+      INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-test-internal-key}
+      DATABASE_URL: postgresql+asyncpg://${DB_USERNAME:-folio}:${DB_PASSWORD:-folio_test}@postgresql-test:5432/${DB_NAME:-folio_test}
+      REDIS_URL: redis://redis-test:6379/0
+      CELERY_BROKER_URL: redis://redis-test:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-test:6379/2
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-test}
+      LLM_PROVIDER: fake
+      EMBEDDING_PROVIDER: fake
+    depends_on:
+      postgresql-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - folio-test-net
+
+  celery-worker-test:
+    build:
+      context: ../../ai
+      dockerfile: Dockerfile.worker
+    container_name: folio-celery-worker-test
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+asyncpg://${DB_USERNAME:-folio}:${DB_PASSWORD:-folio_test}@postgresql-test:5432/${DB_NAME:-folio_test}
+      REDIS_URL: redis://redis-test:6379/0
+      CELERY_BROKER_URL: redis://redis-test:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-test:6379/2
+      LLM_PROVIDER: fake
+      EMBEDDING_PROVIDER: fake
+    depends_on:
+      redis-test:
+        condition: service_healthy
+    networks:
+      - folio-test-net
+
+networks:
+  folio-test-net:
+    driver: bridge

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 
@@ -57,7 +56,9 @@ export function CharacterNoteList({
   onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
-  const { reorderItems, createCharacter, ensureCharacterNotes } = useLocalWrite();
+  const { createCharacter, ensureCharacterNotes, reorderItems } = useLocalWrite();
+  const [creating, setCreating] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -100,41 +101,61 @@ export function CharacterNoteList({
     : [workId, writerId];
   const { data: characters = [] } = useQuery<CharacterRow>(sql, params);
 
-  const handleCreateCharacter = async (name: string) => {
-    setCreatingCharacter(false);
-    const nextName = name.trim();
-    if (!nextName) return;
-    const id = await createCharacter(workId, nextName, '미설정', '', characters.length);
-    await ensureCharacterNotes(id);
-    setExpandedCharId(id);
-    onItemSelect('char:' + id);
+  const handleCreateChar = () => {
+    const trimmedTitle = createTitle.trim();
+    setCreating(false);
+    setCreateTitle('');
+    if (!trimmedTitle) return;
+    void (async () => {
+      const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
+      await ensureCharacterNotes(id);
+      setExpandedCharId(id);
+      onItemSelect('char:' + id);
+    })();
+  };
+
+  const handleCreateCancel = () => {
+    setCreating(false);
+    setCreateTitle('');
+  };
+
+  const handleCreateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); handleCreateChar(); }
+    if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
-      <button
-        type="button"
-        onClick={() => setCreatingCharacter(true)}
-        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        <Plus size={14} strokeWidth={2} />
-        <span>새 인물</span>
-      </button>
-
-      {creatingCharacter && (
-        <InlineCreateInput
-          placeholder="인물 이름을 입력하세요"
-          onConfirm={(name) => void handleCreateCharacter(name)}
-          onCancel={() => setCreatingCharacter(false)}
-        />
-      )}
-
-      {characters.length === 0 && !creatingCharacter && (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {creating ? (
+          <input
+            autoFocus
+            type="text"
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            onKeyDown={handleCreateKeyDown}
+            onBlur={handleCreateCancel}
+            placeholder="인물 이름을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 인물</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
+      {characters.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
         </p>
-      )}
-
+      ) : (
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -173,6 +194,8 @@ export function CharacterNoteList({
           ))}
         </SortableContext>
       </DndContext>
+      )}
+      </div>
     </div>
   );
 }
@@ -213,9 +236,7 @@ function CharacterTreeItem({
   dragListeners,
 }: CharacterTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateCharacterNoteTitle, createCharacterNote, reorderItems, deleteCharacterNote } = useLocalWrite();
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const { updateCharacterNoteTitle, createCharacterNote, reorderItems } = useLocalWrite();
   const noteSensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -280,52 +301,36 @@ function CharacterTreeItem({
 
       {/* 하위 노트 (트리 자식) */}
       {isExpanded && (() => {
-        const fixedNotes = notes.filter((n) => n.kind === 'appearance' || n.kind === 'personality');
-        const customNotes = notes.filter((n) => n.kind !== 'appearance' && n.kind !== 'personality');
         return (
           <div className="ml-3 border-l border-border/50 pl-2">
-            {/* 고정 노트 (드래그 불가) */}
-            {fixedNotes.map((note) => (
-              <NoteItem
-                key={note.id}
-                note={note}
-                selected={selectedNoteId === note.id}
-                onSelect={() => onNoteSelect(note.id)}
-                onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
-                onDelete={() => {/* 고정 노트는 삭제 불가 */}}
-              />
-            ))}
-            {/* 커스텀 노트 (드래그 가능) */}
-            {customNotes.length > 0 && (
+            {notes.length > 0 && (
               <DndContext
                 sensors={noteSensors}
                 collisionDetection={closestCenter}
                 onDragEnd={(event: DragEndEvent) => {
                   const { active, over } = event;
                   if (!over || active.id === over.id) return;
-                  const oldIndex = customNotes.findIndex((n) => n.id === active.id);
-                  const newIndex = customNotes.findIndex((n) => n.id === over.id);
+                  const oldIndex = notes.findIndex((n) => n.id === active.id);
+                  const newIndex = notes.findIndex((n) => n.id === over.id);
                   if (oldIndex === -1 || newIndex === -1) return;
-                  const reordered = arrayMove(customNotes, oldIndex, newIndex);
-                  // offset by fixedNotes.length so custom notes sort after fixed ones
+                  const reordered = arrayMove(notes, oldIndex, newIndex);
                   void reorderItems(
                     'character_note',
                     reordered.map((n, i) => ({
                       id: n.id,
-                      sortOrder: (fixedNotes.length + i) * 1000,
+                      sortOrder: i * 1000,
                     })),
                   );
                 }}
               >
-                <SortableContext items={customNotes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-                  {customNotes.map((note) => (
+                <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+                  {notes.map((note) => (
                     <SortableNoteItem
                       key={note.id}
                       note={note}
                       selected={selectedNoteId === note.id}
                       onSelect={() => onNoteSelect(note.id)}
                       onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
-                      onDelete={() => setDeleteTarget({ id: note.id, title: note.title })}
                     />
                   ))}
                 </SortableContext>
@@ -349,21 +354,6 @@ function CharacterTreeItem({
           </div>
         );
       })()}
-      {deleteTarget && (
-        <DeleteConfirmDialog
-          title="문서 삭제"
-          message={`"${deleteTarget.title || '(제목 없음)'}"`+ ' 문서가 영구 삭제됩니다.'}
-          busy={deleteBusy}
-          onConfirm={() => {
-            setDeleteBusy(true);
-            void deleteCharacterNote(deleteTarget.id).then(() => {
-              setDeleteTarget(null);
-              setDeleteBusy(false);
-            });
-          }}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
     </div>
   );
 }
@@ -373,7 +363,6 @@ function SortableNoteItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onDelete: () => void;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.note.id });
@@ -396,14 +385,12 @@ function NoteItem({
   selected,
   onSelect,
   onRename,
-  onDelete,
   dragListeners,
 }: {
   note: CharacterNoteRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onDelete: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
@@ -454,15 +441,16 @@ function NoteItem({
   return (
     <div
       className="group flex items-center"
-      draggable={!isFixed}
+      draggable={Boolean(dragListeners)}
       onDragStart={(e) => {
-        if (isFixed) { e.preventDefault(); return; }
+        if (!dragListeners) { e.preventDefault(); return; }
         setupDragTransfer(e, 'character_note', note.id, note.title);
       }}
     >
-      {dragListeners && !isFixed && (
+      {dragListeners && (
         <span
           {...dragListeners}
+          data-dnd-handle
           className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <GripVertical size={12} className="text-muted-foreground" />
@@ -482,16 +470,6 @@ function NoteItem({
       >
         {note.title?.trim() || '(제목 없음)'}
       </button>
-      {!isFixed && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="삭제"
-          className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 size={12} strokeWidth={1.75} />
-        </button>
-      )}
     </div>
   );
 }

@@ -141,7 +141,7 @@ export interface Foreshadow {
 export interface ForeshadowLink {
   id: string;
   foreshadow_id: string;        // FK → Foreshadow
-  link_type: string;             // plant(심기) / resolve(부분회수) / final_resolve(완결)
+  link_type: string;             // plant(심기) / resolve(강화) / final_resolve(회수)
   episode_id: string | null;     // FK → Episode (원고 연결 시)
   plot_id: string | null;        // FK → Plot (플롯 연결 시)
   context_memo: string | null;   // 맥락 메모

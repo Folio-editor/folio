@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 
@@ -49,6 +48,7 @@ export function WorldNoteList({
     useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
@@ -85,32 +85,54 @@ export function WorldNoteList({
     });
   };
 
-  const handleCreateRoot = async (name: string) => {
+  const handleCreateRoot = () => {
+    const trimmedTitle = createTitle.trim();
     setCreating(false);
-    if (!name.trim()) return;
-    const id = await createWorldNote(workId, name.trim(), Date.now(), null);
-    onItemSelect(id);
+    setCreateTitle('');
+    if (!trimmedTitle) return;
+    void (async () => {
+      const id = await createWorldNote(workId, trimmedTitle, Date.now(), null);
+      onItemSelect(id);
+    })();
+  };
+
+  const handleCreateCancel = () => {
+    setCreating(false);
+    setCreateTitle('');
+  };
+
+  const handleCreateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); handleCreateRoot(); }
+    if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
-      <button
-        type="button"
-        onClick={() => setCreating(true)}
-        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        <Plus size={14} strokeWidth={2} />
-        <span>새 문서</span>
-      </button>
-
-      {creating && (
-        <InlineCreateInput
-          placeholder="문서 이름을 입력하세요"
-          onConfirm={(name) => void handleCreateRoot(name)}
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {creating ? (
+          <input
+            autoFocus
+            type="text"
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            onKeyDown={handleCreateKeyDown}
+            onBlur={handleCreateCancel}
+            placeholder="문서 이름을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 문서</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
       {notes.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
@@ -149,6 +171,7 @@ export function WorldNoteList({
           </SortableContext>
         </DndContext>
       )}
+      </div>
     </div>
   );
 }
@@ -193,9 +216,7 @@ function WorldNoteTreeItem({
   dragListeners,
 }: WorldNoteTreeItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { updateWorldNoteName, createWorldNote, reorderItems, deleteWorldNote } = useLocalWrite();
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const { updateWorldNoteName, createWorldNote, reorderItems } = useLocalWrite();
   const childSensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -304,14 +325,6 @@ function WorldNoteTreeItem({
             )}
             {note.name?.trim() || '(이름 없음)'}
           </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: note.id, name: note.name }); }}
-            title="삭제"
-            className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 size={12} strokeWidth={1.75} />
-          </button>
         </div>
       )}
 
@@ -377,21 +390,6 @@ function WorldNoteTreeItem({
           </button>
           )}
         </div>
-      )}
-      {deleteTarget && (
-        <DeleteConfirmDialog
-          title="문서 삭제"
-          message={`"${deleteTarget.name || '(이름 없음)'}"`+ ' 문서와 하위 문서가 영구 삭제됩니다.'}
-          busy={deleteBusy}
-          onConfirm={() => {
-            setDeleteBusy(true);
-            void deleteWorldNote(deleteTarget.id).then(() => {
-              setDeleteTarget(null);
-              setDeleteBusy(false);
-            });
-          }}
-          onCancel={() => setDeleteTarget(null)}
-        />
       )}
     </div>
   );

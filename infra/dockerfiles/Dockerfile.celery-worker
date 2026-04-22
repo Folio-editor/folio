@@ -1,0 +1,31 @@
+# ============================================================
+# Folio AI - Celery Worker 이미지
+#
+# 빌드:
+#   docker build -f infra/dockerfiles/Dockerfile.celery-worker \
+#     -t folio-celery-worker:latest ./ai
+#
+# 실행:
+#   docker run --rm \
+#     -e CELERY_BROKER_URL=redis://... \
+#     -e DATABASE_URL=... \
+#     folio-celery-worker:latest
+# ============================================================
+FROM python:3.13-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+RUN pip install --upgrade pip && pip install -e ".[llm,db]"
+
+COPY app ./app
+
+CMD ["celery", "-A", "app.celery_app", "worker", "-Q", "indexing,draft,review", "-c", "2", "-l", "info"]

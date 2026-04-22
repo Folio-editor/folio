@@ -30,7 +30,6 @@ from app.services.text_extractor import extract_plain_text
 TOKEN_BUDGET = 40_000
 
 PRIORITY_1_LABEL = "recent_raw"
-PRIORITY_2_LABEL = "recent_summaries"
 
 
 RECENT_RAW_LIMIT = {"draft": 4, "review": 2}
@@ -61,9 +60,6 @@ async def assemble_context(
                 sections["world_notes"] = settings_bundle["world_notes_text"]
             sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
             sections["storyline"] = await _fetch_storyline(session, work_id, storyline)
-            sections["recent_summaries"] = await _fetch_recent_summaries(
-                session, work_id, current_episode_num
-            )
             sections["recent_raw"] = await _fetch_recent_raw(
                 session, work_id, current_episode_num, limit=recent_raw_limit
             )
@@ -169,23 +165,7 @@ async def _fetch_storyline(
 async def _fetch_recent_summaries(
     session: AsyncSession, work_id: str, current_episode_num: int
 ) -> str:
-    r = await session.execute(
-        sa_text(
-            "SELECT e.sort_order, e.title, es.summary "
-            "FROM episode_summary es "
-            "JOIN episode e ON e.id = es.episode_id "
-            "WHERE es.work_id = :wid AND e.sort_order < :ep_num "
-            "ORDER BY e.sort_order DESC LIMIT 10"
-        ),
-        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num},
-    )
-    rows = r.fetchall()
-    if not rows:
-        return ""
-    lines = []
-    for row in reversed(rows):
-        lines.append(f"[{row[0]}화 - {row[1]}] {row[2]}")
-    return "\n".join(lines)
+    return ""
 
 
 async def _fetch_recent_raw(
@@ -258,12 +238,10 @@ def _trim_to_budget(sections: dict[str, str]) -> str:
         ("world_notes", "## 세계관 설정"),
         ("foreshadows", "## 복선/떡밥"),
         ("storyline", "## 스토리라인"),
-        ("recent_summaries", "## 최근 회차 요약"),
         ("recent_raw", "## 최근 회차 원문"),
         ("vector_search", "## 관련 과거 장면"),
     ]
 
-    priority_keys = ["recent_raw", "recent_summaries"]
     trimmable_keys = ["vector_search", "foreshadows", "world_notes", "characters"]
 
     blocks = {}

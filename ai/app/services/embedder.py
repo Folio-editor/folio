@@ -26,7 +26,7 @@ class EmbedderProvider(ABC):
 
 
 class FakeEmbedder(EmbedderProvider):
-    """결정적(deterministic) 더미 임베딩. 같은 텍스트 → 같은 벡터, L2 norm = 1."""
+    """Deterministic fake embeddings for local flow validation."""
 
     @property
     def dimension(self) -> int:
@@ -61,9 +61,10 @@ class OpenAIEmbedder(EmbedderProvider):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        normalized_texts = [self._validate_text(text) for text in texts]
         results: list[list[float]] = []
-        for start in range(0, len(texts), OPENAI_BATCH_LIMIT):
-            batch = texts[start : start + OPENAI_BATCH_LIMIT]
+        for start in range(0, len(normalized_texts), OPENAI_BATCH_LIMIT):
+            batch = normalized_texts[start : start + OPENAI_BATCH_LIMIT]
             resp = await self._client.embeddings.create(
                 model=self._model,
                 input=batch,
@@ -71,3 +72,9 @@ class OpenAIEmbedder(EmbedderProvider):
             data = sorted(resp.data, key=lambda item: item.index)
             results.extend([list(item.embedding) for item in data])
         return results
+
+    @staticmethod
+    def _validate_text(text: str) -> str:
+        if not text or not text.strip():
+            raise ValueError("Embedding input must not be empty.")
+        return text

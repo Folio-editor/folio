@@ -42,4 +42,4 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
+# asyncio_mode는 pytest.ini에서 설정 (중복 방지)

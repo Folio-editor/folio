@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus, Trash2 } from 'lucide-react';
+import { GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 
@@ -57,13 +56,12 @@ export function EpisodeTreeList({
   onItemSelect,
 }: EpisodeTreeListProps) {
   const writerId = useWriterId();
-  const { createEpisode, updateEpisode, reorderItems, trashEpisode } = useLocalWrite();
+  const { createEpisode, updateEpisode, reorderItems } = useLocalWrite();
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
   const [creating, setCreating] = useState(false);
-  const [trashTarget, setTrashTarget] = useState<{ id: string; title: string } | null>(null);
-  const [trashBusy, setTrashBusy] = useState(false);
+  const [createTitle, setCreateTitle] = useState('');
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
@@ -75,32 +73,54 @@ export function EpisodeTreeList({
     : [workId, writerId];
   const { data: episodes = [] } = useQuery<EpisodeRow>(sql, params);
 
-  const handleCreate = async (name: string) => {
+  const handleCreate = () => {
+    const trimmedTitle = createTitle.trim();
     setCreating(false);
-    if (!name.trim()) return;
-    const id = await createEpisode(workId, name.trim(), episodes.length);
-    onItemSelect(id);
+    setCreateTitle('');
+    if (!trimmedTitle) return;
+    void (async () => {
+      const id = await createEpisode(workId, trimmedTitle, episodes.length);
+      onItemSelect(id);
+    })();
+  };
+
+  const handleCreateCancel = () => {
+    setCreating(false);
+    setCreateTitle('');
+  };
+
+  const handleCreateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); handleCreate(); }
+    if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
-      <button
-        type="button"
-        onClick={() => setCreating(true)}
-        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        <Plus size={14} strokeWidth={2} />
-        <span>새 원고</span>
-      </button>
-
-      {creating && (
-        <InlineCreateInput
-          placeholder="원고 제목을 입력하세요"
-          onConfirm={(name) => void handleCreate(name)}
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {creating ? (
+          <input
+            autoFocus
+            type="text"
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            onKeyDown={handleCreateKeyDown}
+            onBlur={handleCreateCancel}
+            placeholder="원고 제목을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 원고</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
       {episodes.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '원고가 없습니다.'}
@@ -130,33 +150,14 @@ export function EpisodeTreeList({
                 selected={selectedItemId === ep.id}
                 onSelect={() => onItemSelect(ep.id)}
                 onRename={(title) => void updateEpisode(ep.id, { title })}
-                onTrash={() => setTrashTarget({ id: ep.id, title: ep.title })}
               />
             ))}
           </SortableContext>
         </DndContext>
       )}
-      {trashTarget && (
-        <DeleteConfirmDialog
-          title="휴지통으로 이동"
-          message={`"${trashTarget.title || '(제목 없음)'}"`+ ' 원고가 휴지통으로 이동됩니다.'}
-          warning="30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다."
-          confirmLabel="휴지통으로 이동"
-          busyLabel="이동 중…"
-          busy={trashBusy}
-          onConfirm={() => {
-            setTrashBusy(true);
-            void trashEpisode(trashTarget.id).then(() => {
-              setTrashTarget(null);
-              setTrashBusy(false);
-            });
-          }}
-          onCancel={() => setTrashTarget(null)}
-        />
-      )}
+      </div>
     </div>
   );
-
 }
 
 /* ── 회차 아이템 ── */
@@ -166,7 +167,6 @@ function SortableEpisodeItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onTrash: () => void;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.episode.id });
@@ -189,14 +189,12 @@ function EpisodeItem({
   selected,
   onSelect,
   onRename,
-  onTrash,
   dragListeners,
 }: {
   episode: EpisodeRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onTrash: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -288,54 +286,7 @@ function EpisodeItem({
           )}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onTrash(); }}
-        title="휴지통으로 이동"
-        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-      >
-        <Trash2 size={12} strokeWidth={1.75} />
-      </button>
     </div>
-  );
-}
-
-/* ── 인라인 생성 입력 ── */
-
-function InlineCreateInput({
-  placeholder,
-  onConfirm,
-  onCancel,
-}: {
-  placeholder: string;
-  onConfirm: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === 'Enter') { e.preventDefault(); onConfirm(value); }
-    else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => { if (value.trim()) onConfirm(value); else onCancel(); }}
-      onKeyDown={handleKeyDown}
-      placeholder={placeholder}
-      maxLength={200}
-      className="mb-1 h-9 w-full rounded-lg border border-ring bg-background px-3 text-sm text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
-    />
   );
 }
 

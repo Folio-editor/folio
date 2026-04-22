@@ -442,9 +442,6 @@ export function useLocalWrite() {
     deleteCharacterNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM character_note WHERE id = ?`, [id]);
     },
-    deletePlot: async (id: string): Promise<void> => {
-      await db.execute(`DELETE FROM plot WHERE id = ?`, [id]);
-    },
     deleteWorldNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM world_note WHERE id = ?`, [id]);
     },
@@ -535,6 +532,22 @@ export function useLocalWrite() {
         [id, foreshadowId, linkType, episodeId, plotId, contextMemo, now],
       );
       return id;
+    },
+    updateForeshadowLink: async (
+      linkId: string,
+      values: {
+        linkType: string;
+        episodeId: string | null;
+        plotId: string | null;
+        contextMemo: string | null;
+      },
+    ): Promise<void> => {
+      await db.execute(
+        `UPDATE foreshadow_link
+         SET link_type = ?, episode_id = ?, plot_id = ?, context_memo = ?
+         WHERE id = ?`,
+        [values.linkType, values.episodeId, values.plotId, values.contextMemo, linkId],
+      );
     },
     deleteForeshadowLink: async (linkId: string): Promise<void> => {
       await db.execute('DELETE FROM foreshadow_link WHERE id = ?', [linkId]);

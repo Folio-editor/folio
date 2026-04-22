@@ -1,16 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { Plus } from 'lucide-react';
+import { generateHTML } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
+import Highlight from '@tiptap/extension-highlight';
+import TextAlign from '@tiptap/extension-text-align';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { ViewToggle } from '../../components/ui/ViewToggle';
+import { cn } from '../../lib/cn';
 import { PlanHeader } from './PlanHeader';
 import { TagEditModal } from './TagEditModal';
+
+const previewExtensions = [
+  StarterKit.configure({ code: false, codeBlock: false }),
+  Underline,
+  Highlight.configure({ multicolor: false }),
+  TextAlign.configure({ types: ['heading', 'paragraph'] }),
+];
 
 interface PlanSectionShellProps {
   workId: string;
   selectedItemId: string | null;
+  onItemSelect: (id: string) => void;
   onItemBack: () => void;
 }
 
@@ -37,10 +53,11 @@ interface NoteSummaryRow {
 export function PlanSectionShell({
   workId,
   selectedItemId,
+  onItemSelect,
   onItemBack,
 }: PlanSectionShellProps) {
   const writerId = useWriterId();
-  const { ensurePlan, updatePlan, updatePlanNoteTitle, updatePlanNoteContent } =
+  const { ensurePlan, updatePlan, updatePlanNoteTitle, updatePlanNoteContent, deletePlanNote } =
     useLocalWrite();
   const [planId, setPlanId] = useState<string | null>(null);
 
@@ -83,6 +100,7 @@ export function PlanSectionShell({
                 id: note.id,
                 title: note.title,
                 onTitleChange: (title) => void updatePlanNoteTitle(note.id, title),
+                onDelete: () => deletePlanNote(note.id),
                 onBack: onItemBack,
               }
             : undefined
@@ -108,6 +126,7 @@ export function PlanSectionShell({
             workId={workId}
             meta={meta}
             onMetaChange={(patch) => void updatePlan(meta.id, patch)}
+            onNoteSelect={onItemSelect}
           />
         )}
       </div>
@@ -131,15 +150,18 @@ function PlanOverview({
   workId,
   meta,
   onMetaChange,
+  onNoteSelect,
 }: {
   planId: string;
   workId: string;
   meta: PlanMetaRow;
   onMetaChange: (patch: MetaPatch) => void;
+  onNoteSelect: (id: string) => void;
 }) {
   const genres = parseTags(meta.genres);
   const moods = parseTags(meta.moods);
   const [modal, setModal] = useState<TagField | null>(null);
+  const [viewMode, setViewMode] = usePersistentState<'grid' | 'list'>('folio.ui.view-mode.plan', 'list');
 
   const sloganField = useDeferredText(planId, meta.slogan ?? '', (v) =>
     onMetaChange({ slogan: v || null }),
@@ -284,30 +306,27 @@ function PlanOverview({
       </div>
 
       {/* 하위 문서 요약 */}
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        기획 문서
-      </h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          기획 문서
+        </h3>
+        {notes.length > 0 && (
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+        )}
+      </div>
 
       {notes.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className={viewMode === 'grid'
+          ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+          : 'flex flex-col gap-2'
+        }>
           {notes.map((note) => (
-            <div
+            <PlanNoteCard
               key={note.id}
-              className="rounded-lg border border-border bg-background p-4"
-            >
-              <span className="text-sm font-medium text-foreground">
-                {note.title?.trim() || '(제목 없음)'}
-              </span>
-              {extractPreview(note.content, 60) ? (
-                <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
-                  {extractPreview(note.content, 60)}
-                </p>
-              ) : (
-                <p className="mt-1.5 text-xs text-muted-foreground/50">
-                  아직 작성된 내용이 없습니다
-                </p>
-              )}
-            </div>
+              note={note}
+              layout={viewMode}
+              onSelect={() => onNoteSelect(note.id)}
+            />
           ))}
         </div>
       ) : (
@@ -337,23 +356,82 @@ function PlanOverview({
   );
 }
 
-function extractPreview(raw: string | null, maxLen: number): string {
-  if (!raw) return '';
-  try {
-    const parsed = JSON.parse(raw);
-    const text = collectText(parsed);
-    return text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
-  } catch {
-    return raw.length > maxLen ? raw.slice(0, maxLen) + '…' : raw;
-  }
+/* ── 기획 문서 카드 ── */
+
+function PlanNoteCard({
+  note,
+  layout,
+  onSelect,
+}: {
+  note: NoteSummaryRow;
+  layout: 'grid' | 'list';
+  onSelect: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const previewHtml = useMemo(() => contentToHtml(note.content), [note.content]);
+
+  const handleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpanded((v) => !v);
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter') onSelect(); }}
+      className={cn(
+        'group relative rounded-lg border border-border bg-background text-left transition-colors hover:border-ring hover:bg-primary/5',
+        layout === 'grid' ? 'p-4' : 'px-4 py-3',
+      )}
+    >
+      {/* 헤더: 제목 + 펼치기 버튼 */}
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">
+          {note.title?.trim() || '(제목 없음)'}
+        </span>
+        {previewHtml && (
+          <button
+            type="button"
+            onClick={handleExpand}
+            title={expanded ? '접기' : '전문 보기'}
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          >
+            <ChevronDown
+              size={14}
+              className={cn('transition-transform', expanded && 'rotate-180')}
+            />
+          </button>
+        )}
+      </div>
+
+      {/* 본문 미리보기 / 전문 */}
+      {previewHtml ? (
+        <div
+          className={cn(
+            'note-preview mt-1.5 text-xs text-muted-foreground',
+            !expanded && 'line-clamp-3',
+          )}
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
+      ) : (
+        <p className="mt-1.5 text-xs text-muted-foreground/50">
+          아직 작성된 내용이 없습니다
+        </p>
+      )}
+    </div>
+  );
 }
 
-function collectText(node: unknown): string {
-  if (!node || typeof node !== 'object') return '';
-  const n = node as { text?: string; content?: unknown[] };
-  if (typeof n.text === 'string') return n.text;
-  if (Array.isArray(n.content)) return n.content.map(collectText).join('');
-  return '';
+function contentToHtml(raw: string | null): string {
+  if (!raw) return '';
+  try {
+    const json = JSON.parse(raw) as object;
+    return generateHTML(json, previewExtensions);
+  } catch {
+    return '';
+  }
 }
 
 function parseTags(raw: string | null): string[] {

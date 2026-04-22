@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, GripVertical, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 
@@ -97,32 +96,56 @@ export function PlotTreeList({
     });
   };
 
-  const handleCreateAct = async (name: string) => {
+  const [createTitle, setCreateTitle] = useState('');
+
+  const handleCreateAct = () => {
+    const trimmedTitle = createTitle.trim();
     setCreating(false);
-    if (!name.trim()) return;
-    const id = await createPlot(workId, name.trim(), acts.length);
-    onItemSelect(id);
+    setCreateTitle('');
+    if (!trimmedTitle) return;
+    void (async () => {
+      const id = await createPlot(workId, trimmedTitle, acts.length);
+      onItemSelect(id);
+    })();
+  };
+
+  const handleCreateCancel = () => {
+    setCreating(false);
+    setCreateTitle('');
+  };
+
+  const handleCreateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); handleCreateAct(); }
+    if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
-      <button
-        type="button"
-        onClick={() => setCreating(true)}
-        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        <Plus size={14} strokeWidth={2} />
-        <span>새 막</span>
-      </button>
-
-      {creating && (
-        <InlineCreateInput
-          placeholder="막 제목을 입력하세요"
-          onConfirm={(name) => void handleCreateAct(name)}
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {creating ? (
+          <input
+            autoFocus
+            type="text"
+            value={createTitle}
+            onChange={(e) => setCreateTitle(e.target.value)}
+            onKeyDown={handleCreateKeyDown}
+            onBlur={handleCreateCancel}
+            placeholder="막 제목을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 막</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
       {acts.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '플롯이 없습니다.'}
@@ -160,6 +183,7 @@ export function PlotTreeList({
           </SortableContext>
         </DndContext>
       )}
+      </div>
     </div>
   );
 }
@@ -204,15 +228,12 @@ function ActTreeItem({
   dragListeners,
 }: ActItemProps & { dragListeners?: Record<string, unknown> }) {
   const writerId = useWriterId();
-  const { createPlot, updatePlot, reorderItems, deletePlot } = useLocalWrite();
+  const { createPlot, updatePlot, reorderItems } = useLocalWrite();
   const childSensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
   const isExpanded = expandedIds.has(act.id);
   const isSelected = selectedItemId === act.id;
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(act.title);
   const [creatingChild, setCreatingChild] = useState(false);
@@ -313,14 +334,6 @@ function ActTreeItem({
             />
             {act.title?.trim() || '(제목 없음)'}
           </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: act.id, title: act.title }); }}
-            title="삭제"
-            className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 size={12} strokeWidth={1.75} />
-          </button>
         </div>
       )}
 
@@ -351,7 +364,6 @@ function ActTreeItem({
                     selected={selectedItemId === ep.id}
                     onSelect={() => onItemSelect(ep.id)}
                     onRename={(title) => void updatePlot(ep.id, { title })}
-                    onDelete={() => setDeleteTarget({ id: ep.id, title: ep.title })}
                   />
                 ))}
               </SortableContext>
@@ -376,21 +388,6 @@ function ActTreeItem({
           </button>
         </div>
       )}
-      {deleteTarget && (
-        <DeleteConfirmDialog
-          title="플롯 삭제"
-          message={`"${deleteTarget.title || '(제목 없음)'}"`+ ' 항목과 하위 회차가 영구 삭제됩니다.'}
-          busy={deleteBusy}
-          onConfirm={() => {
-            setDeleteBusy(true);
-            void deletePlot(deleteTarget.id).then(() => {
-              setDeleteTarget(null);
-              setDeleteBusy(false);
-            });
-          }}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
     </div>
   );
 }
@@ -402,7 +399,6 @@ function SortableEpisodeItem(props: {
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onDelete: () => void;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.episode.id });
@@ -425,14 +421,12 @@ function EpisodeItem({
   selected,
   onSelect,
   onRename,
-  onDelete,
   dragListeners,
 }: {
   episode: PlotRow;
   selected: boolean;
   onSelect: () => void;
   onRename: (title: string) => void;
-  onDelete: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -515,14 +509,6 @@ function EpisodeItem({
             title={episode.status}
           />
         )}
-      </button>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        title="삭제"
-        className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-muted-foreground hover:text-destructive"
-      >
-        <Trash2 size={12} strokeWidth={1.75} />
       </button>
     </div>
   );

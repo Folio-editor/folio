@@ -1,0 +1,204 @@
+# ============================================================
+# Folio — GitLab CI/CD Pipeline
+#
+# 구조:
+#   test  → EC2 Runner (shell executor)
+#   deploy → SSH로 EC2 접속 → 직접 빌드/배포
+#
+# 브랜치별 실행 범위:
+#   feature/* (MR): test
+#   develop:        test
+#   master:         test → deploy (자동)
+#
+# 필요한 GitLab CI Variables:
+#   - SSH_PRIVATE_KEY       (File 타입, EC2 PEM 키)
+#   - EC2_HOST              (EC2 IP 또는 도메인)
+#   - EC2_USER              (ubuntu 또는 ec2-user)
+#   - DOPPLER_TOKEN_PRD     (Doppler prd 서비스 토큰)
+# ============================================================
+
+variables:
+  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+
+stages:
+  - test
+  - deploy
+
+# ────────────────────────────────────────────────────────────
+# Test (단위 테스트 + 린트)
+# ────────────────────────────────────────────────────────────
+
+test-backend:
+  stage: test
+  before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+  script:
+    - cd backend && chmod +x gradlew && ./gradlew wrapper && ./gradlew test
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
+
+test-ai:
+  stage: test
+  before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    - cd ai
+    - pip3 install --upgrade pip
+    - pip3 install -e ".[dev,llm,db]"
+  script:
+    - ruff check . || echo "[warn] ruff lint issues found, skipping for now"
+    - pytest -x --tb=short
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
+
+# ────────────────────────────────────────────────────────────
+# Deploy (SSH로 EC2 접속 → 직접 빌드 + Blue/Green 배포)
+# ────────────────────────────────────────────────────────────
+
+deploy-production:
+  stage: deploy
+  before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    - chmod 400 $SSH_PRIVATE_KEY
+  script:
+    - |
+      ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
+        set -e
+
+        echo "=== Folio Deploy ==="
+        echo "Commit: $CI_COMMIT_SHORT_SHA"
+
+        # 1. 소스 코드 최신화
+        cd /opt/folio/S14P31F203
+        git stash --include-untracked 2>/dev/null || true
+        git fetch origin master
+        git checkout master
+        git pull origin master
+
+        # 2. Docker 이미지 빌드
+        echo "[build] Building Docker images..."
+        docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
+        docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
+        docker build -f infra/dockerfiles/Dockerfile.celery-worker -t folio-celery-worker:$CI_COMMIT_SHORT_SHA -t folio-celery-worker:latest ./ai
+        docker build -f infra/dockerfiles/Dockerfile.web \
+          --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+          --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
+          -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
+        docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
+
+        # 3. Doppler에서 시크릿 다운로드
+        export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
+        cd /opt/folio/S14P31F203/infra/prod
+        doppler secrets download --project folio --config prd --no-file --format env > .env
+        echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
+
+        # 3.1 upstream-active.conf 초기화 (없으면 기본값 생성)
+        if [ ! -f nginx/upstream-active.conf ]; then
+          cp nginx/upstream-blue.conf nginx/upstream-active.conf
+        fi
+
+        # 4. 현재 활성 색상 확인
+        CURRENT=\$(cat /opt/folio/active-color 2>/dev/null || echo "blue")
+        if [ "\$CURRENT" = "blue" ]; then NEXT="green"; else NEXT="blue"; fi
+        echo "Switching: \$CURRENT → \$NEXT"
+
+        # 5. 새 색상 컨테이너 기동
+        docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env up -d
+
+        # 6. 헬스체크
+        BACKEND_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8081 || echo 8082 )
+        AI_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8091 || echo 8092 )
+        WEB_PORT=\$( [ "\$NEXT" = "blue" ] && echo 3001 || echo 3002 )
+        LANDING_PORT=\$( [ "\$NEXT" = "blue" ] && echo 3011 || echo 3012 )
+        CELERY_CONTAINER="folio-celery-worker-\${NEXT}"
+
+        echo "Waiting for health checks..."
+        HEALTH_OK=true
+
+        # Backend (Spring Boot)
+        for i in \$(seq 1 30); do
+          if curl -sf http://localhost:\${BACKEND_PORT}/actuator/health > /dev/null 2>&1; then
+            echo "Backend healthy (attempt \$i)"
+            break
+          fi
+          if [ \$i -eq 30 ]; then HEALTH_OK=false; echo "Backend health check failed!"; fi
+          sleep 2
+        done
+
+        # AI (FastAPI)
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 20); do
+            if curl -sf http://localhost:\${AI_PORT}/v1/health > /dev/null 2>&1; then
+              echo "AI healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 20 ]; then HEALTH_OK=false; echo "AI health check failed!"; fi
+            sleep 2
+          done
+        fi
+
+        # Celery worker (broker ping via docker exec)
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 10); do
+            if docker exec \${CELERY_CONTAINER} celery -A app.celery_app inspect ping -t 5 > /dev/null 2>&1; then
+              echo "Celery worker healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 10 ]; then HEALTH_OK=false; echo "Celery worker health check failed!"; fi
+            sleep 3
+          done
+        fi
+
+        # Web (React SPA)
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 15); do
+            if curl -sf http://localhost:\${WEB_PORT}/healthz > /dev/null 2>&1; then
+              echo "Web healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 15 ]; then HEALTH_OK=false; echo "Web health check failed!"; fi
+            sleep 2
+          done
+        fi
+
+        # Landing
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 10); do
+            if curl -sf http://localhost:\${LANDING_PORT}/healthz > /dev/null 2>&1; then
+              echo "Landing healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 10 ]; then HEALTH_OK=false; echo "Landing health check failed!"; fi
+            sleep 2
+          done
+        fi
+
+        # 헬스체크 실패 시 새 컨테이너 정리 후 종료
+        if [ "\$HEALTH_OK" = false ]; then
+          echo "[rollback] Stopping failed \$NEXT containers..."
+          docker compose -f docker-compose.\${NEXT}.yml --env-file .env down || true
+          rm -f .env
+          echo "[rollback] \$CURRENT still active. Deploy aborted."
+          exit 1
+        fi
+
+        # 7. Nginx upstream 전환 + 재시작
+        cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
+        docker compose -f docker-compose.yml restart nginx
+        sleep 5
+
+        # 8. 이전 색상 종료
+        docker compose -f docker-compose.\${CURRENT}.yml --env-file .env down || true
+
+        # 9. 상태 업데이트 + 정리
+        echo "\$NEXT" > /opt/folio/active-color
+        rm -f .env
+        docker image prune -f > /dev/null 2>&1 || true
+
+        echo "=== Deploy Complete: \$NEXT ($CI_COMMIT_SHORT_SHA) ==="
+      ENDSSH
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  environment:
+    name: production

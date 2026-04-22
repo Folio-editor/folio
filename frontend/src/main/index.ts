@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import {
@@ -16,12 +16,33 @@ if (started) {
   app.quit();
 }
 
+const syncedSpellcheckWords = new Set<string>();
+
+function normalizeSpellcheckWords(words: unknown): string[] {
+  if (!Array.isArray(words)) return [];
+
+  const unique = new Set<string>();
+  for (const rawWord of words) {
+    if (typeof rawWord !== 'string') continue;
+
+    const word = rawWord.trim();
+    if (!word) continue;
+    if (word.length > 64) continue;
+    unique.add(word);
+  }
+
+  return Array.from(unique);
+}
+
 const createWindow = () => {
+  Menu.setApplicationMenu(null);
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    icon: path.join(__dirname, '../../resources/folio.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -36,6 +57,15 @@ const createWindow = () => {
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
   }
+
+  // 메뉴 제거 시 DevTools 단축키(F12, Ctrl+Shift+I)가 사라지므로 직접 등록
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') return;
+    const toggle =
+      input.key === 'F12' ||
+      (input.control && input.shift && input.key === 'I');
+    if (toggle) mainWindow.webContents.toggleDevTools();
+  });
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
@@ -53,6 +83,38 @@ function registerAuthHandlers() {
     commitLastKnownWriterId(writerId),
   );
 }
+
+function registerSpellcheckHandlers() {
+  ipcMain.handle('spellcheck:syncWords', async (event, words: unknown) => {
+    const session = event.sender.session as Electron.Session & {
+      removeWordFromSpellCheckerDictionary?: (word: string) => boolean;
+    };
+    const nextWords = new Set(normalizeSpellcheckWords(words));
+
+    if (typeof session.removeWordFromSpellCheckerDictionary === 'function') {
+      for (const word of syncedSpellcheckWords) {
+        if (!nextWords.has(word)) {
+          session.removeWordFromSpellCheckerDictionary(word);
+        }
+      }
+    }
+
+    for (const word of nextWords) {
+      if (!syncedSpellcheckWords.has(word)) {
+        session.addWordToSpellCheckerDictionary(word);
+      }
+    }
+
+    syncedSpellcheckWords.clear();
+    for (const word of nextWords) {
+      syncedSpellcheckWords.add(word);
+    }
+  });
+}
+
+app.on('ready', () => {
+  registerSpellcheckHandlers();
+});
 
 app.on('ready', () => {
   registerAuthHandlers();

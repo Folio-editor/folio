@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tokenizer_compat import get_cl100k_base_encoding
+from app.services.tokenizer_compat import get_cl100k_base_encoding
 
 _enc = get_cl100k_base_encoding()
 

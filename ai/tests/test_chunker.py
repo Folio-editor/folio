@@ -1,98 +1,59 @@
 from __future__ import annotations
 
-import json
-import sys
 import unittest
-from pathlib import Path
 
-AI_ROOT = Path(__file__).resolve().parents[1]
-if str(AI_ROOT) not in sys.path:
-    sys.path.insert(0, str(AI_ROOT))
-
-from chunker import chunk_episode, count_tokens
+from app.services.chunker import chunk_text, count_tokens
 
 
-class ChunkerTests(unittest.TestCase):
-    def test_count_tokens_examples(self) -> None:
+class CountTokensTests(unittest.TestCase):
+    def test_empty_string(self) -> None:
         self.assertEqual(count_tokens(""), 0)
+
+    def test_korean_text(self) -> None:
         self.assertGreater(count_tokens("안녕하세요"), 0)
+
+    def test_english_text(self) -> None:
         self.assertGreater(count_tokens("Hello world"), 0)
 
-    def test_chunk_episode_returns_empty_for_empty_input(self) -> None:
-        self.assertEqual(chunk_episode(""), [])
-        self.assertEqual(chunk_episode("***\n***"), [])
 
-    def test_scene_delimiters_create_scene_breaks(self) -> None:
-        content = "첫 장면입니다.\n\n***\n\n둘째 장면입니다."
-        chunks = chunk_episode(content, max_tokens=100, min_tokens=10, overlap_tokens=10)
+class ChunkTextTests(unittest.TestCase):
+    def test_empty_input(self) -> None:
+        self.assertEqual(chunk_text(""), [])
+        self.assertEqual(chunk_text("   "), [])
 
-        self.assertEqual(len(chunks), 2)
-        self.assertEqual([chunk["chunk_index"] for chunk in chunks], [0, 1])
-        self.assertTrue(chunks[0]["is_scene_break"])
-        self.assertTrue(chunks[1]["is_scene_break"])
+    def test_single_short_paragraph(self) -> None:
+        chunks = chunk_text("짧은 문장입니다.", min_tokens=1, max_tokens=1000)
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0], "짧은 문장입니다.")
 
-    def test_small_internal_chunk_is_merged_into_previous_chunk(self) -> None:
-        paragraph1 = "alpha " * 180
-        paragraph2 = "beta " * 180
-        paragraph3 = "tiny " * 12
-        content = f"{paragraph1}\n\n{paragraph2}\n\n{paragraph3}"
+    def test_multiple_paragraphs_within_limit(self) -> None:
+        text = "첫 번째 단락.\n\n두 번째 단락."
+        chunks = chunk_text(text, min_tokens=1, max_tokens=1000)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("첫 번째 단락.", chunks[0])
+        self.assertIn("두 번째 단락.", chunks[0])
 
-        chunks = chunk_episode(content, max_tokens=200, min_tokens=50, overlap_tokens=20)
+    def test_paragraphs_exceeding_max_tokens_are_split(self) -> None:
+        para1 = "alpha " * 100
+        para2 = "beta " * 100
+        text = f"{para1}\n\n{para2}"
+        chunks = chunk_text(text, min_tokens=10, max_tokens=120)
+        self.assertGreaterEqual(len(chunks), 2)
 
-        self.assertEqual(len(chunks), 2)
-        self.assertTrue(chunks[0]["is_scene_break"])
-        self.assertFalse(chunks[1]["is_scene_break"])
-        self.assertIn("tiny", chunks[1]["content"])
-        self.assertGreaterEqual(chunks[1]["token_count"], 50)
+    def test_small_trailing_chunk_merged(self) -> None:
+        para1 = "word " * 80
+        para2 = "tiny"
+        text = f"{para1}\n\n{para2}"
+        chunks = chunk_text(text, min_tokens=50, max_tokens=200)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("tiny", chunks[0])
 
-    def test_overlap_is_added_only_to_non_scene_break_chunks(self) -> None:
-        paragraph1 = "alpha " * 150
-        paragraph2 = "beta " * 150
-        content = f"{paragraph1}\n\n{paragraph2}"
-
-        chunks = chunk_episode(content, max_tokens=220, min_tokens=30, overlap_tokens=15)
-
-        self.assertEqual(len(chunks), 2)
-        self.assertTrue(chunks[0]["is_scene_break"])
-        self.assertFalse(chunks[1]["is_scene_break"])
-        self.assertIn("alpha", chunks[1]["content"])
-        self.assertIn("beta", chunks[1]["content"])
-
-    def test_fixture_episodes_chunk_with_expected_bounds(self) -> None:
-        validated_fixture_count = 0
-
-        for work_name in ("dummy-work-1", "dummy-work-2", "dummy-work-3"):
-            episodes = self._load_episodes(work_name)
-            if not episodes:
-                continue
-
-            non_empty_episodes = [episode for episode in episodes if episode.get("content", "").strip()]
-            if not non_empty_episodes:
-                continue
-
-            for episode in non_empty_episodes[:2]:
-                chunks = chunk_episode(episode["content"])
-                self.assertGreater(len(chunks), 0)
-                self.assertEqual(
-                    [chunk["chunk_index"] for chunk in chunks],
-                    list(range(len(chunks))),
-                )
-
-                for chunk in chunks:
-                    self.assertGreater(chunk["token_count"], 0)
-                    self.assertLessEqual(chunk["token_count"], 950)
-                    if not chunk["is_scene_break"]:
-                        self.assertGreaterEqual(chunk["token_count"], 100)
-                validated_fixture_count += 1
-
-        self.assertGreater(validated_fixture_count, 0)
-
-    def _load_episodes(self, work_name: str) -> list[dict[str, object]]:
-        fixture_path = AI_ROOT / "tests" / "fixtures" / work_name / "episodes.json"
-        try:
-            return json.loads(fixture_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
+    def test_long_paragraph_split_by_sentence(self) -> None:
+        sentences = "이것은 긴 문장입니다. " * 200
+        chunks = chunk_text(sentences, min_tokens=10, max_tokens=100)
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(count_tokens(chunk), 150)
 
 
 if __name__ == "__main__":

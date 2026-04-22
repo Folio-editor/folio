@@ -47,9 +47,14 @@ export interface FolioAuthApi {
   onSessionExpired: (callback: () => void) => () => void;
 }
 
+export interface FolioSpellcheckApi {
+  syncDictionaryWords: (words: string[]) => Promise<void>;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
+  spellcheck: FolioSpellcheckApi;
 }
 
 declare global {
