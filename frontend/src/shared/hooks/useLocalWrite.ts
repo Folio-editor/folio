@@ -533,6 +533,22 @@ export function useLocalWrite() {
       );
       return id;
     },
+    updateForeshadowLink: async (
+      linkId: string,
+      values: {
+        linkType: string;
+        episodeId: string | null;
+        plotId: string | null;
+        contextMemo: string | null;
+      },
+    ): Promise<void> => {
+      await db.execute(
+        `UPDATE foreshadow_link
+         SET link_type = ?, episode_id = ?, plot_id = ?, context_memo = ?
+         WHERE id = ?`,
+        [values.linkType, values.episodeId, values.plotId, values.contextMemo, linkId],
+      );
+    },
     deleteForeshadowLink: async (linkId: string): Promise<void> => {
       await db.execute('DELETE FROM foreshadow_link WHERE id = ?', [linkId]);
     },
