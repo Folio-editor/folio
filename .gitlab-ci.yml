@@ -8,7 +8,7 @@
 # 브랜치별 실행 범위:
 #   feature/* (MR): test
 #   develop:        test
-#   master:         test → deploy (수동)
+#   master:         test → deploy (자동)
 #
 # 필요한 GitLab CI Variables:
 #   - SSH_PRIVATE_KEY       (File 타입, EC2 PEM 키)
@@ -108,26 +108,51 @@ deploy-production:
 
         # 6. 헬스체크
         BACKEND_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8081 || echo 8082 )
+        AI_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8091 || echo 8092 )
         WEB_PORT=\$( [ "\$NEXT" = "blue" ] && echo 3001 || echo 3002 )
 
         echo "Waiting for health checks..."
+        HEALTH_OK=true
+
         for i in \$(seq 1 30); do
           if curl -sf http://localhost:\${BACKEND_PORT}/actuator/health > /dev/null 2>&1; then
             echo "Backend healthy (attempt \$i)"
             break
           fi
-          [ \$i -eq 30 ] && echo "Backend health check failed!" && exit 1
+          if [ \$i -eq 30 ]; then HEALTH_OK=false; echo "Backend health check failed!"; fi
           sleep 2
         done
 
-        for i in \$(seq 1 15); do
-          if curl -sf http://localhost:\${WEB_PORT}/healthz > /dev/null 2>&1; then
-            echo "Web healthy (attempt \$i)"
-            break
-          fi
-          [ \$i -eq 15 ] && echo "Web health check failed!" && exit 1
-          sleep 2
-        done
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 20); do
+            if curl -sf http://localhost:\${AI_PORT}/v1/health > /dev/null 2>&1; then
+              echo "AI healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 20 ]; then HEALTH_OK=false; echo "AI health check failed!"; fi
+            sleep 2
+          done
+        fi
+
+        if [ "\$HEALTH_OK" = true ]; then
+          for i in \$(seq 1 15); do
+            if curl -sf http://localhost:\${WEB_PORT}/healthz > /dev/null 2>&1; then
+              echo "Web healthy (attempt \$i)"
+              break
+            fi
+            if [ \$i -eq 15 ]; then HEALTH_OK=false; echo "Web health check failed!"; fi
+            sleep 2
+          done
+        fi
+
+        # 헬스체크 실패 시 새 컨테이너 정리 후 종료
+        if [ "\$HEALTH_OK" = false ]; then
+          echo "[rollback] Stopping failed \$NEXT containers..."
+          docker compose -f docker-compose.\${NEXT}.yml --env-file .env down || true
+          rm -f .env
+          echo "[rollback] \$CURRENT still active. Deploy aborted."
+          exit 1
+        fi
 
         # 7. Nginx upstream 전환 + 재시작
         cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
