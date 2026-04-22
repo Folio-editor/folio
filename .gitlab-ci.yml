@@ -19,7 +19,6 @@
 
 variables:
   IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
-  PATH: "/home/gitlab-runner/.local/bin:$PATH"
 
 stages:
   - test
@@ -31,6 +30,8 @@ stages:
 
 test-backend:
   stage: test
+  before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
   script:
     - cd backend && chmod +x gradlew && ./gradlew wrapper && ./gradlew test
   rules:
@@ -40,13 +41,14 @@ test-backend:
 test-ai:
   stage: test
   before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
     - cd ai
     - pip3 install --upgrade pip
     - pip3 install -e ".[dev]"
   script:
     - cd ai
-    - /home/gitlab-runner/.local/bin/ruff check .
-    - /home/gitlab-runner/.local/bin/pytest -x --tb=short
+    - ruff check .
+    - pytest -x --tb=short
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
@@ -57,15 +59,11 @@ test-ai:
 
 deploy-production:
   stage: deploy
-  image: alpine:latest
   before_script:
-    - apk add --no-cache openssh-client
-    - chmod 400 $SSH_PRIVATE_KEY
-    - mkdir -p ~/.ssh
-    - ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
   script:
     - |
-      ssh -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
+      ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
         set -e
 
         echo "=== Folio Deploy ==="
