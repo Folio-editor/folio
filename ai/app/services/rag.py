@@ -80,27 +80,51 @@ async def _fetch_work_meta(session: AsyncSession, work_id: str) -> str:
 
 
 async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
+    wid = uuid.UUID(work_id)
     r = await session.execute(
         sa_text(
-            "SELECT name, gender, age, personality, content "
+            "SELECT id, name, gender, age "
             "FROM character WHERE work_id = :wid ORDER BY sort_order"
         ),
-        {"wid": uuid.UUID(work_id)},
+        {"wid": wid},
     )
-    rows = r.fetchall()
-    if not rows:
+    chars = r.fetchall()
+    if not chars:
         return ""
+
+    # character_note에서 성격/외형 등 서브노트 조회
+    nr = await session.execute(
+        sa_text(
+            "SELECT cn.character_id, cn.kind, cn.title, cn.content "
+            "FROM character_note cn "
+            "JOIN character c ON c.id = cn.character_id "
+            "WHERE c.work_id = :wid "
+            "ORDER BY cn.sort_order"
+        ),
+        {"wid": wid},
+    )
+    notes = nr.fetchall()
+    notes_by_char: dict[uuid.UUID, list[tuple]] = {}
+    for note in notes:
+        cid = note[0] if isinstance(note[0], uuid.UUID) else uuid.UUID(str(note[0]))
+        notes_by_char.setdefault(cid, []).append(note)
+
     lines = []
-    for row in rows:
-        parts = [f"- {row[0]}"]
-        if row[1]:
-            parts.append(f"성별:{row[1]}")
-        if row[2]:
-            parts.append(f"나이:{row[2]}")
-        if row[3]:
-            parts.append(f"성격:{row[3]}")
-        if row[4]:
-            parts.append(f"설명:{extract_plain_text(row[4])[:200]}")
+    for char in chars:
+        char_id = char[0] if isinstance(char[0], uuid.UUID) else uuid.UUID(str(char[0]))
+        parts = [f"- {char[1]}"]
+        if char[2]:
+            parts.append(f"성별:{char[2]}")
+        if char[3]:
+            parts.append(f"나이:{char[3]}")
+        char_notes = notes_by_char.get(char_id, [])
+        for note in char_notes:
+            content = note[3]
+            if content:
+                label = note[2] or note[1] or ""
+                text = extract_plain_text(content)[:200]
+                if text:
+                    parts.append(f"{label}:{text}")
         lines.append(" / ".join(parts))
     return "\n".join(lines)
 

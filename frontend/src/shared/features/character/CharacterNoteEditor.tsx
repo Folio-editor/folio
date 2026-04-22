@@ -12,6 +12,7 @@ import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 interface CharacterNoteEditorProps {
   noteId: string;
   onBack: () => void;
+  onBackToCharacter?: (characterId: string) => void;
 }
 
 interface CharacterNoteRow {
@@ -25,7 +26,7 @@ interface CharacterNameRow {
   name: string;
 }
 
-export function CharacterNoteEditor({ noteId, onBack }: CharacterNoteEditorProps) {
+export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter }: CharacterNoteEditorProps) {
   const { updateCharacterNoteContent, updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
 
   const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
@@ -46,12 +47,20 @@ export function CharacterNoteEditor({ noteId, onBack }: CharacterNoteEditorProps
     return <div className="p-8 text-sm text-muted-foreground">문서를 불러오는 중…</div>;
   }
 
+  const handleBack = () => {
+    if (onBackToCharacter && note.character_id) {
+      onBackToCharacter(note.character_id);
+    } else {
+      onBack();
+    }
+  };
+
   return (
     <NoteEditorInner
       key={noteId}
       note={note}
       characterName={characterName}
-      onBack={onBack}
+      onBack={handleBack}
       onTitleChange={(title) => void updateCharacterNoteTitle(noteId, title)}
       onContentChange={(content) => void updateCharacterNoteContent(noteId, content)}
       onDelete={() => deleteCharacterNote(noteId)}

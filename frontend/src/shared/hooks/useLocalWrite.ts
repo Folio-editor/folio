@@ -208,6 +208,7 @@ export function useLocalWrite() {
         name: string;
         gender: string;
         age: string;
+        profile_image_url: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
