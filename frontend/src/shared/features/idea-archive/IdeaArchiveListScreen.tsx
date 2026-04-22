@@ -28,7 +28,10 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
   const [inputText, setInputText] = useState('');
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIdeaIds, setSelectedIdeaIds] = useState<Set<string>>(() => new Set());
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -40,6 +43,10 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
   );
 
   const filteredIdeas = activeTag ? ideas.filter((idea) => idea.tag === activeTag) : ideas;
+  const visibleIdeaIds = filteredIdeas.map((idea) => idea.id);
+  const selectedCount = selectedIdeaIds.size;
+  const allVisibleSelected =
+    visibleIdeaIds.length > 0 && visibleIdeaIds.every((id) => selectedIdeaIds.has(id));
 
   const handleSubmit = async () => {
     const trimmed = inputText.trim();
@@ -79,6 +86,38 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
     setEditText('');
   };
 
+  const enterSelectionMode = () => {
+    setEditingIdeaId(null);
+    setEditText('');
+    setSelectionMode(true);
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIdeaIds(new Set());
+  };
+
+  const toggleIdeaSelection = (id: string) => {
+    setSelectedIdeaIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelectedIdeaIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleIdeaIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIdeaIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
@@ -87,32 +126,85 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
       />
 
       <div className="shrink-0 border-b border-border/50 bg-muted/30 px-6 py-2">
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              activeTag === null
-                ? 'bg-foreground/10 text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTag(null)}
-          >
-            전체
-          </button>
-          {TAG_LIST.map((tag) => (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <button
-              key={tag}
               type="button"
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                activeTag === tag
-                  ? TAG_COLOR[tag]
+                activeTag === null
+                  ? 'bg-foreground/10 text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
-              onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+              onClick={() => {
+                setActiveTag(null);
+                if (selectionMode) setSelectedIdeaIds(new Set());
+              }}
             >
-              {tag}
+              전체
             </button>
-          ))}
+            {TAG_LIST.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  activeTag === tag
+                    ? TAG_COLOR[tag]
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => {
+                  setActiveTag(activeTag === tag ? null : tag);
+                  if (selectionMode) setSelectedIdeaIds(new Set());
+                }}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+
+          {selectionMode ? (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="mr-1 font-medium text-primary">{selectedCount}개 선택됨</span>
+              <button
+                type="button"
+                onClick={toggleAllVisible}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-background hover:text-foreground"
+              >
+                {allVisibleSelected ? '전체 해제' : '전체 선택'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIdeaIds(new Set())}
+                disabled={selectedCount === 0}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
+              >
+                선택 해제
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={selectedCount === 0}
+                className="rounded-md bg-destructive px-2.5 py-1 font-medium text-destructive-foreground hover:bg-destructive/90 disabled:bg-muted disabled:text-muted-foreground"
+              >
+                삭제
+              </button>
+              <button
+                type="button"
+                onClick={exitSelectionMode}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-background hover:text-foreground"
+              >
+                취소
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={enterSelectionMode}
+              disabled={filteredIdeas.length === 0}
+              className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40"
+            >
+              선택
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,6 +268,7 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
               const plainText = extractText(idea.content) || '(빈 아이디어)';
               const previewText = truncateIdeaPreview(plainText);
               const isEditing = editingIdeaId === idea.id;
+              const isSelected = selectedIdeaIds.has(idea.id);
 
               return (
                 <div
@@ -183,17 +276,40 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
                   role="button"
                   tabIndex={0}
                   onClick={() => {
+                    if (selectionMode) {
+                      toggleIdeaSelection(idea.id);
+                      return;
+                    }
                     if (!isEditing) onSelect(idea.id);
                   }}
                   onKeyDown={(e) => {
+                    if (selectionMode && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      toggleIdeaSelection(idea.id);
+                      return;
+                    }
                     if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
                       e.preventDefault();
                       onSelect(idea.id);
                     }
                   }}
-                  className="group relative flex h-[168px] cursor-pointer flex-col rounded-lg border border-border bg-background px-5 py-5 text-left transition-all hover:border-ring hover:shadow-md"
+                  className={`group relative flex h-[168px] cursor-pointer flex-col rounded-lg border bg-background px-5 py-5 text-left transition-all hover:border-ring hover:shadow-md ${
+                    isSelected ? 'border-primary bg-primary/[0.04] shadow-sm' : 'border-border'
+                  }`}
                 >
-                  {!isEditing ? (
+                  {selectionMode && (
+                    <span
+                      className={`absolute right-4 top-4 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] transition-colors ${
+                        isSelected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-transparent'
+                      }`}
+                    >
+                      <Check size={12} strokeWidth={2} />
+                    </span>
+                  )}
+
+                  {!isEditing && !selectionMode && (
                     <>
                       <button
                         type="button"
@@ -218,7 +334,9 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
                         <Trash2 size={14} strokeWidth={1.75} />
                       </button>
                     </>
-                  ) : (
+                  )}
+
+                  {isEditing && (
                     <div className="absolute bottom-5 right-5 z-10 flex gap-1 rounded-md bg-background/90 shadow-sm">
                       <button
                         type="button"
@@ -320,6 +438,27 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
             });
           }}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {bulkDeleteOpen && (
+        <DeleteConfirmDialog
+          title="선택한 아이디어 삭제"
+          message={`선택한 아이디어 ${selectedCount}개를 삭제합니다.`}
+          warning="이 작업은 되돌릴 수 없습니다."
+          confirmLabel="삭제"
+          busyLabel="삭제 중..."
+          busy={deleteBusy}
+          onConfirm={() => {
+            const ids = Array.from(selectedIdeaIds);
+            setDeleteBusy(true);
+            void Promise.all(ids.map((id) => deleteIdeaArchive(id))).then(() => {
+              setBulkDeleteOpen(false);
+              setDeleteBusy(false);
+              exitSelectionMode();
+            });
+          }}
+          onCancel={() => setBulkDeleteOpen(false)}
         />
       )}
     </div>
