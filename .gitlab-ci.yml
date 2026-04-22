@@ -46,7 +46,6 @@ test-ai:
     - pip3 install --upgrade pip
     - pip3 install -e ".[dev]"
   script:
-    - cd ai
     - ruff check .
     - pytest -x --tb=short
   rules:
