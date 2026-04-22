@@ -23,6 +23,7 @@ import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useSpellCheckerDictionarySync } from '../../hooks/useSpellCheckerDictionarySync';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
@@ -56,6 +57,7 @@ export function AuthenticatedApp() {
   const [settingsMode, setSettingsMode] = useState(false);
   const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
+  useSpellCheckerDictionarySync(selectedWorkId);
 
   const { createWork, createWorldNote, createPlanNote, ensureWorldNoteTemplates } = useLocalWrite();
 

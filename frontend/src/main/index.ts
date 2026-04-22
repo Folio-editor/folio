@@ -16,6 +16,24 @@ if (started) {
   app.quit();
 }
 
+const syncedSpellcheckWords = new Set<string>();
+
+function normalizeSpellcheckWords(words: unknown): string[] {
+  if (!Array.isArray(words)) return [];
+
+  const unique = new Set<string>();
+  for (const rawWord of words) {
+    if (typeof rawWord !== 'string') continue;
+
+    const word = rawWord.trim();
+    if (!word) continue;
+    if (word.length > 64) continue;
+    unique.add(word);
+  }
+
+  return Array.from(unique);
+}
+
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -53,6 +71,38 @@ function registerAuthHandlers() {
     commitLastKnownWriterId(writerId),
   );
 }
+
+function registerSpellcheckHandlers() {
+  ipcMain.handle('spellcheck:syncWords', async (event, words: unknown) => {
+    const session = event.sender.session as Electron.Session & {
+      removeWordFromSpellCheckerDictionary?: (word: string) => boolean;
+    };
+    const nextWords = new Set(normalizeSpellcheckWords(words));
+
+    if (typeof session.removeWordFromSpellCheckerDictionary === 'function') {
+      for (const word of syncedSpellcheckWords) {
+        if (!nextWords.has(word)) {
+          session.removeWordFromSpellCheckerDictionary(word);
+        }
+      }
+    }
+
+    for (const word of nextWords) {
+      if (!syncedSpellcheckWords.has(word)) {
+        session.addWordToSpellCheckerDictionary(word);
+      }
+    }
+
+    syncedSpellcheckWords.clear();
+    for (const word of nextWords) {
+      syncedSpellcheckWords.add(word);
+    }
+  });
+}
+
+app.on('ready', () => {
+  registerSpellcheckHandlers();
+});
 
 app.on('ready', () => {
   registerAuthHandlers();
