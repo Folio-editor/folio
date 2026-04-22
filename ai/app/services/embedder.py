@@ -1,8 +1,4 @@
-"""임베딩 Provider 인터페이스 + Fake/OpenAI 구현.
-
-SSAFY GMS 키 발급 전까지 FakeEmbedder로 Phase 2 파이프라인 구조를 검증한다.
-키 도착 후 OpenAIEmbedder 본체 구현 + EMBEDDING_PROVIDER=openai 전환.
-"""
+"""임베딩 Provider 인터페이스 + Fake/OpenAI 구현."""
 
 from __future__ import annotations
 
@@ -11,7 +7,13 @@ import math
 import random
 from abc import ABC, abstractmethod
 
+try:
+    from openai import AsyncOpenAI
+except ImportError:  # pragma: no cover - optional runtime dependency
+    AsyncOpenAI = None  # type: ignore[assignment]
+
 EMBEDDING_DIM = 1536
+OPENAI_BATCH_LIMIT = 2048
 
 
 class EmbedderProvider(ABC):
@@ -44,15 +46,28 @@ class FakeEmbedder(EmbedderProvider):
 
 
 class OpenAIEmbedder(EmbedderProvider):
-    """SSAFY GMS 키 발급 후 구현 예정."""
+    """OpenAI text-embedding-3-* 기반 구현."""
 
     def __init__(self, api_key: str, model: str) -> None:
-        self._api_key = api_key
+        if AsyncOpenAI is None:
+            raise RuntimeError("openai package is not installed.")
         self._model = model
+        self._client = AsyncOpenAI(api_key=api_key)
 
     @property
     def dimension(self) -> int:
         return EMBEDDING_DIM
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError("SSAFY GMS 키 발급 후 활성화")
+        if not texts:
+            return []
+        results: list[list[float]] = []
+        for start in range(0, len(texts), OPENAI_BATCH_LIMIT):
+            batch = texts[start : start + OPENAI_BATCH_LIMIT]
+            resp = await self._client.embeddings.create(
+                model=self._model,
+                input=batch,
+            )
+            data = sorted(resp.data, key=lambda item: item.index)
+            results.extend([list(item.embedding) for item in data])
+        return results
