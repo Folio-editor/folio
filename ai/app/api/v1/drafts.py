@@ -1,7 +1,4 @@
-"""POST /v1/drafts — SSE 스트리밍으로 소설 초안 생성.
-
-흐름: RAG 컨텍스트 조립 -> LLM 스트리밍 -> SSE 응답
-"""
+"""POST /v1/drafts - SSE 스트리밍으로 소설 초안 생성."""
 
 import asyncio
 import json
@@ -29,6 +26,7 @@ class DraftRequest(BaseModel):
     storyline: str
     current_episode_num: int
     model: str = "sonnet"
+    user_prompt: str | None = None
 
 
 SYSTEM_PROMPT = (
@@ -49,8 +47,16 @@ async def _generate_sse(req: DraftRequest):
         current_episode_num=req.current_episode_num,
     )
 
+    extra_instructions = ""
+    if req.user_prompt:
+        extra_instructions = (
+            "\n\n## 작가의 추가 지시사항\n"
+            f"{req.user_prompt}"
+        )
+
     user_prompt = (
-        f"{context}\n\n---\n이번 회차 방향: {req.storyline}\n\n"
+        f"{context}\n\n---\n이번 회차 방향: {req.storyline}"
+        f"{extra_instructions}\n\n"
         "위 컨텍스트를 바탕으로 이번 회차 초안을 작성해주세요."
     )
 

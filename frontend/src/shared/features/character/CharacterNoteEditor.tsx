@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useQuery } from '@powersync/react';
+import { Trash2 } from 'lucide-react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface CharacterNoteEditorProps {
   noteId: string;
@@ -23,7 +26,7 @@ interface CharacterNameRow {
 }
 
 export function CharacterNoteEditor({ noteId, onBack }: CharacterNoteEditorProps) {
-  const { updateCharacterNoteContent, updateCharacterNoteTitle } = useLocalWrite();
+  const { updateCharacterNoteContent, updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
 
   const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
     `SELECT id, title, content, character_id FROM character_note WHERE id = ?`,
@@ -51,6 +54,7 @@ export function CharacterNoteEditor({ noteId, onBack }: CharacterNoteEditorProps
       onBack={onBack}
       onTitleChange={(title) => void updateCharacterNoteTitle(noteId, title)}
       onContentChange={(content) => void updateCharacterNoteContent(noteId, content)}
+      onDelete={() => deleteCharacterNote(noteId)}
     />
   );
 }
@@ -61,14 +65,18 @@ function NoteEditorInner({
   onBack,
   onTitleChange,
   onContentChange,
+  onDelete,
 }: {
   note: CharacterNoteRow;
   characterName: string;
   onBack: () => void;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
+  onDelete: () => Promise<void> | void;
 }) {
   const title = useDeferredText(note.id, note.title, onTitleChange);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
@@ -87,6 +95,16 @@ function NoteEditorInner({
             />
           </div>
         }
+        trailing={
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            title="문서 삭제"
+            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+          >
+            <Trash2 size={16} strokeWidth={1.75} />
+          </button>
+        }
       />
       <ContentEditor
         itemId={note.id}
@@ -94,6 +112,22 @@ function NoteEditorInner({
         placeholder="내용을 작성하세요…"
         onUpdate={onContentChange}
       />
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="문서 삭제"
+          message={`"${note.title || '(제목 없음)'}" 문서가 영구 삭제됩니다.`}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void Promise.resolve(onDelete()).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+              onBack();
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }

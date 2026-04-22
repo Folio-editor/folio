@@ -1,8 +1,4 @@
-"""임베딩 Provider 인터페이스 + Fake/OpenAI 구현.
-
-SSAFY GMS 키 발급 전까지 FakeEmbedder로 Phase 2 파이프라인 구조를 검증한다.
-키 도착 후 OpenAIEmbedder 본체 구현 + EMBEDDING_PROVIDER=openai 전환.
-"""
+"""Embedding providers for fake and OpenAI-backed vector generation."""
 
 from __future__ import annotations
 
@@ -11,7 +7,10 @@ import math
 import random
 from abc import ABC, abstractmethod
 
+from openai import OpenAI
+
 EMBEDDING_DIM = 1536
+OPENAI_BATCH_LIMIT = 2048
 
 
 class EmbedderProvider(ABC):
@@ -24,7 +23,7 @@ class EmbedderProvider(ABC):
 
 
 class FakeEmbedder(EmbedderProvider):
-    """결정적(deterministic) 더미 임베딩. 같은 텍스트 → 같은 벡터, L2 norm = 1."""
+    """Deterministic fake embeddings for local flow validation."""
 
     @property
     def dimension(self) -> int:
@@ -44,15 +43,34 @@ class FakeEmbedder(EmbedderProvider):
 
 
 class OpenAIEmbedder(EmbedderProvider):
-    """SSAFY GMS 키 발급 후 구현 예정."""
+    """OpenAI embedding provider using text-embedding models."""
 
     def __init__(self, api_key: str, model: str) -> None:
         self._api_key = api_key
         self._model = model
+        self._client = OpenAI(api_key=api_key)
 
     @property
     def dimension(self) -> int:
         return EMBEDDING_DIM
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError("SSAFY GMS 키 발급 후 활성화")
+        if not texts:
+            return []
+
+        normalized_texts = [self._validate_text(text) for text in texts]
+        embeddings: list[list[float]] = []
+
+        for start in range(0, len(normalized_texts), OPENAI_BATCH_LIMIT):
+            batch = normalized_texts[start:start + OPENAI_BATCH_LIMIT]
+            response = self._client.embeddings.create(model=self._model, input=batch)
+            for item in sorted(response.data, key=lambda data: data.index):
+                embeddings.append(list(item.embedding))
+
+        return embeddings
+
+    @staticmethod
+    def _validate_text(text: str) -> str:
+        if not text or not text.strip():
+            raise ValueError("Embedding input must not be empty.")
+        return text

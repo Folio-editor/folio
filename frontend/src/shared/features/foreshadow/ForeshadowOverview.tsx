@@ -117,8 +117,8 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
     const final = fLinks.filter((l) => l.link_type === 'final_resolve').length;
     const parts: string[] = [];
     if (plant > 0) parts.push(`심기 ${plant}`);
-    if (resolve > 0) parts.push(`회수 ${resolve}`);
-    if (final > 0) parts.push(`완결 ${final}`);
+    if (resolve > 0) parts.push(`강화 ${resolve}`);
+    if (final > 0) parts.push(`회수 ${final}`);
     return parts.join(' · ') || null;
   };
 
