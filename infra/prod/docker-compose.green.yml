@@ -104,6 +104,21 @@ services:
     networks:
       - folio-net
 
+  landing-green:
+    image: folio-landing:${IMAGE_TAG:-latest}
+    container_name: folio-landing-green
+    ports:
+      - "3012:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: always
+    networks:
+      - folio-net
+
 networks:
   folio-net:
     external: true
+    name: folio-net

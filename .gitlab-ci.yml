@@ -80,13 +80,22 @@ deploy-production:
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
         docker build -f infra/dockerfiles/Dockerfile.celery-worker -t folio-celery-worker:$CI_COMMIT_SHORT_SHA -t folio-celery-worker:latest ./ai
-        docker build -f infra/dockerfiles/Dockerfile.web -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
+        docker build -f infra/dockerfiles/Dockerfile.web \
+          --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+          --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
+          -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
+        docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
 
         # 3. Doppler에서 시크릿 다운로드
         export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
         cd /opt/folio/S14P31F203/infra/prod
         doppler secrets download --project folio --config prd --no-file --format env > .env
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
+
+        # 3.1 upstream-active.conf 초기화 (없으면 기본값 생성)
+        if [ ! -f nginx/upstream-active.conf ]; then
+          cp nginx/upstream-blue.conf nginx/upstream-active.conf
+        fi
 
         # 4. 현재 활성 색상 확인
         CURRENT=\$(cat /opt/folio/active-color 2>/dev/null || echo "blue")
@@ -119,10 +128,10 @@ deploy-production:
           sleep 2
         done
 
-        # 7. Nginx upstream 전환
+        # 7. Nginx upstream 전환 + 재시작
         cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
-        docker compose -f docker-compose.yml exec -T nginx nginx -s reload
-        sleep 3
+        docker compose -f docker-compose.yml restart nginx
+        sleep 5
 
         # 8. 이전 색상 종료
         docker compose -f docker-compose.\${CURRENT}.yml --env-file .env down || true
@@ -138,4 +147,3 @@ deploy-production:
     - if: $CI_COMMIT_BRANCH == "master"
   environment:
     name: production
-  when: manual

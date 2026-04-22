@@ -5,7 +5,6 @@
 
 - Phase 1: _ping (배선 확인)
 - Phase 2: chunk_and_embed
-- Phase 3: generate_summary
 """
 
 from app.tasks._ping import ping_task  # noqa: F401
