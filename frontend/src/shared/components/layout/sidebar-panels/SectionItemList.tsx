@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { Plus } from 'lucide-react';
+import { GripVertical, Plus } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
@@ -34,7 +47,8 @@ export function SectionItemList({
   onItemSelect,
 }: SectionItemListProps) {
   const writerId = useWriterId();
-  const { createForeshadow } = useLocalWrite();
+  const { createForeshadow, reorderItems } = useLocalWrite();
+  const sensors = useSensors(useSensor(HandleOnlyPointerSensor));
   const table = SECTION_TABLES[section];
   const labelField = LABEL_FIELDS[section];
 
@@ -110,30 +124,90 @@ export function SectionItemList({
           {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
         </p>
       ) : (
-        rows.map((row) => {
-          const raw = row.label?.trim() || '';
-          const display =
-            section === 'idea-archive'
-              ? extractPlainText(raw) || PLACEHOLDER_LABELS[section]
-              : raw || PLACEHOLDER_LABELS[section];
-          return (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => onItemSelect(row.id)}
-              className={cn(
-                'block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                selectedItemId === row.id
-                  ? 'bg-primary/5 font-medium text-primary'
-                  : 'text-sidebar-foreground',
-              )}
-            >
-              {display}
-            </button>
-          );
-        })
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={(event: DragEndEvent) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            const oldIndex = rows.findIndex((row) => row.id === active.id);
+            const newIndex = rows.findIndex((row) => row.id === over.id);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const reordered = arrayMove(rows, oldIndex, newIndex);
+            void reorderItems(
+              table,
+              reordered.map((row, i) => ({ id: row.id, sortOrder: i * 1000 })),
+            );
+          }}
+        >
+          <SortableContext items={rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
+            {rows.map((row) => {
+              const raw = row.label?.trim() || '';
+              const display =
+                section === 'idea-archive'
+                  ? extractPlainText(raw) || PLACEHOLDER_LABELS[section]
+                  : raw || PLACEHOLDER_LABELS[section];
+              return (
+                <SortableSectionItem
+                  key={row.id}
+                  id={row.id}
+                  label={display}
+                  selected={selectedItemId === row.id}
+                  onSelect={() => onItemSelect(row.id)}
+                />
+              );
+            })}
+          </SortableContext>
+        </DndContext>
       )}
       </div>
+    </div>
+  );
+}
+
+function SortableSectionItem({
+  id,
+  label,
+  selected,
+  onSelect,
+}: {
+  id: string;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="group flex w-full items-center">
+      <span
+        {...attributes}
+        {...listeners}
+        data-dnd-handle
+        className="cursor-grab opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        <GripVertical size={12} className="text-muted-foreground" />
+      </span>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+          selected
+            ? 'bg-primary/5 font-medium text-primary'
+            : 'text-sidebar-foreground',
+        )}
+      >
+        {label}
+      </button>
     </div>
   );
 }
