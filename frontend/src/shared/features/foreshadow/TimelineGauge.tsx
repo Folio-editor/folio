@@ -14,19 +14,19 @@ interface TimelineGaugeProps {
 
 const MARKER_COLOR: Record<string, string> = {
   plant: 'bg-blue-500',
-  resolve: 'bg-green-500',
-  final_resolve: 'bg-red-500',
+  resolve: 'bg-amber-500',
+  final_resolve: 'bg-emerald-500',
 };
 
 const MARKER_LABEL: Record<string, string> = {
   plant: '심기',
-  resolve: '회수',
-  final_resolve: '완결',
+  resolve: '강화',
+  final_resolve: '회수',
 };
 
 /**
  * 복선 타임라인 게이지.
- * 가로 트랙 위에 심기(🔵)/회수(🟢)/완결(🔴) 마커를 위치시킨다.
+ * 가로 트랙 위에 심기/강화/회수 마커를 위치시킨다.
  * 마커 위치는 episode sort_order 기준으로 비례 배치.
  */
 export function TimelineGauge({ links, range, compact = false }: TimelineGaugeProps) {

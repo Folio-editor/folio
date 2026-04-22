@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { GripVertical, Plus } from 'lucide-react';
 import {
@@ -27,7 +28,7 @@ interface HomeWorkListProps {
   selectedWorkId: string | null;
   searchTerm: string;
   onWorkSelect: (id: string) => void;
-  onNewWork: () => void;
+  onNewWork: (title: string) => void;
 }
 
 /**
@@ -46,6 +47,27 @@ export function HomeWorkList({
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
+  const [showInput, setShowInput] = useState(false);
+  const [title, setTitle] = useState('');
+
+  const handleSubmit = () => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    onNewWork(trimmed);
+    setTitle('');
+    setShowInput(false);
+  };
+
+  const handleCancel = () => {
+    setShowInput(false);
+    setTitle('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSubmit();
+    if (e.key === 'Escape') handleCancel();
+  };
+
   const trimmed = searchTerm.trim();
   const sql = trimmed
     ? `SELECT id, title FROM work
@@ -58,15 +80,31 @@ export function HomeWorkList({
   const { data: works = [] } = useQuery<WorkRow>(sql, params);
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 py-2">
-      <button
-        type="button"
-        onClick={onNewWork}
-        className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-      >
-        <Plus size={14} strokeWidth={2} />
-        <span>새 작품</span>
-      </button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        {showInput ? (
+          <input
+            autoFocus
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleCancel}
+            placeholder="작품 제목을 입력 후 Enter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowInput(true)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus size={14} strokeWidth={2} />
+            <span>새 작품</span>
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
       {works.length === 0 ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '작품이 없습니다.'}
@@ -100,6 +138,7 @@ export function HomeWorkList({
           </SortableContext>
         </DndContext>
       )}
+      </div>
     </div>
   );
 }

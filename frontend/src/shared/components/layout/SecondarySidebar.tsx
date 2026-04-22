@@ -27,7 +27,7 @@ interface SecondarySidebarProps {
   selectedItemId: string | null;
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
-  onNewWork: () => void;
+  onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
   width: number;
@@ -162,7 +162,7 @@ export function SecondarySidebar({
       </div>
 
       {/* 콘텐츠 */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col">
         {settingsMode ? (
           <SettingsList
             selectedItemId={selectedSettingsItem ?? null}
@@ -248,7 +248,7 @@ function renderContent(args: {
   searchTerm: string;
   onWorkSelect: (id: string) => void;
   onItemSelect: (id: string | null) => void;
-  onNewWork: () => void;
+  onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
 }) {
