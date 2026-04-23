@@ -403,10 +403,6 @@ function CharacterOverviewInner({
 
 /* ── 하위 문서 인라인 편집 항목 ── */
 
-const KIND_ICONS: Record<string, string> = {
-  custom: '📄',
-};
-
 function InlineNoteItem({
   note,
   onNavigate,
@@ -415,7 +411,6 @@ function InlineNoteItem({
   onNavigate: () => void;
 }) {
   const { updateCharacterNoteTitle, updateCharacterNoteContent, deleteCharacterNote } = useLocalWrite();
-  const icon = KIND_ICONS[note.kind];
 
   const title = useDeferredText(note.id, note.title, (v) =>
     void updateCharacterNoteTitle(note.id, v),
@@ -466,7 +461,6 @@ function InlineNoteItem({
     <div className="group py-4">
       {/* 제목 행 */}
       <div className="mb-2 flex items-center gap-2">
-        {icon && <span className="shrink-0 text-base">{icon}</span>}
         <input
           type="text"
           value={title.value}
@@ -493,7 +487,7 @@ function InlineNoteItem({
         </button>
       </div>
       {/* 본문 인라인 위지윅 에디터 */}
-      <div className={icon ? 'pl-7' : ''}>
+      <div>
         <EditorContent
           editor={editor}
           className="inline-note-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
