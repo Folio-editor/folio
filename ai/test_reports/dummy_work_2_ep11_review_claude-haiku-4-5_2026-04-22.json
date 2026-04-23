@@ -1,9 +1,0 @@
-{
-  "issues": [],
-  "summary": "검수 결과 없음 (fake)",
-  "score": 100,
-  "usage": {
-    "input_tokens": 51274,
-    "output_tokens": 2000
-  }
-}
