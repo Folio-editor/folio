@@ -25,8 +25,14 @@ async def load_settings(db: AsyncSession, work_id: str) -> SettingsBundle:
 
     character_result = await db.execute(
         sa_text(
-            "SELECT name, gender, age, personality, content "
-            "FROM character WHERE work_id = :wid ORDER BY sort_order"
+            "SELECT c.name, c.gender, c.age, "
+            "       pn.content AS personality, "
+            "       '' AS content "
+            "FROM character c "
+            "LEFT JOIN character_note pn "
+            "  ON pn.character_id = c.id AND pn.kind = 'personality' "
+            "WHERE c.work_id = :wid "
+            "ORDER BY c.sort_order"
         ),
         {"wid": work_uuid},
     )
@@ -78,7 +84,7 @@ def _format_characters_full(rows: list[tuple[Any, ...]]) -> str:
         if age:
             parts.append(f"나이: {age}")
         if personality:
-            parts.append(f"성격: {personality}")
+            parts.append(f"성격: {extract_plain_text(personality)}")
         if content:
             parts.append(f"상세: {extract_plain_text(content)}")
         lines.append("\n".join(parts))
@@ -109,7 +115,7 @@ def _format_characters_compact(rows: list[tuple[Any, ...]]) -> str:
         if age:
             parts.append(f"나이:{_first_line(str(age))}")
         if personality:
-            parts.append(f"성격:{_first_line(str(personality))}")
+            parts.append(f"성격:{_first_line(extract_plain_text(personality))}")
         lines.append("- " + " / ".join(parts))
     return "\n".join(lines)
 

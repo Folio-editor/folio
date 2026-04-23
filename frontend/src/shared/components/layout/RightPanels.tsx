@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Typography from '@tiptap/extension-typography';
 import {
   DndContext,
   closestCenter,
@@ -23,9 +26,11 @@ import {
   ChevronRight,
   ArrowUpRight,
   ClipboardCopy,
+  Clock,
   Eye,
   FileStack,
   GripVertical,
+  History,
   Info,
   Lightbulb,
   Loader2,
@@ -46,6 +51,7 @@ import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { apiClient } from '../../lib/apiClient';
+import { useAiSessionStore } from '../../stores/aiSessionStore';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
@@ -144,13 +150,14 @@ export function RightPanels({
         {activeTab === 'idea' && (
           <IdeaTabContent selectedWorkId={selectedWorkId} />
         )}
-        {activeTab === 'ai' && (
+        {/* AI 탭은 스트리밍 중 탭 전환 시에도 언마운트되지 않도록 display:none 처리 */}
+        <div className={cn('flex min-h-0 flex-1 flex-col', activeTab !== 'ai' && 'hidden')}>
           <AiTabContent
             selectedWorkId={selectedWorkId}
             mainSection={mainSection}
             mainItemId={mainItemId}
           />
-        )}
+        </div>
       </div>
     </div>
   );
@@ -593,7 +600,6 @@ interface AiTabContentProps {
   mainItemId: string | null;
 }
 
-type AiSubTab = 'draft' | 'review';
 
 interface EpisodeInfo {
   id: string;
@@ -603,245 +609,510 @@ interface EpisodeInfo {
   sort_order: number;
 }
 
-function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
-  const [subTab, setSubTab] = useState<AiSubTab>('draft');
+function formatHistoryTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return '방금 전';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}분 전`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}시간 전`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
+/* ── AI 탭: 단일 전역 세션 기반 화면 전환 ── */
+
+function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
   const isEpisode = mainSection === 'episode' && mainItemId != null;
+
   const { data: episodeRows = [] } = useQuery<EpisodeInfo>(
     isEpisode
       ? `SELECT id, title, content, work_id, sort_order FROM episode WHERE id = ?`
       : `SELECT '' as id, '' as title, null as content, '' as work_id, 0 as sort_order WHERE 0`,
     isEpisode ? [mainItemId] : [],
   );
-  const episode = episodeRows[0] ?? null;
+  const currentEpisode = episodeRows[0] ?? null;
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 서브 탭 */}
-      <div className="flex shrink-0 border-b border-border">
-        {([
-          { key: 'draft' as const, icon: Sparkles, label: '초안 생성' },
-          { key: 'review' as const, icon: Search, label: '원고 검수' },
-        ]).map(({ key, icon: Icon, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSubTab(key)}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors',
-              subTab === key
-                ? 'border-b-2 border-primary text-primary'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Icon size={13} strokeWidth={1.75} />
-            {label}
-          </button>
-        ))}
-      </div>
+  // 전역 AI 세션 스토어
+  const screen = useAiSessionStore((s) => s.screen);
+  const draftState = useAiSessionStore((s) => s.draftState);
+  const draftResult = useAiSessionStore((s) => s.draftResult);
+  const draftError = useAiSessionStore((s) => s.draftError);
+  const storyline = useAiSessionStore((s) => s.storyline);
+  const userPrompt = useAiSessionStore((s) => s.userPrompt);
+  const model = useAiSessionStore((s) => s.model);
+  const targetEpisode = useAiSessionStore((s) => s.targetEpisode);
+  const isStreaming = useAiSessionStore((s) => s.isStreaming);
 
-      {/* 콘텐츠 */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {!isEpisode || !episode ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <BotMessageSquare size={28} className="text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              원고 편집 화면에서 사용할 수 있습니다.
-              <br />
-              좌측에서 원고를 선택해주세요.
-            </p>
-          </div>
-        ) : subTab === 'draft' ? (
-          <DraftPanel episode={episode} />
-        ) : (
-          <ReviewPanel episode={episode} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── 초안 생성 패널 ── */
-
-type DraftState = 'idle' | 'streaming' | 'done' | 'error';
-
-function DraftPanel({ episode }: { episode: EpisodeInfo }) {
-  const [storyline, setStoryline] = useState('');
-  const [userPrompt, setUserPrompt] = useState('');
-  const [model, setModel] = useState('sonnet');
-  const [state, setState] = useState<DraftState>('idle');
-  const [result, setResult] = useState('');
-  const [error, setError] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
-  const writerId = useWriterId();
-
-  // 에피소드 변경 시 상태 초기화
-  useEffect(() => {
-    setState('idle');
-    setResult('');
-    setError('');
-    setStoryline('');
-    setUserPrompt('');
-    abortRef.current?.abort();
-  }, [episode.id]);
+  const setScreen = useAiSessionStore((s) => s.setScreen);
+  const setStoryline = useAiSessionStore((s) => s.setStoryline);
+  const setUserPrompt = useAiSessionStore((s) => s.setUserPrompt);
+  const setModel = useAiSessionStore((s) => s.setModel);
+  const startGeneration = useAiSessionStore((s) => s.startGeneration);
+  const appendChunk = useAiSessionStore((s) => s.appendChunk);
+  const finishGeneration = useAiSessionStore((s) => s.finishGeneration);
+  const failGeneration = useAiSessionStore((s) => s.failGeneration);
+  const stopGeneration = useAiSessionStore((s) => s.stopGeneration);
+  const setAbort = useAiSessionStore((s) => s.setAbort);
 
   const handleGenerate = useCallback(async () => {
-    if (!storyline.trim()) return;
-    setState('streaming');
-    setResult('');
-    setError('');
+    if (!storyline.trim() || !currentEpisode) return;
+    if (isStreaming) return;
+
+    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
+      id: currentEpisode.id,
+      workId: currentEpisode.work_id,
+      title: currentEpisode.title,
+      sortOrder: currentEpisode.sort_order,
+    };
+
+    startGeneration(episode);
 
     const controller = await apiClient.streamSSE(
       '/ai/drafts',
       {
-        workId: episode.work_id,
+        workId: episode.workId,
         episodeId: episode.id,
         storyline: storyline.trim(),
-        currentEpisodeNum: episode.sort_order + 1,
+        currentEpisodeNum: episode.sortOrder + 1,
         model,
         userPrompt: userPrompt.trim() || null,
       },
       (data: unknown) => {
         const d = data as { type?: string; content?: string };
+        if (d.type === 'done') {
+          finishGeneration();
+          return true;
+        }
         if (d.type === 'chunk' && d.content) {
-          setResult((prev) => prev + d.content);
-          resultRef.current?.scrollTo(0, resultRef.current.scrollHeight);
+          appendChunk(d.content);
         }
       },
-      () => setState('done'),
-      (err) => {
-        setError(err.message || 'AI 서버 오류가 발생했습니다.');
-        setState('error');
-      },
+      () => finishGeneration(),
+      (err) => failGeneration(err.message || 'AI 서버 오류가 발생했습니다.'),
     );
-    abortRef.current = controller;
-  }, [episode, storyline, userPrompt, model]);
+    setAbort(controller);
+  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort]);
 
-  const handleStop = () => {
-    abortRef.current?.abort();
-    setState('done');
-  };
+  const handleStop = () => stopGeneration();
 
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(result);
-  };
+  const history = useAiSessionStore((s) => s.history);
+  const viewHistory = useAiSessionStore((s) => s.viewHistory);
+  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
 
-  return (
-    <div className="flex flex-col gap-3 p-4">
-      {/* 현재 에피소드 */}
-      <div className="rounded-md bg-muted/50 px-3 py-2">
-        <span className="text-xs text-muted-foreground">현재 원고</span>
-        <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-          {episode.title || '(제목 없음)'}
-        </p>
-      </div>
+  // 히스토리 뷰: 과거 생성 결과 열람
+  if (screen === 'history-view') {
+    return (
+      <DraftViewScreen
+        result={draftResult}
+        state={draftState}
+        error={draftError}
+        targetEpisode={targetEpisode}
+        isHistoryView
+        onStop={handleStop}
+        onBack={() => setScreen('menu')}
+      />
+    );
+  }
 
-      {/* 이번 회차 방향 */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">
-          이번 회차 방향 <span className="text-destructive">*</span>
-        </label>
-        <textarea
-          value={storyline}
-          onChange={(e) => setStoryline(e.target.value)}
-          placeholder="이번 회차에서 전개할 내용을 설명해주세요..."
-          rows={3}
-          disabled={state === 'streaming'}
-          className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-        />
-      </div>
+  // 생성 뷰: 스트리밍/완료/에러 상태에서 항상 표시 (메인 화면 이동과 무관)
+  if (screen === 'draft-view') {
+    return (
+      <DraftViewScreen
+        result={draftResult}
+        state={draftState}
+        error={draftError}
+        targetEpisode={targetEpisode}
+        onStop={handleStop}
+        onBack={() => setScreen('draft-input')}
+      />
+    );
+  }
 
-      {/* 추가 지시사항 */}
-      <div>
-        <label className="mb-1 block text-xs font-medium text-muted-foreground">
-          추가 지시사항 (선택)
-        </label>
-        <textarea
-          value={userPrompt}
-          onChange={(e) => setUserPrompt(e.target.value)}
-          placeholder="문체, 톤, 특별 요구사항 등..."
-          rows={2}
-          disabled={state === 'streaming'}
-          className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-        />
-      </div>
+  if (screen === 'draft-input') {
+    return (
+      <DraftInputScreen
+        episode={currentEpisode}
+        isEpisode={isEpisode}
+        storyline={storyline}
+        userPrompt={userPrompt}
+        model={model}
+        isStreaming={isStreaming}
+        onStorylineChange={setStoryline}
+        onUserPromptChange={setUserPrompt}
+        onModelChange={setModel}
+        onGenerate={handleGenerate}
+        onBack={() => setScreen('menu')}
+      />
+    );
+  }
 
-      {/* 모델 선택 + 생성 버튼 */}
-      <div className="flex items-center gap-2">
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          disabled={state === 'streaming'}
-          className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-        >
-          <option value="sonnet">Sonnet</option>
-          <option value="opus">Opus</option>
-        </select>
-
-        {state === 'streaming' ? (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-destructive-foreground shadow-sm transition-colors hover:bg-destructive/90"
-          >
-            <Square size={12} strokeWidth={2} />
-            중단
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={!storyline.trim()}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Sparkles size={13} strokeWidth={1.75} />
-            초안 생성
-          </button>
-        )}
-      </div>
-
-      {/* 결과 영역 */}
-      {(result || state === 'streaming') && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">
-              {state === 'streaming' ? '생성 중...' : '생성 결과'}
-            </span>
-            {state === 'streaming' && (
-              <Loader2 size={14} className="animate-spin text-primary" />
-            )}
-          </div>
-          <div
-            ref={resultRef}
-            className="max-h-80 overflow-y-auto rounded-md border border-border bg-muted/30 p-3 text-sm leading-relaxed text-foreground whitespace-pre-wrap"
-          >
-            {result}
-          </div>
-          {state === 'done' && result && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background text-xs font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              <ClipboardCopy size={12} strokeWidth={1.75} />
-              복사
+  if (screen === 'review') {
+    if (!isEpisode || !currentEpisode) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+            <button type="button" onClick={() => setScreen('menu')} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <ArrowLeft size={15} />
             </button>
-          )}
+            <Search size={14} className="text-primary" />
+            <span className="text-xs font-semibold text-foreground">원고 검수</span>
+          </div>
+          <div className="flex flex-1 items-center justify-center px-6 text-center">
+            <p className="text-sm text-muted-foreground">좌측에서 원고를 선택해주세요.</p>
+          </div>
         </div>
-      )}
+      );
+    }
+    return (
+      <ReviewScreen
+        episode={currentEpisode}
+        onBack={() => setScreen('menu')}
+      />
+    );
+  }
 
-      {/* 에러 */}
-      {state === 'error' && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
+  // 메뉴 화면
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <p className="text-xs font-medium text-muted-foreground">AI 도구</p>
+
+      <button
+        type="button"
+        onClick={() => setScreen('draft-input')}
+        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+      >
+        <Sparkles size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <div>
+          <p className="text-sm font-medium text-foreground">초안 생성</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            AI가 작품 설정과 이전 맥락을 참고하여 다음 회차 원고를 생성합니다.
+          </p>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setScreen('review')}
+        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+      >
+        <Search size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <div>
+          <p className="text-sm font-medium text-foreground">원고 검수</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            설정집과 이전 맥락을 대조하여 모순이나 오류를 검출합니다.
+          </p>
+        </div>
+      </button>
+
+      {/* 히스토리 목록 */}
+      {history.length > 0 && (
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5 px-1 pb-1.5">
+            <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+            <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
+            <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            {history.map((entry) => (
+              <div
+                key={entry.id}
+                className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+              >
+                <button
+                  type="button"
+                  onClick={() => viewHistory(entry.id)}
+                  className="flex min-w-0 flex-1 flex-col text-left"
+                >
+                  <span className="truncate text-xs font-medium text-foreground">
+                    {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
+                  </span>
+                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                    <span className="flex items-center gap-0.5">
+                      <Clock size={9} />
+                      {formatHistoryTime(entry.createdAt)}
+                    </span>
+                    <span>{entry.result.length.toLocaleString()}자</span>
+                    <span className="uppercase">{entry.model}</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteHistory(entry.id)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                  title="삭제"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-/* ── 원고 검수 패널 ── */
+/* ── 초안 생성: 입력 화면 ── */
+
+function DraftInputScreen({
+  episode,
+  isEpisode,
+  storyline,
+  userPrompt,
+  model,
+  isStreaming,
+  onStorylineChange,
+  onUserPromptChange,
+  onModelChange,
+  onGenerate,
+  onBack,
+}: {
+  episode: EpisodeInfo | null;
+  isEpisode: boolean;
+  storyline: string;
+  userPrompt: string;
+  model: string;
+  isStreaming: boolean;
+  onStorylineChange: (v: string) => void;
+  onUserPromptChange: (v: string) => void;
+  onModelChange: (v: string) => void;
+  onGenerate: () => void;
+  onBack: () => void;
+}) {
+  const canGenerate = isEpisode && episode != null && storyline.trim().length > 0 && !isStreaming;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 헤더 */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <Sparkles size={14} className="text-primary" />
+        <span className="text-xs font-semibold text-foreground">초안 생성</span>
+      </div>
+
+      {/* 폼 */}
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* 현재 에피소드 */}
+        <div className="rounded-md bg-muted/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">대상 원고</span>
+          {isEpisode && episode ? (
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              좌측에서 원고를 선택해주세요
+            </p>
+          )}
+        </div>
+
+        {/* 이번 회차 방향 */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            이번 회차 방향 <span className="text-destructive">*</span>
+          </label>
+          <textarea
+            value={storyline}
+            onChange={(e) => onStorylineChange(e.target.value)}
+            placeholder="이번 회차에서 전개할 내용을 설명해주세요..."
+            rows={3}
+            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* 추가 지시사항 */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            추가 지시사항 (선택)
+          </label>
+          <textarea
+            value={userPrompt}
+            onChange={(e) => onUserPromptChange(e.target.value)}
+            placeholder="문체, 톤, 특별 요구사항 등..."
+            rows={2}
+            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* 모델 선택 + 생성 버튼 */}
+        <div className="flex items-center gap-2">
+          <select
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={!canGenerate}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Sparkles size={13} strokeWidth={1.75} />
+            초안 생성
+          </button>
+        </div>
+
+        {isStreaming && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            현재 초안이 생성 중입니다. 중단 후 새로운 생성을 시작할 수 있습니다.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── 초안 생성: 읽기전용 에디터 뷰 ── */
+
+function textToTipTapJson(text: string) {
+  const paragraphs = text.split('\n\n').filter(Boolean);
+  if (paragraphs.length === 0) {
+    return { type: 'doc' as const, content: [{ type: 'paragraph' as const }] };
+  }
+  return {
+    type: 'doc' as const,
+    content: paragraphs.map((p) => ({
+      type: 'paragraph' as const,
+      content: [{ type: 'text' as const, text: p }],
+    })),
+  };
+}
+
+function DraftViewScreen({
+  result,
+  state,
+  error,
+  targetEpisode,
+  isHistoryView = false,
+  onStop,
+  onBack,
+}: {
+  result: string;
+  state: import('../../stores/aiSessionStore').DraftState;
+  error: string;
+  targetEpisode: import('../../stores/aiSessionStore').DraftEpisodeInfo | null;
+  isHistoryView?: boolean;
+  onStop: () => void;
+  onBack: () => void;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    editable: false,
+    extensions: [
+      StarterKit.configure({ code: false, codeBlock: false }),
+      Typography,
+    ],
+    content: '',
+  }, []);
+
+  // 결과 텍스트가 업데이트될 때마다 에디터에 반영 + 자동 스크롤
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    if (result) {
+      editor.commands.setContent(textToTipTapJson(result));
+      // 자동 스크롤
+      requestAnimationFrame(() => {
+        editorRef.current?.scrollTo(0, editorRef.current.scrollHeight);
+      });
+    }
+  }, [editor, result]);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(result);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 헤더 */}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+        <div className="flex items-center gap-2">
+          {state !== 'streaming' && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft size={15} />
+            </button>
+          )}
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            {state === 'streaming' && (
+              <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
+            )}
+            <span className="truncate text-xs font-semibold text-foreground">
+              {isHistoryView ? '생성 기록' : state === 'streaming' ? 'AI 생성 중...' : state === 'done' ? '생성 완료' : state === 'error' ? '생성 오류' : 'AI 초안'}
+              {targetEpisode && (
+                <span className="ml-1 font-normal text-muted-foreground">
+                  {targetEpisode.sortOrder + 1}화
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {state === 'streaming' && (
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex h-7 items-center gap-1 rounded-md bg-destructive px-2 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+            >
+              <Square size={10} strokeWidth={2.5} />
+              중단
+            </button>
+          )}
+          {result && state !== 'streaming' && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex h-7 items-center gap-1 rounded-md border border-input px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ClipboardCopy size={11} strokeWidth={1.75} />
+              {copied ? '복사됨' : '복사'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 에러 */}
+      {state === 'error' && error && (
+        <div className="shrink-0 border-b border-destructive/20 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+
+      {/* 읽기전용 에디터 뷰 */}
+      <div
+        ref={editorRef}
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+      >
+        <EditorContent
+          editor={editor}
+          className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed"
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ── 원고 검수 화면 ── */
 
 interface ReviewIssue {
   type: string;
@@ -860,11 +1131,10 @@ interface ReviewResult {
 
 type ReviewState = 'idle' | 'loading' | 'done' | 'error';
 
-function ReviewPanel({ episode }: { episode: EpisodeInfo }) {
+function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () => void }) {
   const [state, setState] = useState<ReviewState>('idle');
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState('');
-  const writerId = useWriterId();
 
   useEffect(() => {
     setState('idle');
@@ -893,128 +1163,140 @@ function ReviewPanel({ episode }: { episode: EpisodeInfo }) {
   };
 
   const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
-    critical: { bg: 'bg-red-50 border-red-200', icon: OctagonAlert, label: '심각' },
-    warning: { bg: 'bg-amber-50 border-amber-200', icon: AlertTriangle, label: '주의' },
-    info: { bg: 'bg-blue-50 border-blue-200', icon: Info, label: '참고' },
+    critical: { bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800', icon: OctagonAlert, label: '심각' },
+    warning: { bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800', icon: AlertTriangle, label: '주의' },
+    info: { bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800', icon: Info, label: '참고' },
   };
 
   return (
-    <div className="flex flex-col gap-3 p-4">
-      {/* 현재 에피소드 */}
-      <div className="rounded-md bg-muted/50 px-3 py-2">
-        <span className="text-xs text-muted-foreground">현재 원고</span>
-        <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-          {episode.title || '(제목 없음)'}
-        </p>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 헤더 */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <Search size={14} className="text-primary" />
+        <span className="text-xs font-semibold text-foreground">원고 검수</span>
       </div>
 
-      {!episode.content ? (
-        <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
-          원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+      {/* 콘텐츠 */}
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* 현재 에피소드 */}
+        <div className="rounded-md bg-muted/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">대상 원고</span>
+          <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+            {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
+          </p>
         </div>
-      ) : (
-        <>
-          {/* 검수 시작 버튼 */}
-          <button
-            type="button"
-            onClick={handleReview}
-            disabled={state === 'loading'}
-            className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            {state === 'loading' ? (
-              <>
-                <Loader2 size={13} className="animate-spin" />
-                검수 진행 중...
-              </>
-            ) : (
-              <>
-                <Search size={13} strokeWidth={1.75} />
-                검수 시작
-              </>
-            )}
-          </button>
 
-          {state === 'loading' && (
-            <p className="text-center text-xs text-muted-foreground">
-              설정집과 이전 맥락을 대조하여 원고를 검수합니다.
-              <br />
-              최대 1분 정도 소요될 수 있습니다.
-            </p>
-          )}
-        </>
-      )}
-
-      {/* 검수 결과 */}
-      {state === 'done' && result && (
-        <div className="flex flex-col gap-3">
-          {/* 점수 + 요약 */}
-          <div className="rounded-md border border-border bg-background p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
-              <span className={cn(
-                'text-lg font-bold',
-                result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-600' : 'text-red-600',
-              )}>
-                {result.score}
-                <span className="text-xs font-normal text-muted-foreground">/100</span>
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">{result.summary}</p>
+        {!episode.content ? (
+          <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+            원고 내용이 없습니다. 먼저 원고를 작성해주세요.
           </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleReview}
+              disabled={state === 'loading'}
+              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {state === 'loading' ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  검수 진행 중...
+                </>
+              ) : (
+                <>
+                  <Search size={13} strokeWidth={1.75} />
+                  검수 시작
+                </>
+              )}
+            </button>
 
-          {/* 이슈 목록 */}
-          {result.issues.length === 0 ? (
-            <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
-              <Check size={16} strokeWidth={2} />
-              검수에서 발견된 문제가 없습니다.
+            {state === 'loading' && (
+              <p className="text-center text-xs text-muted-foreground">
+                설정집과 이전 맥락을 대조하여 원고를 검수합니다.
+                <br />
+                최대 1분 정도 소요될 수 있습니다.
+              </p>
+            )}
+          </>
+        )}
+
+        {/* 검수 결과 */}
+        {state === 'done' && result && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-md border border-border bg-background p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
+                <span className={cn(
+                  'text-lg font-bold',
+                  result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                )}>
+                  {result.score}
+                  <span className="text-xs font-normal text-muted-foreground">/100</span>
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{result.summary}</p>
             </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                발견된 이슈 ({result.issues.length}건)
-              </span>
-              {result.issues.map((issue, i) => {
-                const severity = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.info;
-                const SeverityIcon = severity.icon;
-                return (
-                  <div key={i} className={cn('rounded-md border p-3', severity.bg)}>
-                    <div className="mb-1.5 flex items-center gap-1.5">
-                      <SeverityIcon size={14} strokeWidth={1.75} />
-                      <span className="text-xs font-semibold">{severity.label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
-                      </span>
+
+            {result.issues.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-3 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+                <Check size={16} strokeWidth={2} />
+                검수에서 발견된 문제가 없습니다.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  발견된 이슈 ({result.issues.length}건)
+                </span>
+                {result.issues.map((issue, i) => {
+                  const severity = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.info;
+                  const SeverityIcon = severity.icon;
+                  return (
+                    <div key={i} className={cn('rounded-md border p-3', severity.bg)}>
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <SeverityIcon size={14} strokeWidth={1.75} />
+                        <span className="text-xs font-semibold">{severity.label}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
+                        </span>
+                      </div>
+                      {issue.location && (
+                        <p className="mb-1 rounded bg-background/60 px-2 py-1 text-xs italic text-foreground/80">
+                          &ldquo;{issue.location}&rdquo;
+                        </p>
+                      )}
+                      <p className="text-xs text-foreground">{issue.description}</p>
+                      {issue.reference && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <span className="font-medium">근거:</span> {issue.reference}
+                        </p>
+                      )}
+                      {issue.suggestion && (
+                        <p className="mt-1 text-xs text-primary">
+                          <span className="font-medium">제안:</span> {issue.suggestion}
+                        </p>
+                      )}
                     </div>
-                    {issue.location && (
-                      <p className="mb-1 rounded bg-white/60 px-2 py-1 text-xs italic text-foreground/80">
-                        &ldquo;{issue.location}&rdquo;
-                      </p>
-                    )}
-                    <p className="text-xs text-foreground">{issue.description}</p>
-                    {issue.reference && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        <span className="font-medium">근거:</span> {issue.reference}
-                      </p>
-                    )}
-                    {issue.suggestion && (
-                      <p className="mt-1 text-xs text-primary">
-                        <span className="font-medium">제안:</span> {issue.suggestion}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* 에러 */}
-      {state === 'error' && (
-        <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
+        {state === 'error' && (
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
