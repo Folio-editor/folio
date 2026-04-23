@@ -37,6 +37,7 @@ interface NoteSummaryRow {
   kind: string;
   title: string;
   content: string | null;
+  sort_order: number | null;
 }
 
 const GENDER_OPTIONS = [
@@ -45,6 +46,11 @@ const GENDER_OPTIONS = [
   { value: '여', label: '여' },
   { value: '기타', label: '기타' },
 ];
+
+function nextSortOrder(rows: { sort_order: number | null }[]) {
+  if (rows.length === 0) return 0;
+  return Math.max(...rows.map((row) => row.sort_order ?? 0)) + 1000;
+}
 
 const GENDER_ICON_STYLE: Record<string, { color: string }> = {
   '미설정': { color: 'text-muted-foreground' },
@@ -180,7 +186,7 @@ function CharacterOverviewInner({
   };
 
   const { data: notes = [] } = useQuery<NoteSummaryRow>(
-    `SELECT id, kind, title, content FROM character_note
+    `SELECT id, kind, title, content, sort_order FROM character_note
      WHERE character_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
     [id],
@@ -354,7 +360,7 @@ function CharacterOverviewInner({
           </h3>
           <button
             type="button"
-            onClick={() => void createCharacterNote(id, '새 문서', notes.length)}
+            onClick={() => void createCharacterNote(id, '새 문서', nextSortOrder(notes))}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Plus size={12} />
