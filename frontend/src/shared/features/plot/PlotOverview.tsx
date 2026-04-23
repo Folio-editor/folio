@@ -877,8 +877,9 @@ function ActGridSection({
   return (
     <section
       ref={(node) => registerActRef(act.id, node)}
+      onClick={() => onNavigateTo('plot', act.id)}
       className={cn(
-        'flex h-fit flex-col self-start rounded-xl border border-border bg-background p-4 shadow-sm',
+        'flex h-fit flex-col self-start rounded-xl border border-border bg-background p-4 shadow-sm transition-colors hover:border-primary/40',
         selectedItemId === act.id && 'ring-2 ring-primary/30',
       )}
     >
@@ -957,10 +958,13 @@ function ActGridSection({
       </div>
 
       <div className="mt-4 flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => onNavigateTo('plot', act.id)}>
-          막 보기
-        </Button>
-        <Button size="sm" onClick={onNewEpisode}>
+        <Button
+          size="sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNewEpisode();
+          }}
+        >
           <Plus className="h-4 w-4" /> 새 회차
         </Button>
       </div>
