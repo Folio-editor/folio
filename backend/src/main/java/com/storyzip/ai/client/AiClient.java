@@ -1,10 +1,13 @@
 package com.storyzip.ai.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.storyzip.ai.client.dto.DraftRequest;
 import com.storyzip.ai.client.dto.EpisodePipelineRequest;
 import com.storyzip.ai.client.dto.EpisodePipelineResponse;
 import com.storyzip.ai.client.dto.HealthResponse;
 import com.storyzip.ai.client.dto.PingEnqueuedResponse;
 import com.storyzip.ai.client.dto.PingResultResponse;
+import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.common.exception.AiException;
 import com.storyzip.common.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -14,8 +17,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Map;
 
 /**
@@ -110,6 +121,97 @@ public class AiClient {
         } catch (RestClientResponseException e) {
             log.warn("AI ping enqueue failed (http {})", e.getStatusCode(), e);
             throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+        }
+    }
+
+    /**
+     * SSE 스트리밍으로 초안 생성 — FastAPI /v1/drafts 프록시.
+     * 별도 스레드에서 SseEmitter로 이벤트를 전달한다.
+     */
+    public void streamDraft(DraftRequest request, SseEmitter emitter) {
+        Thread.startVirtualThread(() -> {
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/drafts"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(5))
+                        .build();
+
+                HttpClient sseClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<java.io.InputStream> response = sseClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofInputStream()
+                );
+
+                if (response.statusCode() != 200) {
+                    emitter.completeWithError(new AiException(ErrorCode.AI_RESPONSE_INVALID));
+                    return;
+                }
+
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.startsWith("data: ")) {
+                            String data = line.substring(6);
+                            emitter.send(SseEmitter.event().data(data, org.springframework.http.MediaType.APPLICATION_JSON));
+                        }
+                    }
+                }
+                emitter.complete();
+            } catch (Exception e) {
+                log.warn("Draft streaming failed", e);
+                emitter.completeWithError(e);
+            }
+        });
+    }
+
+    /** 원고 검수 — FastAPI /v1/reviews 프록시 (동기 JSON). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestReview(ReviewRequest request) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonBody = mapper.writeValueAsString(request);
+
+            HttpRequest httpReq = HttpRequest.newBuilder()
+                    .uri(URI.create(properties.getBaseUrl() + "/v1/reviews"))
+                    .header("Content-Type", "application/json")
+                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                    .timeout(Duration.ofMinutes(3))
+                    .build();
+
+            HttpClient reviewClient = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(properties.getConnectTimeout())
+                    .build();
+
+            HttpResponse<String> response = reviewClient.send(
+                    httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+
+            if (response.statusCode() != 200) {
+                log.warn("AI review failed (http {}): {}", response.statusCode(), response.body());
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+            }
+
+            return mapper.readValue(response.body(), Map.class);
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            log.warn("AI review request failed (IO)", e);
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
         }
     }
 

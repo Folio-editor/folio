@@ -270,11 +270,6 @@ function EpisodeItem({
       >
         <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {episode.word_count > 0 && (
-            <span className="text-[10px] text-muted-foreground">
-              {episode.word_count.toLocaleString()}자
-            </span>
-          )}
           {episode.status && (
             <span
               className={cn(
