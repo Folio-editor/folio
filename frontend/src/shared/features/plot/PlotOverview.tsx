@@ -340,6 +340,7 @@ function ActSection({
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const actDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actPendingSaveRef = useRef<(() => void) | null>(null);
   const actUpdateRef = useRef(updatePlot);
   actUpdateRef.current = updatePlot;
 
@@ -354,20 +355,33 @@ function ActSection({
       content: parseNoteContent(act.content),
       onUpdate: ({ editor: ed }) => {
         if (actDebounceRef.current) clearTimeout(actDebounceRef.current);
+        const updateCb = actUpdateRef.current;
+        const targetId = act.id;
+        actPendingSaveRef.current = () => {
+          void updateCb(targetId, { content: JSON.stringify(ed.getJSON()) });
+        };
         actDebounceRef.current = setTimeout(() => {
-          const json = JSON.stringify(ed.getJSON());
-          void actUpdateRef.current(act.id, { content: json });
+          actPendingSaveRef.current?.();
+          actPendingSaveRef.current = null;
+          actDebounceRef.current = null;
         }, 800);
       },
     },
     [],
   );
 
-  useEffect(() => {
+  const actFlushRef = useRef(() => {});
+  actFlushRef.current = () => {
     if (actDebounceRef.current) {
       clearTimeout(actDebounceRef.current);
       actDebounceRef.current = null;
     }
+    actPendingSaveRef.current?.();
+    actPendingSaveRef.current = null;
+  };
+
+  useEffect(() => {
+    actFlushRef.current();
     if (!actEditor || actEditor.isDestroyed) return;
     actEditor.commands.setContent(parseNoteContent(act.content), { emitUpdate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,7 +389,7 @@ function ActSection({
 
   useEffect(() => {
     return () => {
-      if (actDebounceRef.current) clearTimeout(actDebounceRef.current);
+      actFlushRef.current();
     };
   }, []);
 
@@ -570,6 +584,7 @@ function TimelineCard({
   );
 
   const epDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const epPendingSaveRef = useRef<(() => void) | null>(null);
   const epUpdateRef = useRef(updatePlot);
   epUpdateRef.current = updatePlot;
 
@@ -584,20 +599,33 @@ function TimelineCard({
       content: parseNoteContent(episode.content),
       onUpdate: ({ editor: ed }) => {
         if (epDebounceRef.current) clearTimeout(epDebounceRef.current);
+        const updateCb = epUpdateRef.current;
+        const targetId = episode.id;
+        epPendingSaveRef.current = () => {
+          void updateCb(targetId, { content: JSON.stringify(ed.getJSON()) });
+        };
         epDebounceRef.current = setTimeout(() => {
-          const json = JSON.stringify(ed.getJSON());
-          void epUpdateRef.current(episode.id, { content: json });
+          epPendingSaveRef.current?.();
+          epPendingSaveRef.current = null;
+          epDebounceRef.current = null;
         }, 800);
       },
     },
     [],
   );
 
-  useEffect(() => {
+  const epFlushRef = useRef(() => {});
+  epFlushRef.current = () => {
     if (epDebounceRef.current) {
       clearTimeout(epDebounceRef.current);
       epDebounceRef.current = null;
     }
+    epPendingSaveRef.current?.();
+    epPendingSaveRef.current = null;
+  };
+
+  useEffect(() => {
+    epFlushRef.current();
     if (!epEditor || epEditor.isDestroyed) return;
     epEditor.commands.setContent(parseNoteContent(episode.content), { emitUpdate: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -605,7 +633,7 @@ function TimelineCard({
 
   useEffect(() => {
     return () => {
-      if (epDebounceRef.current) clearTimeout(epDebounceRef.current);
+      epFlushRef.current();
     };
   }, []);
 

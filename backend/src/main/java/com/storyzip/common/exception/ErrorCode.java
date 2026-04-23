@@ -73,6 +73,9 @@ public enum ErrorCode {
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "N001", "알림을 찾을 수 없습니다"),
     NOTIFICATION_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "N002", "알림 발송에 실패했습니다"),
 
+    // ===== Account (AC###) =====
+    STORAGE_LIMIT_EXCEEDED(HttpStatus.FORBIDDEN, "AC001", "클라우드 저장 공간이 가득 찼습니다"),
+
     // ===== Export (E###) =====
     EXPORT_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "E001", "내보내기 작업을 찾을 수 없습니다"),
     EXPORT_FORMAT_UNSUPPORTED(HttpStatus.BAD_REQUEST, "E002", "지원하지 않는 내보내기 포맷입니다"),

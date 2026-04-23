@@ -24,6 +24,11 @@ interface SyncUploadEntry {
 }
 
 export class FolioConnector implements PowerSyncBackendConnector {
+  /** 마지막 업로드 시각 — throttle 판단 기준 */
+  private lastUploadAt = 0;
+  /** 업로드 최소 간격 (ms). 디바운스 3초와 합쳐 실질 5~8초 간격 업로드 */
+  private static readonly UPLOAD_THROTTLE_MS = 5000;
+
   /**
    * PowerSync 서비스에 연결할 JWT와 엔드포인트를 반환한다.
    */
@@ -66,6 +71,14 @@ export class FolioConnector implements PowerSyncBackendConnector {
       console.log('[uploadData] 게스트 모드 — 큐 유지');
       return;
     }
+
+    // 마지막 업로드로부터 5초 미경과 시 건너뜀
+    // → PowerSync가 나중에 재호출하며, 그때 쌓인 entry를 한 번에 처리
+    const now = Date.now();
+    if (now - this.lastUploadAt < FolioConnector.UPLOAD_THROTTLE_MS) {
+      return;
+    }
+    this.lastUploadAt = now;
 
     const BATCH_SIZE = 50;
     const THROTTLE_MS = 200;
