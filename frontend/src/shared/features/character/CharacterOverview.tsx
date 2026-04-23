@@ -479,20 +479,18 @@ function InlineNoteItem({
           type="button"
           onClick={onNavigate}
           title="에디터에서 편집"
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
         >
           상세 편집
         </button>
-        {note.kind === 'custom' && (
-          <button
-            type="button"
-            onClick={() => void deleteCharacterNote(note.id)}
-            title="문서 삭제"
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-          >
-            <Trash2 size={12} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => void deleteCharacterNote(note.id)}
+          title="문서 삭제"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
       {/* 본문 인라인 위지윅 에디터 */}
       <div className={icon ? 'pl-7' : ''}>
