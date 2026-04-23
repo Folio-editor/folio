@@ -37,6 +37,7 @@ interface NoteSummaryRow {
   kind: string;
   title: string;
   content: string | null;
+  sort_order: number | null;
 }
 
 const GENDER_OPTIONS = [
@@ -45,6 +46,11 @@ const GENDER_OPTIONS = [
   { value: '여', label: '여' },
   { value: '기타', label: '기타' },
 ];
+
+function nextSortOrder(rows: { sort_order: number | null }[]) {
+  if (rows.length === 0) return 0;
+  return Math.max(...rows.map((row) => row.sort_order ?? 0)) + 1000;
+}
 
 const GENDER_ICON_STYLE: Record<string, { color: string }> = {
   '미설정': { color: 'text-muted-foreground' },
@@ -180,7 +186,7 @@ function CharacterOverviewInner({
   };
 
   const { data: notes = [] } = useQuery<NoteSummaryRow>(
-    `SELECT id, kind, title, content FROM character_note
+    `SELECT id, kind, title, content, sort_order FROM character_note
      WHERE character_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
     [id],
@@ -354,7 +360,7 @@ function CharacterOverviewInner({
           </h3>
           <button
             type="button"
-            onClick={() => void createCharacterNote(id, '새 문서', notes.length)}
+            onClick={() => void createCharacterNote(id, '새 문서', nextSortOrder(notes))}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Plus size={12} />
@@ -397,10 +403,6 @@ function CharacterOverviewInner({
 
 /* ── 하위 문서 인라인 편집 항목 ── */
 
-const KIND_ICONS: Record<string, string> = {
-  custom: '📄',
-};
-
 function InlineNoteItem({
   note,
   onNavigate,
@@ -409,7 +411,6 @@ function InlineNoteItem({
   onNavigate: () => void;
 }) {
   const { updateCharacterNoteTitle, updateCharacterNoteContent, deleteCharacterNote } = useLocalWrite();
-  const icon = KIND_ICONS[note.kind];
 
   const title = useDeferredText(note.id, note.title, (v) =>
     void updateCharacterNoteTitle(note.id, v),
@@ -460,7 +461,6 @@ function InlineNoteItem({
     <div className="group py-4">
       {/* 제목 행 */}
       <div className="mb-2 flex items-center gap-2">
-        {icon && <span className="shrink-0 text-base">{icon}</span>}
         <input
           type="text"
           value={title.value}
@@ -473,23 +473,21 @@ function InlineNoteItem({
           type="button"
           onClick={onNavigate}
           title="에디터에서 편집"
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
         >
           상세 편집
         </button>
-        {note.kind === 'custom' && (
-          <button
-            type="button"
-            onClick={() => void deleteCharacterNote(note.id)}
-            title="문서 삭제"
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-          >
-            <Trash2 size={12} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => void deleteCharacterNote(note.id)}
+          title="문서 삭제"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
       {/* 본문 인라인 위지윅 에디터 */}
-      <div className={icon ? 'pl-7' : ''}>
+      <div>
         <EditorContent
           editor={editor}
           className="inline-note-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"

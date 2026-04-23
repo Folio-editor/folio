@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.api.v1 import drafts as drafts_module
@@ -52,5 +54,11 @@ def test_drafts_endpoint_accepts_opus_model(monkeypatch):
 
     assert response.status_code == 200
     assert any('"type": "chunk"' in line for line in events)
-    assert any('"type": "done"' in line for line in events)
+    done_events = [
+        json.loads(line.removeprefix("data: "))
+        for line in events
+        if '"type": "done"' in line
+    ]
+    assert len(done_events) == 1
+    assert done_events[0]["usage"] == {"input_tokens": 0, "output_tokens": 0}
     assert captured["model_override"] == "claude-opus-test"

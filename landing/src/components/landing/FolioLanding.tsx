@@ -9,9 +9,9 @@ import { PrologueLabel } from './PrologueLabel';
 import { ProseSection } from './ProseSection';
 import { ChapterHead } from './ChapterHead';
 import { ToolSection } from './ToolSection';
-import { AiInspectionMockup } from './mockups/AiInspectionMockup';
-import { SpellcheckMockup } from './mockups/SpellcheckMockup';
-import { ImportAutoOrganizeMockup } from './mockups/ImportAutoOrganizeMockup';
+import { DeviceSyncMockup } from './mockups/DeviceSyncMockup';
+import { EditorMockup } from './mockups/EditorMockup';
+import { AiStudioMockup } from './mockups/AiStudioMockup';
 import { FeaturesAutoCarousel } from './FeaturesAutoCarousel';
 import { FlowSection } from './FlowSection';
 import { PricingSection } from './PricingSection';
@@ -24,9 +24,9 @@ import '../../styles/landing.css';
 gsap.registerPlugin(ScrollTrigger);
 
 const MOCKUPS: Record<ToolMockupKey, React.ComponentType> = {
-  aiinspection: AiInspectionMockup,
-  spellcheck: SpellcheckMockup,
-  importorganize: ImportAutoOrganizeMockup,
+  devicesync: DeviceSyncMockup,
+  editor: EditorMockup,
+  aistudio: AiStudioMockup,
 };
 
 export function FolioLanding() {
@@ -89,7 +89,7 @@ export function FolioLanding() {
             number={t.number}
             keyword={t.keyword}
             oneline={t.oneline}
-            metric={t.metric}
+            features={t.features}
             mockup={<Mockup />}
           />
         );

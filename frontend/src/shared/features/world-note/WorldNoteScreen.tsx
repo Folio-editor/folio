@@ -94,15 +94,15 @@ export function WorldNoteScreen({ noteId, onBack }: WorldNoteScreenProps) {
           </IconButton>
         }
         title={
-          <span className="flex items-center gap-1 text-lg">
-            <span className="text-sm text-muted-foreground">세계관</span>
+          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-lg">
+            <span className="shrink-0 text-sm text-muted-foreground">세계관</span>
             {parentName && (
               <>
-                <span className="text-sm text-muted-foreground">/</span>
-                <span className="text-sm text-muted-foreground">{parentName}</span>
+                <span className="shrink-0 text-sm text-muted-foreground">/</span>
+                <span className="max-w-40 truncate text-sm text-muted-foreground">{parentName}</span>
               </>
             )}
-            <span className="text-sm text-muted-foreground">/</span>
+            <span className="shrink-0 text-sm text-muted-foreground">/</span>
             {isEditingName ? (
               <input
                 autoFocus
@@ -111,7 +111,7 @@ export function WorldNoteScreen({ noteId, onBack }: WorldNoteScreenProps) {
                 onChange={(e) => setNameInput(e.target.value)}
                 onBlur={() => void handleNameBlur()}
                 onKeyDown={handleNameKeyDown}
-                className="w-full font-semibold text-foreground outline-none"
+                className="min-w-0 flex-1 bg-transparent font-semibold text-foreground outline-none"
               />
             ) : (
               <span
@@ -119,7 +119,7 @@ export function WorldNoteScreen({ noteId, onBack }: WorldNoteScreenProps) {
                 tabIndex={0}
                 onClick={() => setIsEditingName(true)}
                 onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(true); }}
-                className="cursor-text font-semibold text-foreground hover:text-primary"
+                className="min-w-0 flex-1 cursor-text truncate font-semibold text-foreground hover:text-primary"
                 title="클릭하여 제목 편집"
               >
                 {note.name}

@@ -23,11 +23,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.config import settings
 from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
+from app.services.settings_loader import load_settings
 from app.services.text_extractor import extract_plain_text
 
-TOKEN_BUDGET = 28_000
+TOKEN_BUDGET = 40_000
 
 PRIORITY_1_LABEL = "recent_raw"
+
+
+RECENT_RAW_LIMIT = {"draft": 4, "review": 2}
+VECTOR_SEARCH_LIMIT = {"draft": 15, "review": 5}
 
 
 async def assemble_context(
@@ -35,22 +40,30 @@ async def assemble_context(
     writer_id: str,
     storyline: str,
     current_episode_num: int,
+    mode: str = "draft",
 ) -> str:
+    recent_raw_limit = RECENT_RAW_LIMIT.get(mode, RECENT_RAW_LIMIT["draft"])
+    vector_search_limit = VECTOR_SEARCH_LIMIT.get(mode, VECTOR_SEARCH_LIMIT["draft"])
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
         async with AsyncSession(engine) as session:
             sections = {}
+            settings_bundle = await load_settings(session, work_id)
 
             sections["work_meta"] = await _fetch_work_meta(session, work_id)
-            sections["characters"] = await _fetch_characters(session, work_id)
-            sections["world_notes"] = await _fetch_world_notes(session, work_id)
+            if settings_bundle["mode"] == "full":
+                sections["characters"] = await _fetch_characters(session, work_id)
+                sections["world_notes"] = await _fetch_world_notes(session, work_id)
+            else:
+                sections["characters"] = settings_bundle["characters_text"]
+                sections["world_notes"] = settings_bundle["world_notes_text"]
             sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
             sections["storyline"] = await _fetch_storyline(session, work_id, storyline)
             sections["recent_raw"] = await _fetch_recent_raw(
-                session, work_id, current_episode_num
+                session, work_id, current_episode_num, limit=recent_raw_limit
             )
             sections["vector_search"] = await _fetch_vector_similar(
-                session, work_id, writer_id, storyline
+                session, work_id, writer_id, storyline, limit=vector_search_limit
             )
 
         return _trim_to_budget(sections)
@@ -195,15 +208,15 @@ async def _fetch_recent_summaries(
 
 
 async def _fetch_recent_raw(
-    session: AsyncSession, work_id: str, current_episode_num: int
+    session: AsyncSession, work_id: str, current_episode_num: int, limit: int = 4
 ) -> str:
     r = await session.execute(
         sa_text(
             "SELECT sort_order, title, content FROM episode "
             "WHERE work_id = :wid AND sort_order < :ep_num "
-            "ORDER BY sort_order DESC LIMIT 3"
+            "ORDER BY sort_order DESC LIMIT :lim"
         ),
-        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num},
+        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num, "lim": limit},
     )
     rows = r.fetchall()
     if not rows:
@@ -216,7 +229,11 @@ async def _fetch_recent_raw(
 
 
 async def _fetch_vector_similar(
-    session: AsyncSession, work_id: str, writer_id: str, storyline: str
+    session: AsyncSession,
+    work_id: str,
+    writer_id: str,
+    storyline: str,
+    limit: int = 15,
 ) -> str:
     if not storyline:
         return ""
@@ -233,12 +250,13 @@ async def _fetch_vector_similar(
             "FROM episode_chunk "
             "WHERE work_id = :wid AND writer_id = :wr "
             "ORDER BY embedding <=> cast(:vec AS vector) "
-            "LIMIT 12"
+            "LIMIT :lim"
         ),
         {
             "vec": vec_str,
             "wid": uuid.UUID(work_id),
             "wr": uuid.UUID(writer_id),
+            "lim": limit,
         },
     )
     rows = r.fetchall()

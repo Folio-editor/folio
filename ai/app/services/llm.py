@@ -1,8 +1,9 @@
-"""LLM provider interfaces plus fake/Anthropic implementations."""
+"""LLM provider interfaces plus fake and Anthropic implementations."""
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -19,11 +20,37 @@ _JSON_ONLY_SUFFIX = (
     "반드시 JSON으로만 응답하라. 마크다운 코드블록(```)을 사용하지 마라. "
     "설명이나 인사말을 붙이지 마라. JSON만 출력하라."
 )
+logger = logging.getLogger(__name__)
+
+
+def _empty_usage() -> dict[str, int]:
+    return {"input_tokens": 0, "output_tokens": 0}
+
+
+def _usage_dict(usage: Any) -> dict[str, int]:
+    if usage is None:
+        return _empty_usage()
+    return {
+        "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+    }
 
 
 class LLMProvider(ABC):
+    @property
     @abstractmethod
-    async def generate_json(self, system: str, user: str, schema_hint: str) -> dict: ...
+    def last_usage(self) -> dict[str, int]: ...
+
+    @abstractmethod
+    async def generate_json(
+        self,
+        system: str,
+        user: str,
+        schema_hint: str,
+        *,
+        model_override: str | None = None,
+        max_tokens: int = 2000,
+    ) -> dict: ...
 
     @abstractmethod
     def generate_stream(
@@ -46,7 +73,24 @@ class LLMProvider(ABC):
 class FakeLLM(LLMProvider):
     """Fixed fake responses for local flow validation."""
 
-    async def generate_json(self, system: str, user: str, schema_hint: str) -> dict:
+    def __init__(self, base_url: str | None = None) -> None:
+        self._base_url = base_url
+        self._last_usage = _empty_usage()
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        return dict(self._last_usage)
+
+    async def generate_json(
+        self,
+        system: str,
+        user: str,
+        schema_hint: str,
+        *,
+        model_override: str | None = None,
+        max_tokens: int = 2000,
+    ) -> dict:
+        self._last_usage = _empty_usage()
         blob = f"{system}\n{user}\n{schema_hint}".lower()
         if "review" in blob:
             return {"issues": [], "newItems": []}
@@ -65,6 +109,7 @@ class FakeLLM(LLMProvider):
     ) -> AsyncIterator[str]:
         import asyncio
 
+        self._last_usage = _empty_usage()
         text = (
             "[fake draft] "
             "리운은 사무실 의자에 앉아 창밖을 바라보았다. "
@@ -85,6 +130,7 @@ class FakeLLM(LLMProvider):
         tools: list[dict[str, Any]],
         tool_executor: ToolExecutor,
     ) -> dict:
+        self._last_usage = _empty_usage()
         return {"issues": [], "summary": "검수 결과 없음 (fake)", "score": 100}
 
 
@@ -97,6 +143,7 @@ class AnthropicLLM(LLMProvider):
         sonnet_model: str,
         haiku_model: str,
         opus_model: str,
+        base_url: str | None = None,
     ) -> None:
         if anthropic is None:
             raise RuntimeError("anthropic package is not installed.")
@@ -104,20 +151,47 @@ class AnthropicLLM(LLMProvider):
         self._sonnet_model = sonnet_model
         self._haiku_model = haiku_model
         self._opus_model = opus_model
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        self._base_url = base_url
+        self._last_usage = _empty_usage()
 
-    async def generate_json(self, system: str, user: str, schema_hint: str) -> dict:
+        client_kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        self._client = anthropic.AsyncAnthropic(**client_kwargs)
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        return dict(self._last_usage)
+
+    async def generate_json(
+        self,
+        system: str,
+        user: str,
+        schema_hint: str,
+        *,
+        model_override: str | None = None,
+        max_tokens: int = 2000,
+    ) -> dict:
         system_prompt = (
             f"{system.rstrip()}\n\n"
             f"{_JSON_ONLY_SUFFIX}\n"
             f"응답 형식: {schema_hint}"
         )
-        response = await self._client.messages.create(
-            model=self._haiku_model,
-            max_tokens=2000,
-            temperature=0.2,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user}],
+        model = model_override or self._haiku_model
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if "opus-4-7" not in model:
+            create_kwargs["temperature"] = 0.2
+        response = await self._client.messages.create(**create_kwargs)
+        self._last_usage = _usage_dict(getattr(response, "usage", None))
+        logger.info(
+            "LLM usage: input=%s, output=%s",
+            self._last_usage["input_tokens"],
+            self._last_usage["output_tokens"],
         )
         raw_text = _extract_text(response.content)
         return _parse_json_response(raw_text)
@@ -129,16 +203,29 @@ class AnthropicLLM(LLMProvider):
         model_override: str | None = None,
     ) -> AsyncIterator[str]:
         model = model_override or self._sonnet_model
-        async with self._client.messages.stream(
-            model=model,
-            max_tokens=8000,
-            temperature=0.7,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        ) as stream:
+        final_message = None
+
+        stream_kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": 8000,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if "opus-4-7" not in model:
+            stream_kwargs["temperature"] = 0.7
+
+        async with self._client.messages.stream(**stream_kwargs) as stream:
             async for text in stream.text_stream:
                 if text:
                     yield text
+            final_message = await stream.get_final_message()
+
+        self._last_usage = _usage_dict(getattr(final_message, "usage", None))
+        logger.info(
+            "LLM usage: input=%s, output=%s",
+            self._last_usage["input_tokens"],
+            self._last_usage["output_tokens"],
+        )
 
     async def generate_with_tools(
         self,
@@ -148,6 +235,7 @@ class AnthropicLLM(LLMProvider):
         tool_executor: ToolExecutor,
     ) -> dict:
         messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
+        total_usage = _empty_usage()
 
         for _ in range(10):
             response = await self._client.messages.create(
@@ -158,6 +246,9 @@ class AnthropicLLM(LLMProvider):
                 messages=messages,
                 tools=tools,
             )
+            usage = _usage_dict(getattr(response, "usage", None))
+            total_usage["input_tokens"] += usage["input_tokens"]
+            total_usage["output_tokens"] += usage["output_tokens"]
 
             if response.stop_reason == "tool_use":
                 assistant_content: list[dict[str, Any]] = []
@@ -190,6 +281,12 @@ class AnthropicLLM(LLMProvider):
                     )
 
                 if not tool_results:
+                    self._last_usage = total_usage
+                    logger.info(
+                        "LLM usage: input=%s, output=%s",
+                        self._last_usage["input_tokens"],
+                        self._last_usage["output_tokens"],
+                    )
                     return {
                         "error": "도구 호출 결과가 비어 있습니다.",
                         "raw": _extract_text(response.content),
@@ -199,8 +296,20 @@ class AnthropicLLM(LLMProvider):
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
+            self._last_usage = total_usage
+            logger.info(
+                "LLM usage: input=%s, output=%s",
+                self._last_usage["input_tokens"],
+                self._last_usage["output_tokens"],
+            )
             return _parse_json_response(_extract_text(response.content))
 
+        self._last_usage = total_usage
+        logger.info(
+            "LLM usage: input=%s, output=%s",
+            self._last_usage["input_tokens"],
+            self._last_usage["output_tokens"],
+        )
         return {"error": "tool_use loop exceeded limit"}
 
 

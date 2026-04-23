@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.v1 import _dev_ping, drafts, health, pipelines, reviews
+from app.api.v1 import _dev_ping, drafts, extract_settings, health, pipelines, reviews
 from app.config import settings
 from app.core.logging import configure_logging
 
@@ -15,6 +15,7 @@ app.include_router(health.router, prefix="/v1")
 app.include_router(pipelines.router, prefix="/v1")
 app.include_router(drafts.router, prefix="/v1")
 app.include_router(reviews.router, prefix="/v1")
+app.include_router(extract_settings.router, prefix="/v1")
 
 # Dev 전용
 if settings.app_env != "prod":

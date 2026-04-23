@@ -2,9 +2,8 @@ export function TopNav() {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <a href="#" className="nav-brand sans">
-          Folio
-          <span className="nav-dot" aria-hidden="true" />
+        <a href="#" className="nav-brand" aria-label="Folio">
+          <img src="/nav-logo.png" alt="Folio" className="nav-logo" />
         </a>
         <div className="nav-links">
           <a href="#features" className="nav-link">

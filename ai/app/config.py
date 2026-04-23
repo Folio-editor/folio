@@ -1,7 +1,13 @@
 import os
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Doppler가 빈 문자열로 주입하는 ANTHROPIC_BASE_URL은 Anthropic SDK가
+# 유효한 base URL로 잘못 해석한다. 빈/공백이면 아예 언셋해 SDK 기본값을 쓰게 한다.
+_raw_base_url = os.environ.get("ANTHROPIC_BASE_URL")
+if _raw_base_url is not None and not _raw_base_url.strip():
+    os.environ.pop("ANTHROPIC_BASE_URL", None)
 
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://storyzip:storyzip@localhost:5432/storyzip"
@@ -43,6 +49,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
     )
+    anthropic_base_url: str | None = Field(default=None, validation_alias="ANTHROPIC_BASE_URL")
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     embedding_model: str = Field(default="text-embedding-3-small", validation_alias="EMBEDDING_MODEL")
     claude_sonnet_model: str = Field(
@@ -61,6 +68,13 @@ class Settings(BaseSettings):
     # Provider defaults stay in code when Doppler does not define them.
     embedding_provider: str = Field(default="fake", validation_alias="EMBEDDING_PROVIDER")
     llm_provider: str = Field(default="fake", validation_alias="LLM_PROVIDER")
+
+    @field_validator("anthropic_base_url", mode="before")
+    @classmethod
+    def _empty_base_url_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     @model_validator(mode="after")
     def populate_composed_urls(self) -> "Settings":

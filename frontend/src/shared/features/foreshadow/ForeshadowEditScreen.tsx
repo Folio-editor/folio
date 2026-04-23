@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -378,9 +378,10 @@ function LinkManagementSection({
   onPanelResize: (deltaPx: number) => void;
 }) {
   const writerId = useWriterId();
-  const { createForeshadowLink, deleteForeshadowLink } = useLocalWrite();
+  const { createForeshadowLink, updateForeshadowLink, deleteForeshadowLink } = useLocalWrite();
   const [expanded, setExpanded] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
 
   const { data: linkRows = [] } = useQuery<LinkRow>(
     `SELECT fl.id, fl.link_type, fl.episode_id, fl.plot_id, fl.context_memo,
@@ -429,6 +430,22 @@ function LinkManagementSection({
     setAdding(false);
   };
 
+  const handleUpdate = async (
+    linkId: string,
+    linkType: string,
+    episodeId: string | null,
+    plotId: string | null,
+    memo: string | null,
+  ) => {
+    await updateForeshadowLink(linkId, {
+      linkType,
+      episodeId,
+      plotId,
+      contextMemo: memo || null,
+    });
+    setEditingLinkId(null);
+  };
+
   return (
     <div
       className="relative flex shrink-0 flex-col border-t border-border"
@@ -446,7 +463,7 @@ function LinkManagementSection({
         </button>
         <button
           type="button"
-          onClick={() => { setAdding(true); setExpanded(true); }}
+          onClick={() => { setAdding(true); setEditingLinkId(null); setExpanded(true); }}
           className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
         >
           <Plus size={12} />
@@ -505,11 +522,27 @@ function LinkManagementSection({
                     ) : (
                       <div className="space-y-2">
                         {stageLinks.map((link) => (
-                          <ForeshadowLinkCard
-                            key={link.id}
-                            link={link}
-                            onDelete={handleDelete}
-                          />
+                          <div key={link.id} className="space-y-2">
+                            <ForeshadowLinkCard
+                              link={link}
+                              onEdit={(targetLink) => {
+                                setAdding(false);
+                                setEditingLinkId(targetLink.id);
+                              }}
+                              onDelete={handleDelete}
+                            />
+                            {editingLinkId === link.id && (
+                              <AddLinkForm
+                                workId={workId}
+                                initialLink={link}
+                                submitLabel="수정 완료"
+                                onConfirm={(linkType, episodeId, plotId, memo) =>
+                                  handleUpdate(link.id, linkType, episodeId, plotId, memo)
+                                }
+                                onCancel={() => setEditingLinkId(null)}
+                              />
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -522,6 +555,7 @@ function LinkManagementSection({
           {adding && (
             <AddLinkForm
               workId={workId}
+              submitLabel="추가"
               onConfirm={handleAdd}
               onCancel={() => setAdding(false)}
             />
@@ -534,9 +568,11 @@ function LinkManagementSection({
 
 function ForeshadowLinkCard({
   link,
+  onEdit,
   onDelete,
 }: {
   link: LinkRow;
+  onEdit: (link: LinkRow) => void;
   onDelete: (linkId: string) => Promise<void>;
 }) {
   return (
@@ -567,14 +603,24 @@ function ForeshadowLinkCard({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => void onDelete(link.id)}
-          title="연결 삭제"
-          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        >
-          <Trash2 size={12} />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onEdit(link)}
+            title="연결 수정"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onDelete(link.id)}
+            title="연결 삭제"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -706,18 +752,24 @@ function TargetDropdown({
 
 function AddLinkForm({
   workId,
+  initialLink,
+  submitLabel = '추가',
   onConfirm,
   onCancel,
 }: {
   workId: string;
+  initialLink?: LinkRow;
+  submitLabel?: string;
   onConfirm: (linkType: string, episodeId: string | null, plotId: string | null, memo: string | null) => Promise<void>;
   onCancel: () => void;
 }) {
   const writerId = useWriterId();
-  const [linkType, setLinkType] = useState('plant');
-  const [targetType, setTargetType] = useState<'episode' | 'plot'>('episode');
-  const [targetId, setTargetId] = useState('');
-  const [memo, setMemo] = useState('');
+  const [linkType, setLinkType] = useState(initialLink?.link_type ?? 'plant');
+  const [targetType, setTargetType] = useState<'episode' | 'plot'>(
+    initialLink?.plot_id ? 'plot' : 'episode',
+  );
+  const [targetId, setTargetId] = useState(initialLink?.episode_id ?? initialLink?.plot_id ?? '');
+  const [memo, setMemo] = useState(initialLink?.context_memo ?? '');
 
   const { data: episodes = [] } = useQuery<TargetRow>(
     `SELECT e.id, e.title, ep.title AS parent_title
@@ -844,7 +896,7 @@ function AddLinkForm({
             disabled={!targetId}
             className="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            추가
+            {submitLabel}
           </button>
         </div>
       </div>

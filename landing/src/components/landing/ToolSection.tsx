@@ -4,7 +4,7 @@ type Props = {
   number: string;
   keyword: string;
   oneline: string;
-  metric: ReactNode;
+  features: string[];
   mockup: ReactNode;
 };
 
@@ -12,7 +12,7 @@ export function ToolSection({
   number,
   keyword,
   oneline,
-  metric,
+  features,
   mockup,
 }: Props) {
   return (
@@ -23,7 +23,11 @@ export function ToolSection({
           <div className="tool-num sans">{number}</div>
           <h3 className="tool-keyword">{keyword}</h3>
           <p className="tool-oneline">{oneline}</p>
-          <div className="tool-metric">{metric}</div>
+          <ul className="tool-features">
+            {features.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
