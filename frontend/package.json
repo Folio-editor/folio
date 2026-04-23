@@ -54,6 +54,7 @@
     "@powersync/react": "^1.10.0",
     "@powersync/web": "^1.37.2",
     "@radix-ui/react-slot": "^1.2.4",
+    "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-bubble-menu": "^3.22.3",
     "@tiptap/extension-character-count": "^3.0.0",
     "@tiptap/extension-color": "^3.0.0",

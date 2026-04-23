@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
+import { IconGenderMale, IconGenderFemale, IconGenderBigender, IconQuestionMark } from '@tabler/icons-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
@@ -16,13 +17,33 @@ interface CharacterRow {
   name: string;
   gender: string;
   age: string;
+  profile_image_url: string | null;
 }
+
+interface NoteRow {
+  character_id: string;
+  title: string;
+}
+
+const GENDER_ICON_MAP: Record<string, React.ComponentType<{ size: number; stroke: number; className?: string }>> = {
+  '남': IconGenderMale,
+  '여': IconGenderFemale,
+  '기타': IconGenderBigender,
+  '미설정': IconQuestionMark,
+};
+
+const GENDER_COLOR: Record<string, string> = {
+  '남': 'text-blue-500',
+  '여': 'text-pink-500',
+  '기타': 'text-violet-500',
+  '미설정': 'text-muted-foreground',
+};
 
 export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllProps) {
   const writerId = useWriterId();
   const { createCharacter } = useLocalWrite();
   const { data: items = [] } = useQuery<CharacterRow>(
-    `SELECT id, name, gender, age FROM character
+    `SELECT id, name, gender, age, profile_image_url FROM character
      WHERE work_id = ? AND writer_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
     [workId, writerId],
@@ -37,6 +58,13 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
     [workId, writerId],
   );
 
+  const { data: allNotes = [] } = useQuery<NoteRow>(
+    `SELECT character_id, title FROM character_note
+     WHERE character_id IN (SELECT id FROM character WHERE work_id = ? AND writer_id = ?)
+     ORDER BY sort_order ASC`,
+    [workId, writerId],
+  );
+
   const tagsByCharacter = useMemo(() => {
     const map = new Map<string, { world_note_id: string; name: string }[]>();
     for (const tag of allTags) {
@@ -45,6 +73,15 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
     }
     return map;
   }, [allTags]);
+
+  const notesByCharacter = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const note of allNotes) {
+      if (!map.has(note.character_id)) map.set(note.character_id, []);
+      map.get(note.character_id)!.push(note.title);
+    }
+    return map;
+  }, [allNotes]);
 
   const uniqueTags = useMemo(() => {
     const seen = new Map<string, string>();
@@ -119,32 +156,67 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
             {items.length === 0 ? '아직 등장인물이 없습니다.' : '필터에 맞는 등장인물이 없습니다.'}
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {filteredItems.map((item) => {
               const charTags = tagsByCharacter.get(item.id) ?? [];
+              const charNotes = notesByCharacter.get(item.id) ?? [];
+              const GenderIcon = GENDER_ICON_MAP[item.gender] ?? IconQuestionMark;
+              const genderColor = GENDER_COLOR[item.gender] ?? GENDER_COLOR['미설정'];
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => onSelect('char:' + item.id)}
-                  className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-primary/40 hover:shadow-sm"
+                  className="flex gap-4 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:shadow-sm"
                 >
-                  <div className="mb-1 text-base font-semibold text-foreground">{item.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {item.gender}{item.age ? ` · ${item.age}` : ''}
+                  {/* 프로필 이미지 — 디테일 화면과 동일 비율 */}
+                  <div className="flex h-28 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                    {item.profile_image_url ? (
+                      <img src={item.profile_image_url} alt={item.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-2xl font-bold text-muted-foreground/30">{item.name.charAt(0) || '?'}</span>
+                    )}
                   </div>
-                  {charTags.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {charTags.map((t) => (
-                        <span
-                          key={t.world_note_id}
-                          className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-                        >
-                          {t.name}
-                        </span>
-                      ))}
+
+                  {/* 정보 영역 */}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+                    {/* 이름 / 나이 + 성별 아이콘 */}
+                    <div className="flex items-center gap-1.5">
+                      <GenderIcon size={16} stroke={1.75} className={genderColor} />
+                      <span className="text-sm font-semibold text-foreground">{item.name}</span>
+                      {item.age && (
+                        <>
+                          <span className="text-xs text-muted-foreground/40 select-none">/</span>
+                          <span className="text-xs text-muted-foreground">{item.age}</span>
+                        </>
+                      )}
                     </div>
-                  )}
+
+                    {/* 태그 */}
+                    {charTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {charTags.map((t) => (
+                          <span
+                            key={t.world_note_id}
+                            className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                          >
+                            {t.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 하위 문서 목록 */}
+                    {charNotes.length > 0 && (
+                      <div className="mt-auto flex flex-wrap gap-x-2 gap-y-0.5">
+                        {charNotes.map((title, i) => (
+                          <span key={i} className="text-[10px] text-muted-foreground">
+                            {title}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </button>
               );
             })}

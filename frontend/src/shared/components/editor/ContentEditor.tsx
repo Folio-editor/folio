@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
-import Link from '@tiptap/extension-link';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
 import SceneBreak from './extensions/SceneBreak';
@@ -74,15 +72,14 @@ export function ContentEditor({
         StarterKit.configure({
           code: false,
           codeBlock: false,
+          link: { openOnClick: false },
         }),
         Placeholder.configure({ placeholder }),
-        Underline,
         Highlight.configure({ multicolor: false }),
         Typography,
         CharacterCount,
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Color,
-        Link.configure({ openOnClick: false }),
         SceneBreak,
         KoreanPunctuation.configure({ enabled: settings.autoKoreanPunctuation }),
         AutoPairQuotes.configure({ enabled: settings.autoPairQuotes }),

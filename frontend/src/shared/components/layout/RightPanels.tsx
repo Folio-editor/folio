@@ -15,17 +15,26 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import {
+  AlertTriangle,
   ArrowLeft,
   BotMessageSquare,
+  Check,
   ChevronDown,
   ChevronRight,
   ArrowUpRight,
+  ClipboardCopy,
   Eye,
   FileStack,
   GripVertical,
+  Info,
   Lightbulb,
+  Loader2,
+  OctagonAlert,
   Pencil,
+  Search,
   Send,
+  Sparkles,
+  Square,
   Trash2,
   X,
 } from 'lucide-react';
@@ -36,6 +45,7 @@ import { Select } from '../ui/Select';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
+import { apiClient } from '../../lib/apiClient';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
@@ -84,7 +94,7 @@ export function RightPanels({
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col border-l border-border"
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-border"
     >
       <ResizeHandle
         side="left"
@@ -135,7 +145,11 @@ export function RightPanels({
           <IdeaTabContent selectedWorkId={selectedWorkId} />
         )}
         {activeTab === 'ai' && (
-          <AiTabContent />
+          <AiTabContent
+            selectedWorkId={selectedWorkId}
+            mainSection={mainSection}
+            mainItemId={mainItemId}
+          />
         )}
       </div>
     </div>
@@ -224,7 +238,7 @@ function DocsTabContent({
 
   return (
     <div
-      className={cn('flex flex-1 flex-col', isDragOver && 'bg-primary/5')}
+      className={cn('flex min-h-0 flex-1 flex-col', isDragOver && 'bg-primary/5')}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -573,19 +587,444 @@ function IdeaPanelDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
 /* ── AI 탭 ── */
 
-function AiTabContent() {
+interface AiTabContentProps {
+  selectedWorkId: string | null;
+  mainSection: WorkspaceSection | null;
+  mainItemId: string | null;
+}
+
+type AiSubTab = 'draft' | 'review';
+
+interface EpisodeInfo {
+  id: string;
+  title: string;
+  content: string | null;
+  work_id: string;
+  sort_order: number;
+}
+
+function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
+  const [subTab, setSubTab] = useState<AiSubTab>('draft');
+
+  const isEpisode = mainSection === 'episode' && mainItemId != null;
+  const { data: episodeRows = [] } = useQuery<EpisodeInfo>(
+    isEpisode
+      ? `SELECT id, title, content, work_id, sort_order FROM episode WHERE id = ?`
+      : `SELECT '' as id, '' as title, null as content, '' as work_id, 0 as sort_order WHERE 0`,
+    isEpisode ? [mainItemId] : [],
+  );
+  const episode = episodeRows[0] ?? null;
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <BotMessageSquare size={32} className="text-muted-foreground/40" />
-      <h2 className="text-base font-semibold text-foreground">AI 도구</h2>
-      <p className="text-sm text-muted-foreground">
-        설정 충돌 분석, 톤 일관성 검사, 문장 제안, 줄거리 요약 등
-        <br />
-        AI 기능이 이곳에서 제공될 예정입니다.
-      </p>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 서브 탭 */}
+      <div className="flex shrink-0 border-b border-border">
+        {([
+          { key: 'draft' as const, icon: Sparkles, label: '초안 생성' },
+          { key: 'review' as const, icon: Search, label: '원고 검수' },
+        ]).map(({ key, icon: Icon, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSubTab(key)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors',
+              subTab === key
+                ? 'border-b-2 border-primary text-primary'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Icon size={13} strokeWidth={1.75} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 콘텐츠 */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {!isEpisode || !episode ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <BotMessageSquare size={28} className="text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">
+              원고 편집 화면에서 사용할 수 있습니다.
+              <br />
+              좌측에서 원고를 선택해주세요.
+            </p>
+          </div>
+        ) : subTab === 'draft' ? (
+          <DraftPanel episode={episode} />
+        ) : (
+          <ReviewPanel episode={episode} />
+        )}
+      </div>
     </div>
   );
 }
+
+/* ── 초안 생성 패널 ── */
+
+type DraftState = 'idle' | 'streaming' | 'done' | 'error';
+
+function DraftPanel({ episode }: { episode: EpisodeInfo }) {
+  const [storyline, setStoryline] = useState('');
+  const [userPrompt, setUserPrompt] = useState('');
+  const [model, setModel] = useState('sonnet');
+  const [state, setState] = useState<DraftState>('idle');
+  const [result, setResult] = useState('');
+  const [error, setError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const writerId = useWriterId();
+
+  // 에피소드 변경 시 상태 초기화
+  useEffect(() => {
+    setState('idle');
+    setResult('');
+    setError('');
+    setStoryline('');
+    setUserPrompt('');
+    abortRef.current?.abort();
+  }, [episode.id]);
+
+  const handleGenerate = useCallback(async () => {
+    if (!storyline.trim()) return;
+    setState('streaming');
+    setResult('');
+    setError('');
+
+    const controller = await apiClient.streamSSE(
+      '/ai/drafts',
+      {
+        workId: episode.work_id,
+        episodeId: episode.id,
+        storyline: storyline.trim(),
+        currentEpisodeNum: episode.sort_order + 1,
+        model,
+        userPrompt: userPrompt.trim() || null,
+      },
+      (data: unknown) => {
+        const d = data as { type?: string; content?: string };
+        if (d.type === 'chunk' && d.content) {
+          setResult((prev) => prev + d.content);
+          resultRef.current?.scrollTo(0, resultRef.current.scrollHeight);
+        }
+      },
+      () => setState('done'),
+      (err) => {
+        setError(err.message || 'AI 서버 오류가 발생했습니다.');
+        setState('error');
+      },
+    );
+    abortRef.current = controller;
+  }, [episode, storyline, userPrompt, model]);
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    setState('done');
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(result);
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      {/* 현재 에피소드 */}
+      <div className="rounded-md bg-muted/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">현재 원고</span>
+        <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+          {episode.title || '(제목 없음)'}
+        </p>
+      </div>
+
+      {/* 이번 회차 방향 */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          이번 회차 방향 <span className="text-destructive">*</span>
+        </label>
+        <textarea
+          value={storyline}
+          onChange={(e) => setStoryline(e.target.value)}
+          placeholder="이번 회차에서 전개할 내용을 설명해주세요..."
+          rows={3}
+          disabled={state === 'streaming'}
+          className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        />
+      </div>
+
+      {/* 추가 지시사항 */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          추가 지시사항 (선택)
+        </label>
+        <textarea
+          value={userPrompt}
+          onChange={(e) => setUserPrompt(e.target.value)}
+          placeholder="문체, 톤, 특별 요구사항 등..."
+          rows={2}
+          disabled={state === 'streaming'}
+          className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        />
+      </div>
+
+      {/* 모델 선택 + 생성 버튼 */}
+      <div className="flex items-center gap-2">
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          disabled={state === 'streaming'}
+          className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        >
+          <option value="sonnet">Sonnet</option>
+          <option value="opus">Opus</option>
+        </select>
+
+        {state === 'streaming' ? (
+          <button
+            type="button"
+            onClick={handleStop}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-destructive-foreground shadow-sm transition-colors hover:bg-destructive/90"
+          >
+            <Square size={12} strokeWidth={2} />
+            중단
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={!storyline.trim()}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Sparkles size={13} strokeWidth={1.75} />
+            초안 생성
+          </button>
+        )}
+      </div>
+
+      {/* 결과 영역 */}
+      {(result || state === 'streaming') && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              {state === 'streaming' ? '생성 중...' : '생성 결과'}
+            </span>
+            {state === 'streaming' && (
+              <Loader2 size={14} className="animate-spin text-primary" />
+            )}
+          </div>
+          <div
+            ref={resultRef}
+            className="max-h-80 overflow-y-auto rounded-md border border-border bg-muted/30 p-3 text-sm leading-relaxed text-foreground whitespace-pre-wrap"
+          >
+            {result}
+          </div>
+          {state === 'done' && result && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <ClipboardCopy size={12} strokeWidth={1.75} />
+              복사
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 에러 */}
+      {state === 'error' && (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 원고 검수 패널 ── */
+
+interface ReviewIssue {
+  type: string;
+  severity: 'critical' | 'warning' | 'info';
+  location: string;
+  description: string;
+  reference: string;
+  suggestion: string;
+}
+
+interface ReviewResult {
+  issues: ReviewIssue[];
+  summary: string;
+  score: number;
+}
+
+type ReviewState = 'idle' | 'loading' | 'done' | 'error';
+
+function ReviewPanel({ episode }: { episode: EpisodeInfo }) {
+  const [state, setState] = useState<ReviewState>('idle');
+  const [result, setResult] = useState<ReviewResult | null>(null);
+  const [error, setError] = useState('');
+  const writerId = useWriterId();
+
+  useEffect(() => {
+    setState('idle');
+    setResult(null);
+    setError('');
+  }, [episode.id]);
+
+  const handleReview = async () => {
+    if (!episode.content) return;
+    setState('loading');
+    setError('');
+
+    try {
+      const data = await apiClient.post<ReviewResult>('/ai/reviews', {
+        workId: episode.work_id,
+        episodeId: episode.id,
+        content: episode.content,
+        episodeNumber: episode.sort_order + 1,
+      });
+      setResult(data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 });
+      setState('done');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI 서버 오류가 발생했습니다.');
+      setState('error');
+    }
+  };
+
+  const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
+    critical: { bg: 'bg-red-50 border-red-200', icon: OctagonAlert, label: '심각' },
+    warning: { bg: 'bg-amber-50 border-amber-200', icon: AlertTriangle, label: '주의' },
+    info: { bg: 'bg-blue-50 border-blue-200', icon: Info, label: '참고' },
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      {/* 현재 에피소드 */}
+      <div className="rounded-md bg-muted/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">현재 원고</span>
+        <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+          {episode.title || '(제목 없음)'}
+        </p>
+      </div>
+
+      {!episode.content ? (
+        <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+          원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+        </div>
+      ) : (
+        <>
+          {/* 검수 시작 버튼 */}
+          <button
+            type="button"
+            onClick={handleReview}
+            disabled={state === 'loading'}
+            className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {state === 'loading' ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                검수 진행 중...
+              </>
+            ) : (
+              <>
+                <Search size={13} strokeWidth={1.75} />
+                검수 시작
+              </>
+            )}
+          </button>
+
+          {state === 'loading' && (
+            <p className="text-center text-xs text-muted-foreground">
+              설정집과 이전 맥락을 대조하여 원고를 검수합니다.
+              <br />
+              최대 1분 정도 소요될 수 있습니다.
+            </p>
+          )}
+        </>
+      )}
+
+      {/* 검수 결과 */}
+      {state === 'done' && result && (
+        <div className="flex flex-col gap-3">
+          {/* 점수 + 요약 */}
+          <div className="rounded-md border border-border bg-background p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
+              <span className={cn(
+                'text-lg font-bold',
+                result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+              )}>
+                {result.score}
+                <span className="text-xs font-normal text-muted-foreground">/100</span>
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{result.summary}</p>
+          </div>
+
+          {/* 이슈 목록 */}
+          {result.issues.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
+              <Check size={16} strokeWidth={2} />
+              검수에서 발견된 문제가 없습니다.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                발견된 이슈 ({result.issues.length}건)
+              </span>
+              {result.issues.map((issue, i) => {
+                const severity = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.info;
+                const SeverityIcon = severity.icon;
+                return (
+                  <div key={i} className={cn('rounded-md border p-3', severity.bg)}>
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <SeverityIcon size={14} strokeWidth={1.75} />
+                      <span className="text-xs font-semibold">{severity.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
+                      </span>
+                    </div>
+                    {issue.location && (
+                      <p className="mb-1 rounded bg-white/60 px-2 py-1 text-xs italic text-foreground/80">
+                        &ldquo;{issue.location}&rdquo;
+                      </p>
+                    )}
+                    <p className="text-xs text-foreground">{issue.description}</p>
+                    {issue.reference && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-medium">근거:</span> {issue.reference}
+                      </p>
+                    )}
+                    {issue.suggestion && (
+                      <p className="mt-1 text-xs text-primary">
+                        <span className="font-medium">제안:</span> {issue.suggestion}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 에러 */}
+      {state === 'error' && (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ISSUE_TYPE_LABELS: Record<string, string> = {
+  setting_conflict: '설정 충돌',
+  narration_conflict: '서술 충돌',
+  tone_conflict: '톤 불일치',
+  context_conflict: '맥락 충돌',
+};
 
 /* ── 삽입 위치 인디케이터 ── */
 

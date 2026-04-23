@@ -461,6 +461,7 @@ function renderMain({
             key={noteId}
             noteId={noteId}
             onBack={back}
+            onBackToCharacter={(charId) => onItemSelect('char:' + charId)}
           />
         );
       }
