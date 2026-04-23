@@ -7,8 +7,8 @@ from app.services.llm import FakeLLM
 async def test_summary_schema_keys():
     llm = FakeLLM()
     result = await llm.generate_json(
-        system="요약 프롬프트",
-        user="회차 본문 ...",
+        system="summary prompt",
+        user="episode body",
         schema_hint="summary schema",
     )
     assert set(result.keys()) == {
@@ -18,17 +18,19 @@ async def test_summary_schema_keys():
         "foreshadowingCandidates",
     }
     assert set(result["characters"].keys()) == {"existing", "new"}
+    assert llm.last_usage == {"input_tokens": 0, "output_tokens": 0}
 
 
 @pytest.mark.asyncio
 async def test_review_schema_keys():
     llm = FakeLLM()
     result = await llm.generate_json(
-        system="review 프롬프트",
-        user="검수 대상 원고",
+        system="review prompt",
+        user="review body",
         schema_hint="review schema",
     )
     assert set(result.keys()) == {"issues", "newItems"}
+    assert llm.last_usage == {"input_tokens": 0, "output_tokens": 0}
 
 
 @pytest.mark.asyncio
@@ -38,6 +40,7 @@ async def test_stream_yields_non_empty_chunks():
     assert len(chunks) > 0
     assert all(isinstance(c, str) and len(c) > 0 for c in chunks)
     assert "".join(chunks).startswith("[fake draft]")
+    assert llm.last_usage == {"input_tokens": 0, "output_tokens": 0}
 
 
 @pytest.mark.asyncio
@@ -46,7 +49,7 @@ async def test_stream_accepts_model_override():
     chunks = [c async for c in llm.generate_stream("sys", "usr", model_override="opus")]
     assert len(chunks) > 0
     assert "".join(chunks).startswith("[fake draft]")
-
+    assert llm.last_usage == {"input_tokens": 0, "output_tokens": 0}
 
 
 @pytest.mark.asyncio
@@ -63,3 +66,4 @@ async def test_generate_with_tools_returns_review_shape():
         "summary": "검수 결과 없음 (fake)",
         "score": 100,
     }
+    assert llm.last_usage == {"input_tokens": 0, "output_tokens": 0}

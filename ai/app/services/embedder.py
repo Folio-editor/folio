@@ -1,4 +1,4 @@
-"""Embedding providers for fake and OpenAI-backed vector generation."""
+"""임베딩 Provider 인터페이스 + Fake/OpenAI 구현."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ import math
 import random
 from abc import ABC, abstractmethod
 
-from openai import OpenAI
+try:
+    from openai import AsyncOpenAI
+except ImportError:  # pragma: no cover - optional runtime dependency
+    AsyncOpenAI = None  # type: ignore[assignment]
 
 EMBEDDING_DIM = 1536
 OPENAI_BATCH_LIMIT = 2048
@@ -43,12 +46,13 @@ class FakeEmbedder(EmbedderProvider):
 
 
 class OpenAIEmbedder(EmbedderProvider):
-    """OpenAI embedding provider using text-embedding models."""
+    """OpenAI text-embedding-3-* 기반 구현."""
 
     def __init__(self, api_key: str, model: str) -> None:
-        self._api_key = api_key
+        if AsyncOpenAI is None:
+            raise RuntimeError("openai package is not installed.")
         self._model = model
-        self._client = OpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key)
 
     @property
     def dimension(self) -> int:
@@ -57,17 +61,17 @@ class OpenAIEmbedder(EmbedderProvider):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-
         normalized_texts = [self._validate_text(text) for text in texts]
-        embeddings: list[list[float]] = []
-
+        results: list[list[float]] = []
         for start in range(0, len(normalized_texts), OPENAI_BATCH_LIMIT):
-            batch = normalized_texts[start:start + OPENAI_BATCH_LIMIT]
-            response = self._client.embeddings.create(model=self._model, input=batch)
-            for item in sorted(response.data, key=lambda data: data.index):
-                embeddings.append(list(item.embedding))
-
-        return embeddings
+            batch = normalized_texts[start : start + OPENAI_BATCH_LIMIT]
+            resp = await self._client.embeddings.create(
+                model=self._model,
+                input=batch,
+            )
+            data = sorted(resp.data, key=lambda item: item.index)
+            results.extend([list(item.embedding) for item in data])
+        return results
 
     @staticmethod
     def _validate_text(text: str) -> str:

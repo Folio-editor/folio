@@ -10,6 +10,13 @@ def _make_embedding(value: float) -> list[float]:
     return [value] * EMBEDDING_DIM
 
 
+def _make_client(create_fn):
+    async def async_create(**kwargs):
+        return create_fn(**kwargs)
+
+    return SimpleNamespace(embeddings=SimpleNamespace(create=async_create))
+
+
 @pytest.mark.asyncio
 async def test_openai_embedder_returns_vectors_in_order():
     fake_response = SimpleNamespace(
@@ -18,11 +25,9 @@ async def test_openai_embedder_returns_vectors_in_order():
             SimpleNamespace(index=0, embedding=_make_embedding(0.0)),
         ]
     )
-    fake_client = SimpleNamespace(
-        embeddings=SimpleNamespace(create=lambda **_: fake_response)
-    )
+    fake_client = _make_client(lambda **_: fake_response)
 
-    with patch("app.services.embedder.OpenAI", return_value=fake_client):
+    with patch("app.services.embedder.AsyncOpenAI", return_value=fake_client):
         embedder = OpenAIEmbedder(api_key="test-key", model="text-embedding-3-small")
         vectors = await embedder.embed_batch(["안녕", "반가워"])
 
@@ -45,10 +50,10 @@ async def test_openai_embedder_splits_large_batches():
             ]
         )
 
-    fake_client = SimpleNamespace(embeddings=SimpleNamespace(create=create))
+    fake_client = _make_client(create)
     texts = [f"text-{index}" for index in range(OPENAI_BATCH_LIMIT + 2)]
 
-    with patch("app.services.embedder.OpenAI", return_value=fake_client):
+    with patch("app.services.embedder.AsyncOpenAI", return_value=fake_client):
         embedder = OpenAIEmbedder(api_key="test-key", model="text-embedding-3-small")
         vectors = await embedder.embed_batch(texts)
 
@@ -58,9 +63,9 @@ async def test_openai_embedder_splits_large_batches():
 
 @pytest.mark.asyncio
 async def test_openai_embedder_rejects_blank_input():
-    fake_client = SimpleNamespace(embeddings=SimpleNamespace(create=lambda **_: None))
+    fake_client = _make_client(lambda **_: None)
 
-    with patch("app.services.embedder.OpenAI", return_value=fake_client):
+    with patch("app.services.embedder.AsyncOpenAI", return_value=fake_client):
         embedder = OpenAIEmbedder(api_key="test-key", model="text-embedding-3-small")
         with pytest.raises(ValueError):
             await embedder.embed_batch([""])
