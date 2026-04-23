@@ -36,7 +36,7 @@ interface ContentEditorProps {
   onCharCountChange?: (count: number) => void;
 }
 
-const DEFAULT_DEBOUNCE_MS = 1000;
+const DEFAULT_DEBOUNCE_MS = 3000;
 
 export function ContentEditor({
   itemId,
@@ -50,6 +50,7 @@ export function ContentEditor({
   onCharCountChange,
 }: ContentEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const charCountDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
   const onCharCountChangeRef = useRef(onCharCountChange);
   onUpdateRef.current = onUpdate;
@@ -95,12 +96,19 @@ export function ContentEditor({
       onUpdate: ({ editor: ed }) => {
         setSaveStatus('saving');
 
-        // 글자 수 즉시 갱신 (debounce 없이)
+        // 글자 수 UI 즉시 갱신
         const chars = ed.storage.characterCount?.characters?.() ?? 0;
         const words = ed.storage.characterCount?.words?.() ?? 0;
         setCharCount(chars);
         setWordCount(words);
-        if (onCharCountChangeRef.current) onCharCountChangeRef.current(chars);
+
+        // DB 저장은 디바운스 (매 키 입력마다 UPDATE 방지)
+        if (onCharCountChangeRef.current) {
+          if (charCountDebounceRef.current) clearTimeout(charCountDebounceRef.current);
+          charCountDebounceRef.current = setTimeout(() => {
+            onCharCountChangeRef.current?.(chars);
+          }, debounceMs);
+        }
 
         const emit = () => {
           const json = JSON.stringify(ed.getJSON());
@@ -136,6 +144,10 @@ export function ContentEditor({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
+    if (charCountDebounceRef.current) {
+      clearTimeout(charCountDebounceRef.current);
+      charCountDebounceRef.current = null;
+    }
     if (!editor || editor.isDestroyed) return;
     editor.commands.setContent(parseContent(initialContent), { emitUpdate: false });
     setSaveStatus('idle');
@@ -146,6 +158,7 @@ export function ContentEditor({
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (charCountDebounceRef.current) clearTimeout(charCountDebounceRef.current);
     };
   }, []);
 

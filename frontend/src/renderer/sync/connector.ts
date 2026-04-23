@@ -48,10 +48,11 @@ export class FolioConnector implements PowerSyncBackendConnector {
    * PowerSync가 변경사항 발생 시 자동으로 호출한다.
    *
    * 흐름:
-   *   1. getNextCrudTransaction()으로 한 트랜잭션의 모든 entry 조회
+   *   1. getCrudBatch(BATCH_SIZE)로 최대 50건의 entry를 한 배치로 조회
    *   2. POST /api/v1/sync/upload 로 한 번에 전송
-   *   3. 200 OK 시에만 transaction.complete() → 큐에서 제거
+   *   3. 200 OK 시에만 batch.complete() → 큐에서 제거
    *   4. 실패 시 complete() 미호출 → PowerSync 자동 재시도
+   *   5. 배치 간 200ms throttle로 서버 burst 부하 방지
    *
    * 게스트 모드(토큰 없음): 큐는 누적되며 로그인 후 업로드된다.
    *
@@ -66,10 +67,13 @@ export class FolioConnector implements PowerSyncBackendConnector {
       return;
     }
 
-    let transaction = await database.getNextCrudTransaction();
+    const BATCH_SIZE = 50;
+    const THROTTLE_MS = 200;
 
-    while (transaction) {
-      const entries: SyncUploadEntry[] = transaction.crud.map((entry) => ({
+    let batch = await database.getCrudBatch(BATCH_SIZE);
+
+    while (batch) {
+      const entries: SyncUploadEntry[] = batch.crud.map((entry) => ({
         table: entry.table,
         op: entry.op,
         id: entry.id,
@@ -78,7 +82,7 @@ export class FolioConnector implements PowerSyncBackendConnector {
 
       try {
         await apiClient.post('/sync/upload', entries);
-        await transaction.complete();
+        await batch.complete();
         console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 'network';
@@ -86,7 +90,11 @@ export class FolioConnector implements PowerSyncBackendConnector {
         break;
       }
 
-      transaction = await database.getNextCrudTransaction();
+      if (!batch.haveMore) break;
+
+      // 다음 배치 전 throttle — 서버 burst 부하 방지
+      await new Promise((r) => setTimeout(r, THROTTLE_MS));
+      batch = await database.getCrudBatch(BATCH_SIZE);
     }
   }
 }
