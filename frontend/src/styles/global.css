@@ -178,6 +178,22 @@ body {
   text-indent: 0;
 }
 
+.folio-editor .ProseMirror h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+}
+.folio-editor .ProseMirror h2 {
+  font-size: 1.25em;
+  font-weight: 700;
+  margin: 0.8em 0 0.3em;
+}
+.folio-editor .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.6em 0 0.25em;
+}
+
 /* ── 장면 구분선 ── */
 .folio-editor .scene-break {
   text-align: center;
@@ -330,5 +346,43 @@ body {
   padding: 0 1px;
 }
 .dark .note-preview mark {
+  background-color: oklch(0.4 0.1 90);
+}
+
+/* ── 플롯 인라인 에디터 ── */
+.plot-inline-editor .tiptap h1 {
+  font-size: 1.15em;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+.plot-inline-editor .tiptap h2 {
+  font-size: 1em;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+.plot-inline-editor .tiptap h3 {
+  font-size: 0.9em;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+}
+.plot-inline-editor .tiptap p {
+  margin: 0 0 0.25em;
+}
+.plot-inline-editor .tiptap ul,
+.plot-inline-editor .tiptap ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.plot-inline-editor .tiptap blockquote {
+  margin: 0;
+  padding-left: 0.5em;
+  border-left: 2px solid var(--border);
+}
+.plot-inline-editor .tiptap mark {
+  background-color: oklch(0.9 0.15 90);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dark .plot-inline-editor .tiptap mark {
   background-color: oklch(0.4 0.1 90);
 }

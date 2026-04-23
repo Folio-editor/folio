@@ -94,7 +94,7 @@ export function RightPanels({
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col border-l border-border"
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-border"
     >
       <ResizeHandle
         side="left"
@@ -238,7 +238,7 @@ function DocsTabContent({
 
   return (
     <div
-      className={cn('flex flex-1 flex-col', isDragOver && 'bg-primary/5')}
+      className={cn('flex min-h-0 flex-1 flex-col', isDragOver && 'bg-primary/5')}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

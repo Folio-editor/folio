@@ -1,5 +1,9 @@
-import { useMemo, useState, useEffect, useCallback, useRef, type RefCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@powersync/react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import Highlight from '@tiptap/extension-highlight';
 import {
   ChevronDown,
   ChevronRight,
@@ -34,6 +38,7 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 import type { WorkspaceSection } from '../../types/workspace';
 
@@ -331,21 +336,50 @@ function ActSection({
   );
   const title = useDeferredText(act.id, act.title, (v) => void updatePlot(act.id, { title: v }));
 
-  const actContentText = useMemo(() => extractPlainText(act.content), [act.content]);
-  const [actDraft, setActDraft] = useState(actContentText);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const actDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actUpdateRef = useRef(updatePlot);
+  actUpdateRef.current = updatePlot;
+
+  const actEditor = useEditor(
+    {
+      immediatelyRender: false,
+      extensions: [
+        StarterKit.configure({ code: false, codeBlock: false }),
+        Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
+        Highlight.configure({ multicolor: false }),
+      ],
+      content: parseNoteContent(act.content),
+      onUpdate: ({ editor: ed }) => {
+        if (actDebounceRef.current) clearTimeout(actDebounceRef.current);
+        actDebounceRef.current = setTimeout(() => {
+          const json = JSON.stringify(ed.getJSON());
+          void actUpdateRef.current(act.id, { content: json });
+        }, 800);
+      },
+    },
+    [],
+  );
 
   useEffect(() => {
-    setActDraft(extractPlainText(act.content));
-  }, [act.content]);
+    if (actDebounceRef.current) {
+      clearTimeout(actDebounceRef.current);
+      actDebounceRef.current = null;
+    }
+    if (!actEditor || actEditor.isDestroyed) return;
+    actEditor.commands.setContent(parseNoteContent(act.content), { emitUpdate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [act.id]);
 
-  const commitActContent = useCallback(() => {
-    const current = extractPlainText(act.content);
-    if (actDraft === current) return;
-    const json = plainTextToTiptap(actDraft);
-    void updatePlot(act.id, { content: JSON.stringify(json) });
-  }, [actDraft, act.content, act.id, updatePlot]);
+  useEffect(() => {
+    return () => {
+      if (actDebounceRef.current) clearTimeout(actDebounceRef.current);
+    };
+  }, []);
 
-  const actTextareaRef = useAutoResize(actDraft);
+  const hasContent = actEditor ? actEditor.state.doc.textContent.length > 0 : !!act.content;
 
   return (
     <div
@@ -363,7 +397,7 @@ function ActSection({
           <div className="absolute left-[-1px] top-1/2 h-4 w-4 -translate-y-1/2 animate-ping rounded-full bg-primary/40" />
         )}
         {/* 헤더 → 본문/회차로 이어지는 세로선 (도트 아래부터 시작) */}
-        {(!isCollapsed || actDraft) && (
+        {(!isCollapsed || hasContent) && (
           <div className="absolute bottom-0 left-[7px] top-[calc(50%+8px)] w-px bg-border" />
         )}
 
@@ -388,7 +422,7 @@ function ActSection({
 
         <button
           type="button"
-          onClick={() => void deletePlot(act.id)}
+          onClick={() => setConfirmDelete(true)}
           title="막 삭제"
           className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
         >
@@ -396,23 +430,31 @@ function ActSection({
         </button>
       </div>
 
-      {/* ── 막 설명 (세로선 연결) ── */}
+      {/* ── 막 설명 (세로선 연결, 위지윅 에디터) ── */}
       <div className="relative pl-7 pb-2">
         {/* 세로선: 본문 영역 */}
-        <div className={cn(
-          'absolute left-[7px] top-0 w-px bg-border',
-          !isCollapsed ? 'bottom-0' : 'bottom-0',
-        )} />
-        <textarea
-          ref={actTextareaRef}
-          value={actDraft}
-          onChange={(e) => setActDraft(e.target.value)}
-          onBlur={commitActContent}
-          placeholder="막에 대한 설명을 입력하세요…"
-          rows={1}
-          className="w-full resize-none overflow-hidden bg-transparent text-xs leading-relaxed text-foreground/80 outline-none placeholder:text-muted-foreground"
+        <div className="absolute left-[7px] top-0 bottom-0 w-px bg-border" />
+        <EditorContent
+          editor={actEditor}
+          className="plot-inline-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
         />
       </div>
+
+      {confirmDelete && (
+        <DeleteConfirmDialog
+          title="막 삭제"
+          message={`"${act.title || '(제목 없음)'}" 막과 하위 ${episodes.length}개 회차가 모두 삭제됩니다.`}
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void Promise.resolve(deletePlot(act.id)).then(() => {
+              setDeleteBusy(false);
+              setConfirmDelete(false);
+            });
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
 
       {!isCollapsed && (
         <div className="relative">
@@ -527,21 +569,45 @@ function TimelineCard({
     (v) => void updatePlot(episode.id, { title: v }),
   );
 
-  const contentText = useMemo(() => extractPlainText(episode.content), [episode.content]);
-  const [draft, setDraft] = useState(contentText);
+  const epDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const epUpdateRef = useRef(updatePlot);
+  epUpdateRef.current = updatePlot;
+
+  const epEditor = useEditor(
+    {
+      immediatelyRender: false,
+      extensions: [
+        StarterKit.configure({ code: false, codeBlock: false }),
+        Placeholder.configure({ placeholder: '플롯 내용을 입력하세요…' }),
+        Highlight.configure({ multicolor: false }),
+      ],
+      content: parseNoteContent(episode.content),
+      onUpdate: ({ editor: ed }) => {
+        if (epDebounceRef.current) clearTimeout(epDebounceRef.current);
+        epDebounceRef.current = setTimeout(() => {
+          const json = JSON.stringify(ed.getJSON());
+          void epUpdateRef.current(episode.id, { content: json });
+        }, 800);
+      },
+    },
+    [],
+  );
 
   useEffect(() => {
-    setDraft(extractPlainText(episode.content));
-  }, [episode.content]);
+    if (epDebounceRef.current) {
+      clearTimeout(epDebounceRef.current);
+      epDebounceRef.current = null;
+    }
+    if (!epEditor || epEditor.isDestroyed) return;
+    epEditor.commands.setContent(parseNoteContent(episode.content), { emitUpdate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episode.id]);
 
-  const commitContent = () => {
-    const current = extractPlainText(episode.content);
-    if (draft === current) return;
-    const json = plainTextToTiptap(draft);
-    void updatePlot(episode.id, { content: JSON.stringify(json) });
-  };
-
-  const epTextareaRef = useAutoResize(draft);
+  useEffect(() => {
+    return () => {
+      if (epDebounceRef.current) clearTimeout(epDebounceRef.current);
+    };
+  }, []);
 
   const cycleStatus = () => {
     const idx = STATUS_OPTIONS.indexOf(episode.status ?? '예정');
@@ -624,18 +690,12 @@ function TimelineCard({
         </div>
 
         {!collapsed && (
-          <>
-            {/* 플롯 내용 — 자동 높이 */}
-            <textarea
-              ref={epTextareaRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commitContent}
-              placeholder="플롯 내용을 입력하세요…"
-              rows={1}
-              className="mt-2 w-full resize-none overflow-hidden bg-transparent text-xs leading-relaxed text-foreground/80 outline-none placeholder:text-muted-foreground"
+          <div className="mt-2">
+            <EditorContent
+              editor={epEditor}
+              className="plot-inline-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
             />
-          </>
+          </div>
         )}
 
         {/* 액션 버튼 */}
@@ -769,23 +829,50 @@ function ActGridSection({
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }) {
   const { updatePlot, reorderItems } = useLocalWrite();
-  const summary = useMemo(() => extractPlainText(act.content), [act.content]);
-  const [actDraft, setActDraft] = useState(summary);
   const previewEpisodes = episodes;
   const episodeSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  useEffect(() => {
-    setActDraft(extractPlainText(act.content));
-  }, [act.content]);
+  const gridActDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gridActUpdateRef = useRef(updatePlot);
+  gridActUpdateRef.current = updatePlot;
 
-  const commitActContent = useCallback(() => {
-    const current = extractPlainText(act.content);
-    if (actDraft === current) return;
-    const json = plainTextToTiptap(actDraft);
-    void updatePlot(act.id, { content: JSON.stringify(json) });
-  }, [actDraft, act.content, act.id, updatePlot]);
+  const gridActEditor = useEditor(
+    {
+      immediatelyRender: false,
+      extensions: [
+        StarterKit.configure({ code: false, codeBlock: false }),
+        Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
+        Highlight.configure({ multicolor: false }),
+      ],
+      content: parseNoteContent(act.content),
+      onUpdate: ({ editor: ed }) => {
+        if (gridActDebounceRef.current) clearTimeout(gridActDebounceRef.current);
+        gridActDebounceRef.current = setTimeout(() => {
+          const json = JSON.stringify(ed.getJSON());
+          void gridActUpdateRef.current(act.id, { content: json });
+        }, 800);
+      },
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (gridActDebounceRef.current) {
+      clearTimeout(gridActDebounceRef.current);
+      gridActDebounceRef.current = null;
+    }
+    if (!gridActEditor || gridActEditor.isDestroyed) return;
+    gridActEditor.commands.setContent(parseNoteContent(act.content), { emitUpdate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [act.id]);
+
+  useEffect(() => {
+    return () => {
+      if (gridActDebounceRef.current) clearTimeout(gridActDebounceRef.current);
+    };
+  }, []);
 
   return (
     <section
@@ -814,13 +901,9 @@ function ActGridSection({
       {!isCollapsed && (
         <>
       <div className="mb-4 rounded-lg border border-border/70 bg-card/40 px-3 py-2">
-        <textarea
-          value={actDraft}
-          onChange={(e) => setActDraft(e.target.value)}
-          onBlur={commitActContent}
-          placeholder="막에 대한 설명을 입력하세요…"
-          rows={4}
-          className="w-full resize-none bg-transparent text-xs leading-relaxed text-foreground/80 outline-none placeholder:text-muted-foreground"
+        <EditorContent
+          editor={gridActEditor}
+          className="plot-inline-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
         />
       </div>
 
@@ -969,8 +1052,47 @@ function ActGridEpisodeContentEditor({
     episode.title,
     (v) => void updatePlot(episode.id, { title: v }),
   );
-  const contentText = useMemo(() => extractPlainText(episode.content), [episode.content]);
-  const [draft, setDraft] = useState(contentText);
+
+  const gridEpDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gridEpUpdateRef = useRef(updatePlot);
+  gridEpUpdateRef.current = updatePlot;
+
+  const gridEpEditor = useEditor(
+    {
+      immediatelyRender: false,
+      extensions: [
+        StarterKit.configure({ code: false, codeBlock: false }),
+        Placeholder.configure({ placeholder: '회차 내용을 입력하세요…' }),
+        Highlight.configure({ multicolor: false }),
+      ],
+      content: parseNoteContent(episode.content),
+      onUpdate: ({ editor: ed }) => {
+        if (gridEpDebounceRef.current) clearTimeout(gridEpDebounceRef.current);
+        gridEpDebounceRef.current = setTimeout(() => {
+          const json = JSON.stringify(ed.getJSON());
+          void gridEpUpdateRef.current(episode.id, { content: json });
+        }, 800);
+      },
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (gridEpDebounceRef.current) {
+      clearTimeout(gridEpDebounceRef.current);
+      gridEpDebounceRef.current = null;
+    }
+    if (!gridEpEditor || gridEpEditor.isDestroyed) return;
+    gridEpEditor.commands.setContent(parseNoteContent(episode.content), { emitUpdate: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episode.id]);
+
+  useEffect(() => {
+    return () => {
+      if (gridEpDebounceRef.current) clearTimeout(gridEpDebounceRef.current);
+    };
+  }, []);
+
   const { data: linkRows = [] } = useQuery<LinkRow>(
     `SELECT pel.plot_id, pel.id AS link_id, pel.episode_id AS episode_id, e.title AS episode_title
      FROM plot_episode_link pel
@@ -985,19 +1107,6 @@ function ActGridEpisodeContentEditor({
         episodeTitle: linkRows[0].episode_title,
       }
     : undefined;
-
-  useEffect(() => {
-    setDraft(extractPlainText(episode.content));
-  }, [episode.content]);
-
-  const commitContent = () => {
-    const current = extractPlainText(episode.content);
-    if (draft === current) return;
-    const json = plainTextToTiptap(draft);
-    void updatePlot(episode.id, { content: JSON.stringify(json) });
-  };
-
-  const gridTextareaRef = useAutoResize(draft);
 
   const cycleStatus = () => {
     const idx = STATUS_OPTIONS.indexOf(episode.status ?? '예정');
@@ -1056,16 +1165,12 @@ function ActGridEpisodeContentEditor({
       </div>
       {!collapsed && (
         <>
-      <textarea
-        ref={gridTextareaRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commitContent}
-        onClick={(e) => e.stopPropagation()}
-        placeholder="회차 내용을 입력하세요…"
-        rows={1}
-        className="mt-2 w-full resize-none overflow-hidden rounded-md border border-border/70 bg-background px-2 py-1.5 text-xs leading-relaxed text-foreground/80 outline-none placeholder:text-muted-foreground"
-      />
+      <div className="mt-2 rounded-md border border-border/70 bg-background px-2 py-1.5">
+        <EditorContent
+          editor={gridEpEditor}
+          className="plot-inline-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:h-0"
+        />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
         {link ? (
           <>
@@ -1280,51 +1385,13 @@ function EpisodeLinkModal({
   );
 }
 
-/* ── 자동 높이 textarea ── */
-
-function useAutoResize(value: string): RefCallback<HTMLTextAreaElement> {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
-
-  return useCallback((node: HTMLTextAreaElement | null) => {
-    ref.current = node;
-    if (node) {
-      node.style.height = 'auto';
-      node.style.height = `${node.scrollHeight}px`;
-    }
-  }, []);
-}
-
 /* ── 유틸 ── */
 
-function extractPlainText(raw: string | null): string {
+function parseNoteContent(raw: string | null): object | string {
   if (!raw) return '';
   try {
-    const json = JSON.parse(raw);
-    if (!json.content) return '';
-    return json.content
-      .map((node: { content?: { text?: string }[] }) =>
-        node.content?.map((c) => c.text ?? '').join('') ?? '',
-      )
-      .join('\n');
+    return JSON.parse(raw) as object;
   } catch {
     return '';
   }
-}
-
-function plainTextToTiptap(text: string) {
-  const lines = text.split('\n');
-  return {
-    type: 'doc',
-    content: lines.map((line) => ({
-      type: 'paragraph',
-      content: line ? [{ type: 'text', text: line }] : [],
-    })),
-  };
 }
