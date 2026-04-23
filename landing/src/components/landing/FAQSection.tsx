@@ -27,6 +27,16 @@ export function FAQSection() {
             </details>
           ))}
         </div>
+
+        <div className="faq-contact">
+          <p className="faq-contact-label sans">문의사항이 있나요?</p>
+          <p className="faq-contact-body">
+            <a href="mailto:s14p31f203@gmail.com" className="sans">
+              s14p31f203@gmail.com
+            </a>
+            으로 편하게 문의 주세요.
+          </p>
+        </div>
       </section>
     </>
   );
