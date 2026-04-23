@@ -3,22 +3,17 @@ export function Hero() {
     <section className="hero" id="signup">
       <div className="hero-rule" />
       <p className="hero-hook">이제, 혼자 쓰지 마세요.</p>
-      <h1 className="hero-brand">Folio</h1>
-      <p className="hero-sub">a writing room for serial novelists</p>
-      <p className="hero-tagline">
-        1화부터 AI와 함께 쌓아가는 웹소설 작업실.
-        <br />
-        오래 쓸수록, 작가님의 작품을 더 잘 이해합니다.
-      </p>
-      <div className="cta-group">
-        <a href="#" className="cta cta-primary">
-          무료로 시작하기
+      <img
+        src="/hero-title.png"
+        alt="Folio — Where your stories come to life."
+        className="hero-image"
+      />
+      <div className="cta-download-group">
+        <a href="#" className="cta-download">
+          <span className="cta-download-inner">Download</span>
         </a>
-        <a href="#features" className="cta cta-ghost">
-          기능 둘러보기
-        </a>
+        <p className="cta-download-caption">Windows · iOS</p>
       </div>
-      <div className="hero-cue sans">scroll</div>
     </section>
   );
 }

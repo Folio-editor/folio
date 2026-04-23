@@ -13,13 +13,14 @@ html {
   --accent: #a01818;
   --serif: 'Noto Serif KR', 'Nanum Myeongjo', Georgia, serif;
   --sans: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
-  --nav-h: 56px;
+  --nav-h: 68px;
 
   background: var(--bg);
   color: var(--ink);
   font-family: var(--serif);
   min-height: 100vh;
   overflow-x: hidden;
+  padding-top: var(--nav-h);
   -webkit-font-smoothing: antialiased;
 }
 .folio-landing *,
@@ -33,11 +34,12 @@ html {
 
 /* ── Top Navigation ───────────────────────────────────── */
 .folio-landing .nav {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
   height: var(--nav-h);
-  width: 100%;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: saturate(180%) blur(10px);
   -webkit-backdrop-filter: saturate(180%) blur(10px);
@@ -53,28 +55,24 @@ html {
   justify-content: space-between;
 }
 .folio-landing .nav-brand {
-  font-family: var(--sans);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
+  height: 100%;
 }
-.folio-landing .nav-dot {
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  border-radius: 50%;
-  margin-left: 2px;
-  transform: translateY(-7px);
+.folio-landing .nav-logo {
+  display: block;
+  height: 54px;
+  width: auto;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .folio-landing .nav-links {
   display: flex;
   align-items: center;
   gap: 1.5rem;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
 }
 .folio-landing .nav-link {
   color: var(--ink-mid);
@@ -90,6 +88,7 @@ html {
   padding: 8px 14px;
   text-decoration: none;
   font-weight: 500;
+  font-size: 14px;
   transition: opacity 0.15s;
 }
 .folio-landing .nav-cta:hover {
@@ -118,31 +117,18 @@ html {
   font-size: 24px;
   font-weight: 500;
   letter-spacing: -0.015em;
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.25rem;
   color: var(--ink-mid);
 }
-.folio-landing .hero-brand {
-  font-family: var(--sans);
-  font-size: 88px;
-  font-weight: 700;
-  letter-spacing: -0.045em;
-  line-height: 1;
-  margin-bottom: 0.75rem;
-}
-.folio-landing .hero-sub {
-  font-size: 15px;
-  color: var(--ink-mid);
-  font-style: italic;
-  letter-spacing: 0.02em;
-  margin-bottom: 2.5rem;
-}
-.folio-landing .hero-tagline {
-  font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.7;
-  margin-bottom: 2.5rem;
-  color: #333;
-  max-width: 460px;
+.folio-landing .hero-image {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  margin: 0 auto 2.5rem;
+  transform: translateX(6px);
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .folio-landing .cta-group {
   display: inline-flex;
@@ -153,7 +139,7 @@ html {
 .folio-landing .cta {
   display: inline-block;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   padding: 14px 32px;
   border: 1.5px solid var(--ink);
@@ -179,11 +165,61 @@ html {
   background: var(--ink);
   color: var(--bg);
 }
+.folio-landing .cta-download-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.folio-landing .cta-download {
+  display: inline-block;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: #2a2420;
+  background: transparent;
+  border: 1.5px solid #2a2420;
+  border-radius: 999px;
+  padding: 4px;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.folio-landing .cta-download-inner {
+  display: block;
+  padding: 10px 44px;
+  border: 1px solid #2a2420;
+  border-radius: 999px;
+  transition: border-color 0.2s;
+}
+.folio-landing .cta-download:hover {
+  background: #2a2420;
+  color: #faf6ed;
+}
+.folio-landing .cta-download:hover .cta-download-inner {
+  border-color: #faf6ed;
+}
+.folio-landing .cta-download:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.folio-landing .cta-download-caption {
+  margin-top: 0.85rem;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  color: var(--ink-mid);
+  text-transform: uppercase;
+  margin-bottom: 0;
+}
 .folio-landing .hero-cue {
   position: absolute;
   bottom: 2.5rem;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.3em;
   text-transform: uppercase;
   color: var(--ink-mid);
@@ -195,7 +231,7 @@ html {
 }
 .folio-landing .hero-cue::after {
   content: '↓';
-  font-size: 14px;
+  font-size: 15px;
 }
 @keyframes folioPulse {
   0%,
@@ -230,20 +266,13 @@ html {
 }
 .folio-landing .prologue-meta {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.4em;
   text-transform: uppercase;
   color: var(--ink-mid);
   font-weight: 300;
   margin-bottom: 0.75rem;
 }
-.folio-landing .prologue-title {
-  font-size: 22px;
-  font-weight: 400;
-  color: var(--ink-mid);
-  letter-spacing: 0.02em;
-}
-
 /* ── Scroll-Ink (prose lines) ─────────────────────────── */
 .folio-landing .fill-line {
   display: block;
@@ -278,11 +307,12 @@ html {
 .folio-landing .prose p:last-child {
   margin-bottom: 0;
 }
-.folio-landing .whisper {
-  padding-left: 1.5rem;
-  border-left: 2px solid var(--accent);
-  font-style: italic;
-  margin-left: 0.5rem;
+.folio-landing .prose-dedication {
+  text-align: center;
+  margin-top: 3rem !important;
+  padding-top: 2rem;
+  border-top: 1px solid var(--ink-faint);
+  font-size: 0.95em;
 }
 
 /* ── Chapter Head (shared) ────────────────────────────── */
@@ -300,7 +330,7 @@ html {
 }
 .folio-landing .chapter-label {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.35em;
   text-transform: uppercase;
   color: var(--ink-mid);
@@ -345,7 +375,7 @@ html {
 }
 .folio-landing .tool-num {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.3em;
   color: var(--ink-mid);
   margin-bottom: 1.25rem;
@@ -358,22 +388,30 @@ html {
   margin-bottom: 1.25rem;
 }
 .folio-landing .tool-oneline {
-  font-size: 17px;
-  line-height: 1.6;
+  font-size: 18px;
+  line-height: 1.65;
   color: #333;
   margin-bottom: 2rem;
 }
-.folio-landing .tool-metric {
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--ink-mid);
-  letter-spacing: 0.02em;
-  padding-top: 1.25rem;
+.folio-landing .tool-features {
+  list-style: none;
+  padding: 1.25rem 0 0;
+  margin: 0;
   border-top: 1px solid var(--ink-border);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.95;
+  color: #333;
 }
-.folio-landing .tool-metric strong {
-  color: var(--ink);
-  font-weight: 600;
+.folio-landing .tool-features li {
+  padding-left: 1.2rem;
+  position: relative;
+}
+.folio-landing .tool-features li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--ink-mid);
 }
 
 /* Mockup internals */
@@ -396,7 +434,7 @@ html {
   gap: 1.25rem;
   margin-left: 1rem;
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-mid);
 }
 .folio-landing .mock-tab-active {
@@ -405,7 +443,7 @@ html {
 }
 .folio-landing .mock-content {
   font-family: var(--serif);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.9;
   color: var(--ink);
 }
@@ -413,12 +451,12 @@ html {
   margin: 0;
 }
 .folio-landing .mock-content-sm {
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.75;
 }
 .folio-landing .mock-note {
   color: #6b6b6b;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--sans);
 }
 .folio-landing .hl-name {
@@ -444,7 +482,7 @@ html {
 }
 .folio-landing .mock-card-label {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink-mid);
@@ -463,67 +501,43 @@ html {
   font-family: var(--sans);
 }
 
-/* Import Auto-Organize mockup (Tool 03) */
-.folio-landing .mock-import-head {
+/* Device sync mockup (Tool 01) */
+.folio-landing .mock-device-row,
+.folio-landing .mock-kv-row {
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 0.85rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--ink-border);
-}
-.folio-landing .mock-import-title {
-  font-family: var(--serif);
-  font-size: 15px;
-  font-weight: 500;
-}
-.folio-landing .mock-import-meta {
   font-family: var(--sans);
-  font-size: 10px;
-  color: var(--ink-mid);
-  letter-spacing: 0.15em;
+  font-size: 12.5px;
+  padding: 0.4rem 0;
 }
-.folio-landing .mock-check {
+.folio-landing .mock-device-name {
   color: var(--ink);
-  font-family: var(--sans);
-  font-weight: 600;
-  margin-right: 0.35rem;
 }
-.folio-landing .mock-import-banner {
-  font-family: var(--sans);
-  font-size: 11px;
-  color: #111;
-}
-.folio-landing .mock-result-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-.folio-landing .mock-result-item {
-  border: 1px solid var(--ink-border);
-  padding: 0.65rem 0.8rem;
-  background: #fff;
-}
-.folio-landing .mock-result-count {
-  font-family: var(--sans);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin-bottom: 0.15rem;
-}
-.folio-landing .mock-result-name {
-  font-family: var(--sans);
-  font-size: 10px;
+.folio-landing .mock-device-status {
   color: var(--ink-mid);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
 }
-.folio-landing .mock-result-sample {
-  font-family: var(--sans);
-  font-size: 10px;
+.folio-landing .mock-device-status.offline {
+  color: var(--accent);
+}
+.folio-landing .mock-kv-row span:first-child {
   color: var(--ink-mid);
-  margin-top: 0.4rem;
-  line-height: 1.6;
+}
+.folio-landing .mock-kv-row span:last-child {
+  color: var(--ink);
+}
+
+/* AI Studio mockup (Tool 03) */
+.folio-landing .mock-ai-line {
+  font-size: 12.5px;
+  line-height: 1.75;
+  margin: 0;
+}
+.folio-landing .mock-ai-note {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink-mid);
+  line-height: 1.75;
+  margin: 0;
 }
 
 /* ── Auto Carousel (Extra tools, v5) ──────────────────── */
@@ -541,13 +555,13 @@ html {
 }
 .folio-landing .carousel-label {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.3em;
   text-transform: uppercase;
   color: var(--ink-mid);
 }
 .folio-landing .carousel-heading {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   letter-spacing: -0.015em;
   margin: 0;
@@ -559,7 +573,7 @@ html {
 }
 .folio-landing .carousel-dot {
   width: 24px;
-  height: 2px;
+  height: 4px;
   background: var(--ink-faint);
   border: none;
   cursor: pointer;
@@ -597,27 +611,27 @@ html {
 }
 .folio-landing .carousel-card-num {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.3em;
   color: var(--ink-mid);
   margin-bottom: 1.25rem;
 }
 .folio-landing .carousel-card-title {
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.015em;
   margin-bottom: 0.85rem;
   line-height: 1.25;
 }
 .folio-landing .carousel-card-desc {
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 14.5px;
+  line-height: 1.7;
   color: #333;
   margin-bottom: auto;
 }
 .folio-landing .carousel-card-meta {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-mid);
   padding-top: 1rem;
   border-top: 1px solid var(--ink-border);
@@ -651,19 +665,19 @@ html {
 }
 .folio-landing .flow-num {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.3em;
   color: var(--ink-mid);
 }
 .folio-landing .flow-key {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.015em;
 }
 .folio-landing .flow-desc {
-  font-size: 14px;
+  font-size: 15.5px;
   color: var(--ink-mid);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* Pricing (Chapter III) */
@@ -692,7 +706,7 @@ html {
   top: 1.5rem;
   right: 1.5rem;
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.25em;
   background: var(--ink);
   color: var(--bg);
@@ -700,7 +714,7 @@ html {
 }
 .folio-landing .price-name {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink-mid);
@@ -708,7 +722,7 @@ html {
 }
 .folio-landing .price-num {
   font-family: var(--sans);
-  font-size: 40px;
+  font-size: 42px;
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -716,15 +730,15 @@ html {
 }
 .folio-landing .price-period {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-mid);
   margin-bottom: 1.75rem;
 }
 .folio-landing .price-cta {
   display: inline-block;
-  padding: 10px 24px;
+  padding: 11px 26px;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   border: 1.5px solid var(--ink);
   text-decoration: none;
@@ -754,8 +768,8 @@ html {
   padding: 0;
   margin: 0;
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 2;
+  font-size: 14.5px;
+  line-height: 1.95;
   color: #333;
 }
 .folio-landing .price-list li::before {
@@ -786,23 +800,23 @@ html {
 }
 .folio-landing .faq-num {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.25em;
   color: var(--ink-mid);
 }
 .folio-landing .faq-q {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 500;
   letter-spacing: -0.01em;
 }
 .folio-landing .faq-short {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-mid);
 }
 .folio-landing .faq-toggle {
   font-family: var(--sans);
-  font-size: 18px;
+  font-size: 20px;
   color: var(--ink-mid);
   font-weight: 300;
   transition: transform 0.2s;
@@ -813,10 +827,47 @@ html {
 .folio-landing .faq-a {
   padding: 0 0 1.75rem 40px;
   margin: 0 1.25rem 0 0;
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 15.5px;
+  line-height: 1.8;
   color: #333;
-  max-width: 680px;
+  max-width: 700px;
+}
+
+/* FAQ Contact block */
+.folio-landing .faq-contact {
+  margin-top: 3.5rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid var(--ink-faint);
+  text-align: center;
+}
+.folio-landing .faq-contact-label {
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin: 0 0 1.25rem;
+  font-weight: 400;
+}
+.folio-landing .faq-contact-body {
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.7;
+  margin: 0;
+}
+.folio-landing .faq-contact-body a {
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 15px;
+  border-bottom: 1px solid var(--ink);
+  text-decoration: none;
+  padding-bottom: 2px;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.folio-landing .faq-contact-body a:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ── Fin Footer ───────────────────────────────────────── */
@@ -834,14 +885,14 @@ html {
   border-bottom: 1.2px solid var(--ink);
 }
 .folio-landing .fin-mark {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ink-mid);
   letter-spacing: 0.25em;
   margin-bottom: 2rem;
 }
 .folio-landing .fin-meta {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: #9a9a9a;
@@ -877,16 +928,18 @@ html {
     min-height: calc(90vh - var(--nav-h));
   }
   .folio-landing .hero-hook {
-    font-size: 18px;
+    font-size: 20px;
   }
-  .folio-landing .hero-brand {
-    font-size: 64px;
-  }
-  .folio-landing .hero-tagline {
-    font-size: 15px;
+  .folio-landing .hero-image {
+    max-width: 88%;
+    margin-bottom: 2rem;
+    transform: translateX(2px);
   }
   .folio-landing .hero-cue {
     bottom: 1.5rem;
+  }
+  .folio-landing .nav-logo {
+    height: 42px;
   }
 
   .folio-landing .prologue-label {
@@ -894,12 +947,12 @@ html {
   }
   .folio-landing .prose {
     padding: 5vh 1.5rem 8vh;
-    font-size: 18px;
+    font-size: 19px;
     line-height: 1.95;
   }
-  .folio-landing .whisper {
-    padding-left: 1rem;
-    margin-left: 0;
+  .folio-landing .prose-dedication {
+    margin-top: 2rem !important;
+    padding-top: 1.5rem;
   }
 
   .folio-landing .chapter-head {
@@ -911,7 +964,7 @@ html {
     align-items: flex-start;
   }
   .folio-landing .chapter-heading {
-    font-size: 26px;
+    font-size: 28px;
   }
   .folio-landing .chapter {
     padding: 3vh 1.25rem 2vh;
@@ -929,10 +982,13 @@ html {
     padding-left: 0;
   }
   .folio-landing .tool-keyword {
-    font-size: 26px;
+    font-size: 28px;
   }
   .folio-landing .tool-oneline {
-    font-size: 15px;
+    font-size: 16.5px;
+  }
+  .folio-landing .tool-features {
+    font-size: 14.5px;
   }
 
   .folio-landing .carousel-wrap {
@@ -973,6 +1029,17 @@ html {
   }
   .folio-landing .faq-a {
     padding-left: 32px;
+  }
+  .folio-landing .faq-contact {
+    margin-top: 2.5rem;
+    padding-top: 2rem;
+  }
+  .folio-landing .faq-contact-body {
+    font-size: 14px;
+  }
+  .folio-landing .faq-contact-body a {
+    font-size: 14px;
+    display: inline-block;
   }
 
   .folio-landing .fin {
