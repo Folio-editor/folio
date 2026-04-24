@@ -251,7 +251,7 @@ function CharacterTreeItem({
   const { data: notes = [] } = useQuery<CharacterNoteRow>(
     isExpanded
       ? `SELECT id, kind, title, sort_order FROM character_note
-         WHERE character_id = ? AND writer_id = ?
+         WHERE character_id = ? AND writer_id = ? AND kind != 'intro'
          ORDER BY sort_order ASC, created_at ASC`
       : `SELECT '' AS id, '' AS kind, '' AS title, 0 AS sort_order WHERE 0`,
     isExpanded ? [character.id, writerId] : [],
