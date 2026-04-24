@@ -4,6 +4,14 @@
 # 사용법:
 #   docker compose -f docker-compose.yml -f docker-compose.green.yml up -d
 # ============================================================
+
+# 로그 로테이션 공통 설정 (디스크 풀 방지)
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   spring-boot-green:
     image: folio-backend:${IMAGE_TAG:-latest}
@@ -22,10 +30,21 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-1800}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-1209600}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-50}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${GOOGLE_DESKTOP_CLIENT_SECRET}
+      PS_JWT_KID: ${PS_JWT_KID}
+      PS_JWT_AUDIENCE: ${PS_JWT_AUDIENCE}
       AI_SERVER_URL: http://fastapi-green:8000
       AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY}
+      TOSS_API_BASE_URL: ${TOSS_API_BASE_URL}
+      TOSS_WEBHOOK_SECRET: ${TOSS_WEBHOOK_SECRET}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
     depends_on:
       postgresql:
@@ -39,6 +58,7 @@ services:
       retries: 5
       start_period: 60s
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -50,13 +70,21 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
       DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL}
+      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL}
+      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL}
     depends_on:
       postgresql:
         condition: service_healthy
@@ -69,6 +97,7 @@ services:
       retries: 5
       start_period: 15s
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -81,12 +110,19 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL}
+      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL}
+      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL}
     depends_on:
       redis:
         condition: service_healthy
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -96,11 +132,12 @@ services:
     ports:
       - "3002:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -110,11 +147,12 @@ services:
     ports:
       - "3012:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 

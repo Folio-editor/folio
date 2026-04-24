@@ -1,0 +1,117 @@
+# ============================================================
+# Promtail — Docker SD 기반 로그 수집 에이전트
+#
+# 주요 역할:
+#   1) folio-net 네트워크의 모든 컨테이너 자동 감지 (Blue/Green 교체에도 설정 변경 불필요)
+#   2) 서비스별 레이블 (service, color) 자동 부여
+#   3) JSON/텍스트 로그 파싱하여 level 레이블 추출
+#   4) DEBUG, health check, 8KB 초과 라인 드롭 (노이즈/프롬프트 유출 차단)
+#   5) 이메일/카드번호/전화번호 마스킹
+# ============================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: network
+            values: ["folio-net"]
+
+    relabel_configs:
+      # 컨테이너 이름 기반 레이블
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # folio-<service>-<color> 패턴에서 service 추출
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-(backend|ai|celery-worker|web|landing|nginx|postgresql|redis|mongo|powersync|loki|promtail|grafana|certbot).*'
+        target_label: service
+      # Blue/Green 색상 추출
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-.*-(blue|green)'
+        target_label: color
+      # 정적 레이블
+      - target_label: environment
+        replacement: production
+      - target_label: project
+        replacement: folio
+
+    pipeline_stages:
+      # ─── 1. 라인 크기 제한 (8KB 초과 드롭) ─────────────────
+      # 프롬프트, stack trace, 에피소드 본문 유출 1차 차단
+      - drop:
+          longer_than: 8KB
+          drop_counter_reason: "oversized_line"
+
+      # ─── 2. JSON 로그 파싱 (backend/ai/celery/powersync) ───
+      - match:
+          selector: '{service=~"backend|ai|celery-worker|powersync"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  logger_name: logger_name
+            - labels:
+                level:
+
+      # ─── 3. Nginx JSON 로그 파싱 ───────────────────────────
+      - match:
+          selector: '{service="nginx"}'
+          stages:
+            - json:
+                expressions:
+                  status: status
+                  method: method
+                  uri: uri
+                  request_time: request_time
+            - labels:
+                status:
+                method:
+
+      # ─── 4. PostgreSQL 레벨 추출 (텍스트 로그) ──────────────
+      - match:
+          selector: '{service="postgresql"}'
+          stages:
+            - regex:
+                expression: '(?P<level>LOG|ERROR|WARNING|FATAL|PANIC):.*'
+            - labels:
+                level:
+
+      # ─── 5. DEBUG 레벨 로그 드롭 ───────────────────────────
+      - match:
+          selector: '{level="DEBUG"}'
+          action: drop
+          drop_counter_reason: "debug_level"
+
+      # ─── 6. Health check 로그 드롭 (소스 차단 실패 시 방어) ──
+      - match:
+          selector: '{service=~"backend|ai|celery-worker"}'
+          stages:
+            - drop:
+                expression: '.*(actuator/health|/v1/health|/healthz|/probes/liveness).*'
+                drop_counter_reason: "healthcheck"
+
+      # ─── 7. 민감 패턴 마스킹 ───────────────────────────────
+      - replace:
+          expression: '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+          replace: '[EMAIL]'
+      - replace:
+          expression: '(\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4})'
+          replace: '[CARD]'
+      - replace:
+          expression: '(01[0-9]-?\d{3,4}-?\d{4})'
+          replace: '[PHONE]'

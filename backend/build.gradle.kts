@@ -43,6 +43,9 @@ dependencies {
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // 구조화 JSON 로깅 (Promtail/Loki 수집용) — prod 프로필에서만 JSON 포맷 활성화
+    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
+
     // Swagger / OpenAPI
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 

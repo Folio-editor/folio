@@ -1,0 +1,16 @@
+# ============================================================
+# Grafana 대시보드 프로비저닝 — 파일 시스템 기반
+# 같은 디렉토리의 *.json 파일을 'Folio' 폴더에 자동 등록한다.
+# ============================================================
+apiVersion: 1
+
+providers:
+  - name: Folio
+    orgId: 1
+    folder: Folio
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

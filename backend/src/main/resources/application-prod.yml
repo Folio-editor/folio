@@ -44,8 +44,4 @@ springdoc:
   api-docs:
     enabled: false
 
-logging:
-  level:
-    root: INFO
-    com.storyzip: INFO
-    org.hibernate.SQL: WARN
+# 로깅 설정은 logback-spring.xml 에서 관리 (prod 프로필은 JSON 포맷)

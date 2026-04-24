@@ -15,7 +15,8 @@
 #   - doppler CLI 설치됨 (또는 .env 직접 준비)
 #   - 공유 서비스(docker-compose.yml)가 이미 기동 중
 # ============================================================
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "[FATAL] Deploy failed at line $LINENO (exit=$?)" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROD_DIR="/opt/folio/infra/prod"
@@ -45,6 +46,13 @@ echo ""
 
 cd "$PROD_DIR"
 
+# ─── 1.5. PLG 데이터 디렉토리 보장 ─────────────────────────
+# Loki/Grafana/Promtail 컨테이너가 처음 기동될 때 필요한 디렉토리와
+# 권한을 자동으로 준비한다 (idempotent — 이미 있으면 무시).
+sudo mkdir -p /opt/folio/data/{loki,grafana,promtail-positions}
+sudo chown -R 10001:10001 /opt/folio/data/loki
+sudo chown -R 472:472 /opt/folio/data/grafana
+
 # ─── 2. Doppler에서 시크릿 다운로드 ─────────────────────────
 echo "[deploy] Downloading secrets from Doppler..."
 doppler secrets download --project folio --config prd --no-file --format env > .env
@@ -64,6 +72,8 @@ echo "[deploy] Running health checks..."
 BACKEND_PORT=$( [ "$NEXT" = "blue" ] && echo 8081 || echo 8082 )
 AI_PORT=$( [ "$NEXT" = "blue" ] && echo 8091 || echo 8092 )
 WEB_PORT=$( [ "$NEXT" = "blue" ] && echo 3001 || echo 3002 )
+LANDING_PORT=$( [ "$NEXT" = "blue" ] && echo 3011 || echo 3012 )
+CELERY_CONTAINER="folio-celery-worker-${NEXT}"
 
 HEALTH_FAILED=false
 
@@ -71,9 +81,32 @@ bash "$HEALTH_CHECK" "http://localhost:${BACKEND_PORT}/actuator/health" 30 2 || 
 bash "$HEALTH_CHECK" "http://localhost:${AI_PORT}/v1/health" 20 2 || HEALTH_FAILED=true
 bash "$HEALTH_CHECK" "http://localhost:${WEB_PORT}/healthz" 10 2 || HEALTH_FAILED=true
 
+# Celery worker (HTTP 엔드포인트 없음 — docker exec로 broker ping)
+if [ "$HEALTH_FAILED" = false ]; then
+    echo "[deploy] Checking celery worker..."
+    CELERY_OK=false
+    for i in $(seq 1 10); do
+        if docker exec "$CELERY_CONTAINER" celery -A app.celery_app inspect ping -t 5 > /dev/null 2>&1; then
+            echo "[deploy] Celery worker healthy (attempt $i)"
+            CELERY_OK=true
+            break
+        fi
+        echo "[deploy] Celery attempt $i/10 - waiting 3s..."
+        sleep 3
+    done
+    if [ "$CELERY_OK" = false ]; then
+        echo "[deploy] Celery worker health check failed!"
+        HEALTH_FAILED=true
+    fi
+fi
+
+# Landing page
+bash "$HEALTH_CHECK" "http://localhost:${LANDING_PORT}/healthz" 10 2 || HEALTH_FAILED=true
+
 if [ "$HEALTH_FAILED" = true ]; then
     echo "[deploy] ✗ Health check failed! Rolling back..."
-    docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env down
+    docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env \
+        rm -sf "spring-boot-${NEXT}" "fastapi-${NEXT}" "celery-worker-${NEXT}" "react-web-${NEXT}" "landing-${NEXT}"
     rm -f .env
     echo "[deploy] $NEXT containers stopped. $CURRENT still active."
     exit 1
@@ -82,17 +115,24 @@ fi
 # ─── 6. Nginx upstream 전환 ──────────────────────────────────
 echo "[deploy] Switching nginx upstream to $NEXT..."
 cp "nginx/upstream-${NEXT}.conf" "nginx/upstream-active.conf"
-docker compose -f docker-compose.yml exec nginx nginx -s reload
+# docker compose exec는 stdin attach로 heredoc 시나리오에서 stdin을 소비하는 버그가 있음.
+# 여기는 로컬 실행이지만 일관성을 위해 docker exec 직접 사용.
+docker exec folio-nginx nginx -s reload
+
+# ─── 7. 원자성: 트래픽 전환 직후 즉시 상태 기록 ────────────────
+# (중간 단계에서 실패해도 active-color 파일이 실제 트래픽 방향과 일치하도록)
+echo "$NEXT" > "$ACTIVE_COLOR_FILE"
 
 echo "[deploy] Waiting 5s for nginx to stabilize..."
 sleep 5
 
-# ─── 7. 이전 색상 종료 ──────────────────────────────────────
+# ─── 8. 이전 색상 종료 ──────────────────────────────────────
 echo "[deploy] Stopping $CURRENT containers..."
-docker compose -f "docker-compose.${CURRENT}.yml" --env-file .env down || true
+docker compose -f docker-compose.yml -f "docker-compose.${CURRENT}.yml" --env-file .env \
+    rm -sf "spring-boot-${CURRENT}" "fastapi-${CURRENT}" "celery-worker-${CURRENT}" "react-web-${CURRENT}" "landing-${CURRENT}" \
+    || echo "[deploy] Warning: failed to stop ${CURRENT} containers"
 
-# ─── 8. 상태 업데이트 + 정리 ─────────────────────────────────
-echo "$NEXT" > "$ACTIVE_COLOR_FILE"
+# ─── 9. 정리 ──────────────────────────────────────────────
 rm -f .env
 
 # 미사용 이미지 정리
