@@ -34,7 +34,7 @@ services:
       - /opt/folio/data/certbot/conf:/etc/letsencrypt:ro
       - /opt/folio/data/certbot/www:/var/www/certbot:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
