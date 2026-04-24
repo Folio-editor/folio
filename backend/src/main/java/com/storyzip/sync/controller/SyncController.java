@@ -29,6 +29,10 @@ import java.util.UUID;
  * {@code transaction.complete()}를 호출해 큐에서 제거한다.
  *
  * <p>도중 1건이라도 실패하면 {@link Transactional} 롤백 — 부분 저장 방지.
+ *
+ * <p>요금제 용량 제한은 동기화 파이프라인에서 강제하지 않는다.
+ * 오프라인 퍼스트 원칙에 따라 서버는 모든 CRUD를 수용하고,
+ * 용량 초과 여부는 {@code GET /api/v1/account/me}를 통해 프론트에서 확인한다.
  */
 @RestController
 @RequestMapping("/api/v1/sync")

@@ -214,13 +214,29 @@ class AnthropicLLM(LLMProvider):
         if "opus-4-7" not in model:
             stream_kwargs["temperature"] = 0.7
 
-        async with self._client.messages.stream(**stream_kwargs) as stream:
-            async for text in stream.text_stream:
-                if text:
-                    yield text
-            final_message = await stream.get_final_message()
+        # 저수준 스트리밍 — SDK의 messages.stream() 고수준 헬퍼는
+        # API 이벤트 순서를 엄격 검증하여 RuntimeError를 발생시키므로,
+        # messages.create(stream=True)로 원시 이벤트를 직접 처리한다.
+        response = await self._client.messages.create(**stream_kwargs, stream=True)
+        usage_input = 0
+        usage_output = 0
+        async for event in response:
+            if event.type == "message_start" and hasattr(event, "message"):
+                u = getattr(event.message, "usage", None)
+                if u:
+                    usage_input = getattr(u, "input_tokens", 0)
+            elif event.type == "content_block_delta":
+                delta = getattr(event, "delta", None)
+                if delta and getattr(delta, "type", "") == "text_delta":
+                    text = getattr(delta, "text", "")
+                    if text:
+                        yield text
+            elif event.type == "message_delta":
+                u = getattr(event, "usage", None)
+                if u:
+                    usage_output = getattr(u, "output_tokens", 0)
 
-        self._last_usage = _usage_dict(getattr(final_message, "usage", None))
+        self._last_usage = {"input_tokens": usage_input, "output_tokens": usage_output}
         logger.info(
             "LLM usage: input=%s, output=%s",
             self._last_usage["input_tokens"],

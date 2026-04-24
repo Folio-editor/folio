@@ -66,7 +66,7 @@ async function request<T>(
 async function streamSSE(
   path: string,
   body: unknown,
-  onData: (parsed: unknown) => void,
+  onData: (parsed: unknown) => boolean | void,
   onDone: () => void,
   onError: (err: Error) => void,
 ): Promise<AbortController> {
@@ -100,17 +100,28 @@ async function streamSSE(
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
+        let earlyDone = false;
         for (const line of lines) {
           const trimmed = line.trim();
           if (trimmed.startsWith('data:')) {
             const jsonStr = trimmed.slice(5).trim();
             if (!jsonStr) continue;
             try {
-              onData(JSON.parse(jsonStr));
+              const parsed = JSON.parse(jsonStr);
+              const shouldStop = onData(parsed);
+              if (shouldStop) {
+                earlyDone = true;
+                break;
+              }
             } catch {
               // 파싱 실패한 라인은 무시
             }
           }
+        }
+        if (earlyDone) {
+          reader.cancel();
+          onDone();
+          return;
         }
       }
       onDone();

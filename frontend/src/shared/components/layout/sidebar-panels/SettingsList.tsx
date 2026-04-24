@@ -1,9 +1,10 @@
-import { Palette, Type } from 'lucide-react';
+import { Palette, Type, User } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 
-export type SettingsItemId = 'theme' | 'font';
+export type SettingsItemId = 'account' | 'theme' | 'font';
 
 const SETTINGS_ITEMS: { id: SettingsItemId; label: string; icon: typeof Palette }[] = [
+  { id: 'account', label: '계정', icon: User },
   { id: 'theme', label: '색상 테마', icon: Palette },
   { id: 'font', label: '폰트 설정', icon: Type },
 ];
