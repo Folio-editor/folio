@@ -86,9 +86,9 @@ for i in $(seq 1 15); do
   sleep 1
 done
 
-# PowerSync
+# PowerSync (호스트 포트 미노출이므로 컨테이너 healthcheck 상태로 확인)
 for i in $(seq 1 60); do
-  if curl -sf http://localhost:8080/probes/liveness &>/dev/null 2>&1; then
+  if [ "$(docker inspect -f '{{.State.Health.Status}}' folio-powersync-prod 2>/dev/null)" = "healthy" ]; then
     echo "      ✓ PowerSync ready (${i}s)"
     break
   fi
