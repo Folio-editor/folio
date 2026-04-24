@@ -156,8 +156,9 @@ body {
 
 /* ── 에디터 본문 레이아웃 ── */
 .folio-editor .ProseMirror {
-  max-width: 720px;
-  margin: 0 auto;
+  max-width: none;
+  width: 100%;
+  margin: 0;
   font-size: var(--editor-font-size, 1rem);
   line-height: var(--editor-line-height, 1.8);
   font-family: var(--editor-font-family, inherit);
