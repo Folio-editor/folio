@@ -132,7 +132,7 @@ function GridCard({ note, children, expanded, onClick, onToggle, onChildClick }:
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full p-4 text-left hover:bg-primary/5"
+        className="flex h-[76px] w-full px-4 py-3 text-left hover:bg-primary/5"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -192,7 +192,7 @@ function ListItem({ note, children, expanded, onClick, onToggle, onChildClick }:
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full px-4 py-3 text-left hover:bg-primary/5"
+        className="flex h-[64px] w-full items-center px-4 py-2.5 text-left hover:bg-primary/5"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
