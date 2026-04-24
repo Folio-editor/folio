@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Writer } from '../types/auth';
 import { db } from '../../renderer/sync/db';
+import { useNetworkStore } from '../hooks/useNetworkStatus';
 
 // ────────────────────────────────────────────────────────────
 // 앱 모드
@@ -168,6 +169,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
    * 기존대로 syncDecision=null 로 남겨두고 useSyncResolver + 다이얼로그가 결정한다.
    */
   login: async () => {
+    if (!useNetworkStore.getState().isOnline) {
+      set({ error: '오프라인 상태에서는 로그인할 수 없습니다.' });
+      return;
+    }
     const currentGuestId = get().guestWriterId;
     set({ isLoggingIn: true, error: null });
     try {

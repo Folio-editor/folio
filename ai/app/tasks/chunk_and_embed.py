@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 from sqlalchemy import delete
@@ -15,6 +16,11 @@ from app.db.models.episode_chunk import EpisodeChunk
 from app.services.chunker import chunk_text, count_tokens
 from app.services.providers import get_embedder
 from app.services.text_extractor import extract_plain_text
+
+# stdlib logger를 사용한다. configure_logging()이 설정한 JSON 포맷터가
+# 모든 stdlib 로그에도 적용되므로 extra={}로 전달한 필드가 JSON 출력에 포함된다.
+# (structlog 직접 사용은 CI 환경의 twisted/zope.interface 충돌로 피함)
+logger = logging.getLogger(__name__)
 
 
 async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> int:
@@ -61,9 +67,34 @@ async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> i
     retry_backoff=True,
 )
 def chunk_and_embed_task(self, episode_id: str, work_id: str, writer_id: str, content: str) -> dict:
+    # content 본문은 절대 로그 필드로 전달하지 않는다. 길이/ID만 기록.
+    logger.info(
+        "chunk_embed.start",
+        extra={
+            "episode_id": episode_id,
+            "work_id": work_id,
+            "content_length": len(content) if content else 0,
+        },
+    )
     loop = asyncio.new_event_loop()
     try:
         count = loop.run_until_complete(_run(episode_id, work_id, writer_id, content))
+        logger.info(
+            "chunk_embed.success",
+            extra={"episode_id": episode_id, "chunk_count": count},
+        )
+        return {"episode_id": episode_id, "chunk_count": count}
+    except Exception as e:
+        logger.error(
+            "chunk_embed.failed",
+            extra={
+                "episode_id": episode_id,
+                "retry": self.request.retries,
+                "max_retries": self.max_retries,
+                "error_type": type(e).__name__,
+                "error_message": str(e)[:200],
+            },
+        )
+        raise
     finally:
         loop.close()
-    return {"episode_id": episode_id, "chunk_count": count}

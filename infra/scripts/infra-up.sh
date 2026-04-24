@@ -34,7 +34,10 @@ fi
 
 # ── 2. 데이터 디렉토리 생성 ───────────────────────────────
 echo "[1/6] 데이터 디렉토리 확인..."
-sudo mkdir -p /opt/folio/data/{postgresql,redis,mongodb,certbot/conf,certbot/www}
+sudo mkdir -p /opt/folio/data/{postgresql,redis,mongodb,certbot/conf,certbot/www,loki,grafana,promtail-positions}
+# PLG 컨테이너가 사용하는 공식 UID로 권한 부여
+sudo chown -R 10001:10001 /opt/folio/data/loki
+sudo chown -R 472:472 /opt/folio/data/grafana
 echo "      ✓ /opt/folio/data/ 준비 완료"
 
 # ── 3. Doppler에서 .env 다운로드 ──────────────────────────

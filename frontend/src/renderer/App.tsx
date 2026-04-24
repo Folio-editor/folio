@@ -6,6 +6,10 @@ import { AuthenticatedApp } from '../shared/features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../shared/components/ThemeProvider';
 import { db } from './sync/db';
 import { FolioConnector } from './sync/connector';
+import { initNetworkListener, useNetworkStatus } from '../shared/hooks/useNetworkStatus';
+
+// 모듈 로드 시 1회 — online/offline 이벤트 바인딩
+initNetworkListener();
 
 const connector = new FolioConnector();
 
@@ -46,6 +50,18 @@ export function App() {
       void db.disconnect();
     }
   }, [isAuthenticated, syncDecision]);
+
+  // 온라인 복귀 시 PowerSync 즉시 재연결 트리거
+  const isOnline = useNetworkStatus();
+  useEffect(() => {
+    if (isOnline && isAuthenticated && syncDecision !== null) {
+      db.connect(connector).catch((e) =>
+        console.warn('[App] 온라인 복귀 reconnect 실패:', e),
+      );
+    }
+    // isOnline 변경 시에만 트리거 (isAuthenticated/syncDecision은 위 effect가 담당)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {
