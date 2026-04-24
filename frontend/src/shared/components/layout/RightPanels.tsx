@@ -52,6 +52,7 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { apiClient } from '../../lib/apiClient';
 import { useAiSessionStore } from '../../stores/aiSessionStore';
+import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
@@ -697,6 +698,35 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const history = useAiSessionStore((s) => s.history);
   const viewHistory = useAiSessionStore((s) => s.viewHistory);
   const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
+  const startReview = useAiSessionStore((s) => s.startReview);
+  const finishReview = useAiSessionStore((s) => s.finishReview);
+  const failReview = useAiSessionStore((s) => s.failReview);
+
+  const handleReview = useCallback(async () => {
+    if (!currentEpisode?.content) return;
+
+    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
+      id: currentEpisode.id,
+      workId: currentEpisode.work_id,
+      title: currentEpisode.title,
+      sortOrder: currentEpisode.sort_order,
+    };
+
+    startReview(episode);
+
+    try {
+      const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
+        workId: episode.workId,
+        episodeId: episode.id,
+        content: currentEpisode.content,
+        episodeNumber: episode.sortOrder + 1,
+      });
+      const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
+      finishReview(reviewResult);
+    } catch (err) {
+      failReview(err instanceof Error ? err.message : 'AI 서버 오류가 발생했습니다.');
+    }
+  }, [currentEpisode, startReview, finishReview, failReview]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {
@@ -745,26 +775,30 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     );
   }
 
-  if (screen === 'review') {
-    if (!isEpisode || !currentEpisode) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-            <button type="button" onClick={() => setScreen('menu')} className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-              <ArrowLeft size={15} />
-            </button>
-            <Search size={14} className="text-primary" />
-            <span className="text-xs font-semibold text-foreground">원고 검수</span>
-          </div>
-          <div className="flex flex-1 items-center justify-center px-6 text-center">
-            <p className="text-sm text-muted-foreground">좌측에서 원고를 선택해주세요.</p>
-          </div>
-        </div>
-      );
-    }
+  if (screen === 'review-history-view') {
     return (
-      <ReviewScreen
+      <ReviewResultScreen
+        onBack={() => setScreen('review-input')}
+        isHistoryView
+      />
+    );
+  }
+
+  if (screen === 'review-result') {
+    return (
+      <ReviewResultScreen
+        onBack={() => setScreen('review-input')}
+      />
+    );
+  }
+
+  if (screen === 'review-input') {
+    return (
+      <ReviewInputScreen
         episode={currentEpisode}
+        isEpisode={isEpisode}
+        selectedWorkId={selectedWorkId}
+        onStartReview={handleReview}
         onBack={() => setScreen('menu')}
       />
     );
@@ -791,7 +825,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
 
       <button
         type="button"
-        onClick={() => setScreen('review')}
+        onClick={() => setScreen('review-input')}
         className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <Search size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -1112,65 +1146,32 @@ function DraftViewScreen({
   );
 }
 
-/* ── 원고 검수 화면 ── */
+/* ── 원고 검수: 입력 화면 (검수 버튼 + 히스토리 목록) ── */
 
-interface ReviewIssue {
-  type: string;
-  severity: 'critical' | 'warning' | 'info';
-  location: string;
-  description: string;
-  reference: string;
-  suggestion: string;
-}
+function ReviewInputScreen({
+  episode,
+  isEpisode,
+  selectedWorkId,
+  onStartReview,
+  onBack,
+}: {
+  episode: EpisodeInfo | null;
+  isEpisode: boolean;
+  selectedWorkId: string | null;
+  onStartReview: () => void;
+  onBack: () => void;
+}) {
+  const reviewHistory = useAiSessionStore((s) => s.reviewHistory);
+  const viewReviewHistory = useAiSessionStore((s) => s.viewReviewHistory);
+  const deleteReviewHistory = useAiSessionStore((s) => s.deleteReviewHistory);
+  const reviewState = useAiSessionStore((s) => s.reviewState);
 
-interface ReviewResult {
-  issues: ReviewIssue[];
-  summary: string;
-  score: number;
-}
-
-type ReviewState = 'idle' | 'loading' | 'done' | 'error';
-
-function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () => void }) {
-  const [state, setState] = useState<ReviewState>('idle');
-  const [result, setResult] = useState<ReviewResult | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    setState('idle');
-    setResult(null);
-    setError('');
-  }, [episode.id]);
-
-  const handleReview = async () => {
-    if (!episode.content) return;
-    setState('loading');
-    setError('');
-
-    try {
-      const data = await apiClient.post<ReviewResult>('/ai/reviews', {
-        workId: episode.work_id,
-        episodeId: episode.id,
-        content: episode.content,
-        episodeNumber: episode.sort_order + 1,
-      });
-      setResult(data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 });
-      setState('done');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI 서버 오류가 발생했습니다.');
-      setState('error');
-    }
-  };
-
-  const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
-    critical: { bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800', icon: OctagonAlert, label: '심각' },
-    warning: { bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800', icon: AlertTriangle, label: '주의' },
-    info: { bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800', icon: Info, label: '참고' },
-  };
+  const filteredHistory = selectedWorkId
+    ? reviewHistory.filter((h) => h.workId === selectedWorkId)
+    : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더 */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
         <button
           type="button"
@@ -1183,53 +1184,176 @@ function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () =>
         <span className="text-xs font-semibold text-foreground">원고 검수</span>
       </div>
 
-      {/* 콘텐츠 */}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {/* 현재 에피소드 */}
-        <div className="rounded-md bg-muted/50 px-3 py-2">
-          <span className="text-xs text-muted-foreground">대상 원고</span>
-          <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-            {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
-          </p>
-        </div>
-
-        {!episode.content ? (
-          <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
-            원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+        {!isEpisode || !episode ? (
+          <div className="flex flex-1 items-center justify-center px-6 text-center">
+            <p className="text-sm text-muted-foreground">좌측에서 원고를 선택해주세요.</p>
           </div>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={handleReview}
-              disabled={state === 'loading'}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {state === 'loading' ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  검수 진행 중...
-                </>
-              ) : (
-                <>
-                  <Search size={13} strokeWidth={1.75} />
-                  검수 시작
-                </>
-              )}
-            </button>
-
-            {state === 'loading' && (
-              <p className="text-center text-xs text-muted-foreground">
-                설정집과 이전 맥락을 대조하여 원고를 검수합니다.
-                <br />
-                최대 1분 정도 소요될 수 있습니다.
+            <div className="rounded-md bg-muted/50 px-3 py-2">
+              <span className="text-xs text-muted-foreground">대상 원고</span>
+              <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+                {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
               </p>
+            </div>
+
+            {!episode.content ? (
+              <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+                원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onStartReview}
+                disabled={reviewState === 'loading'}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                <Search size={13} strokeWidth={1.75} />
+                검수 시작
+              </button>
             )}
           </>
         )}
 
+        {/* 검수 히스토리 목록 */}
+        {filteredHistory.length > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5">
+              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+              <span className="text-xs font-medium text-muted-foreground">검수 기록</span>
+              <span className="text-xs text-muted-foreground/60">{filteredHistory.length}/{10}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {filteredHistory.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+                >
+                  <button
+                    type="button"
+                    onClick={() => viewReviewHistory(entry.id)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
+                    </span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {formatHistoryTime(entry.createdAt)}
+                      </span>
+                      <span className={cn(
+                        'font-medium',
+                        entry.result.score >= 80 ? 'text-emerald-600' : entry.result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                      )}>
+                        {entry.result.score}점
+                      </span>
+                      <span>이슈 {entry.result.issues.length}건</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteReviewHistory(entry.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    title="삭제"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── 원고 검수: 결과 화면 (로딩/결과/에러 표시) ── */
+
+const CIRCLED_NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+function circledNumber(n: number): string {
+  if (n >= 1 && n <= 20) return CIRCLED_NUMBERS[n - 1];
+  return `(${n})`;
+}
+
+const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
+  critical: { bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800', icon: OctagonAlert, label: '심각' },
+  warning: { bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800', icon: AlertTriangle, label: '주의' },
+  info: { bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800', icon: Info, label: '참고' },
+};
+
+function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
+  const reviewState = useAiSessionStore((s) => s.reviewState);
+  const result = useAiSessionStore((s) => s.reviewResult);
+  const error = useAiSessionStore((s) => s.reviewError);
+  const targetEpisode = useAiSessionStore((s) => s.reviewTargetEpisode);
+  const focusedIndex = useReviewHighlightStore((s) => s.focusedIndex);
+
+  // 하이라이트 연동: 결과가 있으면 하이라이트 스토어에 이슈 전달
+  useEffect(() => {
+    if (reviewState === 'done' && result && result.issues.length > 0) {
+      useReviewHighlightStore.getState().setIssues(
+        result.issues.map((issue, i) => ({
+          index: i,
+          type: issue.type,
+          severity: issue.severity,
+          lines: issue.lines ?? [],
+          location: issue.location,
+          description: issue.description,
+        })),
+      );
+    }
+    return () => useReviewHighlightStore.getState().clearIssues();
+  }, [reviewState, result]);
+
+  const handleBack = () => {
+    useReviewHighlightStore.getState().clearIssues();
+    onBack();
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <Search size={14} className="text-primary" />
+        <span className="text-xs font-semibold text-foreground">
+          {isHistoryView ? '검수 기록' : '원고 검수'}
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* 대상 에피소드 */}
+        {targetEpisode && (
+          <div className="rounded-md bg-muted/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">대상 원고</span>
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {targetEpisode.sortOrder + 1}화: {targetEpisode.title || '(제목 없음)'}
+            </p>
+          </div>
+        )}
+
+        {/* 로딩 */}
+        {reviewState === 'loading' && (
+          <div className="flex flex-col items-center gap-2 py-8">
+            <Loader2 size={24} className="animate-spin text-primary" />
+            <p className="text-center text-xs text-muted-foreground">
+              설정집과 이전 맥락을 대조하여 원고를 검수합니다.
+              <br />
+              최대 1분 정도 소요될 수 있습니다.
+            </p>
+          </div>
+        )}
+
         {/* 검수 결과 */}
-        {state === 'done' && result && (
+        {reviewState === 'done' && result && (
           <div className="flex flex-col gap-3">
             <div className="rounded-md border border-border bg-background p-3">
               <div className="flex items-center justify-between">
@@ -1258,9 +1382,28 @@ function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () =>
                 {result.issues.map((issue, i) => {
                   const severity = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.info;
                   const SeverityIcon = severity.icon;
+                  const isFocused = focusedIndex === i;
                   return (
-                    <div key={i} className={cn('rounded-md border p-3', severity.bg)}>
+                    <button
+                      type="button"
+                      key={i}
+                      onClick={() => useReviewHighlightStore.getState().focusIssue(i)}
+                      className={cn(
+                        'rounded-md border p-3 text-left transition-all',
+                        severity.bg,
+                        isFocused && 'ring-2 ring-primary/50',
+                        issue.lines.length > 0 && 'cursor-pointer hover:brightness-95',
+                      )}
+                    >
                       <div className="mb-1.5 flex items-center gap-1.5">
+                        <span className={cn(
+                          'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                          issue.severity === 'critical' && 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200',
+                          issue.severity === 'warning' && 'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200',
+                          issue.severity === 'info' && 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+                        )}>
+                          {circledNumber(i + 1)}
+                        </span>
                         <SeverityIcon size={14} strokeWidth={1.75} />
                         <span className="text-xs font-semibold">{severity.label}</span>
                         <span className="text-xs text-muted-foreground">
@@ -1283,7 +1426,7 @@ function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () =>
                           <span className="font-medium">제안:</span> {issue.suggestion}
                         </p>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -1291,7 +1434,7 @@ function ReviewScreen({ episode, onBack }: { episode: EpisodeInfo; onBack: () =>
           </div>
         )}
 
-        {state === 'error' && (
+        {reviewState === 'error' && (
           <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {error}
           </div>

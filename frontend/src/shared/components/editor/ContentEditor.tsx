@@ -16,6 +16,8 @@ import AuthorNote from './extensions/AuthorNote';
 import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
+import ReviewHighlight from './extensions/ReviewHighlight';
+import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
 import EditorToolbar from './EditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
@@ -95,6 +97,7 @@ export function ContentEditor({
         }),
         FocusMode.configure({ enabled: settings.focusMode }),
         FindReplace,
+        ReviewHighlight,
       ],
       content: parseContent(initialContent),
       onUpdate: ({ editor: ed }) => {
@@ -151,6 +154,21 @@ export function ContentEditor({
     setCharCount(chars);
     setWordCount(words);
   }, [editor, itemId]);
+
+  // 검수 하이라이트 스토어 구독 → 데코레이션 리빌드
+  useEffect(() => {
+    if (!editor) return;
+    let prevVersion = useReviewHighlightStore.getState().version;
+    const unsub = useReviewHighlightStore.subscribe((s) => {
+      if (s.version !== prevVersion) {
+        prevVersion = s.version;
+        if (!editor.isDestroyed) {
+          editor.commands.triggerReviewHighlightRebuild();
+        }
+      }
+    });
+    return unsub;
+  }, [editor]);
 
   // 보류 중인 디바운스를 즉시 실행 (flush)
   // pendingSaveRef에 캡처된 콜백을 사용하므로 itemId 전환 시에도 올바른 대상에 저장됨
