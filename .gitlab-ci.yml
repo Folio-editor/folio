@@ -182,7 +182,9 @@ deploy-production:
         # 헬스체크 실패 시 새 컨테이너 정리 후 종료
         if [ "\$HEALTH_OK" = false ]; then
           echo "[rollback] Stopping failed \$NEXT containers..."
-          docker compose -f docker-compose.\${NEXT}.yml --env-file .env down || true
+          docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env \
+            rm -sf spring-boot-\${NEXT} fastapi-\${NEXT} celery-worker-\${NEXT} react-web-\${NEXT} landing-\${NEXT} \
+            || echo "[rollback] Warning: failed to remove \${NEXT} containers"
           rm -f .env
           echo "[rollback] \$CURRENT still active. Deploy aborted."
           exit 1
@@ -190,11 +192,13 @@ deploy-production:
 
         # 7. Nginx upstream 전환 + 재시작
         cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
-        docker compose -f docker-compose.yml restart nginx
+        docker compose -f docker-compose.yml exec nginx nginx -s reload
         sleep 5
 
         # 8. 이전 색상 종료
-        docker compose -f docker-compose.\${CURRENT}.yml --env-file .env down || true
+        docker compose -f docker-compose.yml -f docker-compose.\${CURRENT}.yml --env-file .env \
+          rm -sf spring-boot-\${CURRENT} fastapi-\${CURRENT} celery-worker-\${CURRENT} react-web-\${CURRENT} landing-\${CURRENT} \
+          || echo "[deploy] Warning: failed to stop \${CURRENT} containers"
 
         # 9. 상태 업데이트 + 정리
         echo "\$NEXT" > /opt/folio/active-color

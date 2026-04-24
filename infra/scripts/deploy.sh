@@ -64,6 +64,8 @@ echo "[deploy] Running health checks..."
 BACKEND_PORT=$( [ "$NEXT" = "blue" ] && echo 8081 || echo 8082 )
 AI_PORT=$( [ "$NEXT" = "blue" ] && echo 8091 || echo 8092 )
 WEB_PORT=$( [ "$NEXT" = "blue" ] && echo 3001 || echo 3002 )
+LANDING_PORT=$( [ "$NEXT" = "blue" ] && echo 3011 || echo 3012 )
+CELERY_CONTAINER="folio-celery-worker-${NEXT}"
 
 HEALTH_FAILED=false
 
@@ -71,9 +73,32 @@ bash "$HEALTH_CHECK" "http://localhost:${BACKEND_PORT}/actuator/health" 30 2 || 
 bash "$HEALTH_CHECK" "http://localhost:${AI_PORT}/v1/health" 20 2 || HEALTH_FAILED=true
 bash "$HEALTH_CHECK" "http://localhost:${WEB_PORT}/healthz" 10 2 || HEALTH_FAILED=true
 
+# Celery worker (HTTP 엔드포인트 없음 — docker exec로 broker ping)
+if [ "$HEALTH_FAILED" = false ]; then
+    echo "[deploy] Checking celery worker..."
+    CELERY_OK=false
+    for i in $(seq 1 10); do
+        if docker exec "$CELERY_CONTAINER" celery -A app.celery_app inspect ping -t 5 > /dev/null 2>&1; then
+            echo "[deploy] Celery worker healthy (attempt $i)"
+            CELERY_OK=true
+            break
+        fi
+        echo "[deploy] Celery attempt $i/10 - waiting 3s..."
+        sleep 3
+    done
+    if [ "$CELERY_OK" = false ]; then
+        echo "[deploy] Celery worker health check failed!"
+        HEALTH_FAILED=true
+    fi
+fi
+
+# Landing page
+bash "$HEALTH_CHECK" "http://localhost:${LANDING_PORT}/healthz" 10 2 || HEALTH_FAILED=true
+
 if [ "$HEALTH_FAILED" = true ]; then
     echo "[deploy] ✗ Health check failed! Rolling back..."
-    docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env down
+    docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env \
+        rm -sf "spring-boot-${NEXT}" "fastapi-${NEXT}" "celery-worker-${NEXT}" "react-web-${NEXT}" "landing-${NEXT}"
     rm -f .env
     echo "[deploy] $NEXT containers stopped. $CURRENT still active."
     exit 1
@@ -89,7 +114,9 @@ sleep 5
 
 # ─── 7. 이전 색상 종료 ──────────────────────────────────────
 echo "[deploy] Stopping $CURRENT containers..."
-docker compose -f "docker-compose.${CURRENT}.yml" --env-file .env down || true
+docker compose -f docker-compose.yml -f "docker-compose.${CURRENT}.yml" --env-file .env \
+    rm -sf "spring-boot-${CURRENT}" "fastapi-${CURRENT}" "celery-worker-${CURRENT}" "react-web-${CURRENT}" "landing-${CURRENT}" \
+    || echo "[deploy] Warning: failed to stop ${CURRENT} containers"
 
 # ─── 8. 상태 업데이트 + 정리 ─────────────────────────────────
 echo "$NEXT" > "$ACTIVE_COLOR_FILE"
