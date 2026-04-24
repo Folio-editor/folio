@@ -15,7 +15,6 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
@@ -283,32 +282,12 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
             strategy={rectSortingStrategy}
           >
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => void handleNew()}
-                className="group relative min-h-[232px] overflow-hidden rounded-[12px] border border-dashed border-border bg-background p-6 text-left transition-all hover:-translate-y-1 hover:border-border hover:bg-muted/40 hover:shadow-sm"
-              >
-                <div className="flex h-full flex-col items-center justify-center text-center">
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-muted text-foreground">
-                    <Plus size={30} strokeWidth={1.8} />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-[1.65rem] font-semibold text-foreground">새 인물 추가</p>
-                    <p className="text-[15px] leading-7 text-muted-foreground">
-                      주인공, 조력자, 라이벌까지
-                      <br />
-                      작품의 얼굴이 될 인물을 만들어보세요.
-                    </p>
-                  </div>
-                </div>
-              </button>
-
               {filteredItems.map((item) => {
                 const charTags = tagsByCharacter.get(item.id) ?? [];
                 const charNotes = notesByCharacter.get(item.id) ?? { intro: '', titles: [] };
                 const genderLabel = normalizeGenderLabel(item.gender);
                 const GenderMark = GENDER_MARK_MAP[item.gender];
-                const summary = charNotes.intro || '한 줄 소개를 아직 작성하지 않았어요.';
+                const summary = charNotes.intro;
 
                 return (
                   <SortableCharacterCard
@@ -316,7 +295,7 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
                     characterId={item.id}
                     onClick={() => onSelect(`char:${item.id}`)}
                   >
-                    <div className="group relative min-h-[232px] overflow-hidden rounded-[14px] border border-border/80 bg-background px-5 py-5 text-left transition-all duration-200 hover:-translate-y-1 hover:border-border hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+                    <div className="group relative h-[232px] overflow-hidden rounded-[14px] border border-border/80 bg-background px-5 py-5 text-left transition-all duration-200 hover:-translate-y-1 hover:border-border hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
                       <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-foreground/10 to-transparent" />
                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(148,163,184,0.08),transparent_28%)] opacity-60" />
 
