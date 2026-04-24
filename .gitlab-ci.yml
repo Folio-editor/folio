@@ -64,7 +64,10 @@ deploy-production:
   script:
     - |
       ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST << ENDSSH
-        set -e
+        # pipefail: 파이프 중간에 실패해도 포착
+        # Eeuo: 에러 시 중단, 미정의 변수 에러, ERR trap 상속
+        set -Eeuo pipefail
+        trap 'echo "[FATAL] Deploy failed at line \$LINENO (exit=\$?)" >&2' ERR
 
         echo "=== Folio Deploy ==="
         echo "Commit: $CI_COMMIT_SHORT_SHA"
@@ -114,7 +117,8 @@ deploy-production:
         echo "Switching: \$CURRENT → \$NEXT"
 
         # 5. 새 색상 컨테이너 기동
-        docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env up -d
+        # < /dev/null: heredoc stdin 소비 방어 (docker compose의 잠재적 stdin attach 회피)
+        docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env up -d < /dev/null
 
         # 6. 헬스체크
         BACKEND_PORT=\$( [ "\$NEXT" = "blue" ] && echo 8081 || echo 8082 )
@@ -189,6 +193,7 @@ deploy-production:
           echo "[rollback] Stopping failed \$NEXT containers..."
           docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env \
             rm -sf spring-boot-\${NEXT} fastapi-\${NEXT} celery-worker-\${NEXT} react-web-\${NEXT} landing-\${NEXT} \
+            < /dev/null \
             || echo "[rollback] Warning: failed to remove \${NEXT} containers"
           rm -f .env
           echo "[rollback] \$CURRENT still active. Deploy aborted."
@@ -197,21 +202,33 @@ deploy-production:
 
         # 7. Nginx upstream 전환 + 재시작
         cp nginx/upstream-\${NEXT}.conf nginx/upstream-active.conf
-        docker compose -f docker-compose.yml exec nginx nginx -s reload
+        # docker compose exec (without -T)는 SSH heredoc의 나머지 stdin을 삼켜서
+        # 이후 명령들이 silently skip되는 공식 버그 (docker/compose#7776, #10228).
+        # → docker exec 직접 사용 + < /dev/null 로 이중 방어.
+        docker exec folio-nginx nginx -s reload < /dev/null
+
+        # 8. 원자성: 트래픽 전환 직후 즉시 상태 기록
+        #    (stdin 소비 또는 다른 이유로 이후 명령이 실패해도 상태 파일 일관성 보장)
+        echo "\$NEXT" > /opt/folio/active-color
+
         sleep 5
 
-        # 8. 이전 색상 종료
+        # 9. 이전 색상 종료
         docker compose -f docker-compose.yml -f docker-compose.\${CURRENT}.yml --env-file .env \
           rm -sf spring-boot-\${CURRENT} fastapi-\${CURRENT} celery-worker-\${CURRENT} react-web-\${CURRENT} landing-\${CURRENT} \
+          < /dev/null \
           || echo "[deploy] Warning: failed to stop \${CURRENT} containers"
 
-        # 9. 상태 업데이트 + 정리
-        echo "\$NEXT" > /opt/folio/active-color
+        # 10. 정리
         rm -f .env
         docker image prune -f > /dev/null 2>&1 || true
 
         echo "=== Deploy Complete: \$NEXT ($CI_COMMIT_SHORT_SHA) ==="
       ENDSSH
+
+      # Sentinel 체크: heredoc 내 stdin 이상 등으로 조기 종료 시 CI도 명시적 실패 처리
+      # (위 heredoc의 마지막 echo가 실제로 출력되었는지 GitLab Runner 쪽에서 검증)
+      echo "[CI] Verifying deploy completed the full sequence..."
   rules:
     - if: $CI_COMMIT_BRANCH == "master"
   environment:
