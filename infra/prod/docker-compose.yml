@@ -11,6 +11,15 @@
 # 환경변수:
 #   Doppler에서 .env 다운로드 후 --env-file로 주입
 # ============================================================
+
+# 로그 로테이션 공통 설정 (컨테이너당 최대 150MB: 50MB × 3파일)
+# 디스크 풀로 서버가 다운되는 것을 물리적으로 차단한다.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   # ─── Reverse Proxy ──────────────────────────────────────────
   nginx:
@@ -30,6 +39,7 @@ services:
       timeout: 5s
       retries: 3
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -58,13 +68,13 @@ services:
         -c shared_preload_libraries=pg_stat_statements
         -c pg_stat_statements.track=all
         -c log_min_duration_statement=1000
-        -c log_line_prefix='%t [%p] %q%u@%d '
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -86,6 +96,7 @@ services:
       timeout: 5s
       retries: 5
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -107,6 +118,7 @@ services:
       start_period: 15s
       retries: 30
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -136,6 +148,7 @@ services:
       timeout: 5s
       retries: 10
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -148,6 +161,7 @@ services:
       - /opt/folio/data/certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'"
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -165,6 +179,7 @@ services:
       timeout: 5s
       retries: 5
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -181,6 +196,7 @@ services:
       loki:
         condition: service_healthy
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -191,7 +207,9 @@ services:
       GF_SERVER_ROOT_URL: https://folio-editor.co.kr/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # 필수 — Doppler에 GRAFANA_ADMIN_PASSWORD 없으면 compose가 즉시 실패.
+      # 빈 문자열로 주입되어 기본 admin/admin 로그인 허용되는 보안 사고 방지.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in Doppler}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_UNIFIED_ALERTING_ENABLED: "true"
       GF_LOG_LEVEL: warn
@@ -202,11 +220,13 @@ services:
       loki:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/health || exit 1"]
+      # SERVE_FROM_SUB_PATH=true 이므로 내부 경로에도 /grafana/ 프리픽스 필수
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/grafana/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 

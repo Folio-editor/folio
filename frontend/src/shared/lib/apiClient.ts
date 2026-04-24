@@ -86,65 +86,77 @@ async function streamSSE(
     return controller;
   }
 
-  const token = await window.folio.auth.getAccessToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // 401 재시도는 1회로 제한하여 refresh 루프 방지
+  let triedRefresh = false;
 
-  fetch(`${apiUrl()}${path}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new ApiError(response.status, text || response.statusText);
-      }
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('ReadableStream not supported');
+  const attempt = async (): Promise<void> => {
+    const token = await window.folio.auth.getAccessToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const decoder = new TextDecoder();
-      let buffer = '';
+    const response = await fetch(`${apiUrl()}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    if (response.status === 401 && !triedRefresh) {
+      triedRefresh = true;
+      const restored = await window.folio.auth.tryRestore();
+      if (restored) return attempt();
+    }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new ApiError(response.status, text || response.statusText);
+    }
 
-        let earlyDone = false;
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('data:')) {
-            const jsonStr = trimmed.slice(5).trim();
-            if (!jsonStr) continue;
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const shouldStop = onData(parsed);
-              if (shouldStop) {
-                earlyDone = true;
-                break;
-              }
-            } catch {
-              // 파싱 실패한 라인은 무시
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('ReadableStream not supported');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let earlyDone = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data:')) {
+          const jsonStr = trimmed.slice(5).trim();
+          if (!jsonStr) continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const shouldStop = onData(parsed);
+            if (shouldStop) {
+              earlyDone = true;
+              break;
             }
+          } catch {
+            // 파싱 실패한 라인은 무시
           }
         }
-        if (earlyDone) {
-          reader.cancel();
-          onDone();
-          return;
-        }
       }
-      onDone();
-    })
-    .catch((err) => {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      onError(err instanceof Error ? err : new Error(String(err)));
-    });
+      if (earlyDone) {
+        reader.cancel();
+        onDone();
+        return;
+      }
+    }
+    onDone();
+  };
+
+  attempt().catch((err) => {
+    if (err instanceof DOMException && err.name === 'AbortError') return;
+    onError(err instanceof Error ? err : new Error(String(err)));
+  });
 
   return controller;
 }

@@ -4,6 +4,14 @@
 # 사용법:
 #   docker compose -f docker-compose.yml -f docker-compose.blue.yml up -d
 # ============================================================
+
+# 로그 로테이션 공통 설정 (디스크 풀 방지)
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   spring-boot-blue:
     image: folio-backend:${IMAGE_TAG:-latest}
@@ -43,6 +51,7 @@ services:
       retries: 5
       start_period: 60s
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -76,6 +85,7 @@ services:
       retries: 5
       start_period: 15s
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -97,6 +107,7 @@ services:
       redis:
         condition: service_healthy
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -111,6 +122,7 @@ services:
       timeout: 5s
       retries: 3
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
@@ -125,6 +137,7 @@ services:
       timeout: 5s
       retries: 3
     restart: always
+    logging: *default-logging
     networks:
       - folio-net
 
