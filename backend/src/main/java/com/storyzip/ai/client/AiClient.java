@@ -199,7 +199,11 @@ public class AiClient {
             );
 
             if (response.statusCode() != 200) {
-                log.warn("AI review failed (http {}): {}", response.statusCode(), response.body());
+                String body = response.body();
+                int bodyLen = body == null ? 0 : body.length();
+                String bodyPreview = bodyLen == 0 ? "" : body.substring(0, Math.min(bodyLen, 200));
+                log.warn("AI review failed (http {}): bodyLen={} preview={}",
+                        response.statusCode(), bodyLen, bodyPreview);
                 throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
             }
 

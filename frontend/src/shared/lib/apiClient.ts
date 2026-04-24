@@ -3,7 +3,12 @@
  * - Main 프로세스의 Access Token을 IPC로 조회하여 Authorization 헤더 자동 삽입
  * - 401 응답 시 tryRestore 통해 자동 refresh 후 1회 재시도
  * - refresh 실패 시 로그아웃 상태로 전환
+ * - 오프라인 시 fetch 시도 없이 즉시 에러 반환
  */
+
+import { useNetworkStore } from '../hooks/useNetworkStatus';
+
+const OFFLINE_MESSAGE = '오프라인 상태입니다. 네트워크 연결을 확인하세요.';
 
 function apiUrl(): string {
   // Windows Docker의 IPv6 localhost 이슈 회피를 위해 기본값을 127.0.0.1로 통일
@@ -25,6 +30,10 @@ async function request<T>(
   init: RequestInit = {},
   retry = true,
 ): Promise<T> {
+  if (!useNetworkStore.getState().isOnline) {
+    throw new ApiError(0, OFFLINE_MESSAGE);
+  }
+
   const token = await window.folio.auth.getAccessToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -71,6 +80,12 @@ async function streamSSE(
   onError: (err: Error) => void,
 ): Promise<AbortController> {
   const controller = new AbortController();
+
+  if (!useNetworkStore.getState().isOnline) {
+    onError(new ApiError(0, OFFLINE_MESSAGE));
+    return controller;
+  }
+
   const token = await window.folio.auth.getAccessToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;

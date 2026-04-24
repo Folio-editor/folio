@@ -262,7 +262,11 @@ function lastAccessPath() {
 }
 
 function saveLastAccessToken(token: string): void {
-  if (!safeStorage.isEncryptionAvailable()) return;
+  if (!safeStorage.isEncryptionAvailable()) {
+    // 무음 return 금지 — 저장 실패 시 앱 재시작 시 자동 복원이 영구 실패하므로
+    // 로그인/refresh 경로에서 명확한 에러로 노출해 사용자가 원인을 알 수 있게 한다.
+    throw new Error('safeStorage is not available on this system');
+  }
   fs.writeFileSync(lastAccessPath(), safeStorage.encryptString(token));
 }
 

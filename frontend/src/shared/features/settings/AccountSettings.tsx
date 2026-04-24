@@ -4,6 +4,7 @@ import { useQuery, useStatus } from '@powersync/react';
 import { db } from '../../../renderer/sync/db';
 import { useAuthStore } from '../../stores/authStore';
 import { useIsGuest } from '../../hooks/useWriterId';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
 import { cn } from '../../lib/cn';
 
@@ -147,6 +148,7 @@ function AuthenticatedView() {
   const logout = useAuthStore((s) => s.logout);
   const { localBytes, pendingCount } = useLocalStorageStats();
   const psStatus = useStatus();
+  const isOnline = useNetworkStatus();
 
   if (loading || !data) {
     return (
@@ -265,7 +267,7 @@ function AuthenticatedView() {
           <Section title="동기화 상태">
             <SyncPendingGauge
               pendingCount={pendingCount}
-              connected={psStatus.connected}
+              connected={isOnline && psStatus.connected}
             />
           </Section>
 
