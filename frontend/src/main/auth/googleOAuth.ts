@@ -65,11 +65,15 @@ export function commitLastKnownWriterId(writerId: string): void {
 }
 
 export async function loginWithGoogle(): Promise<LoginResult> {
+  console.log('[oauth] loginWithGoogle 시작');
+  console.log('[oauth] API URL:', apiUrl());
+  console.log('[oauth] Client ID:', googleClientId());
   const deviceId = getOrCreateDeviceId();
   const { codeVerifier, codeChallenge } = generatePkce();
   const state = generateState();
 
   const server = await startOAuthServer();
+  console.log('[oauth] 로컬 서버 시작:', server.redirectUri);
 
   try {
     const authUrl = new URL(GOOGLE_AUTH_URL);
@@ -84,8 +88,11 @@ export async function loginWithGoogle(): Promise<LoginResult> {
     authUrl.searchParams.set('prompt', 'select_account');
 
     await shell.openExternal(authUrl.toString());
+    console.log('[oauth] 브라우저 열림, code 대기 중...');
 
     const code = await server.waitForCode(state);
+    console.log('[oauth] code 수신 완료, 백엔드 전송 중...');
+    console.log('[oauth] fetch URL:', `${apiUrl()}/auth/login/google`);
 
     const response = await fetch(`${apiUrl()}/auth/login/google`, {
       method: 'POST',
@@ -98,8 +105,10 @@ export async function loginWithGoogle(): Promise<LoginResult> {
       }),
     });
 
+    console.log('[oauth] 백엔드 응답 status:', response.status);
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      console.error('[oauth] 로그인 실패:', response.status, text);
       throw new Error(`login failed: ${response.status} ${text}`);
     }
 
@@ -109,6 +118,7 @@ export async function loginWithGoogle(): Promise<LoginResult> {
       writer: Writer;
       isNewUser: boolean;
     };
+    console.log('[oauth] 로그인 성공, writer:', body.writer?.id, 'isNewUser:', body.isNewUser);
 
     saveRefreshToken(body.refreshToken);
     saveLastAccessToken(body.accessToken);
