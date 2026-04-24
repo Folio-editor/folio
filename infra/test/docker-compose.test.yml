@@ -29,7 +29,7 @@ services:
       - /var/lib/postgresql/data
     volumes:
       - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../db/powersync-init.sql:/docker-entrypoint-initdb.d/02-powersync.sql:ro
+      - ../db/powersync-init.sh:/docker-entrypoint-initdb.d/02-powersync.sh:ro
     command: >
       postgres
         -c wal_level=logical
@@ -88,7 +88,7 @@ services:
       - ../powersync/powersync.yaml:/app/powersync.yaml:ro
       - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
     environment:
-      PS_DATA_SOURCE_URI: postgresql://powersync_repl:storyzip_repl_dev@postgresql-test:5432/${DB_NAME:-folio_test}
+      PS_DATA_SOURCE_URI: postgresql://folio_repl:storyzip_repl_dev@postgresql-test:5432/${DB_NAME:-folio_test}
       PS_MONGO_URI: mongodb://mongo-test:27017/powersync
       PS_JWT_K: ${PS_JWT_K:-dGVzdC1zZWNyZXQtcGxlYXNlLWNoYW5nZS10aGlzLXRvLWEtbG9uZy1yYW5kb20tc3RyaW5nLTMyY2hhcnM}
     healthcheck:

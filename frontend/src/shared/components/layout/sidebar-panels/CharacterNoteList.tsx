@@ -29,6 +29,7 @@ interface CharacterNoteRow {
   id: string;
   kind: string;
   title: string;
+  sort_order: number | null;
 }
 
 interface CharacterNoteListProps {
@@ -36,6 +37,11 @@ interface CharacterNoteListProps {
   searchTerm: string;
   selectedItemId: string | null;
   onItemSelect: (id: string | null) => void;
+}
+
+function nextSortOrder(rows: { sort_order: number | null }[]) {
+  if (rows.length === 0) return 0;
+  return Math.max(...rows.map((row) => row.sort_order ?? 0)) + 1000;
 }
 
 /**
@@ -242,21 +248,21 @@ function CharacterTreeItem({
   );
   const [creatingNote, setCreatingNote] = useState(false);
 
+  const { data: notes = [] } = useQuery<CharacterNoteRow>(
+    isExpanded
+      ? `SELECT id, kind, title, sort_order FROM character_note
+         WHERE character_id = ? AND writer_id = ? AND kind != 'intro'
+         ORDER BY sort_order ASC, created_at ASC`
+      : `SELECT '' AS id, '' AS kind, '' AS title, 0 AS sort_order WHERE 0`,
+    isExpanded ? [character.id, writerId] : [],
+  );
+
   const handleCreateNote = async (name: string) => {
     setCreatingNote(false);
     if (!name.trim()) return;
-    const id = await createCharacterNote(character.id, name.trim(), Date.now());
+    const id = await createCharacterNote(character.id, name.trim(), nextSortOrder(notes));
     onNoteSelect(id);
   };
-
-  const { data: notes = [] } = useQuery<CharacterNoteRow>(
-    isExpanded
-      ? `SELECT id, kind, title FROM character_note
-         WHERE character_id = ? AND writer_id = ?
-         ORDER BY sort_order ASC, created_at ASC`
-      : `SELECT '' AS id, '' AS kind, '' AS title WHERE 0`,
-    isExpanded ? [character.id, writerId] : [],
-  );
 
   return (
     <div>

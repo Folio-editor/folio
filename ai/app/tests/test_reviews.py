@@ -9,17 +9,44 @@ from app.main import app
 from app.services.llm import FakeLLM
 
 
+class FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+
+class FakeSession:
+    async def execute(self, statement, params=None):
+        query = str(statement)
+        if "FROM character" in query:
+            return FakeResult(
+                [
+                    ("박지훈", "남", "29", "무기력하지만 예민함", "안경 관련 설정 없음"),
+                ]
+            )
+        if "FROM world_note" in query:
+            return FakeResult(
+                [
+                    ("오션", "물방울 후원 시스템이 있는 인터넷 방송 플랫폼"),
+                ]
+            )
+        raise AssertionError(f"unexpected query: {query}")
+
+
 def test_reviews_endpoint_returns_fake_review(monkeypatch):
     async def fake_assemble_context(
         work_id: str,
         writer_id: str,
         storyline: str,
         current_episode_num: int,
+        mode: str = "draft",
     ) -> str:
         return "mocked context"
 
     async def override_get_session():
-        yield object()
+        yield FakeSession()
 
     monkeypatch.setattr(reviews_module, "assemble_context", fake_assemble_context)
     monkeypatch.setattr(reviews_module, "get_llm", lambda: FakeLLM())
@@ -46,4 +73,5 @@ def test_reviews_endpoint_returns_fake_review(monkeypatch):
         "issues": [],
         "summary": "검수 결과 없음 (fake)",
         "score": 100,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
     }

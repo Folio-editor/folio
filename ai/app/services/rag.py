@@ -23,11 +23,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.config import settings
 from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
+from app.services.settings_loader import load_settings
 from app.services.text_extractor import extract_plain_text
 
-TOKEN_BUDGET = 28_000
+TOKEN_BUDGET = 40_000
 
 PRIORITY_1_LABEL = "recent_raw"
+
+
+RECENT_RAW_LIMIT = {"draft": 4, "review": 2}
+VECTOR_SEARCH_LIMIT = {"draft": 15, "review": 5}
 
 
 async def assemble_context(
@@ -35,22 +40,30 @@ async def assemble_context(
     writer_id: str,
     storyline: str,
     current_episode_num: int,
+    mode: str = "draft",
 ) -> str:
+    recent_raw_limit = RECENT_RAW_LIMIT.get(mode, RECENT_RAW_LIMIT["draft"])
+    vector_search_limit = VECTOR_SEARCH_LIMIT.get(mode, VECTOR_SEARCH_LIMIT["draft"])
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
         async with AsyncSession(engine) as session:
             sections = {}
+            settings_bundle = await load_settings(session, work_id)
 
             sections["work_meta"] = await _fetch_work_meta(session, work_id)
-            sections["characters"] = await _fetch_characters(session, work_id)
-            sections["world_notes"] = await _fetch_world_notes(session, work_id)
+            if settings_bundle["mode"] == "full":
+                sections["characters"] = await _fetch_characters(session, work_id)
+                sections["world_notes"] = await _fetch_world_notes(session, work_id)
+            else:
+                sections["characters"] = settings_bundle["characters_text"]
+                sections["world_notes"] = settings_bundle["world_notes_text"]
             sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
             sections["storyline"] = await _fetch_storyline(session, work_id, storyline)
             sections["recent_raw"] = await _fetch_recent_raw(
-                session, work_id, current_episode_num
+                session, work_id, current_episode_num, limit=recent_raw_limit
             )
             sections["vector_search"] = await _fetch_vector_similar(
-                session, work_id, writer_id, storyline
+                session, work_id, writer_id, storyline, limit=vector_search_limit
             )
 
         return _trim_to_budget(sections)
@@ -80,27 +93,51 @@ async def _fetch_work_meta(session: AsyncSession, work_id: str) -> str:
 
 
 async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
+    wid = uuid.UUID(work_id)
     r = await session.execute(
         sa_text(
-            "SELECT name, gender, age, personality, content "
+            "SELECT id, name, gender, age "
             "FROM character WHERE work_id = :wid ORDER BY sort_order"
         ),
-        {"wid": uuid.UUID(work_id)},
+        {"wid": wid},
     )
-    rows = r.fetchall()
-    if not rows:
+    chars = r.fetchall()
+    if not chars:
         return ""
+
+    # character_note에서 성격/외형 등 서브노트 조회
+    nr = await session.execute(
+        sa_text(
+            "SELECT cn.character_id, cn.kind, cn.title, cn.content "
+            "FROM character_note cn "
+            "JOIN character c ON c.id = cn.character_id "
+            "WHERE c.work_id = :wid "
+            "ORDER BY cn.sort_order"
+        ),
+        {"wid": wid},
+    )
+    notes = nr.fetchall()
+    notes_by_char: dict[uuid.UUID, list[tuple]] = {}
+    for note in notes:
+        cid = note[0] if isinstance(note[0], uuid.UUID) else uuid.UUID(str(note[0]))
+        notes_by_char.setdefault(cid, []).append(note)
+
     lines = []
-    for row in rows:
-        parts = [f"- {row[0]}"]
-        if row[1]:
-            parts.append(f"성별:{row[1]}")
-        if row[2]:
-            parts.append(f"나이:{row[2]}")
-        if row[3]:
-            parts.append(f"성격:{row[3]}")
-        if row[4]:
-            parts.append(f"설명:{extract_plain_text(row[4])[:200]}")
+    for char in chars:
+        char_id = char[0] if isinstance(char[0], uuid.UUID) else uuid.UUID(str(char[0]))
+        parts = [f"- {char[1]}"]
+        if char[2]:
+            parts.append(f"성별:{char[2]}")
+        if char[3]:
+            parts.append(f"나이:{char[3]}")
+        char_notes = notes_by_char.get(char_id, [])
+        for note in char_notes:
+            content = note[3]
+            if content:
+                label = note[2] or note[1] or ""
+                text = extract_plain_text(content)[:200]
+                if text:
+                    parts.append(f"{label}:{text}")
         lines.append(" / ".join(parts))
     return "\n".join(lines)
 
@@ -171,15 +208,15 @@ async def _fetch_recent_summaries(
 
 
 async def _fetch_recent_raw(
-    session: AsyncSession, work_id: str, current_episode_num: int
+    session: AsyncSession, work_id: str, current_episode_num: int, limit: int = 4
 ) -> str:
     r = await session.execute(
         sa_text(
             "SELECT sort_order, title, content FROM episode "
             "WHERE work_id = :wid AND sort_order < :ep_num "
-            "ORDER BY sort_order DESC LIMIT 3"
+            "ORDER BY sort_order DESC LIMIT :lim"
         ),
-        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num},
+        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num, "lim": limit},
     )
     rows = r.fetchall()
     if not rows:
@@ -192,7 +229,11 @@ async def _fetch_recent_raw(
 
 
 async def _fetch_vector_similar(
-    session: AsyncSession, work_id: str, writer_id: str, storyline: str
+    session: AsyncSession,
+    work_id: str,
+    writer_id: str,
+    storyline: str,
+    limit: int = 15,
 ) -> str:
     if not storyline:
         return ""
@@ -209,12 +250,13 @@ async def _fetch_vector_similar(
             "FROM episode_chunk "
             "WHERE work_id = :wid AND writer_id = :wr "
             "ORDER BY embedding <=> cast(:vec AS vector) "
-            "LIMIT 12"
+            "LIMIT :lim"
         ),
         {
             "vec": vec_str,
             "wid": uuid.UUID(work_id),
             "wr": uuid.UUID(writer_id),
+            "lim": limit,
         },
     )
     rows = r.fetchall()

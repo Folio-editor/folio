@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
-import Link from '@tiptap/extension-link';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
 import SceneBreak from './extensions/SceneBreak';
@@ -18,6 +16,8 @@ import AuthorNote from './extensions/AuthorNote';
 import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
+import ReviewHighlight from './extensions/ReviewHighlight';
+import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
 import EditorToolbar from './EditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
@@ -38,7 +38,7 @@ interface ContentEditorProps {
   onCharCountChange?: (count: number) => void;
 }
 
-const DEFAULT_DEBOUNCE_MS = 1000;
+const DEFAULT_DEBOUNCE_MS = 3000;
 
 export function ContentEditor({
   itemId,
@@ -52,10 +52,15 @@ export function ContentEditor({
   onCharCountChange,
 }: ContentEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const charCountDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onUpdateRef = useRef(onUpdate);
   const onCharCountChangeRef = useRef(onCharCountChange);
   onUpdateRef.current = onUpdate;
   onCharCountChangeRef.current = onCharCountChange;
+
+  // flush용: 디바운스 생성 시점의 콜백을 캡처하여 itemId 전환 시 올바른 대상에 저장
+  const pendingSaveRef = useRef<(() => void) | null>(null);
+  const pendingCharCountSaveRef = useRef<(() => void) | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [charCount, setCharCount] = useState(0);
@@ -74,15 +79,14 @@ export function ContentEditor({
         StarterKit.configure({
           code: false,
           codeBlock: false,
+          link: { openOnClick: false },
         }),
         Placeholder.configure({ placeholder }),
-        Underline,
         Highlight.configure({ multicolor: false }),
         Typography,
         CharacterCount,
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Color,
-        Link.configure({ openOnClick: false }),
         SceneBreak,
         KoreanPunctuation.configure({ enabled: settings.autoKoreanPunctuation }),
         AutoPairQuotes.configure({ enabled: settings.autoPairQuotes }),
@@ -93,30 +97,49 @@ export function ContentEditor({
         }),
         FocusMode.configure({ enabled: settings.focusMode }),
         FindReplace,
+        ReviewHighlight,
       ],
       content: parseContent(initialContent),
       onUpdate: ({ editor: ed }) => {
         setSaveStatus('saving');
 
-        // 글자 수 즉시 갱신 (debounce 없이)
+        // 글자 수 UI 즉시 갱신
         const chars = ed.storage.characterCount?.characters?.() ?? 0;
         const words = ed.storage.characterCount?.words?.() ?? 0;
         setCharCount(chars);
         setWordCount(words);
-        if (onCharCountChangeRef.current) onCharCountChangeRef.current(chars);
 
-        const emit = () => {
-          const json = JSON.stringify(ed.getJSON());
-          onUpdateRef.current(json);
+        // charCount DB 저장 디바운스
+        if (onCharCountChangeRef.current) {
+          if (charCountDebounceRef.current) clearTimeout(charCountDebounceRef.current);
+          // 현재 시점의 콜백을 캡처 — flush 시 올바른 대상에 저장
+          const charCountCb = onCharCountChangeRef.current;
+          pendingCharCountSaveRef.current = () => charCountCb(chars);
+          charCountDebounceRef.current = setTimeout(() => {
+            pendingCharCountSaveRef.current?.();
+            pendingCharCountSaveRef.current = null;
+          }, debounceMs);
+        }
+
+        // content DB 저장 디바운스
+        // 현재 시점의 콜백을 캡처 — itemId 전환 시에도 이전 item에 정확히 저장
+        const updateCb = onUpdateRef.current;
+        pendingSaveRef.current = () => {
+          updateCb(JSON.stringify(ed.getJSON()));
           setSaveStatus('saved');
         };
 
         if (debounceMs <= 0) {
-          emit();
+          pendingSaveRef.current();
+          pendingSaveRef.current = null;
           return;
         }
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(emit, debounceMs);
+        debounceRef.current = setTimeout(() => {
+          pendingSaveRef.current?.();
+          pendingSaveRef.current = null;
+          debounceRef.current = null;
+        }, debounceMs);
       },
     },
     [],
@@ -132,23 +155,53 @@ export function ContentEditor({
     setWordCount(words);
   }, [editor, itemId]);
 
-  // itemId 변경 시 콘텐츠 교체 + 진행 중인 debounce 취소
+  // 검수 하이라이트 스토어 구독 → 데코레이션 리빌드
   useEffect(() => {
-    // 이전 문서의 debounce 타이머가 새 문서 내용을 덮어쓰는 것을 방지
+    if (!editor) return;
+    let prevVersion = useReviewHighlightStore.getState().version;
+    const unsub = useReviewHighlightStore.subscribe((s) => {
+      if (s.version !== prevVersion) {
+        prevVersion = s.version;
+        if (!editor.isDestroyed) {
+          editor.commands.triggerReviewHighlightRebuild();
+        }
+      }
+    });
+    return unsub;
+  }, [editor]);
+
+  // 보류 중인 디바운스를 즉시 실행 (flush)
+  // pendingSaveRef에 캡처된 콜백을 사용하므로 itemId 전환 시에도 올바른 대상에 저장됨
+  const flushRef = useRef(() => {});
+  flushRef.current = () => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
+    pendingSaveRef.current?.();
+    pendingSaveRef.current = null;
+
+    if (charCountDebounceRef.current) {
+      clearTimeout(charCountDebounceRef.current);
+      charCountDebounceRef.current = null;
+    }
+    pendingCharCountSaveRef.current?.();
+    pendingCharCountSaveRef.current = null;
+  };
+
+  // itemId 변경 시 이전 문서의 보류 중인 변경사항 즉시 저장 후 콘텐츠 교체
+  useEffect(() => {
+    flushRef.current();
     if (!editor || editor.isDestroyed) return;
     editor.commands.setContent(parseContent(initialContent), { emitUpdate: false });
     setSaveStatus('idle');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
 
-  // 언마운트 시 debounce 정리
+  // 언마운트 시 보류 중인 변경사항 즉시 저장
   useEffect(() => {
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      flushRef.current();
     };
   }, []);
 

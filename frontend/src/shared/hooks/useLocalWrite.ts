@@ -1,4 +1,4 @@
-import { usePowerSync } from '@powersync/react';
+﻿import { usePowerSync } from '@powersync/react';
 import { useWriterId } from './useWriterId';
 
 /**
@@ -208,6 +208,7 @@ export function useLocalWrite() {
         name: string;
         gender: string;
         age: string;
+        profile_image_url: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -225,16 +226,22 @@ export function useLocalWrite() {
     /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
     ensureCharacterNotes: async (characterId: string): Promise<void> => {
       const now = new Date().toISOString();
+      await db.execute(
+        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         SELECT ?, ?, ?, 'intro', '한 줄 소개', NULL, 0, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'intro')`,
+        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+      );
       // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'appearance', '외형', NULL, 0, ?, ?
+         SELECT ?, ?, ?, 'appearance', '외형', NULL, 1, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
         [crypto.randomUUID(), characterId, writerId, now, now, characterId],
       );
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'personality', '성격', NULL, 1, ?, ?
+         SELECT ?, ?, ?, 'personality', '성격', NULL, 2, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
         [crypto.randomUUID(), characterId, writerId, now, now, characterId],
       );

@@ -1,4 +1,4 @@
-import { PROSE, WHISPER } from '../../data/landing-content';
+import { DEDICATION, PROSE } from '../../data/landing-content';
 
 export function ProseSection() {
   return (
@@ -12,8 +12,8 @@ export function ProseSection() {
           ))}
         </p>
       ))}
-      <p className="whisper">
-        {WHISPER.map((line, lIdx) => (
+      <p className="prose-dedication">
+        {DEDICATION.map((line, lIdx) => (
           <span key={lIdx} className="fill-line">
             {line}
           </span>

@@ -58,6 +58,82 @@ async function request<T>(
   return JSON.parse(text) as T;
 }
 
+/**
+ * SSE 스트리밍 요청.
+ * FastAPI → Spring 프록시의 Server-Sent Events를 소비한다.
+ * @returns AbortController — 호출자가 abort()로 스트리밍을 취소할 수 있음.
+ */
+async function streamSSE(
+  path: string,
+  body: unknown,
+  onData: (parsed: unknown) => boolean | void,
+  onDone: () => void,
+  onError: (err: Error) => void,
+): Promise<AbortController> {
+  const controller = new AbortController();
+  const token = await window.folio.auth.getAccessToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  fetch(`${apiUrl()}${path}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new ApiError(response.status, text || response.statusText);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('ReadableStream not supported');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        let earlyDone = false;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data:')) {
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const shouldStop = onData(parsed);
+              if (shouldStop) {
+                earlyDone = true;
+                break;
+              }
+            } catch {
+              // 파싱 실패한 라인은 무시
+            }
+          }
+        }
+        if (earlyDone) {
+          reader.cancel();
+          onDone();
+          return;
+        }
+      }
+      onDone();
+    })
+    .catch((err) => {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      onError(err instanceof Error ? err : new Error(String(err)));
+    });
+
+  return controller;
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, body?: unknown) =>
@@ -66,4 +142,5 @@ export const apiClient = {
       body: body ? JSON.stringify(body) : undefined,
     }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  streamSSE,
 };

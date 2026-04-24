@@ -183,9 +183,6 @@ export function SecondarySidebar({
         )}
       </div>
 
-      {/* 동기화 상태 바 */}
-      <SyncStatusBar />
-
       {/* 프로필 풋터 */}
       <div className="shrink-0 border-t border-sidebar-border p-3">
         {isGuest ? (
@@ -206,27 +203,31 @@ export function SecondarySidebar({
             <ThemeToggle theme={theme} onCycle={cycleTheme} />
           </div>
         ) : (
-          <div className="flex items-center gap-2 px-2 py-1.5">
-            {writer?.profileImageUrl ? (
-              <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
-            ) : (
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">
-                ●
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              {writer?.profileImageUrl ? (
+                <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
+              ) : (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">
+                  ●
+                </span>
+              )}
+              <span className="flex-1 truncate text-xs text-sidebar-foreground">
+                {writer?.nickname ?? writer?.email ?? ''}
               </span>
-            )}
-            <span className="flex-1 truncate text-xs text-sidebar-foreground">
-              {writer?.nickname ?? writer?.email ?? ''}
-            </span>
-            <ThemeToggle theme={theme} onCycle={cycleTheme} />
-            <button
-              type="button"
-              onClick={() => void logout()}
-              aria-label="로그아웃"
-              title="로그아웃"
-              className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              <LogOut size={14} strokeWidth={2} />
-            </button>
+              <ThemeToggle theme={theme} onCycle={cycleTheme} />
+              <button
+                type="button"
+                onClick={() => void logout()}
+                aria-label="로그아웃"
+                title="로그아웃"
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <LogOut size={14} strokeWidth={2} />
+              </button>
+            </div>
+            {/* 동기화 큐 게이지 */}
+            <SyncStatusBar />
           </div>
         )}
       </div>

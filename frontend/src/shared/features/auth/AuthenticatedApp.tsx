@@ -222,7 +222,7 @@ export function AuthenticatedApp() {
   const handleSettingsClick = () => {
     if (sidebarCollapsed) setSidebarCollapsed(false);
     setSettingsMode(true);
-    setSelectedSettingsItem('theme');
+    setSelectedSettingsItem('account');
   };
 
   const handleWorkSelect = (id: string) => {
@@ -461,6 +461,7 @@ function renderMain({
             key={noteId}
             noteId={noteId}
             onBack={back}
+            onBackToCharacter={(charId) => onItemSelect('char:' + charId)}
           />
         );
       }

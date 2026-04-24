@@ -1,110 +1,112 @@
-import { useStatus } from '@powersync/react';
-import {
-  AlertCircle,
-  CheckCircle2,
-  CloudOff,
-  RefreshCw,
-  type LucideIcon,
-} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useStatus } from '@powersync/react';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { cn } from '../../lib/cn';
 
-type BarState = 'active' | 'error' | 'idle' | 'offline';
-
-interface BarView {
-  state: BarState;
-  label: string;
-  Icon: LucideIcon;
-}
-
 /**
- * 좌측 하단 프로필 풋터 바로 위에 배치되는 얇은 동기화 상태 바.
+ * 동기화 큐 게이지 바.
  *
- * - PowerSync `useStatus()` 로 실시간 sync 상태 구독
- * - connecting / downloading / uploading → 애니메이션(회전) 활성
- * - idle(synced) → 정적 체크 아이콘
- * - 오류 → 빨간 톤 + 경고 아이콘
- * - 오프라인(연결 끊김) → 구름 아이콘
- * - 게스트 모드: 동기화 없음 → 렌더하지 않음
+ * - `ps_crud` 테이블의 대기 건수를 실시간 조회
+ * - 큐가 쌓이면 게이지가 표시되고, 업로드 진행에 따라 채워짐
+ * - 완료 시 잠시 green 표시 후 fade out
+ * - 오프라인/오류 상태에 따라 색상 변경
+ * - 큐가 비어있으면 숨김
  */
 export function SyncStatusBar() {
   const isGuest = useIsGuest();
   const status = useStatus();
 
+  const { data: queueRows = [] } = useQuery<{ cnt: number }>(
+    'SELECT count(*) as cnt FROM ps_crud',
+    [],
+  );
+  const queueCount = queueRows[0]?.cnt ?? 0;
+
+  // 최대값 추적 — 게이지 비율 계산 기준
+  const maxRef = useRef(0);
+  const prevCountRef = useRef(0);
+
+  // 완료 후 잠시 표시
+  const [showComplete, setShowComplete] = useState(false);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 큐 증가 시 최대값 갱신
+  if (queueCount > maxRef.current) {
+    maxRef.current = queueCount;
+  }
+
+  // 큐가 0에 도달 → 완료 표시 → fade out
+  useEffect(() => {
+    if (queueCount === 0 && prevCountRef.current > 0) {
+      setShowComplete(true);
+      completeTimerRef.current = setTimeout(() => {
+        setShowComplete(false);
+        maxRef.current = 0;
+      }, 1500);
+    }
+    prevCountRef.current = queueCount;
+    return () => {
+      if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
+    };
+  }, [queueCount]);
+
   if (isGuest) return null;
 
+  // 큐 비어있고 완료 표시도 끝났으면 숨김
+  if (queueCount === 0 && !showComplete) return null;
+
   const {
-    connecting,
     connected,
-    hasSynced,
-    dataFlowStatus: { downloading, uploading, downloadError, uploadError } = {},
+    dataFlowStatus: { downloadError, uploadError } = {},
   } = status;
 
-  const view = resolveView({
-    connecting: connecting ?? false,
-    connected: connected ?? false,
-    downloading: downloading ?? false,
-    uploading: uploading ?? false,
-    hasSynced: hasSynced ?? false,
-    hasError: Boolean(downloadError || uploadError),
-  });
+  const hasError = Boolean(downloadError || uploadError);
+
+  const progress =
+    maxRef.current > 0
+      ? ((maxRef.current - queueCount) / maxRef.current) * 100
+      : 100;
+
+  const WARN_THRESHOLD = 100;
+
+  const label = hasError
+    ? '동기화 오류'
+    : !connected && queueCount > 0
+      ? `오프라인 · ${queueCount.toLocaleString()}건 대기`
+      : queueCount === 0
+        ? '동기화 완료'
+        : queueCount >= WARN_THRESHOLD
+          ? `${queueCount.toLocaleString()}건 대량 동기화 중`
+          : `${queueCount.toLocaleString()}건 동기화 중`;
+
+  const barColor = hasError
+    ? 'bg-red-500'
+    : !connected
+      ? 'bg-muted-foreground/40'
+      : queueCount === 0
+        ? 'bg-green-500'
+        : queueCount >= WARN_THRESHOLD
+          ? 'bg-amber-500'
+          : 'bg-blue-500';
 
   return (
     <div
-      role="status"
-      aria-live="polite"
       className={cn(
-        'flex h-6 shrink-0 items-center gap-1.5 border-t px-3 text-[11px] transition-colors',
-        STATE_STYLES[view.state],
+        'px-2 transition-opacity duration-500',
+        showComplete && queueCount === 0 ? 'opacity-60' : 'opacity-100',
       )}
     >
-      <view.Icon
-        size={12}
-        strokeWidth={2}
-        className={cn('shrink-0', view.state === 'active' && 'animate-spin')}
-      />
-      <span className="truncate">{view.label}</span>
+      {/* 상태 텍스트 */}
+      <div className="mb-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{label}</span>
+      </div>
+      {/* 게이지 바 */}
+      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn('h-full rounded-full transition-all duration-500', barColor)}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
     </div>
   );
-}
-
-const STATE_STYLES: Record<BarState, string> = {
-  active: 'border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-400',
-  idle: 'border-border/50 bg-muted/50 text-muted-foreground',
-  error: 'border-red-100 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400',
-  offline: 'border-border/50 bg-muted/50 text-muted-foreground/70',
-};
-
-function resolveView(args: {
-  connecting: boolean;
-  connected: boolean;
-  downloading: boolean;
-  uploading: boolean;
-  hasSynced: boolean;
-  hasError: boolean;
-}): BarView {
-  const { connecting, connected, downloading, uploading, hasSynced, hasError } = args;
-
-  if (hasError) {
-    return { state: 'error', label: '동기화 오류', Icon: AlertCircle };
-  }
-  if (connecting) {
-    return { state: 'active', label: '연결 중…', Icon: RefreshCw };
-  }
-  if (downloading && uploading) {
-    return { state: 'active', label: '동기화 중…', Icon: RefreshCw };
-  }
-  if (downloading) {
-    return { state: 'active', label: '받는 중…', Icon: RefreshCw };
-  }
-  if (uploading) {
-    return { state: 'active', label: '보내는 중…', Icon: RefreshCw };
-  }
-  if (!connected) {
-    return { state: 'offline', label: '연결 끊김', Icon: CloudOff };
-  }
-  if (hasSynced) {
-    return { state: 'idle', label: '동기화됨', Icon: CheckCircle2 };
-  }
-  return { state: 'idle', label: '대기 중', Icon: CheckCircle2 };
 }

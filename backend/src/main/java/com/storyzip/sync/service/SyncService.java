@@ -147,6 +147,8 @@ public class SyncService {
         if (e.getTitle() == null) e.setTitle("새 문서");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) return;
         planNoteRepo.save(e);
     }
 
@@ -217,6 +219,8 @@ public class SyncService {
         if (e.getTitle() == null) e.setTitle("새 문서");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
         characterNoteRepo.save(e);
     }
 
@@ -237,6 +241,8 @@ public class SyncService {
         if (e.getFieldName() == null) e.setFieldName("");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
         charCustomFieldRepo.save(e);
     }
 
@@ -252,6 +258,8 @@ public class SyncService {
         applyUuid(data, "world_note_id", e::setWorldNoteId);
         applyDt(data,   "created_at",    e::setCreatedAt);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
         charTagRepo.save(e);
     }
 
@@ -320,6 +328,9 @@ public class SyncService {
         applyUuid(data, "episode_id", e::setEpisodeId);
         applyDt(data,   "created_at", e::setCreatedAt);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip — 다음 sync 사이클에서 재시도
+        if (e.getPlotId() != null && !plotRepo.existsById(e.getPlotId())) return;
+        if (e.getEpisodeId() != null && !episodeRepo.existsById(e.getEpisodeId())) return;
         plotEpisodeLinkRepo.save(e);
     }
 
@@ -364,6 +375,8 @@ public class SyncService {
         applyDt(data,    "created_at",   e::setCreatedAt);
         if (e.getLinkType() == null) e.setLinkType("");
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        // FK 대상이 아직 동기화되지 않았으면 skip — 다음 sync 사이클에서 재시도
+        if (e.getForeshadowId() != null && !foreshadowRepo.existsById(e.getForeshadowId())) return;
         foreshadowLinkRepo.save(e);
     }
 
