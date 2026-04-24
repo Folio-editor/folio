@@ -24,6 +24,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID}
+      PS_JWT_KID: ${PS_JWT_KID}
+      PS_JWT_AUDIENCE: ${PS_JWT_AUDIENCE}
       AI_SERVER_URL: http://fastapi-blue:8000
       AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
@@ -55,8 +58,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
     depends_on:
       postgresql:
         condition: service_healthy
@@ -81,8 +87,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
     depends_on:
       redis:
         condition: service_healthy

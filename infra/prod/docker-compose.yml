@@ -41,10 +41,11 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      PS_REPL_PASSWORD: ${PS_REPL_PASSWORD}
     volumes:
       - /opt/folio/data/postgresql:/var/lib/postgresql/data
       - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../db/powersync-init.sql:/docker-entrypoint-initdb.d/02-powersync.sql:ro
+      - ../db/powersync-init.sh:/docker-entrypoint-initdb.d/02-powersync.sh:ro
     command: >
       postgres
         -c wal_level=logical

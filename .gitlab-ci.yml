@@ -76,7 +76,15 @@ deploy-production:
         git checkout master
         git pull origin master
 
-        # 2. Docker 이미지 빌드
+        # 2. Doppler에서 시크릿 다운로드 (빌드 시 VITE_* 변수 필요)
+        export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
+        cd /opt/folio/S14P31F203/infra/prod
+        doppler secrets download --project folio --config prd --no-file --format env > .env
+        echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
+        set -a; source .env; set +a
+
+        # 3. Docker 이미지 빌드
+        cd /opt/folio/S14P31F203
         echo "[build] Building Docker images..."
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
@@ -84,14 +92,11 @@ deploy-production:
         docker build -f infra/dockerfiles/Dockerfile.web \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
+          --build-arg VITE_GOOGLE_CLIENT_ID=\${VITE_GOOGLE_CLIENT_ID} \
+          --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=\${VITE_GOOGLE_DESKTOP_CLIENT_ID} \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
         docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
-
-        # 3. Doppler에서 시크릿 다운로드
-        export DOPPLER_TOKEN=$DOPPLER_TOKEN_PRD
         cd /opt/folio/S14P31F203/infra/prod
-        doppler secrets download --project folio --config prd --no-file --format env > .env
-        echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
 
         # 3.1 upstream-active.conf 초기화 (없으면 기본값 생성)
         if [ ! -f nginx/upstream-active.conf ]; then
