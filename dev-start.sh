@@ -45,7 +45,7 @@ PIDS+=($!)
 
 # --- 3. FastAPI (port 8001) ---
 echo "[ai]       Starting FastAPI..."
-(cd "$ROOT_DIR/ai" && doppler run -p folio -c dev -- .venv/Scripts/python -m uvicorn app.main:app --reload --port 8001 2>&1 | sed 's/^/[ai]       /') &
+(cd "$ROOT_DIR/ai" && doppler run -p folio -c dev -- .venv/Scripts/python -m uvicorn app.main:app --reload --port 8001 2>&1 | tee -a "$ROOT_DIR/ai/test_reports/uvicorn.log" | sed 's/^/[ai]       /') &
 PIDS+=($!)
 
 # --- 4. Celery Worker ---

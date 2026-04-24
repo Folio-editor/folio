@@ -18,6 +18,7 @@ def test_drafts_endpoint_accepts_opus_model(monkeypatch):
         writer_id: str,
         storyline: str,
         current_episode_num: int,
+        mode: str = "draft",
     ) -> str:
         return "mocked context"
 
@@ -27,6 +28,7 @@ def test_drafts_endpoint_accepts_opus_model(monkeypatch):
             system: str,
             user: str,
             model_override: str | None = None,
+            max_tokens: int = 4000,
         ):
             captured["model_override"] = model_override
             async for chunk in super().generate_stream(system, user, model_override=model_override):
