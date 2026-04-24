@@ -68,7 +68,7 @@ public class GlobalExceptionHandler {
                 .toList();
         String traceId = newTraceId();
 
-        log.warn("[Validation] traceId={} errors={}", traceId, fieldErrors);
+        log.warn("[Validation] traceId={} errors={}", traceId, summarizeForLog(fieldErrors));
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(
@@ -83,7 +83,7 @@ public class GlobalExceptionHandler {
                 .toList();
         String traceId = newTraceId();
 
-        log.warn("[ConstraintViolation] traceId={} errors={}", traceId, fieldErrors);
+        log.warn("[ConstraintViolation] traceId={} errors={}", traceId, summarizeForLog(fieldErrors));
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(
@@ -223,6 +223,21 @@ public class GlobalExceptionHandler {
                 .reason(fe.getDefaultMessage())
                 .rejectedValue(fe.getRejectedValue())
                 .build();
+    }
+
+    /**
+     * 로그 전용 요약. rejectedValue(사용자 원본 텍스트)는 길이만 기록하여 프롬프트/본문 유출을 차단한다.
+     * 클라이언트 응답(ErrorResponse)에는 기존 fieldErrors가 그대로 포함되므로 API 계약은 변하지 않는다.
+     */
+    private List<String> summarizeForLog(List<ErrorResponse.FieldError> errors) {
+        return errors.stream()
+                .map(fe -> {
+                    Object rv = fe.getRejectedValue();
+                    int len = (rv == null) ? 0 : rv.toString().length();
+                    return String.format("field=%s reason=%s rejectedLen=%d",
+                            fe.getField(), fe.getReason(), len);
+                })
+                .toList();
     }
 
     private ErrorResponse.FieldError toFieldError(ConstraintViolation<?> v) {

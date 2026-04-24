@@ -18,6 +18,7 @@ const MIN_DELAY_MS = 1000; // 즉시 발사에도 최소 1초 대기 (경합 방
 const BACKOFF_BASE_MS = 30 * 1000;
 const BACKOFF_MAX_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 6;
+const NETWORK_RETRY_MS = 60 * 1000; // 네트워크 오류 시 고정 재시도 간격
 
 export type RefreshOutcome =
   | { kind: 'ok'; accessToken: string }
@@ -54,6 +55,7 @@ export function createTokenRefreshScheduler(
   const emitter = new EventEmitter() as TokenRefreshScheduler;
   let timer: NodeJS.Timeout | null = null;
   let retryCount = 0;
+  let lastKnownToken: string | null = null;
 
   const clear = () => {
     if (timer) {
@@ -100,8 +102,14 @@ export function createTokenRefreshScheduler(
         emitter.emit('session-expired');
         return;
       }
-      // network / 5xx
-      handleRetry();
+      // network / 5xx — 카운터 소진 없이 고정 간격 재시도
+      console.log(
+        `[auth] proactive refresh 네트워크 오류 — ${NETWORK_RETRY_MS / 1000}s 후 재시도 (카운트 미소진)`,
+      );
+      clear();
+      timer = setTimeout(() => {
+        void doRefresh();
+      }, NETWORK_RETRY_MS);
     } catch (e) {
       console.warn('[auth] proactive refresh 예외:', e);
       handleRetry();
@@ -134,10 +142,12 @@ export function createTokenRefreshScheduler(
 
   emitter.start = (accessToken: string) => {
     retryCount = 0;
+    lastKnownToken = accessToken;
     scheduleNext(accessToken);
   };
   emitter.stop = () => {
     retryCount = 0;
+    lastKnownToken = null;
     clear();
   };
 

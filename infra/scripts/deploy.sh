@@ -45,6 +45,13 @@ echo ""
 
 cd "$PROD_DIR"
 
+# ─── 1.5. PLG 데이터 디렉토리 보장 ─────────────────────────
+# Loki/Grafana/Promtail 컨테이너가 처음 기동될 때 필요한 디렉토리와
+# 권한을 자동으로 준비한다 (idempotent — 이미 있으면 무시).
+sudo mkdir -p /opt/folio/data/{loki,grafana,promtail-positions}
+sudo chown -R 10001:10001 /opt/folio/data/loki
+sudo chown -R 472:472 /opt/folio/data/grafana
+
 # ─── 2. Doppler에서 시크릿 다운로드 ─────────────────────────
 echo "[deploy] Downloading secrets from Doppler..."
 doppler secrets download --project folio --config prd --no-file --format env > .env

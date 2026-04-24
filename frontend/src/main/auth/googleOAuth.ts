@@ -8,6 +8,7 @@ import { saveRefreshToken, getRefreshToken, clearRefreshToken } from './tokenSto
 import { saveLastWriterId, getLastWriterId } from './lastWriterStore';
 import {
   createTokenRefreshScheduler,
+  parseJwtExp,
   type RefreshOutcome,
 } from './tokenRefreshScheduler';
 import type { LoginResult, Writer } from '../../shared/types/auth';
@@ -35,7 +36,26 @@ let currentWriter: Writer | null = null;
 // Lazy(401 retry) 경로와 proactive 타이머가 동시 발동 시 실제 /refresh는 1회로 직렬화
 let refreshingPromise: Promise<RefreshOutcome> | null = null;
 
-export function getAccessToken(): string | null {
+/** 만료 임박(30초 이내) 시 선제 refresh를 시도하는 기준값 */
+const LAZY_REFRESH_BUFFER_MS = 30 * 1000;
+
+/**
+ * 현재 Access Token을 반환한다.
+ * 만료 임박 시 선제적으로 refresh를 시도하여 좀비 세션(메모리에 만료 AT 잔류)을 방지한다.
+ * - 만료 임박 + refresh 성공: 새 토큰 반환
+ * - 만료 임박 + refresh 실패(네트워크): 기존 만료 토큰 반환 (호출자가 한 번은 시도하게)
+ * - 만료 임박 + refresh 실패(RT 거부): null 반환 (clearAllTokens가 이미 호출됨)
+ */
+export async function getAccessToken(): Promise<string | null> {
+  if (!currentAccessToken) return null;
+  const exp = parseJwtExp(currentAccessToken);
+  if (exp !== null && exp * 1000 - Date.now() < LAZY_REFRESH_BUFFER_MS) {
+    const outcome = await performRefresh();
+    if (outcome.kind === 'ok') return outcome.accessToken;
+    if (outcome.kind === 'unauthorized') return null;
+    // network — 만료된 토큰이라도 반환 (호출자가 401 받으면 tryRestore로 다시 시도)
+    return currentAccessToken;
+  }
   return currentAccessToken;
 }
 
@@ -156,6 +176,7 @@ export async function tryRestoreLogin(): Promise<LoginResult | null> {
       headers: { Authorization: `Bearer ${outcome.accessToken}` },
     });
     if (!meResponse.ok) {
+      // HTTP 에러 (4xx/5xx) — 서버가 명시적으로 인증/권한 거부 → 토큰 삭제
       clearAllTokens();
       tokenRefreshScheduler.stop();
       return null;
@@ -166,8 +187,10 @@ export async function tryRestoreLogin(): Promise<LoginResult | null> {
     // 자동 복원은 이미 결정 끝난 기존 사용자이므로 isNewUser=false
     return { accessToken: outcome.accessToken, writer, isNewUser: false };
   } catch {
-    clearAllTokens();
-    tokenRefreshScheduler.stop();
+    // 네트워크 오류 (오프라인 등) — 토큰 유지, 다음 기회에 재시도 가능하게 둔다.
+    // performRefresh는 이미 성공했으므로 AT/RT는 유효. 이 경로에서 토큰을 지우면
+    // 일시적 네트워크 끊김에도 세션이 완전 소실되어 오프라인 퍼스트 원칙에 위배.
+    console.warn('[auth] /auth/me 네트워크 오류 — 토큰 유지, 재시도 대상');
     return null;
   }
 }
@@ -262,7 +285,11 @@ function lastAccessPath() {
 }
 
 function saveLastAccessToken(token: string): void {
-  if (!safeStorage.isEncryptionAvailable()) return;
+  if (!safeStorage.isEncryptionAvailable()) {
+    // 무음 return 금지 — 저장 실패 시 앱 재시작 시 자동 복원이 영구 실패하므로
+    // 로그인/refresh 경로에서 명확한 에러로 노출해 사용자가 원인을 알 수 있게 한다.
+    throw new Error('safeStorage is not available on this system');
+  }
   fs.writeFileSync(lastAccessPath(), safeStorage.encryptString(token));
 }
 

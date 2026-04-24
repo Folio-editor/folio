@@ -10,6 +10,7 @@ import type {
   PowerSyncBackendConnector,
 } from '@powersync/web';
 import { apiClient, ApiError } from '@shared/lib/apiClient';
+import { useNetworkStore } from '@shared/hooks/useNetworkStatus';
 
 // Windows Docker에서 localhost는 IPv6 우선 해석되는데 컨테이너는 IPv4 바인딩이라
 // CONNECTION_RESET이 난다. 기본값을 127.0.0.1로 고정.
@@ -66,6 +67,11 @@ export class FolioConnector implements PowerSyncBackendConnector {
    *   - 백엔드: client UUID 수락, writer_id는 JWT에서 추출하여 덮어씀
    */
   async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
+    if (!useNetworkStore.getState().isOnline) {
+      console.log('[sync] 오프라인 — 업로드 건너뜀 (큐 유지)');
+      return;
+    }
+
     const token = await window.folio.auth.getAccessToken();
     if (!token) {
       console.log('[uploadData] 게스트 모드 — 큐 유지');

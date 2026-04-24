@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useStatus } from '@powersync/react';
 import { useIsGuest } from '../../hooks/useWriterId';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { cn } from '../../lib/cn';
 
 /**
@@ -14,6 +15,7 @@ import { cn } from '../../lib/cn';
  */
 export function SyncStatusBar() {
   const isGuest = useIsGuest();
+  const isOnline = useNetworkStatus();
   const status = useStatus();
 
   const { data: queueRows = [] } = useQuery<{ cnt: number }>(
@@ -52,15 +54,18 @@ export function SyncStatusBar() {
 
   if (isGuest) return null;
 
-  // 큐 비어있고 완료 표시도 끝났으면 숨김
-  if (queueCount === 0 && !showComplete) return null;
-
   const {
     connected,
     dataFlowStatus: { downloadError, uploadError } = {},
   } = status;
 
+  // 오프라인이면 connected 여부와 관계없이 즉시 오프라인 표시
+  const effectivelyOffline = !isOnline || !connected;
   const hasError = Boolean(downloadError || uploadError);
+
+  // 큐 비어있고 완료 표시도 끝났고 온라인이면 숨김
+  // 오프라인이면 큐 0이어도 상태 표시
+  if (queueCount === 0 && !showComplete && !effectivelyOffline) return null;
 
   const progress =
     maxRef.current > 0
@@ -71,17 +76,19 @@ export function SyncStatusBar() {
 
   const label = hasError
     ? '동기화 오류'
-    : !connected && queueCount > 0
+    : effectivelyOffline && queueCount > 0
       ? `오프라인 · ${queueCount.toLocaleString()}건 대기`
-      : queueCount === 0
-        ? '동기화 완료'
-        : queueCount >= WARN_THRESHOLD
-          ? `${queueCount.toLocaleString()}건 대량 동기화 중`
-          : `${queueCount.toLocaleString()}건 동기화 중`;
+      : effectivelyOffline
+        ? '오프라인'
+        : queueCount === 0
+          ? '동기화 완료'
+          : queueCount >= WARN_THRESHOLD
+            ? `${queueCount.toLocaleString()}건 대량 동기화 중`
+            : `${queueCount.toLocaleString()}건 동기화 중`;
 
   const barColor = hasError
     ? 'bg-red-500'
-    : !connected
+    : effectivelyOffline
       ? 'bg-muted-foreground/40'
       : queueCount === 0
         ? 'bg-green-500'

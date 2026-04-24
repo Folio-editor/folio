@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Folio Backend 로깅 설정
+  - dev/test: 텍스트 패턴 (사람이 읽기 편한 포맷)
+  - prod: JSON (LogstashEncoder) — Promtail/Loki 수집용 구조화 포맷
+  - stack trace 최대 2048자로 제한 (프롬프트/본문 유출 방어)
+-->
+<configuration>
+
+    <springProfile name="!prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE" />
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>userId</includeMdcKeyName>
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <level>level</level>
+                    <message>message</message>
+                    <logger>logger_name</logger>
+                    <thread>thread</thread>
+                    <stackTrace>stack_trace</stackTrace>
+                </fieldNames>
+                <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                    <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                    <maxLength>2048</maxLength>
+                    <shortenedClassNameLength>36</shortenedClassNameLength>
+                    <rootCauseFirst>true</rootCauseFirst>
+                </throwableConverter>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.storyzip" level="INFO" />
+        <logger name="org.hibernate.SQL" level="WARN" />
+        <logger name="org.springframework.security" level="WARN" />
+    </springProfile>
+
+</configuration>
