@@ -1,7 +1,8 @@
 // ============================================================
-// PowerSync Sync Connector — Electron 렌더러용
+// PowerSync Sync Connector — Electron 렌더러 + 웹 공통
 // ============================================================
-// - fetchCredentials: 기존 auth IPC(getAccessToken)로 JWT 제공
+// - fetchCredentials: window.folio.auth.getAccessToken으로 JWT 제공
+//   (Electron: IPC, Web: 메모리 AT 어댑터)
 // - uploadData: PowerSync CRUD 큐 → 백엔드 batch 업로드
 // ============================================================
 
@@ -9,8 +10,8 @@ import type {
   AbstractPowerSyncDatabase,
   PowerSyncBackendConnector,
 } from '@powersync/web';
-import { apiClient, ApiError } from '@shared/lib/apiClient';
-import { useNetworkStore } from '@shared/hooks/useNetworkStatus';
+import { apiClient, ApiError } from '../lib/apiClient';
+import { useNetworkStore } from '../hooks/useNetworkStatus';
 
 // Windows Docker에서 localhost는 IPv6 우선 해석되는데 컨테이너는 IPv4 바인딩이라
 // CONNECTION_RESET이 난다. 기본값을 127.0.0.1로 고정.

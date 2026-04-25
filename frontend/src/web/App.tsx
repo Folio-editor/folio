@@ -1,15 +1,12 @@
-import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider } from '../shared/components/ThemeProvider';
+import { AppRoot } from '../shared/app/AppRoot';
 
+/**
+ * 웹 브라우저 진입점.
+ * 공통 로직은 모두 {@link AppRoot}에 있고, 여기서는 BrowserRouter를 선택한다.
+ *
+ * 운영 배포는 별도 서브도메인(app.folio.com)을 사용하므로 basename은 비워둔다.
+ * 만약 path 기반(folio.com/editor) 배포로 전환할 경우 basename="/editor" 추가.
+ */
 export function App() {
-  return (
-    <ThemeProvider>
-      <BrowserRouter basename="/editor">
-        <div>
-          <h1>Folio Web Editor</h1>
-          <p>웹 에디터 (데스크탑과 동일한 기능)</p>
-        </div>
-      </BrowserRouter>
-    </ThemeProvider>
-  );
+  return <AppRoot router="browser" />;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Cloud, CloudOff, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-react';
 import { useQuery, useStatus } from '@powersync/react';
-import { db } from '../../../renderer/sync/db';
+import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';

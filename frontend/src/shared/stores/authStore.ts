@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import type { Writer } from '../types/auth';
-import { db } from '../../renderer/sync/db';
+import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
+
+/** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
+function isWebPlatform(): boolean {
+  return typeof window !== 'undefined' && window.folio?.platform === 'web';
+}
 
 // ────────────────────────────────────────────────────────────
 // 앱 모드
@@ -132,12 +137,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
     } catch {
-      /* 네트워크 오류 등 — 게스트로 폴백 */
+      /* 네트워크 오류 등 — 아래에서 비인증 폴백 */
+    }
+    if (isWebPlatform()) {
+      // 웹은 게스트 모드 없음 — 비인증 상태로 두고 로그인 화면 표시 (AppRoot가 처리).
+      set({
+        writer: null,
+        guestWriterId: null,
+        previousGuestId: null,
+        lastKnownWriterId: null,
+        isAuthenticated: false,
+        isGuest: false,
+        isRestoring: false,
+        isNewUser: false,
+        syncDecision: null,
+      });
+      return;
     }
     await get().enterGuestMode();
   },
 
   enterGuestMode: async () => {
+    if (isWebPlatform()) {
+      // 웹은 게스트 모드 자체가 없음 — 비인증 상태로만 전환.
+      set({
+        writer: null,
+        guestWriterId: null,
+        previousGuestId: null,
+        lastKnownWriterId: null,
+        isAuthenticated: false,
+        isGuest: false,
+        isRestoring: false,
+        isNewUser: false,
+        syncDecision: null,
+      });
+      return;
+    }
     const [guestWriterId, lastKnownWriterId] = await Promise.all([
       window.folio.auth.getGuestId(),
       window.folio.auth.getLastKnownWriterId(),
@@ -281,6 +316,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await window.folio.auth.logout();
     } finally {
+      if (isWebPlatform()) {
+        // 웹은 로그아웃 시 게스트로 떨어지지 않음 — 비인증 상태로만 전환.
+        // AppRoot가 비인증 상태를 감지해 로그인 안내(또는 랜딩 redirect) 화면을 표시.
+        set({
+          writer: null,
+          guestWriterId: null,
+          previousGuestId: null,
+          lastKnownWriterId: null,
+          isAuthenticated: false,
+          isGuest: false,
+          isNewUser: false,
+          syncDecision: null,
+        });
+        return;
+      }
       const guestWriterId = get().guestWriterId ?? (await window.folio.auth.getGuestId());
       // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
       // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.

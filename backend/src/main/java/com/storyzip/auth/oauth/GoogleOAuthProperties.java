@@ -28,4 +28,13 @@ public class GoogleOAuthProperties {
      * PKCE를 사용하더라도 client_secret이 필수이다. ("Desktop app" 타입은 secret 없이도 가능.)
      */
     private String desktopClientSecret;
+
+    /**
+     * 웹 OAuth 콜백 URL — Google authorize 호출 시 redirect_uri로 전달하고
+     * 토큰 교환 시에도 동일한 값을 보내야 한다.
+     * dev: http://localhost:8080/api/v1/auth/google/web/callback
+     * prod: https://api.folio.com/api/v1/auth/google/web/callback
+     * <p>Google Cloud Console "승인된 리디렉션 URI"에도 동일하게 등록되어야 한다.
+     */
+    private String webRedirectUri;
 }

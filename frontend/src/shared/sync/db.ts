@@ -1,12 +1,12 @@
 // ============================================================
-// PowerSync DB 싱글턴 — Electron 렌더러용
+// PowerSync DB 싱글턴 — Electron 렌더러 + 웹 공통
 // ============================================================
 // WASM SQLite(wa-sqlite)를 사용하며 OPFS 우선, 미지원 시 IndexedDB 폴백.
 // 앱 전체에서 이 인스턴스 하나를 공유한다.
 // ============================================================
 
 import { PowerSyncDatabase } from '@powersync/web';
-import { AppSchema } from '@shared/sync/schema';
+import { AppSchema } from './schema';
 
 export const db = new PowerSyncDatabase({
   schema: AppSchema,

@@ -1,4 +1,8 @@
+import { buildLoginUrl } from '../../lib/loginUrl';
+
 export function Hero() {
+  // 웹 에디터 진입 = 백엔드 OAuth start로 이동
+  const loginUrl = buildLoginUrl('/');
   return (
     <section className="hero" id="signup">
       <div className="hero-rule" />
@@ -9,10 +13,10 @@ export function Hero() {
         className="hero-image"
       />
       <div className="cta-download-group">
-        <a href="#" className="cta-download">
-          <span className="cta-download-inner">Download</span>
+        <a href={loginUrl} className="cta-download">
+          <span className="cta-download-inner">웹에서 시작</span>
         </a>
-        <p className="cta-download-caption">Windows · iOS</p>
+        <p className="cta-download-caption">데스크탑 앱은 곧 제공 예정</p>
       </div>
     </section>
   );

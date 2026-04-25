@@ -1,4 +1,8 @@
+import { buildLoginUrl } from '../../lib/loginUrl';
+
 export function TopNav() {
+  // 백엔드 OAuth start로 직접 이동 — full-page navigation
+  const loginUrl = buildLoginUrl('/');
   return (
     <nav className="nav">
       <div className="nav-inner">
@@ -15,8 +19,8 @@ export function TopNav() {
           <a href="#faq" className="nav-link">
             문답
           </a>
-          <a href="#signup" className="nav-cta sans">
-            무료로 시작
+          <a href={loginUrl} className="nav-cta sans">
+            로그인
           </a>
         </div>
       </div>

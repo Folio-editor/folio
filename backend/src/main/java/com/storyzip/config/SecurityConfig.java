@@ -24,6 +24,10 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/api/v1/auth/login/**",
             "/api/v1/auth/refresh",
+            // 웹(브라우저) OAuth 흐름 — 인증 전 호출되는 엔드포인트
+            "/api/v1/auth/google/web/**",
+            "/api/v1/auth/refresh-cookie",
+            "/api/v1/auth/web/logout",
             "/api/v1/auth/dev/**",
             "/api/v1/payments/webhook/**",
             "/test-payment.html",
