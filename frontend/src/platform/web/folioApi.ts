@@ -1,15 +1,16 @@
 // ============================================================
-// Web FolioApi 구현 — 브라우저 환경용
+// Web FolioApi 구현 — Electron 패턴 그대로 (auth_code + Bearer 헤더)
 // ============================================================
-// Electron의 IPC 기반 FolioApi와 동일한 인터페이스를 충족하지만
-// 토큰 저장은 메모리 + httpOnly 쿠키, OAuth 진입은 백엔드 redirect 흐름이다.
-//
-// 게스트 모드는 웹에서 비활성 — getGuestId 호출은 사용처에서 가드되어야 한다.
+// 설계 원칙:
+// - 쿠키 의존 0 (cross-port localhost 환경의 cookie 정책 회피)
+// - Electron의 PKCE + safeStorage + Bearer 패턴을 web에 동형 매핑
+//   - safeStorage → localStorage (web 한계 — XSS 위험은 prod에서 도메인 분리로 완화)
+//   - PKCE 결과 token → backend가 발급한 short-lived auth_code 교환
+// - 모든 API 호출은 Authorization: Bearer (apiClient/connector 그대로 동작)
 // ============================================================
 
 import type { FolioApi, LoginResult, Writer } from '../../shared/types/auth';
 
-/** apiClient와 동일한 URL 정규화 — VITE_API_URL이 trailing slash 포함이면 제거. */
 function apiUrl(): string {
   const url =
     (import.meta.env.VITE_API_URL as string | undefined) ??
@@ -17,65 +18,143 @@ function apiUrl(): string {
   return url.replace(/\/$/, '');
 }
 
-/** 메모리에만 보존하는 Access Token. 새로고침 시 휘발 → tryRestore로 즉시 회복. */
-let accessToken: string | null = null;
+const RT_KEY = 'folio:web:rt';
+const DEVICE_ID_KEY = 'folio:web:device-id';
+const WRITER_KEY = 'folio:web:writer';
+const LAST_WRITER_ID_KEY = 'folio:web:last-writer-id';
 
-/** 세션 만료 이벤트 fan-out (apiClient의 refresh 실패 → 가입 만료 알림). */
+let accessToken: string | null = null;
 const sessionExpiredTarget = new EventTarget();
 
-/** 외부에서 세션 만료를 알릴 수 있도록 노출 — apiClient가 refresh 실패 시 호출. */
-export function emitWebSessionExpired() {
-  sessionExpiredTarget.dispatchEvent(new Event('expired'));
-}
-
-/** apiClient가 refresh 후 새 AT를 메모리에 반영하기 위해 사용. */
 export function setWebAccessToken(token: string | null) {
   accessToken = token;
 }
 
-/** 디버깅/통합용 — 현재 메모리 AT 조회. */
 export function getWebAccessToken(): string | null {
   return accessToken;
 }
 
-const LAST_WRITER_ID_KEY = 'folio:web:last-writer-id';
+/**
+ * 백엔드 callback이 redirect URL에 박은 ?auth_code=xxx를 1회 교환하여
+ * AT/RT/writer/deviceId를 받아 저장한다.
+ *
+ * @returns 로그인 성공 시 Writer, 그 외 (auth_code 없음/만료/네트워크 실패) null
+ */
+export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('auth_code');
+  if (!code) return null;
+
+  // URL에서 auth_code를 즉시 제거 — 새로고침 시 재교환 시도 방지
+  params.delete('auth_code');
+  const newSearch = params.toString();
+  const newUrl =
+    window.location.pathname +
+    (newSearch ? `?${newSearch}` : '') +
+    window.location.hash;
+  window.history.replaceState({}, '', newUrl);
+
+  try {
+    const res = await fetch(
+      `${apiUrl()}/auth/web/exchange?code=${encodeURIComponent(code)}`,
+      { method: 'POST' },
+    );
+    if (!res.ok) {
+      console.warn('[web/folioApi] auth_code 교환 실패:', res.status);
+      return null;
+    }
+    const payload = (await res.json()) as {
+      accessToken: string;
+      refreshToken: string;
+      deviceId: string;
+      writer: Writer;
+      isNewUser: boolean;
+    };
+
+    accessToken = payload.accessToken;
+    localStorage.setItem(RT_KEY, payload.refreshToken);
+    localStorage.setItem(DEVICE_ID_KEY, payload.deviceId);
+    localStorage.setItem(WRITER_KEY, JSON.stringify(payload.writer));
+    localStorage.setItem(LAST_WRITER_ID_KEY, payload.writer.id);
+
+    return {
+      accessToken: payload.accessToken,
+      writer: payload.writer,
+      isNewUser: payload.isNewUser,
+    };
+  } catch (e) {
+    console.warn('[web/folioApi] auth_code 교환 에러:', e);
+    return null;
+  }
+}
+
+function readWriterFromStorage(): Writer | null {
+  try {
+    const raw = localStorage.getItem(WRITER_KEY);
+    return raw ? (JSON.parse(raw) as Writer) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthStorage() {
+  accessToken = null;
+  localStorage.removeItem(RT_KEY);
+  localStorage.removeItem(DEVICE_ID_KEY);
+  localStorage.removeItem(WRITER_KEY);
+  // LAST_WRITER_ID_KEY는 보존 (Electron의 lastKnownWriterId 동등 — 로그아웃 후에도 로컬 데이터 표시용)
+}
 
 export function createWebFolioApi(): FolioApi {
   return {
     platform: 'web',
     auth: {
       loginWithGoogle: async () => {
-        // 백엔드 OAuth start로 full-page navigation. 응답 후 에디터로 redirect되어 돌아온다.
+        // 백엔드 OAuth start로 full-page navigation
         const returnTo = encodeURIComponent(
           window.location.pathname + window.location.search,
         );
         window.location.href = `${apiUrl()}/auth/google/web/start?returnTo=${returnTo}`;
-        // 페이지가 떠나므로 이 Promise는 사실상 resolve되지 않는다.
         return new Promise<LoginResult>(() => {});
       },
 
       tryRestore: async () => {
-        try {
-          const refreshRes = await fetch(`${apiUrl()}/auth/refresh-cookie`, {
-            method: 'POST',
-            credentials: 'include',
-          });
-          if (!refreshRes.ok) return null;
-          const refreshBody = (await refreshRes.json()) as { accessToken: string };
-          accessToken = refreshBody.accessToken;
+        // 1. URL에 auth_code가 있으면 1회 교환 (callback redirect 직후)
+        const fresh = await exchangeAuthCodeIfPresent();
+        if (fresh) return fresh;
 
-          // 사용자 정보 조회 — Bearer 헤더로 직접
-          const meRes = await fetch(`${apiUrl()}/auth/me`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-            credentials: 'include',
+        // 2. localStorage에 RT/deviceId가 있으면 /auth/web/refresh로 새 AT 발급
+        const rt = localStorage.getItem(RT_KEY);
+        const did = localStorage.getItem(DEVICE_ID_KEY);
+        if (!rt || !did) return null;
+
+        try {
+          const res = await fetch(`${apiUrl()}/auth/web/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: rt }),
           });
-          if (!meRes.ok) {
-            accessToken = null;
+          if (!res.ok) {
+            // RT 무효 → 로그아웃 상태로 정리
+            clearAuthStorage();
             return null;
           }
-          const writer = (await meRes.json()) as Writer;
-          return { accessToken, writer, isNewUser: false };
-        } catch {
+          const body = (await res.json()) as {
+            accessToken: string;
+            refreshToken: string;
+          };
+          accessToken = body.accessToken;
+          localStorage.setItem(RT_KEY, body.refreshToken); // RT rotation
+
+          const writer = readWriterFromStorage();
+          if (!writer) {
+            // writer 정보 손실 — 로그아웃 처리 (어떤 사용자인지 알 수 없음)
+            clearAuthStorage();
+            return null;
+          }
+          return { accessToken: body.accessToken, writer, isNewUser: false };
+        } catch (e) {
+          console.warn('[web/folioApi] tryRestore 네트워크 에러:', e);
           return null;
         }
       },
@@ -83,25 +162,27 @@ export function createWebFolioApi(): FolioApi {
       getAccessToken: async () => accessToken,
 
       logout: async () => {
+        const rt = localStorage.getItem(RT_KEY);
         try {
-          await fetch(`${apiUrl()}/auth/web/logout`, {
-            method: 'POST',
-            credentials: 'include',
-          });
+          if (rt) {
+            await fetch(`${apiUrl()}/auth/web/logout`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: rt }),
+            });
+          }
         } catch {
-          // 네트워크 오류여도 로컬 메모리는 비운다 — 다음 요청에서 401 처리됨
+          // 네트워크 실패해도 로컬 정리는 진행
         }
-        accessToken = null;
-        // 다른 탭에도 알림
+        clearAuthStorage();
         try {
           new BroadcastChannel('folio-auth').postMessage({ type: 'logout' });
         } catch {
-          /* BroadcastChannel 미지원 환경 — 무시 */
+          /* BroadcastChannel 미지원 — 무시 */
         }
       },
 
       getGuestId: async () => {
-        // 웹은 게스트 모드 비활성. 호출처에서 platform 체크로 가드되어야 함.
         throw new Error('guest mode is not supported on web');
       },
 
@@ -115,7 +196,6 @@ export function createWebFolioApi(): FolioApi {
         const handler = () => callback();
         sessionExpiredTarget.addEventListener('expired', handler);
 
-        // 다른 탭의 로그아웃도 세션 만료로 취급
         let bc: BroadcastChannel | null = null;
         try {
           bc = new BroadcastChannel('folio-auth');
@@ -133,7 +213,6 @@ export function createWebFolioApi(): FolioApi {
       },
     },
     spellcheck: {
-      // Electron 전용 기능 — 웹에서는 호출 자체가 platform 체크로 막혀있지만 안전하게 no-op.
       syncDictionaryWords: async () => {},
     },
   };

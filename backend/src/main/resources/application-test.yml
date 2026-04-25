@@ -35,3 +35,25 @@ logging:
   level:
     com.storyzip: INFO
     org.hibernate.SQL: WARN
+
+# ────────────────────────────────────────────────────────────
+# 환경별 설정 hardcode (도플러 슬림화 — 옵션 B)
+# test는 web OAuth 통합 테스트 안 함 — app.web 블록은 빈 값 default 유지
+# ────────────────────────────────────────────────────────────
+google:
+  oauth:
+    web-redirect-uri: http://localhost:8080/api/v1/auth/google/web/callback
+
+app:
+  web:
+    landing-url: http://localhost:5174
+    editor-url: http://localhost:5173
+    api-base-url: http://localhost:8080/api/v1
+    cookie-secure: false
+    cookie-domain: ""
+    allowed-origins:
+      - http://localhost:5173
+
+ai:
+  client:
+    base-url: http://fastapi-test:8000

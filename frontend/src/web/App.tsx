@@ -4,9 +4,12 @@ import { AppRoot } from '../shared/app/AppRoot';
  * 웹 브라우저 진입점.
  * 공통 로직은 모두 {@link AppRoot}에 있고, 여기서는 BrowserRouter를 선택한다.
  *
- * 운영 배포는 별도 서브도메인(app.folio.com)을 사용하므로 basename은 비워둔다.
- * 만약 path 기반(folio.com/editor) 배포로 전환할 경우 basename="/editor" 추가.
+ * basename: vite.web.config.ts의 base 설정으로부터 자동 주입.
+ *   dev:  '/' (vite dev server root)
+ *   prod: '/editor' (nginx path 라우팅 — nginx.conf:94의 location /editor)
  */
 export function App() {
-  return <AppRoot router="browser" />;
+  // import.meta.env.BASE_URL은 vite의 base 설정값. trailing slash 제거.
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
+  return <AppRoot router="browser" basename={basename} />;
 }

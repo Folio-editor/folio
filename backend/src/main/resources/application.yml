@@ -34,33 +34,23 @@ jwt:
   audience: ${PS_JWT_AUDIENCE:powersync-dev}
   key-id: ${PS_JWT_KID:folio-dev}
 
-# Google OAuth
+# Google OAuth (시크릿만 — web-redirect-uri는 환경별이라 application-{profile}.yml로 이동)
 google:
   oauth:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
     desktop-client-secret: ${GOOGLE_DESKTOP_CLIENT_SECRET:}
-    # 웹 OAuth 콜백 URL — Google Console "승인된 리디렉션 URI"와 일치해야 함
-    web-redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/v1/auth/google/web/callback}
 
-# 웹(브라우저) 호스팅 설정 — 랜딩/에디터/백엔드 3-도메인 OAuth 흐름과 RT 쿠키 운영
-app:
-  web:
-    landing-url: ${WEB_LANDING_URL:http://localhost:5174}
-    editor-url: ${WEB_FRONTEND_URL:http://localhost:5173}
-    api-base-url: ${WEB_API_URL:http://localhost:8080/api/v1}
-    cookie-domain: ${WEB_COOKIE_DOMAIN:}    # prod ".folio.com", dev 빈 값
-    cookie-secure: ${WEB_COOKIE_SECURE:false}  # prod true, dev false
-    allowed-origins: ${WEB_ALLOWED_ORIGINS:}   # 콤마 구분, 예: https://app.folio.com,https://folio.com
-
-# AI 서버 (FastAPI)
+# AI 서버 (FastAPI) — base-url은 환경별이라 application-{profile}.yml로 이동
 ai:
   client:
-    base-url: ${AI_SERVER_URL:http://localhost:8000}
-    internal-api-key: ${AI_INTERNAL_API_KEY:dev-internal-key}
+    internal-api-key: ${INTERNAL_API_KEY:dev-internal-key}
     connect-timeout: 3s
     read-timeout: 10s
+
+# app.web.* 블록은 application-{dev,test,prod}.yml로 분리
+# (랜딩/에디터/API URL, 쿠키 속성, CORS 모두 환경별로 다름)
 
 # 토스페이먼츠
 toss:

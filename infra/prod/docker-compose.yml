@@ -48,10 +48,11 @@ services:
     image: pgvector/pgvector:pg17
     container_name: folio-postgresql-prod
     environment:
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-      PS_REPL_PASSWORD: ${PS_REPL_PASSWORD}
+      # `:?error` 패턴: 빈 값/미설정 시 compose가 즉시 실패 (cascade failure 차단)
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME must be set in Doppler}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in Doppler}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME must be set in Doppler}
+      PS_REPL_PASSWORD: ${PS_REPL_PASSWORD:?PS_REPL_PASSWORD must be set in Doppler}
     volumes:
       - /opt/folio/data/postgresql:/var/lib/postgresql/data
       - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -85,7 +86,7 @@ services:
     command: >
       redis-server
         --appendonly yes
-        --requirepass ${REDIS_PASSWORD}
+        --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in Doppler}
         --maxmemory 256mb
         --maxmemory-policy allkeys-lru
     volumes:
@@ -135,6 +136,7 @@ services:
       - ../powersync/powersync-prod.yaml:/app/powersync.yaml:ro
       - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
     environment:
+      # PS_REPL_PASSWORD/DB_NAME는 위 postgresql에서 이미 :? validated → 안전
       PS_DATA_SOURCE_URI: postgresql://folio_repl:${PS_REPL_PASSWORD}@postgresql:5432/${DB_NAME}
       PS_MONGO_URI: mongodb://mongo:27017/powersync
       PS_JWT_K: ${PS_JWT_K}

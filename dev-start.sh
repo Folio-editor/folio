@@ -53,16 +53,22 @@ echo "[celery]   Starting Celery Worker..."
 (cd "$ROOT_DIR/ai" && doppler run -p folio -c dev -- .venv/Scripts/python -m celery -A app.celery_app worker --loglevel=info --pool=solo 2>&1 | sed 's/^/[celery]   /') &
 PIDS+=($!)
 
+# --- 5. Web Editor (port 5173) — 브라우저용 ---
+echo "[web]      Starting Web Editor..."
+(cd "$ROOT_DIR/frontend" && doppler run -p folio -c dev -- pnpm dev:web 2>&1 | sed 's/^/[web]      /') &
+PIDS+=($!)
+
 echo ""
-echo "========== 5개 서버 실행 중 (Ctrl+C로 일괄 종료) =========="
+echo "========== 6개 서버 실행 중 (Ctrl+C로 일괄 종료) =========="
 echo "  [backend]  Spring Backend     :8080"
 echo "  [landing]  Landing Page       :5174"
+echo "  [web]      Web Editor         :5173"
 echo "  [frontend] Frontend Electron  (포그라운드)"
 echo "  [ai]       FastAPI            :8001"
 echo "  [celery]   Celery Worker"
 echo "=========================================================="
 echo ""
 
-# --- 5. Frontend Electron App (포그라운드 실행 — GUI 윈도우 표시 필요) ---
+# --- 6. Frontend Electron App (포그라운드 실행 — GUI 윈도우 표시 필요) ---
 echo "[frontend] Starting Frontend App (foreground)..."
 cd "$ROOT_DIR/frontend" && doppler run -p folio -c dev -- pnpm dev

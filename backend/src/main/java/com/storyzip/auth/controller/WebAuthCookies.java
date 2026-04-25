@@ -25,14 +25,17 @@ public class WebAuthCookies {
     /** Device ID. 영구 유지 (10년). 로그아웃해도 삭제하지 않아 다음 로그인 시 같은 deviceId 재사용. */
     public static final String COOKIE_DID = "folio_did";
 
-    /** OAuth state (CSRF). /api/v1/auth/google/web 경로에만 첨부. 5분 TTL. */
+    /** OAuth state (CSRF). 모든 경로에 첨부 (5분 TTL이라 보안 영향 작음). */
     public static final String COOKIE_STATE = "folio_oauth_state";
 
     /** OAuth returnTo (redirect 대상 path). state와 함께 단명. */
     public static final String COOKIE_RETURN_TO = "folio_oauth_return";
 
     private static final String AUTH_PATH = "/api/v1/auth";
-    private static final String OAUTH_WEB_PATH = "/api/v1/auth/google/web";
+    // OAuth state/returnTo 쿠키는 Path="/"로 두어 callback 요청에 확실히 첨부되게 한다
+    // (Path="/api/v1/auth/google/web"으로 좁히면 일부 브라우저에서 callback에 매칭 안 되는 사례 있음).
+    // 5분 TTL이라 다른 경로 노출 위험 낮음.
+    private static final String OAUTH_PATH = "/";
     private static final Duration STATE_TTL = Duration.ofMinutes(5);
     private static final Duration DEVICE_TTL = Duration.ofDays(3650); // 10년
 
@@ -55,19 +58,19 @@ public class WebAuthCookies {
     }
 
     public ResponseCookie buildStateCookie(String state) {
-        return base(COOKIE_STATE, state, OAUTH_WEB_PATH).maxAge(STATE_TTL).build();
+        return base(COOKIE_STATE, state, OAUTH_PATH).maxAge(STATE_TTL).build();
     }
 
     public ResponseCookie buildClearStateCookie() {
-        return base(COOKIE_STATE, "", OAUTH_WEB_PATH).maxAge(0).build();
+        return base(COOKIE_STATE, "", OAUTH_PATH).maxAge(0).build();
     }
 
     public ResponseCookie buildReturnToCookie(String returnTo) {
-        return base(COOKIE_RETURN_TO, returnTo, OAUTH_WEB_PATH).maxAge(STATE_TTL).build();
+        return base(COOKIE_RETURN_TO, returnTo, OAUTH_PATH).maxAge(STATE_TTL).build();
     }
 
     public ResponseCookie buildClearReturnToCookie() {
-        return base(COOKIE_RETURN_TO, "", OAUTH_WEB_PATH).maxAge(0).build();
+        return base(COOKIE_RETURN_TO, "", OAUTH_PATH).maxAge(0).build();
     }
 
     private ResponseCookie.ResponseCookieBuilder base(String name, String value, String path) {

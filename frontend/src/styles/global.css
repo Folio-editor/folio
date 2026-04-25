@@ -1,6 +1,14 @@
 @import 'tailwindcss';
 @import './themes.css';
 
+/*
+  Tailwind v4 source detection:
+  - Electron renderer: vite root가 frontend라 src/ 전체 자동 스캔 → 정상
+  - Web build: vite.web.config.ts의 root='src/web'이라 src/shared가 자동 감지 안 됨
+  - 명시적 @source로 src/ 전체 포함 (양쪽 빌드 모두 안전)
+*/
+@source "../**/*.{ts,tsx}";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
