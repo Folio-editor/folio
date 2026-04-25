@@ -19,7 +19,6 @@ import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
-import { useSpellCheckerDictionarySync } from '../../hooks/useSpellCheckerDictionarySync';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
@@ -30,9 +29,10 @@ import {
 } from '../../types/workspace';
 
 const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 480;
 const RIGHT_PANEL_MIN = 200;
-const RIGHT_PANEL_MAX = 600;
+// MAX 절대 상한은 두지 않는다 — 뷰포트 기반 동적 MAX 로 메인 패널 최소 너비만 보장.
+const ACTIVITY_BAR_W = 56;
+const MAIN_MIN_W = 320;
 
 const clamp = (v: number, min: number, max: number) =>
   Math.max(min, Math.min(max, v));
@@ -62,7 +62,6 @@ export function AuthenticatedApp() {
   const [settingsMode, setSettingsMode] = useState(false);
   const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
-  useSpellCheckerDictionarySync(selectedWorkId);
 
   const { createWork, createWorldNote, createPlanNote, ensureWorldNoteTemplates } = useLocalWrite();
 
@@ -241,10 +240,23 @@ export function AuthenticatedApp() {
     };
   }, []);
 
+  // 뷰포트 기반 동적 MAX 계산 — 메인 패널 최소 너비(MAIN_MIN_W) 보장.
+  // 사용자가 사이드바를 자유롭게 넓힐 수 있되, 메인이 0이 되지는 않도록.
+  const sidebarMaxAllowed = () =>
+    Math.max(
+      SIDEBAR_MIN,
+      window.innerWidth - rightPanelsWidth - ACTIVITY_BAR_W - MAIN_MIN_W,
+    );
+  const rightPanelMaxAllowed = () =>
+    Math.max(
+      RIGHT_PANEL_MIN,
+      window.innerWidth - sidebarWidth - ACTIVITY_BAR_W - MAIN_MIN_W,
+    );
+
   const resizeSidebar = (delta: number) =>
-    setSidebarWidth((w) => clamp(w + delta, SIDEBAR_MIN, SIDEBAR_MAX));
+    setSidebarWidth((w) => clamp(w + delta, SIDEBAR_MIN, sidebarMaxAllowed()));
   const resizeRightPanels = (delta: number) =>
-    setRightPanelsWidth((w) => clamp(w + delta, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX));
+    setRightPanelsWidth((w) => clamp(w + delta, RIGHT_PANEL_MIN, rightPanelMaxAllowed()));
 
   // ── 액티비티 / 작품 / 섹션 핸들러 ──
   // 핵심 변경: handleActivityChange는 mainDoc을 건드리지 않는다 (Stage Manager 모델)
@@ -509,9 +521,6 @@ function renderEditor({
         <PlanSectionShell
           workId={workId}
           selectedItemId={itemId}
-          onItemSelect={(id: string) =>
-            onItemActivate('plan', id, 'default')
-          }
           onItemBack={onClose}
           onSendToRight={onSendToRight}
         />

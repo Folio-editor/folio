@@ -21,6 +21,8 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
 import type { ClickIntent } from '../../../types/workspace';
+import { PlanTemplatePickerModal } from '../../../features/plan/PlanTemplatePickerModal';
+import { serializeTemplateContent, type PlanTemplate } from '../../../features/plan/planTemplates';
 
 interface NoteRow {
   id: string;
@@ -46,6 +48,10 @@ export function PlanNoteList({
   const { updatePlanNoteTitle, reorderItems } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
+  // 신규 문서 흐름 1단계: 템플릿 선택 모달.
+  // 모달에서 템플릿 선택 → setCreating(true)로 인라인 입력 단계 진입.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<PlanTemplate | null>(null);
   const sensors = useSensors(
     useSensor(HandleOnlyPointerSensor),
   );
@@ -64,13 +70,18 @@ export function PlanNoteList({
     const trimmedTitle = createTitle.trim();
     setCreating(false);
     setCreateTitle('');
-    if (!trimmedTitle) return;
+    if (!trimmedTitle) {
+      // 빈 제목으로 종료 시 템플릿 선택도 무효화 (다음 시도엔 다시 모달부터)
+      setSelectedTemplate(null);
+      return;
+    }
     void createWithName(trimmedTitle);
   };
 
   const handleCreateCancel = () => {
     setCreating(false);
     setCreateTitle('');
+    setSelectedTemplate(null);
   };
 
   const handleCreateKeyDown = (e: React.KeyboardEvent) => {
@@ -81,8 +92,26 @@ export function PlanNoteList({
 
   const { createPlanNote } = useLocalWrite();
   const createWithName = async (name: string) => {
-    const id = await createPlanNote(workId, name, Date.now());
+    const content = selectedTemplate ? serializeTemplateContent(selectedTemplate) : null;
+    const id = await createPlanNote(workId, name, Date.now(), content);
+    setSelectedTemplate(null);
     onItemSelect(id, 'default');
+  };
+
+  // "+ 새 문서" 클릭 → 템플릿 선택 모달 진입
+  const handleStartCreate = () => setPickerOpen(true);
+
+  // 모달에서 템플릿 카드 선택 → 인라인 제목 입력 단계로 전환
+  const handleTemplateSelect = (template: PlanTemplate) => {
+    setSelectedTemplate(template);
+    setPickerOpen(false);
+    setCreating(true);
+  };
+
+  // 모달 ESC/배경 클릭 — creating 미진입 (모든 상태 초기화)
+  const handlePickerClose = () => {
+    setPickerOpen(false);
+    setSelectedTemplate(null);
   };
 
   return (
@@ -102,7 +131,7 @@ export function PlanNoteList({
         ) : (
           <button
             type="button"
-            onClick={() => setCreating(true)}
+            onClick={handleStartCreate}
             className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
           >
             <Plus size={14} strokeWidth={2} />
@@ -146,6 +175,12 @@ export function PlanNoteList({
         </DndContext>
       )}
       </div>
+
+      <PlanTemplatePickerModal
+        open={pickerOpen}
+        onSelect={handleTemplateSelect}
+        onClose={handlePickerClose}
+      />
     </div>
   );
 }

@@ -75,6 +75,13 @@ export function ContentEditor({
   const editor = useEditor(
     {
       immediatelyRender: false,
+      // 한국어 형태론 한계로 Chromium 내장 spellcheck false positive 폭주 → 본문 영역에서만 비활성.
+      // 작품 제목·작가명 등 단순 input은 영향 없음 (이 attribute는 contenteditable에만 적용).
+      editorProps: {
+        attributes: {
+          spellcheck: 'false',
+        },
+      },
       extensions: [
         StarterKit.configure({
           code: false,

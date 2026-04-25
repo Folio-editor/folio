@@ -212,8 +212,5 @@ export function createWebFolioApi(): FolioApi {
         };
       },
     },
-    spellcheck: {
-      syncDictionaryWords: async () => {},
-    },
   };
 }

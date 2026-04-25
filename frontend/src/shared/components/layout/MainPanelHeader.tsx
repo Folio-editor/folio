@@ -50,8 +50,8 @@ export function MainPanelHeader({
 
   return (
     <div className="shrink-0">
-      {/* 메인 행 */}
-      <div className="flex h-12 items-center gap-3 border-b border-border px-6">
+      {/* 메인 행 — 좁은 메인 영역에서 우측 패널로 시각 침범 방지 + 모든 버튼 접근 가능하도록 가로 스크롤. */}
+      <div className="flex h-12 items-center gap-3 overflow-x-auto scrollbar-none border-b border-border px-6">
         {leading}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className={subtitle ? 'shrink-0' : 'min-w-0 flex-1'}>{title}</div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { TagInput } from '../../components/ui/TagInput';
-import { Button } from '../../components/ui/Button';
+import { TagInput } from './TagInput';
+import { Button } from './Button';
 
 interface TagEditModalProps {
   open: boolean;
@@ -13,7 +13,7 @@ interface TagEditModalProps {
 }
 
 /**
- * 태그(장르·분위기) 편집 모달.
+ * 태그 편집 모달 — 작품 단위 장르·분위기 등 string[] 배열 일괄 편집.
  *
  * - 내부에 TagInput을 그대로 임베드 — Enter/Tab/Comma 커밋, 칩 X 제거 동일 동작
  * - "적용" 버튼으로 결과 확정. ESC 또는 배경 클릭으로 취소.

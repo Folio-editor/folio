@@ -145,6 +145,14 @@ body {
   background: transparent;
 }
 
+/* 스크롤바 완전 숨김 — 가로 스크롤이 노이즈가 되는 좁은 컨테이너용 (예: 에디터 툴바) */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* ═══════════════════════════════════════
    Folio Editor — TipTap styles
    ═══════════════════════════════════════ */

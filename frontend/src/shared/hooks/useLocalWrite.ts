@@ -110,13 +110,22 @@ export function useLocalWrite() {
     },
 
     // ── plan_note (work당 1:N 자유 문서) ────────────────────
-    createPlanNote: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+    /**
+     * @param content - 신규 문서 본문(TipTap JSON 직렬화 string). 템플릿 미리채우기 용도.
+     *                  생략·null 시 빈 본문(NULL)으로 INSERT — 기존 동작 호환.
+     */
+    createPlanNote: async (
+      workId: string,
+      title: string,
+      sortOrder: number,
+      content: string | null = null,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, title, content, sortOrder, now, now],
       );
       return id;
     },
