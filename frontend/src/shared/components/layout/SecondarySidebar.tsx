@@ -8,6 +8,8 @@ import {
   Activity,
   ACTIVITY_LABELS,
   WorkspaceSection,
+  type ClickIntent,
+  type MainDoc,
 } from '../../types/workspace';
 import { Input } from '../ui/Input';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
@@ -24,9 +26,11 @@ import { ResizeHandle } from './ResizeHandle';
 interface SecondarySidebarProps {
   activity: Activity;
   selectedWorkId: string | null;
-  selectedItemId: string | null;
+  /** 메인 패널 문서 — 사이드바 항목 시각 하이라이트 결정 */
+  mainDoc: MainDoc | null;
   onWorkSelect: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  /** 사이드바 항목 클릭 디스패처 (단일/더블/모디파이어 의도 분리) */
+  onItemActivate: (section: WorkspaceSection, itemId: string, intent: ClickIntent) => void;
   onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
@@ -61,9 +65,9 @@ interface WorkTitleRow {
 export function SecondarySidebar({
   activity,
   selectedWorkId,
-  selectedItemId,
+  mainDoc,
   onWorkSelect,
-  onItemSelect,
+  onItemActivate,
   onNewWork,
   onNewWorldNote,
   onNewPlanNote,
@@ -74,6 +78,11 @@ export function SecondarySidebar({
   selectedSettingsItem,
   onSettingsItemSelect,
 }: SecondarySidebarProps) {
+  // 사이드바 항목 시각 하이라이트는 mainDoc 기반.
+  // - mainDoc.section이 현 activity의 섹션과 일치하면 itemId로 하이라이트
+  // - 그 외엔 null (다른 섹션 보고 있을 땐 사이드바 어떤 항목도 "현재 메인" 아님)
+  const selectedItemId =
+    mainDoc && (mainDoc.section as Activity) === activity ? mainDoc.itemId : null;
   const writerId = useWriterId();
   const isGuest = useIsGuest();
   const writer = useAuthStore((s) => s.writer);
@@ -175,7 +184,7 @@ export function SecondarySidebar({
             selectedItemId,
             searchTerm,
             onWorkSelect,
-            onItemSelect,
+            onItemActivate,
             onNewWork,
             onNewWorldNote,
             onNewPlanNote,
@@ -247,7 +256,7 @@ function renderContent(args: {
   selectedItemId: string | null;
   searchTerm: string;
   onWorkSelect: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  onItemActivate: (section: WorkspaceSection, itemId: string, intent: ClickIntent) => void;
   onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
@@ -258,11 +267,19 @@ function renderContent(args: {
     selectedItemId,
     searchTerm,
     onWorkSelect,
-    onItemSelect,
+    onItemActivate,
     onNewWork,
     onNewWorldNote,
     onNewPlanNote,
   } = args;
+
+  // 섹션별 panel용 onItemSelect 어댑터 — section을 미리 바인딩.
+  // null은 panel 내부 expand/collapse 신호로 무시 (Stage Manager 모델: mainDoc은 보존).
+  const makeItemHandler = (section: WorkspaceSection) =>
+    (id: string | null, intent: ClickIntent = 'default') => {
+      if (id === null) return;
+      onItemActivate(section, id, intent);
+    };
 
   if (activity === 'home') {
     return (
@@ -293,7 +310,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('plan')}
         onNewPlanNote={onNewPlanNote}
       />
     );
@@ -305,7 +322,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('world-note')}
         onNewWorldNote={onNewWorldNote}
       />
     );
@@ -318,7 +335,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('character')}
       />
     );
   }
@@ -330,7 +347,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('plot')}
       />
     );
   }
@@ -342,7 +359,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('episode')}
       />
     );
   }
@@ -355,7 +372,7 @@ function renderContent(args: {
       workId={selectedWorkId}
       searchTerm={searchTerm}
       selectedItemId={selectedItemId}
-      onItemSelect={onItemSelect}
+      onItemSelect={makeItemHandler(section)}
     />
   );
 }

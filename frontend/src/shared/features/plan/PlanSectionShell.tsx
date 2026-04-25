@@ -26,6 +26,7 @@ interface PlanSectionShellProps {
   selectedItemId: string | null;
   onItemSelect: (id: string) => void;
   onItemBack: () => void;
+  onSendToRight?: () => void;
 }
 
 interface PlanMetaRow {
@@ -53,6 +54,7 @@ export function PlanSectionShell({
   selectedItemId,
   onItemSelect,
   onItemBack,
+  onSendToRight,
 }: PlanSectionShellProps) {
   const writerId = useWriterId();
   const { ensurePlan, updatePlan, updatePlanNoteTitle, updatePlanNoteContent, deletePlanNote } =
@@ -100,6 +102,7 @@ export function PlanSectionShell({
                 onTitleChange: (title) => void updatePlanNoteTitle(note.id, title),
                 onDelete: () => deletePlanNote(note.id),
                 onBack: onItemBack,
+                onSendToRight,
               }
             : undefined
         }

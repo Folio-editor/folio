@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -15,6 +15,7 @@ import { cn } from '../../lib/cn';
 interface ForeshadowEditScreenProps {
   id: string;
   onBack: () => void;
+  onSendToRight?: () => void;
 }
 
 interface ForeshadowRow {
@@ -154,7 +155,7 @@ function formatTargetOption(target: TargetRow) {
   return target.parent_title ? `${target.parent_title} > ${target.title}` : target.title;
 }
 
-export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) {
+export function ForeshadowEditScreen({ id, onBack, onSendToRight }: ForeshadowEditScreenProps) {
   const { data: rows = [] } = useQuery<ForeshadowRow>(
     `SELECT id, work_id, title, status, importance, content FROM foreshadow WHERE id = ?`,
     [id],
@@ -165,10 +166,10 @@ export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) 
     return <div className="p-8 text-sm text-muted-foreground">복선을 불러오는 중…</div>;
   }
 
-  return <ForeshadowEditor key={id} item={item} onBack={onBack} />;
+  return <ForeshadowEditor key={id} item={item} onBack={onBack} onSendToRight={onSendToRight} />;
 }
 
-function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () => void }) {
+function ForeshadowEditor({ item, onBack, onSendToRight }: { item: ForeshadowRow; onBack: () => void; onSendToRight?: () => void }) {
   const { updateForeshadow, deleteForeshadow } = useLocalWrite();
   const { id } = item;
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -182,7 +183,8 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={<IconButton onClick={onBack} title="목록으로"><ArrowLeft className="h-4 w-4" /></IconButton>}
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
           <Input
             value={title.value}

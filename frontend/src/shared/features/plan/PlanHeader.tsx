@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
@@ -11,6 +11,7 @@ interface PlanHeaderProps {
     onTitleChange: (title: string) => void;
     onDelete: () => Promise<void>;
     onBack: () => void;
+    onSendToRight?: () => void;
   };
 }
 
@@ -26,19 +27,8 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
   return (
     <>
     <MainPanelHeader
-      leading={
-        currentNote ? (
-          <button
-            type="button"
-            onClick={currentNote.onBack}
-            aria-label="기획으로 돌아가기"
-            title="기획으로 돌아가기"
-            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            <ArrowLeft size={14} strokeWidth={2} />
-          </button>
-        ) : undefined
-      }
+      onClose={currentNote ? currentNote.onBack : undefined}
+      onSendToRight={currentNote?.onSendToRight}
       title={
         currentNote ? (
           <div className="flex min-w-0 items-center gap-1.5">

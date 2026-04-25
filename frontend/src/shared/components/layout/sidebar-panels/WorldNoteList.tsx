@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Pencil, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,8 +17,10 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
+import type { ClickIntent } from '../../../types/workspace';
 
 interface NoteRow {
   id: string;
@@ -29,7 +31,7 @@ interface WorldNoteListProps {
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
   onNewWorldNote: (parentId?: string | null) => void;
 }
 
@@ -71,18 +73,16 @@ export function WorldNoteList({
     });
   };
 
-  const handleSelect = (id: string) => {
-    onItemSelect(id);
-    // 이미 선택+펼침 상태면 접기, 아니면 펼기
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (selectedItemId === id && next.has(id)) {
-        next.delete(id);
-      } else {
+  const handleSelect = (id: string, intent: ClickIntent) => {
+    onItemSelect(id, intent);
+    // 메인에 올라가는 단일 클릭에서만 자동 펼침 (핀 적층은 트리 보존)
+    if (intent === 'default') {
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
         next.add(id);
-      }
-      return next;
-    });
+        return next;
+      });
+    }
   };
 
   const handleCreateRoot = () => {
@@ -92,7 +92,7 @@ export function WorldNoteList({
     if (!trimmedTitle) return;
     void (async () => {
       const id = await createWorldNote(workId, trimmedTitle, Date.now(), null);
-      onItemSelect(id);
+      onItemSelect(id, 'default');
     })();
   };
 
@@ -182,9 +182,9 @@ interface WorldNoteTreeItemProps {
   depth: number;
   selectedItemId: string | null;
   expandedIds: Set<string>;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, intent: ClickIntent) => void;
   onToggleExpand: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
@@ -256,8 +256,10 @@ function WorldNoteTreeItem({
     setCreatingChild(false);
     if (!name.trim()) return;
     const id = await createWorldNote(workId, name.trim(), Date.now(), note.id);
-    onItemSelect(id);
+    onItemSelect(id, 'default');
   };
+
+  const clickHandlers = useSidebarClickHandler((intent) => onSelect(note.id, intent));
 
   const { data: children = [] } = useQuery<NoteRow>(
     isExpanded
@@ -299,9 +301,8 @@ function WorldNoteTreeItem({
           )}
           <button
             type="button"
-            onClick={() => onSelect(note.id)}
-            onDoubleClick={() => setEditing(true)}
-            title="더블클릭으로 이름 변경"
+            {...clickHandlers}
+            title="클릭=메인 / 더블·⌘+클릭=핀"
             className={cn(
               'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
               isSelected
@@ -324,6 +325,15 @@ function WorldNoteTreeItem({
               />
             )}
             {note.name?.trim() || '(이름 없음)'}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            title="이름 변경"
+            aria-label="이름 변경"
+            className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+          >
+            <Pencil size={12} strokeWidth={1.75} />
           </button>
         </div>
       )}

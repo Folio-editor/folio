@@ -13,6 +13,7 @@ interface CharacterNoteEditorProps {
   noteId: string;
   onBack: () => void;
   onBackToCharacter?: (characterId: string) => void;
+  onSendToRight?: () => void;
 }
 
 interface CharacterNoteRow {
@@ -26,7 +27,7 @@ interface CharacterNameRow {
   name: string;
 }
 
-export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter }: CharacterNoteEditorProps) {
+export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter, onSendToRight }: CharacterNoteEditorProps) {
   const { updateCharacterNoteContent, updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
 
   const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
@@ -61,6 +62,7 @@ export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter }: Chara
       note={note}
       characterName={characterName}
       onBack={handleBack}
+      onSendToRight={onSendToRight}
       onTitleChange={(title) => void updateCharacterNoteTitle(noteId, title)}
       onContentChange={(content) => void updateCharacterNoteContent(noteId, content)}
       onDelete={() => deleteCharacterNote(noteId)}
@@ -72,6 +74,7 @@ function NoteEditorInner({
   note,
   characterName,
   onBack,
+  onSendToRight,
   onTitleChange,
   onContentChange,
   onDelete,
@@ -79,6 +82,7 @@ function NoteEditorInner({
   note: CharacterNoteRow;
   characterName: string;
   onBack: () => void;
+  onSendToRight?: () => void;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
   onDelete: () => Promise<void> | void;
@@ -91,6 +95,7 @@ function NoteEditorInner({
     <div className="flex h-full flex-col">
       <MainPanelHeader
         leading={<IconButton onClick={onBack} title="인물로 돌아가기">←</IconButton>}
+        onSendToRight={onSendToRight}
         title={
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm text-muted-foreground">{characterName}</span>

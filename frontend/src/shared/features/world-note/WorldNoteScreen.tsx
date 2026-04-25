@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { WorldNoteEditor } from './WorldNoteEditor';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-import { IconButton } from '../../components/ui/IconButton';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface WorldNoteScreenProps {
   noteId: string;
   onBack: () => void;
+  onSendToRight?: () => void;
 }
 
 interface NoteRow {
@@ -28,7 +28,7 @@ interface ParentRow {
  * - 상단: 브레드크럼 경로 + 인라인 편집 가능한 문서 제목
  * - 하단: TipTap 에디터 (1초 debounce 자동저장)
  */
-export function WorldNoteScreen({ noteId, onBack }: WorldNoteScreenProps) {
+export function WorldNoteScreen({ noteId, onBack, onSendToRight }: WorldNoteScreenProps) {
   const { updateWorldNoteContent, updateWorldNoteName, deleteWorldNote } = useLocalWrite();
 
   const { data: rows = [] } = useQuery<NoteRow>(
@@ -84,15 +84,8 @@ export function WorldNoteScreen({ noteId, onBack }: WorldNoteScreenProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <MainPanelHeader
-        leading={
-          <IconButton
-            aria-label="뒤로"
-            title="뒤로"
-            onClick={onBack}
-          >
-            <ArrowLeft size={16} strokeWidth={2} />
-          </IconButton>
-        }
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
           <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-lg">
             <span className="shrink-0 text-sm text-muted-foreground">세계관</span>

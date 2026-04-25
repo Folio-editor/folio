@@ -24,6 +24,7 @@ import { cn } from '../../lib/cn';
 interface CharacterOverviewProps {
   characterId: string;
   onBack: () => void;
+  onSendToRight?: () => void;
   onNoteSelect: (noteId: string) => void;
 }
 
@@ -142,6 +143,7 @@ function GenderPicker({
 export function CharacterOverview({
   characterId,
   onBack,
+  onSendToRight,
   onNoteSelect,
 }: CharacterOverviewProps) {
   const { ensureCharacterNotes } = useLocalWrite();
@@ -171,6 +173,7 @@ export function CharacterOverview({
     <CharacterOverviewInner
       character={character}
       onBack={onBack}
+      onSendToRight={onSendToRight}
       onNoteSelect={onNoteSelect}
     />
   );
@@ -179,10 +182,12 @@ export function CharacterOverview({
 function CharacterOverviewInner({
   character,
   onBack,
+  onSendToRight,
   onNoteSelect,
 }: {
   character: CharacterRow;
   onBack: () => void;
+  onSendToRight?: () => void;
   onNoteSelect: (id: string) => void;
 }) {
   const {
@@ -289,11 +294,8 @@ function CharacterOverviewInner({
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={
-          <IconButton onClick={onBack} title="목록으로">
-            ←
-          </IconButton>
-        }
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
           <Input
             value={name.value}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Pencil, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,8 +17,10 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
+import type { ClickIntent } from '../../../types/workspace';
 
 interface CharacterRow {
   id: string;
@@ -36,7 +38,7 @@ interface CharacterNoteListProps {
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 function nextSortOrder(rows: { sort_order: number | null }[]) {
@@ -116,7 +118,7 @@ export function CharacterNoteList({
       const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
       await ensureCharacterNotes(id);
       setExpandedCharId(id);
-      onItemSelect('char:' + id);
+      onItemSelect('char:' + id, 'default');
     })();
   };
 
@@ -185,16 +187,18 @@ export function CharacterNoteList({
               character={char}
               isExpanded={expandedCharId === char.id}
               selectedNoteId={expandedCharId === char.id ? selectedNoteId : null}
-              onCharacterClick={() => {
-                if (expandedCharId === char.id) {
-                  setExpandedCharId(null);
-                  onItemSelect(null);
-                } else {
-                  setExpandedCharId(char.id);
-                  onItemSelect('char:' + char.id);
-                }
+              isCharSelected={selectedItemId === 'char:' + char.id}
+              onToggleExpand={() => {
+                setExpandedCharId(expandedCharId === char.id ? null : char.id);
               }}
-              onNoteSelect={(noteId) => onItemSelect('cnote:' + noteId)}
+              onCharacterActivate={(intent) => {
+                onItemSelect('char:' + char.id, intent);
+                // 메인에 올라가는 단일 클릭에서만 자동 펼침 (핀 적층은 트리 보존)
+                if (intent === 'default') setExpandedCharId(char.id);
+              }}
+              onNoteActivate={(noteId, intent) =>
+                onItemSelect('cnote:' + noteId, intent)
+              }
               onNewNote={() => {/* handled inline */}}
             />
           ))}
@@ -210,8 +214,10 @@ interface CharacterTreeItemProps {
   character: CharacterRow;
   isExpanded: boolean;
   selectedNoteId: string | null;
-  onCharacterClick: () => void;
-  onNoteSelect: (id: string) => void;
+  isCharSelected: boolean;
+  onToggleExpand: () => void;
+  onCharacterActivate: (intent: ClickIntent) => void;
+  onNoteActivate: (id: string, intent: ClickIntent) => void;
   onNewNote: () => void;
 }
 
@@ -236,8 +242,10 @@ function CharacterTreeItem({
   character,
   isExpanded,
   selectedNoteId,
-  onCharacterClick,
-  onNoteSelect,
+  isCharSelected,
+  onToggleExpand,
+  onCharacterActivate,
+  onNoteActivate,
   onNewNote,
   dragListeners,
 }: CharacterTreeItemProps & { dragListeners?: Record<string, unknown> }) {
@@ -247,6 +255,7 @@ function CharacterTreeItem({
     useSensor(HandleOnlyPointerSensor),
   );
   const [creatingNote, setCreatingNote] = useState(false);
+  const charClickHandlers = useSidebarClickHandler(onCharacterActivate);
 
   const { data: notes = [] } = useQuery<CharacterNoteRow>(
     isExpanded
@@ -261,7 +270,7 @@ function CharacterTreeItem({
     setCreatingNote(false);
     if (!name.trim()) return;
     const id = await createCharacterNote(character.id, name.trim(), nextSortOrder(notes));
-    onNoteSelect(id);
+    onNoteActivate(id, 'default');
   };
 
   return (
@@ -283,10 +292,11 @@ function CharacterTreeItem({
         )}
         <button
           type="button"
-          onClick={onCharacterClick}
+          {...charClickHandlers}
+          title="클릭=메인 / 더블·⌘+클릭=핀"
           className={cn(
             'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-            isExpanded && !selectedNoteId
+            isCharSelected
               ? 'bg-primary/5 font-medium text-primary'
               : isExpanded
                 ? 'font-medium text-sidebar-foreground'
@@ -300,6 +310,10 @@ function CharacterTreeItem({
               'shrink-0 transition-transform',
               isExpanded && 'rotate-90',
             )}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
           />
           {character.name?.trim() || '(이름 없음)'}
         </button>
@@ -335,7 +349,7 @@ function CharacterTreeItem({
                       key={note.id}
                       note={note}
                       selected={selectedNoteId === note.id}
-                      onSelect={() => onNoteSelect(note.id)}
+                      onSelect={(intent) => onNoteActivate(note.id, intent)}
                       onRename={(title) => void updateCharacterNoteTitle(note.id, title)}
                     />
                   ))}
@@ -367,7 +381,7 @@ function CharacterTreeItem({
 function SortableNoteItem(props: {
   note: CharacterNoteRow;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ClickIntent) => void;
   onRename: (title: string) => void;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } =
@@ -395,13 +409,14 @@ function NoteItem({
 }: {
   note: CharacterNoteRow;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ClickIntent) => void;
   onRename: (title: string) => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);
+  const clickHandlers = useSidebarClickHandler(onSelect);
 
   useEffect(() => {
     if (!editing) setDraft(note.title);
@@ -464,9 +479,8 @@ function NoteItem({
       )}
       <button
         type="button"
-        onClick={onSelect}
-        onDoubleClick={isFixed ? undefined : () => setEditing(true)}
-        title={isFixed ? undefined : '더블클릭으로 이름 변경'}
+        {...clickHandlers}
+        title="클릭=메인 / 더블·⌘+클릭=핀"
         className={cn(
           'flex-1 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
           selected
@@ -476,6 +490,17 @@ function NoteItem({
       >
         {note.title?.trim() || '(제목 없음)'}
       </button>
+      {!isFixed && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          title="이름 변경"
+          aria-label="이름 변경"
+          className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+        >
+          <Pencil size={10} strokeWidth={1.75} />
+        </button>
+      )}
     </div>
   );
 }

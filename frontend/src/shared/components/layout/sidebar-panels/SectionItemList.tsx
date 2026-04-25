@@ -16,8 +16,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
-import { WorkspaceSection, SECTION_TABLES } from '../../../types/workspace';
+import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
 import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
+import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 
 interface SectionItemListProps {
@@ -25,7 +26,7 @@ interface SectionItemListProps {
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 interface Row {
@@ -73,7 +74,7 @@ export function SectionItemList({
     if (!trimmedTitle) return;
     void (async () => {
       const id = await createForeshadow(workId, trimmedTitle, '중', rows.length);
-      onItemSelect(id);
+      onItemSelect(id, 'default');
     })();
   };
 
@@ -153,7 +154,7 @@ export function SectionItemList({
                   id={row.id}
                   label={display}
                   selected={selectedItemId === row.id}
-                  onSelect={() => onItemSelect(row.id)}
+                  onSelect={(intent) => onItemSelect(row.id, intent)}
                 />
               );
             })}
@@ -174,7 +175,7 @@ function SortableSectionItem({
   id: string;
   label: string;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ClickIntent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
@@ -185,6 +186,7 @@ function SortableSectionItem({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+  const clickHandlers = useSidebarClickHandler(onSelect);
 
   return (
     <div ref={setNodeRef} style={style} className="group flex w-full items-center">
@@ -198,7 +200,8 @@ function SortableSectionItem({
       </span>
       <button
         type="button"
-        onClick={onSelect}
+        {...clickHandlers}
+        title="클릭=메인 / 더블·⌘+클릭=핀"
         className={cn(
           'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
           selected

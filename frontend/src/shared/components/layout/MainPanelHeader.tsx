@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { PanelRight } from 'lucide-react';
+import { ArrowUpRight, PanelRight, X } from 'lucide-react';
 import { useRightPanelToggle } from './AppShell';
 import { cn } from '../../lib/cn';
 
 interface MainPanelHeaderProps {
-  /** 좌측: 뒤로 버튼 등 네비게이션 */
+  /** 좌측: 뒤로 버튼 등 네비게이션 (legacy — 가능하면 onClose 사용) */
   leading?: ReactNode;
   /** 중앙: 제목 (flex-1) */
   title: ReactNode;
@@ -14,6 +14,16 @@ interface MainPanelHeaderProps {
   trailing?: ReactNode;
   /** 헤더 아래 추가 행 (메타 필드 등) — 선택적 */
   meta?: ReactNode;
+  /**
+   * 메인 패널 ✕ — 현 문서를 프리뷰 슬롯으로 강등 후 메인 비움.
+   * 제공되지 않으면 ✕ 버튼 미렌더 (Settings 등에선 사용 안 함).
+   */
+  onClose?: () => void;
+  /**
+   * 메인 패널 ↗ — 현 문서를 우측 핀 상단으로 옮기고 메인 비움.
+   * 제공되지 않으면 ↗ 버튼 미렌더.
+   */
+  onSendToRight?: () => void;
 }
 
 /**
@@ -27,7 +37,15 @@ interface MainPanelHeaderProps {
  *
  * 우측 패널 토글 버튼은 Context를 통해 자동 렌더되며 항상 제일 우측에 위치한다.
  */
-export function MainPanelHeader({ leading, title, subtitle, trailing, meta }: MainPanelHeaderProps) {
+export function MainPanelHeader({
+  leading,
+  title,
+  subtitle,
+  trailing,
+  meta,
+  onClose,
+  onSendToRight,
+}: MainPanelHeaderProps) {
   const rightPanel = useRightPanelToggle();
 
   return (
@@ -42,6 +60,32 @@ export function MainPanelHeader({ leading, title, subtitle, trailing, meta }: Ma
           )}
         </div>
         {trailing && <div className="flex shrink-0 items-center gap-2">{trailing}</div>}
+
+        {/* ↗ 우측으로 보내기 — 현 문서를 핀 상단으로, 메인 비움 */}
+        {onSendToRight && (
+          <button
+            type="button"
+            onClick={onSendToRight}
+            title="우측 패널로 보내기"
+            aria-label="우측 패널로 보내기"
+            className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ArrowUpRight size={15} strokeWidth={1.75} />
+          </button>
+        )}
+
+        {/* ✕ 닫기 — 현 문서를 프리뷰로 강등, 메인 비움 */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="닫기 (메인 비우기)"
+            aria-label="메인 패널 닫기"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X size={15} strokeWidth={1.75} />
+          </button>
+        )}
 
         {/* 우측 패널 토글 — 항상 제일 우측 고정 */}
         {rightPanel && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Plus } from 'lucide-react';
+import { ChevronRight, GripVertical, Pencil, Plus } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -17,8 +17,10 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { setupDragTransfer } from '../../../lib/dragTransfer';
+import type { ClickIntent } from '../../../types/workspace';
 
 interface PlotRow {
   id: string;
@@ -30,7 +32,7 @@ interface PlotTreeListProps {
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -83,17 +85,15 @@ export function PlotTreeList({
     });
   };
 
-  const handleSelect = (id: string) => {
-    onItemSelect(id);
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (selectedItemId === id && next.has(id)) {
-        next.delete(id);
-      } else {
+  const handleSelect = (id: string, intent: ClickIntent) => {
+    onItemSelect(id, intent);
+    if (intent === 'default') {
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
         next.add(id);
-      }
-      return next;
-    });
+        return next;
+      });
+    }
   };
 
   const [createTitle, setCreateTitle] = useState('');
@@ -105,7 +105,7 @@ export function PlotTreeList({
     if (!trimmedTitle) return;
     void (async () => {
       const id = await createPlot(workId, trimmedTitle, acts.length);
-      onItemSelect(id);
+      onItemSelect(id, 'default');
     })();
   };
 
@@ -195,9 +195,9 @@ interface ActItemProps {
   act: PlotRow;
   selectedItemId: string | null;
   expandedIds: Set<string>;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, intent: ClickIntent) => void;
   onToggleExpand: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 function SortableActItem(props: ActItemProps) {
@@ -267,8 +267,10 @@ function ActTreeItem({
     setCreatingChild(false);
     if (!name.trim()) return;
     const id = await createPlot(workId, name.trim(), Date.now(), act.id);
-    onItemSelect(id);
+    onItemSelect(id, 'default');
   };
+
+  const actClickHandlers = useSidebarClickHandler((intent) => onSelect(act.id, intent));
 
   const { data: episodes = [] } = useQuery<PlotRow>(
     isExpanded
@@ -310,9 +312,8 @@ function ActTreeItem({
           )}
           <button
             type="button"
-            onClick={() => onSelect(act.id)}
-            onDoubleClick={() => setEditing(true)}
-            title="더블클릭으로 이름 변경"
+            {...actClickHandlers}
+            title="클릭=메인 / 더블·⌘+클릭=핀"
             className={cn(
               'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
               isSelected
@@ -333,6 +334,15 @@ function ActTreeItem({
               }}
             />
             {act.title?.trim() || '(제목 없음)'}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            title="이름 변경"
+            aria-label="이름 변경"
+            className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+          >
+            <Pencil size={12} strokeWidth={1.75} />
           </button>
         </div>
       )}
@@ -362,7 +372,7 @@ function ActTreeItem({
                     key={ep.id}
                     episode={ep}
                     selected={selectedItemId === ep.id}
-                    onSelect={() => onItemSelect(ep.id)}
+                    onSelect={(intent) => onItemSelect(ep.id, intent)}
                     onRename={(title) => void updatePlot(ep.id, { title })}
                   />
                 ))}
@@ -397,7 +407,7 @@ function ActTreeItem({
 function SortableEpisodeItem(props: {
   episode: PlotRow;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ClickIntent) => void;
   onRename: (title: string) => void;
 }) {
   const { listeners, setNodeRef, transform, transition, isDragging } =
@@ -425,12 +435,13 @@ function EpisodeItem({
 }: {
   episode: PlotRow;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (intent: ClickIntent) => void;
   onRename: (title: string) => void;
   dragListeners?: Record<string, unknown>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(episode.title);
+  const clickHandlers = useSidebarClickHandler(onSelect);
 
   useEffect(() => {
     if (!editing) setDraft(episode.title);
@@ -489,9 +500,8 @@ function EpisodeItem({
       )}
       <button
         type="button"
-        onClick={onSelect}
-        onDoubleClick={() => setEditing(true)}
-        title="더블클릭으로 이름 변경"
+        {...clickHandlers}
+        title="클릭=메인 / 더블·⌘+클릭=핀"
         className={cn(
           'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
           selected
@@ -509,6 +519,15 @@ function EpisodeItem({
             title={episode.status}
           />
         )}
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        title="이름 변경"
+        aria-label="이름 변경"
+        className="ml-1 shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+      >
+        <Pencil size={10} strokeWidth={1.75} />
       </button>
     </div>
   );

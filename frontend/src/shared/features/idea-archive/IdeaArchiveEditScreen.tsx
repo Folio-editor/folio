@@ -1,10 +1,9 @@
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Select } from '../../components/ui/Select';
-import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { TAG_OPTIONS, TAG_DOT_COLOR } from './ideaConstants';
@@ -12,6 +11,7 @@ import { TAG_OPTIONS, TAG_DOT_COLOR } from './ideaConstants';
 interface IdeaArchiveEditScreenProps {
   id: string;
   onBack: () => void;
+  onSendToRight?: () => void;
 }
 
 interface IdeaRow {
@@ -30,7 +30,7 @@ function formatDate(iso: string): string {
   return `${y}.${m}.${day}`;
 }
 
-export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps) {
+export function IdeaArchiveEditScreen({ id, onBack, onSendToRight }: IdeaArchiveEditScreenProps) {
   const { data: rows = [] } = useQuery<IdeaRow>(
     `SELECT id, content, tag, created_at FROM idea_archive WHERE id = ?`,
     [id],
@@ -47,11 +47,8 @@ export function IdeaArchiveEditScreen({ id, onBack }: IdeaArchiveEditScreenProps
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={
-          <IconButton onClick={onBack} title="목록으로">
-            <ArrowLeft className="h-4 w-4" />
-          </IconButton>
-        }
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={<span className="text-sm font-medium text-foreground">아이디어</span>}
         trailing={
           <div className="flex items-center gap-2">

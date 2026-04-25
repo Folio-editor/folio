@@ -53,7 +53,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { apiClient } from '../../lib/apiClient';
 import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
-import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
+import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection, MainDoc } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
 import { extractText, textToTiptap, timeAgo } from '../../features/idea-archive/ideaUtils';
@@ -72,8 +72,8 @@ interface RightPanelsProps {
   activeTab: RightPanelTab;
   onTabChange: (tab: RightPanelTab) => void;
   selectedWorkId: string | null;
-  mainSection: import('../../types/workspace').WorkspaceSection | null;
-  mainItemId: string | null;
+  /** 메인 패널 문서 — lockedReadOnly 판정 + AI 탭 컨텍스트 */
+  mainDoc: MainDoc | null;
 }
 
 const TABS: { key: RightPanelTab; icon: typeof FileStack; label: string }[] = [
@@ -95,9 +95,11 @@ export function RightPanels({
   activeTab,
   onTabChange,
   selectedWorkId,
-  mainSection,
-  mainItemId,
+  mainDoc,
 }: RightPanelsProps) {
+  // mainDoc 객체에서 sub 필드 분리 — 기존 lockedReadOnly / AI 탭 컨텍스트 로직 호환
+  const mainSection = mainDoc?.section ?? null;
+  const mainItemId = mainDoc?.itemId ?? null;
   return (
     <div
       style={{ width }}
@@ -164,7 +166,7 @@ export function RightPanels({
   );
 }
 
-/* ── Docs 탭 (기존 문서 뷰어) ── */
+/* ── Docs 탭 (서브 스테이지 — 핀 슬롯) ── */
 
 function DocsTabContent({
   panels,
@@ -187,6 +189,7 @@ function DocsTabContent({
   mainSection: import('../../types/workspace').WorkspaceSection | null;
   mainItemId: string | null;
 }) {
+  void isDraggingDoc; // 부모 RightPanels에서 외부 dragOver 감지용
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -259,7 +262,7 @@ function DocsTabContent({
           )}>
             <p className="text-sm font-medium text-primary/70">여기에 문서를 놓으세요</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              사이드바에서 드래그하여 문서를 핀할 수 있습니다
+              더블 클릭 또는 드래그로 우측 핀 추가
             </p>
           </div>
         </div>

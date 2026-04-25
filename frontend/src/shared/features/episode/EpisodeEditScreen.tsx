@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Check, ChevronDown, Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -15,6 +15,8 @@ import { cn } from '../../lib/cn';
 interface EpisodeEditScreenProps {
   id: string;
   onBack: () => void;
+  /** 우측 패널로 보내기 — 메인 헤더 ↗ 버튼 */
+  onSendToRight?: () => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }
 
@@ -67,7 +69,7 @@ const STATUS_STYLES: Record<string, { button: string; dot: string; item: string 
   },
 };
 
-export function EpisodeEditScreen({ id, onBack, onNavigateTo }: EpisodeEditScreenProps) {
+export function EpisodeEditScreen({ id, onBack, onSendToRight, onNavigateTo }: EpisodeEditScreenProps) {
   const { data: rows = [] } = useQuery<EpisodeRow>(
     `SELECT id, title, status, content, word_count FROM episode WHERE id = ?`,
     [id],
@@ -78,16 +80,18 @@ export function EpisodeEditScreen({ id, onBack, onNavigateTo }: EpisodeEditScree
     return <div className="p-8 text-sm text-muted-foreground">회차를 불러오는 중…</div>;
   }
 
-  return <EpisodeEditor key={id} item={item} onBack={onBack} onNavigateTo={onNavigateTo} />;
+  return <EpisodeEditor key={id} item={item} onBack={onBack} onSendToRight={onSendToRight} onNavigateTo={onNavigateTo} />;
 }
 
 function EpisodeEditor({
   item,
   onBack,
+  onSendToRight,
   onNavigateTo,
 }: {
   item: EpisodeRow;
   onBack: () => void;
+  onSendToRight?: () => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
 }) {
   const { updateEpisode, trashEpisode } = useLocalWrite();
@@ -100,7 +104,8 @@ function EpisodeEditor({
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={<IconButton onClick={onBack} title="목록으로"><ArrowLeft className="h-4 w-4" /></IconButton>}
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
           <Input
             value={title.value}
