@@ -1,3 +1,5 @@
+// MUST be the first import — userData 경로를 다른 모듈이 캐시하기 전에 변경해야 함
+import './appPaths';
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
@@ -56,6 +58,13 @@ const createWindow = () => {
     mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
+  }
+
+  // dev에서만 타이틀바를 "Folio (dev)"로 고정. HTML <title>이 자동으로 덮어쓰는 것을 막아
+  // 프로덕션 인스턴스와 시각적으로 구분되도록 한다.
+  if (!app.isPackaged) {
+    mainWindow.on('page-title-updated', (e) => e.preventDefault());
+    mainWindow.setTitle('Folio (dev)');
   }
 
   // 메뉴 제거 시 DevTools 단축키(F12, Ctrl+Shift+I)가 사라지므로 직접 등록
