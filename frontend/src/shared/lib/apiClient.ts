@@ -17,12 +17,34 @@ function apiUrl(): string {
 }
 
 export class ApiError extends Error {
+  public code?: string;
   constructor(
     public status: number,
     message: string,
+    code?: string,
   ) {
     super(message);
+    this.code = code;
   }
+}
+
+/**
+ * 서버 응답 본문이 `{"code":"...","message":"..."}` JSON이면 사람이 읽을 메시지만 추출.
+ * 비-JSON이면 원문을, 빈 본문이면 fallback(statusText)을 그대로 쓴다.
+ */
+function parseErrorBody(text: string, statusText: string): { message: string; code?: string } {
+  if (!text) return { message: statusText };
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      const message = typeof parsed.message === 'string' ? parsed.message : statusText;
+      const code = typeof parsed.code === 'string' ? parsed.code : undefined;
+      return { message, code };
+    }
+  } catch {
+    // 비-JSON 본문은 그대로 사용
+  }
+  return { message: text };
 }
 
 async function request<T>(
@@ -53,7 +75,8 @@ async function request<T>(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new ApiError(response.status, text || response.statusText);
+    const { message, code } = parseErrorBody(text, response.statusText);
+    throw new ApiError(response.status, message, code);
   }
 
   // 204 또는 빈 body (Content-Length 0 / 비어있는 텍스트)는 undefined로 반환
@@ -109,7 +132,8 @@ async function streamSSE(
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new ApiError(response.status, text || response.statusText);
+      const { message, code } = parseErrorBody(text, response.statusText);
+      throw new ApiError(response.status, message, code);
     }
 
     const reader = response.body?.getReader();

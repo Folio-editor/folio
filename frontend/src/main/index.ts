@@ -11,6 +11,12 @@ import {
   commitLastKnownWriterId,
 } from './auth/googleOAuth';
 import { getOrCreateGuestId } from './auth/guestId';
+import {
+  openOneTimePayment,
+  openBillingAuth,
+  type OneTimePaymentParams,
+  type BillingAuthParams,
+} from './payment/checkoutWindow';
 
 if (started) {
   app.quit();
@@ -84,6 +90,17 @@ function registerAuthHandlers() {
   );
 }
 
+function registerPaymentHandlers() {
+  ipcMain.handle('payment:openOneTime', async (event, params: OneTimePaymentParams) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    return openOneTimePayment(parent, params);
+  });
+  ipcMain.handle('payment:openBillingAuth', async (event, params: BillingAuthParams) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    return openBillingAuth(parent, params);
+  });
+}
+
 function registerSpellcheckHandlers() {
   ipcMain.handle('spellcheck:syncWords', async (event, words: unknown) => {
     const session = event.sender.session as Electron.Session & {
@@ -118,6 +135,7 @@ app.on('ready', () => {
 
 app.on('ready', () => {
   registerAuthHandlers();
+  registerPaymentHandlers();
   // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
   tokenRefreshScheduler.on('session-expired', () => {
     for (const win of BrowserWindow.getAllWindows()) {

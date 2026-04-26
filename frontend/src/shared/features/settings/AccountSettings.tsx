@@ -7,6 +7,7 @@ import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -16,7 +17,8 @@ function formatBytes(bytes: number): string {
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
+  const d = parseServerDate(iso);
+  if (!d) return '';
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 }
 

@@ -4,6 +4,7 @@ import com.storyzip.auth.domain.Role;
 import com.storyzip.auth.domain.Writer;
 import com.storyzip.auth.jwt.JwtProvider;
 import com.storyzip.auth.repository.WriterRepository;
+import com.storyzip.payment.service.TokenWalletService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -32,10 +33,12 @@ public class DevAuthController {
 
     private final WriterRepository writerRepository;
     private final JwtProvider jwtProvider;
+    private final TokenWalletService tokenWalletService;
 
     @PostMapping("/login")
     @Transactional
     public ResponseEntity<DevLoginResponse> login(@Valid @RequestBody DevLoginRequest request) {
+        boolean isNewUser = writerRepository.findByEmail(request.email()).isEmpty();
         Writer writer = writerRepository.findByEmail(request.email())
                 .orElseGet(() -> writerRepository.save(Writer.builder()
                         .email(request.email())
@@ -43,10 +46,15 @@ public class DevAuthController {
                         .role(Role.USER)
                         .build()));
 
+        if (isNewUser) {
+            tokenWalletService.grantSignupBonus(writer.getId());
+        }
+
         String accessToken = jwtProvider.createAccessToken(
                 writer.getId(), writer.getEmail(), writer.getRole().name());
 
-        log.info("[DEV] Issued access token for writerId={}, email={}", writer.getId(), writer.getEmail());
+        log.info("[DEV] Issued access token for writerId={}, email={}, newUser={}",
+                writer.getId(), writer.getEmail(), isNewUser);
         return ResponseEntity.ok(new DevLoginResponse(accessToken, writer.getId().toString(), writer.getEmail()));
     }
 

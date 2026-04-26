@@ -5,6 +5,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { Button } from '../../components/ui/Button';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface TrashedWork {
   id: string;
@@ -20,16 +21,15 @@ interface TrashedEpisode {
 }
 
 function daysRemaining(updatedAt: string): number {
-  const trashed = new Date(updatedAt).getTime();
-  const now = Date.now();
-  const elapsed = Math.floor((now - trashed) / (1000 * 60 * 60 * 24));
+  const d = parseServerDate(updatedAt);
+  if (!d) return 30;
+  const elapsed = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(0, 30 - elapsed);
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso || '';
   return d.toLocaleDateString('ko-KR', {
     year: 'numeric',
     month: '2-digit',

@@ -8,7 +8,6 @@ import com.storyzip.payment.client.TossConfirmResponse;
 import com.storyzip.payment.client.TossPaymentsClient;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
-import com.storyzip.payment.domain.TokenTransactionType;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
@@ -106,10 +105,9 @@ public class PaymentService {
                         : null
         );
 
-        tokenWalletService.charge(
+        tokenWalletService.chargePurchase(
                 writerId,
                 payment.getTokenQty(),
-                TokenTransactionType.CHARGE,
                 "PAYMENT_" + payment.getOrderId(),
                 payment.getId()
         );

@@ -15,7 +15,7 @@ import java.util.UUID;
  * 토큰 원장 — token_transaction 테이블. append-only.
  *
  * <p>충전/차감/만료를 모두 개별 레코드로 기록. 잔액 계산의 진실의 소스.
- * {@code expiresAt}은 충전 성격의 레코드에서만 채워지며, FIFO 만료 처리의 기준.
+ * 혼합 차감(구독+보너스 등) 시에는 버킷별로 분리된 레코드가 복수 생성된다.
  */
 @Entity
 @Table(name = "token_transaction")
@@ -32,6 +32,10 @@ public class TokenTransaction {
     @Column(name = "writer_id", nullable = false, columnDefinition = "UUID")
     private UUID writerId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TokenBucket bucket;
+
     @Column(nullable = false)
     private Integer amount;
 
@@ -45,21 +49,18 @@ public class TokenTransaction {
     @Column(name = "reference_id", columnDefinition = "UUID")
     private UUID referenceId;
 
-    @Column(name = "expires_at")
-    private LocalDateTime expiresAt;
-
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    private TokenTransaction(UUID writerId, Integer amount, TokenTransactionType type,
-                             String reason, UUID referenceId, LocalDateTime expiresAt) {
+    private TokenTransaction(UUID writerId, TokenBucket bucket, Integer amount,
+                             TokenTransactionType type, String reason, UUID referenceId) {
         this.writerId = writerId;
+        this.bucket = bucket;
         this.amount = amount;
         this.type = type;
         this.reason = reason;
         this.referenceId = referenceId;
-        this.expiresAt = expiresAt;
     }
 }

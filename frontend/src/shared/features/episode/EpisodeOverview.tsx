@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 const previewExtensions = [
   StarterKit.configure({ code: false, codeBlock: false }),
@@ -253,7 +254,9 @@ function EpisodeListItem({
 /* ── 유틸 ── */
 
 function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const d = parseServerDate(iso);
+  if (!d) return '';
+  const diff = Date.now() - d.getTime();
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return '방금 전';
   const minutes = Math.floor(seconds / 60);

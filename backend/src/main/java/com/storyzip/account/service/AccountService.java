@@ -26,13 +26,26 @@ public class AccountService {
 
     /**
      * 계정 정보 + 사용량 + 구독 정보 조회.
+     *
+     * <p>요금제는 활성 구독이 있으면 PRO, 없으면 Role 기반으로 결정한다.
+     * Role을 결제 시점에 PREMIUM으로 동기화하지 않아도 되어 유지보수 비용이 낮고,
+     * 구독 해지/만료 시 자동으로 STARTER로 복귀한다.
      */
     @Transactional(readOnly = true)
     public AccountInfoResponse getAccountInfo(UUID writerId) {
         Writer writer = writerRepository.findById(writerId)
                 .orElseThrow(() -> new AuthException(ErrorCode.WRITER_NOT_FOUND));
 
-        PlanTier tier = PlanTier.fromRole(writer.getRole());
+        // 구독 정보 (ACTIVE만)
+        SubscriptionInfo subscriptionInfo = subscriptionRepository
+                .findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE)
+                .map(SubscriptionInfo::from)
+                .orElse(null);
+
+        // 활성 구독이 있으면 PRO로 승격 (Role과 무관). 없으면 Role 기반.
+        PlanTier tier = subscriptionInfo != null
+                ? PlanTier.PRO
+                : PlanTier.fromRole(writer.getRole());
 
         // 사용량 집계
         long storageUsedBytes = storageUsageRepository.getStorageUsedBytes(writerId);
@@ -43,12 +56,6 @@ public class AccountService {
 
         boolean quotaExceeded = tier.getStorageLimitBytes() > 0
                 && storageUsedBytes >= tier.getStorageLimitBytes();
-
-        // 구독 정보 (ACTIVE만)
-        SubscriptionInfo subscriptionInfo = subscriptionRepository
-                .findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE)
-                .map(SubscriptionInfo::from)
-                .orElse(null);
 
         return new AccountInfoResponse(
                 WriterInfo.from(writer),
