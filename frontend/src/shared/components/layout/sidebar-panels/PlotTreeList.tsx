@@ -14,7 +14,12 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -67,13 +72,15 @@ export function PlotTreeList({
   const { createPlot } = useLocalWrite();
   const [creating, setCreating] = useState(false);
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT p.id, p.title, p.status, p.work_id, p.parent_id, p.sort_order,
-     (SELECT COUNT(*) FROM plot c WHERE c.parent_id = p.id) AS child_count
-     FROM plot p
-     WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NULL ${whereSearch}
-     ORDER BY p.sort_order ASC, p.created_at ASC`;
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
+  const sql = `SELECT id, title, status, work_id, parent_id, sort_order,
+     (SELECT COUNT(*) FROM plot c WHERE c.parent_id = plot.id) AS child_count
+     FROM plot
+     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -155,6 +162,7 @@ export function PlotTreeList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="plot" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
       {acts.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -210,9 +218,12 @@ interface ActItemProps {
 }
 
 function SortableActItem(props: ActItemProps) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.act.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'plot',
@@ -328,12 +339,14 @@ function ActTreeItem({
   };
 
   const actClickHandlers = useSidebarClickHandler((intent) => onSelect(act.id, intent));
+  const childSortMode = useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual');
+  const childOrderBy = buildOrderBy(childSortMode, { titleColumn: 'title' });
 
   const { data: rawEpisodes = [] } = useQuery<PlotRow>(
     isExpanded
       ? `SELECT id, title, status, work_id, parent_id, sort_order FROM plot
          WHERE parent_id = ? AND writer_id = ?
-         ORDER BY sort_order ASC, created_at ASC`
+         ${childOrderBy}`
       : `SELECT '' AS id, '' AS title, '' AS status, '' AS work_id, '' AS parent_id, 0 AS sort_order WHERE 0`,
     isExpanded ? [act.id, writerId] : [],
   );
@@ -479,9 +492,12 @@ function SortableEpisodeItem(props: {
   onRename: (title: string) => void;
   onDelete: () => Promise<void>;
 }) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.episode.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'plot',

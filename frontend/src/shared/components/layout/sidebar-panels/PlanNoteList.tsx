@@ -14,7 +14,12 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -55,11 +60,13 @@ export function PlanNoteList({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PlanTemplate | null>(null);
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['plan'] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const sql = `SELECT id, title, work_id, sort_order FROM plan_note
      WHERE work_id = ? AND writer_id = ? ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -138,6 +145,7 @@ export function PlanNoteList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="plan" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {notes.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -194,9 +202,12 @@ interface SortableNoteItemProps {
 }
 
 function SortableNoteItem(props: SortableNoteItemProps) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['plan'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.note.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'plan_note',

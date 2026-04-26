@@ -14,7 +14,12 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -53,13 +58,16 @@ export function WorldNoteList({
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['world-note'] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT n.id, n.name, n.work_id, n.parent_id, n.sort_order,
-     (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
-     FROM world_note n
-     WHERE n.work_id = ? AND n.writer_id = ? AND n.parent_id IS NULL ${whereSearch}
-     ORDER BY n.sort_order ASC, n.created_at ASC`;
+  // 동적 ORDER BY — 정렬 기준에 따라 sort_order/updated_at/name
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
+  const sql = `SELECT id, name, work_id, parent_id, sort_order,
+     (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = world_note.id) AS child_count
+     FROM world_note
+     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -140,6 +148,7 @@ export function WorldNoteList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="world-note" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
       {notes.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -206,9 +215,13 @@ interface WorldNoteTreeItemProps {
 }
 
 function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
+  // 드래그 reorder는 'manual' 정렬에서만 의미 — 다른 정렬 모드에서는 비활성
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['world-note'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.note.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'world_note',
@@ -331,13 +344,15 @@ function WorldNoteTreeItem({
 
   const clickHandlers = useSidebarClickHandler((intent) => onSelect(note.id, intent));
 
+  const childSortMode = useSortPreferenceStore((s) => s.byPanel['world-note'] ?? 'manual');
+  const childOrderBy = buildOrderBy(childSortMode, { titleColumn: 'name' });
   const { data: rawChildren = [] } = useQuery<NoteRow>(
     isExpanded
-      ? `SELECT n.id, n.name, n.work_id, n.parent_id, n.sort_order,
-           (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
-         FROM world_note n
-         WHERE n.parent_id = ? AND n.writer_id = ?
-         ORDER BY n.sort_order ASC, n.created_at ASC`
+      ? `SELECT id, name, work_id, parent_id, sort_order,
+           (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = world_note.id) AS child_count
+         FROM world_note
+         WHERE parent_id = ? AND writer_id = ?
+         ${childOrderBy}`
       : `SELECT '' AS id, '' AS name, '' AS work_id, '' AS parent_id, 0 AS sort_order, 0 AS child_count WHERE 0`,
     isExpanded ? [note.id, writerId] : [],
   );

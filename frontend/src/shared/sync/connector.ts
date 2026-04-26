@@ -79,13 +79,17 @@ export class FolioConnector implements PowerSyncBackendConnector {
       return;
     }
 
-    // 마지막 업로드로부터 5초 미경과 시 건너뜀
-    // → PowerSync가 나중에 재호출하며, 그때 쌓인 entry를 한 번에 처리
-    const now = Date.now();
-    if (now - this.lastUploadAt < FolioConnector.UPLOAD_THROTTLE_MS) {
-      return;
+    // 마지막 업로드로부터 throttle 미경과 시, 남은 시간만큼 대기 후 진행
+    // → 즉시 return 하면 큐가 그대로 남아 PowerSync가 빠르게 재호출하다가 일시
+    //    uploadError가 set되어 UI에 "동기화 오류"로 잘못 표시되는 문제가 발생.
+    //    sleep으로 정상 종료 흐름을 유지해 status flag를 안정화.
+    const elapsed = Date.now() - this.lastUploadAt;
+    if (elapsed < FolioConnector.UPLOAD_THROTTLE_MS) {
+      await new Promise((r) =>
+        setTimeout(r, FolioConnector.UPLOAD_THROTTLE_MS - elapsed),
+      );
     }
-    this.lastUploadAt = now;
+    this.lastUploadAt = Date.now();
 
     const BATCH_SIZE = 50;
     const THROTTLE_MS = 200;

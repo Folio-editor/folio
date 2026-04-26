@@ -16,6 +16,12 @@ import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
 import {
+  buildOrderBy,
+  useSortPreferenceStore,
+  type SortPanelKey,
+} from '../../../stores/sortPreferenceStore';
+import { SidebarSortPicker } from './SidebarSortPicker';
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -63,11 +69,15 @@ export function SectionItemList({
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
+  // section은 ('plan'/'world-note'/'plot'/'episode')를 제외한 SortPanelKey의 부분집합
+  const panelKey = section as SortPanelKey;
+  const sortMode = useSortPreferenceStore((s) => s.byPanel[panelKey] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
+  const orderBy = buildOrderBy(sortMode, { titleColumn: labelField });
   const sql = `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
      WHERE work_id = ? AND writer_id = ? ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -131,6 +141,7 @@ export function SectionItemList({
         </div>
       )}
 
+      <SidebarSortPicker panelKey={panelKey} />
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
         {rows.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -204,9 +215,14 @@ interface SortableProps {
 }
 
 function SortableSectionItem(props: SortableProps) {
+  const dragEnabled =
+    useSortPreferenceStore(
+      (s) => s.byPanel[props.section as SortPanelKey] ?? 'manual',
+    ) === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: props.docType,

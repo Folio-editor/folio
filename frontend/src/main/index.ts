@@ -22,9 +22,11 @@ const createWindow = () => {
     minWidth: 480,
     minHeight: 320,
     icon: path.join(__dirname, '../../resources/folio.png'),
-    // 타이틀바: OS 기본 프레임 사용. 한때 titleBarStyle: 'hidden' + titleBarOverlay 로
-    // 테마와 동기화 시도했으나, electron-vite 마이그레이션 환경에서 overlay가 제대로 그려지지
-    // 않아 헤더가 시각적으로 사라지는 회귀가 발생. 빌드 파이프라인 안정화 후 재시도 예정.
+    // 타이틀바: 완전 커스텀.
+    // - Windows: frame: false 로 OS 프레임 제거 → React TitleBar 컴포넌트가 컨트롤·드래그 영역 직접 그림
+    // - macOS: titleBarStyle: 'hiddenInset' 으로 OS traffic light는 유지(좌측 상단), 우측은 React가 그림
+    frame: process.platform !== 'darwin' ? false : undefined,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -83,6 +85,8 @@ const createWindow = () => {
     }
   });
 
+  bindMaximizeEvents(mainWindow);
+
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
@@ -101,22 +105,29 @@ function registerAuthHandlers() {
 }
 
 function registerWindowHandlers() {
-  // 렌더러가 테마 변경 후 ActivityBar 색을 hex로 전달하면 OS 타이틀바 오버레이에 적용.
-  // Windows 외 플랫폼은 setTitleBarOverlay 미지원 — silent no-op.
-  ipcMain.handle(
-    'window:setTitleBarColor',
-    (e, color: string, symbolColor: string) => {
-      if (process.platform !== 'win32') return;
-      const win = BrowserWindow.fromWebContents(e.sender);
-      if (!win) return;
-      try {
-        win.setTitleBarOverlay({ color, symbolColor });
-      } catch {
-        // setTitleBarOverlay는 titleBarStyle: 'hidden' + titleBarOverlay 옵션이 있을 때만 동작.
-        // 옵션 없이 호출되면 throw — 로그 노이즈 방지로 무시.
-      }
-    },
-  );
+  // 커스텀 TitleBar에서 사용하는 OS 창 제어 IPC.
+  ipcMain.handle('window:minimize', (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.minimize();
+  });
+  ipcMain.handle('window:toggleMaximize', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.handle('window:close', (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close();
+  });
+  ipcMain.handle('window:isMaximized', (e) => {
+    return BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false;
+  });
+}
+
+/** 새 창 생성 시 maximize/unmaximize 이벤트를 렌더러로 push — TitleBar의 Max/Restore 아이콘 토글용. */
+function bindMaximizeEvents(win: BrowserWindow) {
+  const send = (state: boolean) => win.webContents.send('window:maximizeChanged', state);
+  win.on('maximize', () => send(true));
+  win.on('unmaximize', () => send(false));
 }
 
 app.on('ready', () => {

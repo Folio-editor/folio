@@ -213,8 +213,13 @@ export function createWebFolioApi(): FolioApi {
       },
     },
     window: {
-      // 웹은 OS 타이틀바를 제어할 수 없음 — no-op
-      setTitleBarColor: async () => {},
+      // 웹은 OS 창을 제어할 수 없음 — no-op / safe defaults
+      minimize: async () => {},
+      toggleMaximize: async () => {},
+      close: async () => {},
+      isMaximized: async () => false,
+      onMaximizeChanged: () => () => {},
+      platform: 'web',
     },
   };
 }

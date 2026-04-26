@@ -14,6 +14,11 @@ import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
 import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
+import { SidebarSortPicker } from './SidebarSortPicker';
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -68,14 +73,16 @@ export function HomeWorkList({
     if (e.key === 'Escape') handleCancel();
   };
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['home-work'] ?? 'manual');
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const trimmed = searchTerm.trim();
   const sql = trimmed
     ? `SELECT id, title, sort_order FROM work
        WHERE writer_id = ? AND status != 'trashed' AND title LIKE ? ESCAPE '\\'
-       ORDER BY sort_order ASC, created_at ASC`
+       ${orderBy}`
     : `SELECT id, title, sort_order FROM work
        WHERE writer_id = ? AND status != 'trashed'
-       ORDER BY sort_order ASC, created_at ASC`;
+       ${orderBy}`;
   const params = trimmed ? [writerId, `%${escapeLike(trimmed)}%`] : [writerId];
   const { data: rawWorks = [] } = useQuery<WorkRow>(sql, params);
   // work는 writer_id 기준 평탄 — 모든 작품이 같은 그룹
@@ -109,6 +116,7 @@ export function HomeWorkList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="home-work" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {works.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -155,9 +163,12 @@ function SortableWorkItem({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['home-work'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: work.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'work',

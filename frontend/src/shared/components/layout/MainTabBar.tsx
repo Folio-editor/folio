@@ -151,7 +151,8 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="flex shrink-0 items-center border-b border-border bg-muted/30">
+    // 사이드바 헤더(h-12)와 가로선 일치를 위해 컨테이너도 h-12
+    <div className="flex h-12 shrink-0 items-center border-b border-border bg-muted/30">
       {/* back/forward */}
       <button
         type="button"
@@ -159,7 +160,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
         disabled={!canBack}
         title="뒤로 (Alt+←)"
         aria-label="뒤로"
-        className="flex h-8 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+        className="flex h-full w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronLeft size={14} />
       </button>
@@ -169,7 +170,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
         disabled={!canForward}
         title="앞으로 (Alt+→)"
         aria-label="앞으로"
-        className="flex h-8 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+        className="flex h-full w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronRight size={14} />
       </button>
@@ -205,7 +206,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
         onClick={openBlankTab}
         title="새 탭 (Ctrl+T)"
         aria-label="새 탭"
-        className="flex h-8 w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex h-full w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <Plus size={14} />
       </button>
@@ -254,7 +255,7 @@ function SortableTab({
             }
           }}
           className={cn(
-            'group flex h-8 min-w-25 max-w-50 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-2 text-xs transition-colors',
+            'group flex h-full min-w-25 max-w-50 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-xs transition-colors',
             active
               ? 'bg-background text-foreground'
               : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',

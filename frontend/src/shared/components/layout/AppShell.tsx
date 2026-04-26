@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { TitleBar } from './TitleBar';
 
 interface AppShellProps {
   activityBar: ReactNode;
@@ -51,6 +52,7 @@ export function AppShell({
   return (
     <RightPanelCtx.Provider value={{ toggle: rightPanelToggle, visible: rightPanelVisible }}>
       <div className="flex h-screen flex-col overflow-hidden bg-background">
+        <TitleBar title="Folio" />
         <div className="flex min-h-0 flex-1">
           {activityBar}
           {sidebar}

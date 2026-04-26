@@ -66,7 +66,38 @@ export function SyncStatusBar() {
   // 인증 상태에서만 PowerSync connected 의미가 있음.
   // 게스트는 클라우드 연결 자체가 없으므로 isOnline만 본다.
   const effectivelyOffline = !isOnline || (!isGuest && !connected);
-  const hasError = !isGuest && Boolean(downloadError || uploadError);
+
+  // 동기화 오류 grace period — connector throttle/일시적 실패로 잠깐 set되는 uploadError를
+  // 즉시 "동기화 오류"로 표시하면 사용자에게 잘못된 신호. SYNC_ERROR_GRACE_MS 동안
+  // 지속되어야만 진짜 에러로 간주.
+  const SYNC_ERROR_GRACE_MS = 6000;
+  const rawHasError = !isGuest && Boolean(downloadError || uploadError);
+  const [hasError, setHasError] = useState(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (rawHasError) {
+      // 이미 표시 중이면 그대로, 아니면 grace 후 표시
+      if (!hasError && !errorTimerRef.current) {
+        errorTimerRef.current = setTimeout(() => {
+          setHasError(true);
+          errorTimerRef.current = null;
+        }, SYNC_ERROR_GRACE_MS);
+      }
+    } else {
+      // 에러 해소 — 즉시 표시 해제
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+        errorTimerRef.current = null;
+      }
+      if (hasError) setHasError(false);
+    }
+    return () => {
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+        errorTimerRef.current = null;
+      }
+    };
+  }, [rawHasError, hasError]);
 
   // ─── 라벨 결정 ────────────────────────────────────────────
   const label = (() => {
@@ -100,16 +131,21 @@ export function SyncStatusBar() {
   })();
 
   // ─── 색상 결정 (도트/게이지 공통) ─────────────────────────
-  // 우선순위: 오류 > 대량경고 > 오프라인 > 동기화 완료(잠시) > 진행 중 > 평소
+  // 상태별 명확한 구분:
+  //   오류             → danger (빨강)
+  //   대량 (≥100건)    → warning (노랑/주황)
+  //   오프라인          → muted (회색)
+  //   진행 중 (인증)    → info (파랑)
+  //   누적 중 (게스트)  → info/60 (옅은 파랑 — 클라우드 미연결 표시)
+  //   온라인 + 큐 0    → success (초록) — 인증/게스트 모두
   const color = (() => {
     if (hasError) return 'bg-danger';
     if (queueCount >= WARN_THRESHOLD) return 'bg-warning';
     if (effectivelyOffline) return 'bg-muted-foreground/40';
-    if (!isGuest && queueCount === 0 && showComplete) return 'bg-success';
     if (!isGuest && queueCount > 0) return 'bg-info';
-    if (isGuest && queueCount > 0) return 'bg-muted-foreground/60';
-    // 평소(온라인 + 큐 0): 차분한 muted — 도트만 옅게 보이고 게이지는 빈 트랙
-    return 'bg-muted-foreground/50';
+    if (isGuest && queueCount > 0) return 'bg-info/60';
+    // 인증 + 온라인 + 큐 0 (평소/showComplete) 또는 게스트 + 온라인 + 큐 0 — 초록
+    return 'bg-success';
   })();
 
   // ─── 게이지 채움 비율 ─────────────────────────────────────

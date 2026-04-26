@@ -23,8 +23,16 @@ const api: FolioApi = {
     },
   },
   window: {
-    setTitleBarColor: (color: string, symbolColor: string) =>
-      ipcRenderer.invoke('window:setTitleBarColor', color, symbolColor) as Promise<void>,
+    minimize: () => ipcRenderer.invoke('window:minimize') as Promise<void>,
+    toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize') as Promise<void>,
+    close: () => ipcRenderer.invoke('window:close') as Promise<void>,
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized') as Promise<boolean>,
+    onMaximizeChanged: (callback: (maximized: boolean) => void) => {
+      const listener = (_e: unknown, state: boolean) => callback(state);
+      ipcRenderer.on('window:maximizeChanged', listener);
+      return () => ipcRenderer.removeListener('window:maximizeChanged', listener);
+    },
+    platform: process.platform as 'win32' | 'darwin' | 'linux' | 'web',
   },
 };
 

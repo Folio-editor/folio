@@ -49,13 +49,17 @@ export interface FolioAuthApi {
 
 /**
  * 윈도우/프레임 제어 API. Electron 전용 — 웹에서는 no-op.
+ * frame: false 환경에서 커스텀 TitleBar가 OS 창 컨트롤(min/max/close)을 호출.
  */
 export interface FolioWindowApi {
-  /**
-   * Windows 타이틀바 오버레이 색을 즉시 갱신한다. Windows 외 플랫폼은 무시.
-   * 색은 #rrggbb 형식의 hex (alpha 미지원).
-   */
-  setTitleBarColor: (color: string, symbolColor: string) => Promise<void>;
+  minimize: () => Promise<void>;
+  toggleMaximize: () => Promise<void>;
+  close: () => Promise<void>;
+  isMaximized: () => Promise<boolean>;
+  /** maximize/unmaximize 상태 변화 구독. 반환 함수 호출로 해지. */
+  onMaximizeChanged: (callback: (maximized: boolean) => void) => () => void;
+  /** OS 플랫폼. 커스텀 TitleBar가 Windows/macOS 분기에 사용. */
+  platform: 'win32' | 'darwin' | 'linux' | 'web';
 }
 
 export interface FolioApi {

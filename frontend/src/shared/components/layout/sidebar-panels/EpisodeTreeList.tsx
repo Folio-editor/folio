@@ -14,7 +14,12 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -66,11 +71,13 @@ export function EpisodeTreeList({
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['episode'] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const sql = `SELECT id, title, status, word_count, work_id, sort_order FROM episode
      WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -128,6 +135,7 @@ export function EpisodeTreeList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="episode" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {episodes.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -178,9 +186,12 @@ interface SortableEpisodeItemProps {
 }
 
 function SortableEpisodeItem(props: SortableEpisodeItemProps) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['episode'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.episode.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'episode',

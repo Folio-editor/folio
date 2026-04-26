@@ -14,7 +14,12 @@ import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -98,11 +103,13 @@ export function CharacterNoteList({
     }
   }, [noteParentRows]);
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['character'] ?? 'manual');
   const trimmed = searchTerm.trim();
   const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
   const sql = `SELECT id, name, work_id, sort_order FROM character
      WHERE work_id = ? AND writer_id = ? ${whereName}
-     ORDER BY sort_order ASC, created_at ASC`;
+     ${orderBy}`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -162,6 +169,7 @@ export function CharacterNoteList({
           </button>
         )}
       </div>
+      <SidebarSortPicker panelKey="character" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {characters.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -232,9 +240,12 @@ interface CharacterTreeItemProps {
 }
 
 function SortableCharacterItem(props: CharacterTreeItemProps) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['character'] ?? 'manual') === 'manual';
   const { attributes, listeners, setNodeRef, isDragging } =
     useSortable({
       id: props.character.id,
+      disabled: !dragEnabled,
       data: {
         type: 'tree-node',
         docType: 'character',
@@ -296,11 +307,13 @@ function CharacterTreeItem({
   const [deleting, setDeleting] = useState(false);
   const charClickHandlers = useSidebarClickHandler(onCharacterActivate);
 
+  const noteSortMode = useSortPreferenceStore((s) => s.byPanel['character'] ?? 'manual');
+  const noteOrderBy = buildOrderBy(noteSortMode, { titleColumn: 'title' });
   const { data: rawNotes = [] } = useQuery<CharacterNoteRow>(
     isExpanded
       ? `SELECT id, kind, title, sort_order, character_id FROM character_note
          WHERE character_id = ? AND writer_id = ? AND kind != 'intro'
-         ORDER BY sort_order ASC, created_at ASC`
+         ${noteOrderBy}`
       : `SELECT '' AS id, '' AS kind, '' AS title, 0 AS sort_order, '' AS character_id WHERE 0`,
     isExpanded ? [character.id, writerId] : [],
   );
