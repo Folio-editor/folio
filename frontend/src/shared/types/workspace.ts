@@ -95,12 +95,18 @@ export const SECTION_TABLES: Record<WorkspaceSection, string> = {
  * 메인 보존이 필요하면 사용자가 메인 헤더의 ↗ (우측으로 보내기)를 먼저 누르고
  * 다른 항목을 단일 클릭하면 됨 — 명시적 의도 표시.
  */
-export type ClickIntent = 'default' | 'pin';
+export type ClickIntent = 'default' | 'pin' | 'newTab';
 
-/** 메인 패널이 표시 중인 문서 (단일 슬롯). null = 빈 상태 */
+/** 메인 패널이 표시 중인 문서 */
 export interface MainDoc {
   section: WorkspaceSection;
   itemId: string;
+}
+
+/** 메인 다중 탭의 단일 탭 인스턴스. doc=null = 빈 탭(welcome) */
+export interface MainTab {
+  id: string;
+  doc: MainDoc | null;
 }
 
 // ── 우측 사이드바 탭 ───────────────────────────────────

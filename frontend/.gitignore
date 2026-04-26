@@ -88,5 +88,9 @@ typings/
 # Vite
 .vite/
 
-# Electron-Forge
+# electron-vite output
 out/
+
+# electron-builder output
+release/
+dist-web/

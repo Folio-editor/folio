@@ -2,7 +2,6 @@
 import './appPaths';
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
-import started from 'electron-squirrel-startup';
 import {
   loginWithGoogle,
   logout,
@@ -14,10 +13,6 @@ import {
 } from './auth/googleOAuth';
 import { getOrCreateGuestId } from './auth/guestId';
 
-if (started) {
-  app.quit();
-}
-
 const createWindow = () => {
   Menu.setApplicationMenu(null);
 
@@ -27,19 +22,23 @@ const createWindow = () => {
     minWidth: 480,
     minHeight: 320,
     icon: path.join(__dirname, '../../resources/folio.png'),
+    // 타이틀바: OS 기본 프레임 사용. 한때 titleBarStyle: 'hidden' + titleBarOverlay 로
+    // 테마와 동기화 시도했으나, electron-vite 마이그레이션 환경에서 overlay가 제대로 그려지지
+    // 않아 헤더가 시각적으로 사라지는 회귀가 발생. 빌드 파이프라인 안정화 후 재시도 예정.
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  // electron-vite: dev에선 ELECTRON_RENDERER_URL이 주입되고,
+  // prod에선 out/renderer/index.html이 main 기준 ../renderer/ 에 위치한다.
+  const devUrl = process.env['ELECTRON_RENDERER_URL'];
+  if (devUrl) {
+    mainWindow.loadURL(devUrl);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
   // dev에서만 타이틀바를 "Folio (dev)"로 고정. HTML <title>이 자동으로 덮어쓰는 것을 막아
@@ -101,8 +100,28 @@ function registerAuthHandlers() {
   );
 }
 
+function registerWindowHandlers() {
+  // 렌더러가 테마 변경 후 ActivityBar 색을 hex로 전달하면 OS 타이틀바 오버레이에 적용.
+  // Windows 외 플랫폼은 setTitleBarOverlay 미지원 — silent no-op.
+  ipcMain.handle(
+    'window:setTitleBarColor',
+    (e, color: string, symbolColor: string) => {
+      if (process.platform !== 'win32') return;
+      const win = BrowserWindow.fromWebContents(e.sender);
+      if (!win) return;
+      try {
+        win.setTitleBarOverlay({ color, symbolColor });
+      } catch {
+        // setTitleBarOverlay는 titleBarStyle: 'hidden' + titleBarOverlay 옵션이 있을 때만 동작.
+        // 옵션 없이 호출되면 throw — 로그 노이즈 방지로 무시.
+      }
+    },
+  );
+}
+
 app.on('ready', () => {
   registerAuthHandlers();
+  registerWindowHandlers();
   // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
   tokenRefreshScheduler.on('session-expired', () => {
     for (const win of BrowserWindow.getAllWindows()) {

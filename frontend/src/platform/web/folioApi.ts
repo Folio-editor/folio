@@ -212,5 +212,9 @@ export function createWebFolioApi(): FolioApi {
         };
       },
     },
+    window: {
+      // 웹은 OS 타이틀바를 제어할 수 없음 — no-op
+      setTitleBarColor: async () => {},
+    },
   };
 }

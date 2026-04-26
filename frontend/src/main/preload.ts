@@ -22,6 +22,10 @@ const api: FolioApi = {
       return () => ipcRenderer.removeListener('auth:session-expired', listener);
     },
   },
+  window: {
+    setTitleBarColor: (color: string, symbolColor: string) =>
+      ipcRenderer.invoke('window:setTitleBarColor', color, symbolColor) as Promise<void>,
+  },
 };
 
 contextBridge.exposeInMainWorld('folio', api);

@@ -1,9 +1,10 @@
 // ============================================================
 // sidebarClickHandler — 사이드바 항목 클릭 의도 디스패처
 // ============================================================
-// Stage Manager 단순화 모델:
-// - 단일 클릭 → 메인에 열기 ('default')
-// - 더블 클릭 / ⌘·Ctrl+Click → 우측 핀 ('pin')
+// 다중 탭 모델:
+// - 단일 클릭 → 활성 탭 doc 교체 ('default')
+// - ⌘·Ctrl+Click → 새 탭으로 열기 ('newTab')
+// - 더블 클릭 → 우측 핀 ('pin')
 //
 // onClick은 더블클릭 시 2회 발생 후 onDoubleClick 발생하므로,
 // 단일 클릭 액션은 200ms 지연 → 그 사이 더블 들어오면 timeout 취소.
@@ -37,13 +38,13 @@ export function useSidebarClickHandler(
 
   const onClick = useCallback(
     (e: React.MouseEvent) => {
-      // ⌘/Ctrl+Click — 즉시 pin
+      // ⌘/Ctrl+Click — 즉시 새 탭으로 열기
       if (e.metaKey || e.ctrlKey) {
         if (timerRef.current !== null) {
           window.clearTimeout(timerRef.current);
           timerRef.current = null;
         }
-        onIntent('pin');
+        onIntent('newTab');
         return;
       }
 

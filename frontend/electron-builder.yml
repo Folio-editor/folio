@@ -1,0 +1,63 @@
+appId: com.folio.app
+productName: Folio
+copyright: Copyright (c) 2026 Folio
+asar: true
+artifactName: ${productName}-${version}-Setup.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite 결과물(out/)과 패키지 메타데이터, 한국어 리소스만 포함.
+# .vite/, dist*/, src/, vite.web.config.ts 등 빌드 산출물 외 파일은 제외.
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!**/*.tsx"
+
+# Fuses 적용. forge plugin-fuses와 동일한 옵션을 afterPack 훅에서 flipFuses 로 적용.
+afterPack: ./build/afterPack.js
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # PNG 512x512를 사용 — electron-builder가 자동으로 다중 해상도 ICO 생성.
+  # 기존 resources/folio.ico는 16x16 단일 사이즈라 NSIS의 256x256 최소 요건 미달.
+  icon: resources/folio.png
+  publisherName: Folio
+  # 코드 사이닝 인증서 보유 시 활성화
+  # certificateFile: cert.pfx
+  # certificatePassword: ${env.CERT_PWD}
+  # signingHashAlgorithms: [sha256]
+  # rfc3161TimeStampServer: http://timestamp.digicert.com
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Folio
+  menuCategory: false
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  license: build/license_ko.txt
+  language: "1042"
+  installerLanguages:
+    - ko-KR
+  differentialPackage: true
+  warningsAsErrors: false
+
+mac:
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.productivity

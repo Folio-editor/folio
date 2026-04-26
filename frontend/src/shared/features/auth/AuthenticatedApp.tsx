@@ -31,10 +31,12 @@ class SmartPointerSensor extends PointerSensor {
 import { arrayMove } from '@dnd-kit/sortable';
 import { useDragZoneStore } from '../../lib/dragZoneStore';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
+import { useMainTabsStore } from '../../stores/mainTabsStore';
 import { AppShell } from '../../components/layout/AppShell';
 import { ActivityBar } from '../../components/layout/ActivityBar';
 import { SecondarySidebar } from '../../components/layout/SecondarySidebar';
 import { RightPanels } from '../../components/layout/RightPanels';
+import { MainTabBar } from '../../components/layout/MainTabBar';
 import { WorkspaceHomeOverview } from '../workspace/WorkspaceHomeOverview';
 import { WorkspaceHomeScreen } from '../workspace/WorkspaceHomeScreen';
 import { EmptyMainState } from '../workspace/EmptyMainState';
@@ -89,7 +91,84 @@ export function AuthenticatedApp() {
   const db = usePowerSync();
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
-  const [mainDoc, setMainDoc] = usePersistentState<MainDoc | null>('folio.ui.mainDoc', null);
+  // 메인 다중 탭 store — 활성 탭 doc이 mainDoc 역할 (단일 슬롯 호환)
+  const tabs = useMainTabsStore((s) => s.tabs);
+  const activeTabId = useMainTabsStore((s) => s.activeTabId);
+  const replaceActive = useMainTabsStore((s) => s.replaceActive);
+  const openTab = useMainTabsStore((s) => s.openTab);
+  const closeAllTabs = useMainTabsStore((s) => s.closeAll);
+  const closeActiveTab = useMainTabsStore((s) => s.closeTab);
+  const hydrateLegacyMainDoc = useMainTabsStore((s) => s.hydrateLegacyMainDoc);
+  const mainDoc: MainDoc | null =
+    tabs.find((t) => t.id === activeTabId)?.doc ?? null;
+  /** 활성 탭 doc 교체 (없으면 새 탭). null 전달 시 활성 탭 닫기 — 기존 setMainDoc(null) 호환 */
+  const setMainDoc = useCallback(
+    (next: MainDoc | null) => {
+      if (next === null) {
+        if (activeTabId) closeActiveTab(activeTabId);
+        return;
+      }
+      replaceActive(next);
+    },
+    [activeTabId, closeActiveTab, replaceActive],
+  );
+  // legacy 'folio.ui.mainDoc' 키 마이그레이션 (1회)
+  useEffect(() => {
+    hydrateLegacyMainDoc();
+  }, [hydrateLegacyMainDoc]);
+  // stale 탭 정리 — 영속에는 있지만 DB에서 삭제된 노드 (1회, 마운트 직후)
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const state = useMainTabsStore.getState();
+      const docs = state.tabs
+        .map((t) => t.doc)
+        .filter((d): d is MainDoc => d !== null);
+      if (docs.length === 0) return;
+      // section별 itemId 검증 — character는 prefix 분리
+      const validIds = new Set<string>();
+      const sectionTable: Record<WorkspaceSection, string> = {
+        episode: 'episode',
+        'world-note': 'world_note',
+        plan: 'plan_note',
+        plot: 'plot',
+        foreshadow: 'foreshadow',
+        character: 'character',
+        'idea-archive': 'idea_archive',
+      };
+      for (const doc of docs) {
+        let table = sectionTable[doc.section];
+        let id = doc.itemId;
+        if (doc.section === 'character') {
+          if (id.startsWith('cnote:')) {
+            table = 'character_note';
+            id = id.slice(6);
+          } else if (id.startsWith('char:')) {
+            table = 'character';
+            id = id.slice(5);
+          } else continue;
+        }
+        try {
+          const rows = await db.getAll<{ id: string }>(
+            `SELECT id FROM ${table} WHERE id = ? LIMIT 1`,
+            [id],
+          );
+          if (rows.length > 0) validIds.add(`${doc.section}:${doc.itemId}`);
+        } catch {
+          // 테이블 미존재 등 — 검증 실패 시 보존 (false-positive 방지)
+          validIds.add(`${doc.section}:${doc.itemId}`);
+        }
+      }
+      if (cancelled) return;
+      useMainTabsStore.getState().pruneStaleTabs((doc) =>
+        validIds.has(`${doc.section}:${doc.itemId}`),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db]);
   const [settingsMode, setSettingsMode] = useState(false);
   const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
@@ -227,7 +306,7 @@ export function AuthenticatedApp() {
   );
 
   // ── 사이드바 클릭 디스패처 (단순화) ──
-  // default(단일): 메인 즉시 교체 / pin(더블·⌘+클릭): 우측 핀 적층
+  // default(단일): 활성 탭 교체 / newTab(⌘+클릭): 새 탭 / pin(더블): 우측 핀 적층
   const handleSidebarClick = useCallback(
     async (section: WorkspaceSection, itemId: string, intent: ClickIntent) => {
       if (intent === 'pin') {
@@ -236,11 +315,14 @@ export function AuthenticatedApp() {
         if (aux) addPinnedAndShow(aux, 0);
         return;
       }
-      // default — 메인 즉시 교체 (현 메인은 사라짐. 보존하려면 ↗ 먼저)
-      // 세계관 child의 경우에도 itemId 그대로 mainDoc에 저장 — Hierarchy 화면이 parent_id lookup으로 root 결정 + child id로 focus derive
-      setMainDoc({ section, itemId });
+      if (intent === 'newTab') {
+        openTab({ section, itemId });
+        return;
+      }
+      // default — 활성 탭 doc 교체 (중복 시 점프, 활성 없으면 새 탭)
+      replaceActive({ section, itemId });
     },
-    [setMainDoc, addPinnedAndShow, fetchItemTitle],
+    [replaceActive, openTab, addPinnedAndShow, fetchItemTitle],
   );
 
   // 우측 핀의 ↗(본문으로 열기) — 핀과 메인 swap (자리 교환)
@@ -293,6 +375,84 @@ export function AuthenticatedApp() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [toggleRightPanel]);
+
+  // 메인 탭 단축키 — Ctrl+W/T/Tab/1-9, Alt+←→
+  useEffect(() => {
+    const isInEditableField = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (target.isContentEditable) return true;
+      return false;
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const inEditable = isInEditableField(e.target);
+
+      // Ctrl+W — 활성 탭 닫기 (edit field 안에서도 동작 — 입력 방해 X)
+      if (mod && !e.shiftKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        const { activeTabId, closeTab } = useMainTabsStore.getState();
+        if (activeTabId) closeTab(activeTabId);
+        return;
+      }
+      // Ctrl+T — 새 빈 탭
+      if (mod && !e.shiftKey && !e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        useMainTabsStore.getState().openBlankTab();
+        return;
+      }
+      // Ctrl+Tab / Ctrl+Shift+Tab — 다음/이전 탭
+      if (mod && e.key === 'Tab') {
+        e.preventDefault();
+        const state = useMainTabsStore.getState();
+        if (state.tabs.length === 0) return;
+        const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
+        const dir = e.shiftKey ? -1 : 1;
+        const next = (idx + dir + state.tabs.length) % state.tabs.length;
+        state.setActiveTab(state.tabs[next].id);
+        return;
+      }
+      // Ctrl+PageDown / Ctrl+PageUp — fallback (일부 환경에서 Ctrl+Tab 캡쳐 시)
+      if (mod && (e.key === 'PageDown' || e.key === 'PageUp')) {
+        e.preventDefault();
+        const state = useMainTabsStore.getState();
+        if (state.tabs.length === 0) return;
+        const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
+        const dir = e.key === 'PageDown' ? 1 : -1;
+        const next = (idx + dir + state.tabs.length) % state.tabs.length;
+        state.setActiveTab(state.tabs[next].id);
+        return;
+      }
+      // Ctrl+1..9 — 인덱스 탭 (Numpad 포함 e.code 기반)
+      if (mod && !e.shiftKey && !e.altKey) {
+        const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+        if (m) {
+          e.preventDefault();
+          const targetIdx = Number(m[1]) - 1;
+          const state = useMainTabsStore.getState();
+          const tab = state.tabs[targetIdx];
+          if (tab) state.setActiveTab(tab.id);
+          return;
+        }
+      }
+      // Alt+Left / Alt+Right — back/forward (편집 필드에서는 단어 단위 이동이라 skip)
+      if (e.altKey && !mod && !e.shiftKey && !inEditable) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          useMainTabsStore.getState().back();
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          useMainTabsStore.getState().forward();
+          return;
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 문서 드래그 감지 — 패널 0개일 때도 드롭 존 표시
   useEffect(() => {
@@ -357,8 +517,8 @@ export function AuthenticatedApp() {
 
   const handleWorkSelect = (id: string) => {
     setSelectedWorkId(id);
-    // 작품 전환 = 작업 컨텍스트 전환 → 메인 정리
-    setMainDoc(null);
+    // 작품 전환 = 작업 컨텍스트 전환 → 모든 탭 닫기
+    closeAllTabs();
   };
 
   // WorkspaceHomeScreen에서 섹션 카드 클릭 — 사이드바 뷰만 전환 (메인 보존)
@@ -369,7 +529,7 @@ export function AuthenticatedApp() {
   const handleNewWork = async (title: string) => {
     const id = await createWork(title);
     setSelectedWorkId(id);
-    setMainDoc(null);
+    closeAllTabs();
     setSidebarCollapsed(false);
     setActivity('home');
   };
@@ -393,14 +553,14 @@ export function AuthenticatedApp() {
 
   const handleNewWorkReset = () => {
     setSelectedWorkId(null);
-    setMainDoc(null);
+    closeAllTabs();
     setSidebarCollapsed(false);
     setActivity('home');
   };
 
   const handleWorkDeleted = () => {
     setSelectedWorkId(null);
-    setMainDoc(null);
+    closeAllTabs();
     setAuxPinned([]);
     setSidebarCollapsed(false);
     setActivity('home');
@@ -832,20 +992,29 @@ export function AuthenticatedApp() {
         {settingsMode && selectedSettingsItem ? (
           <SettingsScreen settingsItemId={selectedSettingsItem} />
         ) : (
-          renderMain({
-            activity,
-            workId: selectedWorkId,
-            mainDoc,
-            onSelectWork: handleWorkSelect,
-            onDeselectWork: handleNewWorkReset,
-            onCreateWork: handleNewWork,
-            onSectionSelect: handleSectionSelect,
-            onItemActivate: handleSidebarClick,
-            onWorkDeleted: handleWorkDeleted,
-            onNavigateTo: handleNavigateTo,
-            onClose: () => void handleCloseMain(),
-            onSendToRight: () => void handleSendMainToRight(),
-          })
+          <div className="flex h-full min-h-0 flex-col">
+            <MainTabBar
+              onActiveSectionChange={(section) => {
+                if (section) setActivity(section);
+              }}
+            />
+            <div className="flex min-h-0 flex-1 flex-col">
+              {renderMain({
+                activity,
+                workId: selectedWorkId,
+                mainDoc,
+                onSelectWork: handleWorkSelect,
+                onDeselectWork: handleNewWorkReset,
+                onCreateWork: handleNewWork,
+                onSectionSelect: handleSectionSelect,
+                onItemActivate: handleSidebarClick,
+                onWorkDeleted: handleWorkDeleted,
+                onNavigateTo: handleNavigateTo,
+                onClose: () => void handleCloseMain(),
+                onSendToRight: () => void handleSendMainToRight(),
+              })}
+            </div>
+          </div>
         )}
       </AppShell>
 

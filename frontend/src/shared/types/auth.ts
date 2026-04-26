@@ -47,9 +47,21 @@ export interface FolioAuthApi {
   onSessionExpired: (callback: () => void) => () => void;
 }
 
+/**
+ * 윈도우/프레임 제어 API. Electron 전용 — 웹에서는 no-op.
+ */
+export interface FolioWindowApi {
+  /**
+   * Windows 타이틀바 오버레이 색을 즉시 갱신한다. Windows 외 플랫폼은 무시.
+   * 색은 #rrggbb 형식의 hex (alpha 미지원).
+   */
+  setTitleBarColor: (color: string, symbolColor: string) => Promise<void>;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
+  window: FolioWindowApi;
 }
 
 declare global {
