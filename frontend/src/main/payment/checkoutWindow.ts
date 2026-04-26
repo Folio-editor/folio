@@ -5,13 +5,17 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
  * Electron 안에서 토스 결제창을 띄우는 전용 BrowserWindow.
  *
  * <p>토스 SDK를 data URL HTML에 로드해 `requestPayment` / `requestBillingAuth`를 호출한다.
- * successUrl/failUrl은 `https://folio-checkout.local/success|fail` 같은 가상 호스트를 사용하고,
+ * successUrl/failUrl은 토스가 허용하는 `http://localhost` 호스트를 사용하고,
  * `will-redirect` 이벤트에서 이를 가로채 쿼리 파라미터를 파싱한 뒤 창을 닫는다.
  * → 외부 브라우저 리다이렉트 없이 SPA 상태를 보존한 채 결제 결과를 수신.
+ *
+ * <p>가상 호스트(예: https://folio-checkout.local)는 토스 SDK 가
+ * INCORRECT_SUCCESS_URL_FORMAT 으로 거부하므로 사용 불가.
  */
 
-const CHECKOUT_SUCCESS_URL = 'https://folio-checkout.local/success';
-const CHECKOUT_FAIL_URL = 'https://folio-checkout.local/fail';
+const CHECKOUT_BASE = 'http://localhost/folio-checkout';
+const CHECKOUT_SUCCESS_URL = `${CHECKOUT_BASE}/success`;
+const CHECKOUT_FAIL_URL = `${CHECKOUT_BASE}/fail`;
 
 export interface OneTimePaymentParams {
   clientKey: string;
@@ -123,11 +127,13 @@ function openCheckout<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
-      width: 520,
-      height: 720,
+      width: 920,
+      height: 820,
+      minWidth: 720,
+      minHeight: 640,
       parent: parent ?? undefined,
       modal: Boolean(parent),
-      resizable: false,
+      resizable: true,
       minimizable: false,
       maximizable: false,
       title: 'Folio 결제',
@@ -146,10 +152,10 @@ function openCheckout<T>(
     };
 
     const handleNavigation = (urlString: string) => {
-      if (!urlString.startsWith('https://folio-checkout.local/')) return false;
+      if (!urlString.startsWith(CHECKOUT_BASE)) return false;
       try {
         const u = new URL(urlString);
-        if (u.pathname === '/success') {
+        if (u.pathname === '/folio-checkout/success') {
           const result = parseSuccess(u);
           if (result) {
             settle(() => resolve(result));
@@ -158,7 +164,7 @@ function openCheckout<T>(
           }
           return true;
         }
-        if (u.pathname === '/fail') {
+        if (u.pathname === '/folio-checkout/fail') {
           const code = u.searchParams.get('code');
           const message = u.searchParams.get('message') ?? '결제가 취소되었습니다.';
           const err = new Error(message);

@@ -163,13 +163,16 @@ public class TokenWallet {
     /**
      * 환불로 인한 회수 — 종량제(purchase)에서만 차감. 가진 만큼만 빼고 음수로 가지 않는다.
      *
+     * <p>환불은 "사용"이 아니라 "충전 취소"이므로 {@code totalUsed}는 건드리지 않고,
+     * 회수된 만큼 {@code totalCharged}를 되돌린다. 누적 통계의 의미를 보존한다.
+     *
      * @return 실제 차감된 양
      */
     public int deductForRefund(int amount) {
         requirePositive(amount);
         int actual = Math.min(amount, purchaseBalance);
         this.purchaseBalance -= actual;
-        this.totalUsed += actual;
+        this.totalCharged = Math.max(0, this.totalCharged - actual);
         return actual;
     }
 

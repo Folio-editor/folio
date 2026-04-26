@@ -114,9 +114,9 @@ class SubscriptionServiceTest {
 
         assertThat(response.status()).isEqualTo(SubscriptionStatus.ACTIVE);
         assertThat(response.monthlyAmount()).isEqualTo(9_900);
-        assertThat(response.monthlyTokens()).isEqualTo(25_000);
+        assertThat(response.monthlyTokens()).isEqualTo(1_300);
 
-        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(25_000),
+        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(1_300),
                 anyString(), any());
     }
 
@@ -211,7 +211,7 @@ class SubscriptionServiceTest {
 
         assertThat(s.getNextBillingAt()).isAfter(originalNext);
         assertThat(s.getRetryCount()).isZero();
-        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(25_000),
+        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(1_300),
                 anyString(), any());
     }
 

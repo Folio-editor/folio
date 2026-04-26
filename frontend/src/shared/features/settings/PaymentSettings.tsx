@@ -2,15 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Coins, Gift, Loader2, Receipt, Sparkles } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { ApiError } from '../../lib/apiClient';
+import { parseServerDate } from '../../lib/dateTime';
 import { paymentApi, subscriptionApi } from '../../lib/paymentApi';
 import { useAuthStore } from '../../stores/authStore';
+import { useWalletStore } from '../../stores/walletStore';
 import {
   SUBSCRIPTION_PLANS,
   TOKEN_PACKAGES,
   type PaymentResponse,
   type SubscriptionResponse,
   type TokenPackageCode,
-  type TokenWalletResponse,
 } from '../../types/payment';
 
 /**
@@ -23,8 +24,10 @@ export function PaymentSettings() {
   const writer = useAuthStore((s) => s.writer);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const [wallet, setWallet] = useState<TokenWalletResponse | null>(null);
-  const [walletLoading, setWalletLoading] = useState(false);
+  const wallet = useWalletStore((s) => s.wallet);
+  const walletLoading = useWalletStore((s) => s.loading);
+  const refreshWallet = useWalletStore((s) => s.refresh);
+
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
   const [busyPackage, setBusyPackage] = useState<TokenPackageCode | null>(null);
@@ -36,19 +39,6 @@ export function PaymentSettings() {
   const [info, setInfo] = useState<string | null>(null);
 
   const canUse = isAuthenticated && !!writer;
-
-  const refreshWallet = useCallback(async () => {
-    if (!canUse) return;
-    setWalletLoading(true);
-    try {
-      const w = await paymentApi.getWallet();
-      setWallet(w);
-    } catch (e) {
-      setError(toErrorMessage(e, '지갑 조회 실패'));
-    } finally {
-      setWalletLoading(false);
-    }
-  }, [canUse]);
 
   const refreshSubscription = useCallback(async () => {
     if (!canUse) return;
@@ -94,7 +84,7 @@ export function PaymentSettings() {
       setInfo(`${created.tokenQty.toLocaleString()} 크레딧 충전 완료`);
       await refreshWallet();
     } catch (e) {
-      setError(toErrorMessage(e, '결제 실패'));
+      handleAsyncError(e, '결제');
     } finally {
       setBusyPackage(null);
     }
@@ -120,13 +110,14 @@ export function PaymentSettings() {
       setInfo('구독이 시작됐어요. 이번 달 크레딧이 지급됐습니다.');
       await refreshWallet();
     } catch (e) {
-      setError(toErrorMessage(e, '구독 실패'));
+      handleAsyncError(e, '구독');
     } finally {
       setBusySubscription(null);
     }
   };
 
   const handleCancel = async () => {
+    if (busySubscription !== null) return;
     setError(null);
     setInfo(null);
     setBusySubscription('cancel');
@@ -135,13 +126,14 @@ export function PaymentSettings() {
       setSubscription(sub);
       setInfo('다음 결제일에 해지 예정으로 표시됩니다.');
     } catch (e) {
-      setError(toErrorMessage(e, '해지 실패'));
+      handleAsyncError(e, '해지');
     } finally {
       setBusySubscription(null);
     }
   };
 
   const handleResume = async () => {
+    if (busySubscription !== null) return;
     setError(null);
     setInfo(null);
     setBusySubscription('resume');
@@ -150,7 +142,7 @@ export function PaymentSettings() {
       setSubscription(sub);
       setInfo('해지 예약을 철회했습니다.');
     } catch (e) {
-      setError(toErrorMessage(e, '재개 실패'));
+      handleAsyncError(e, '재개');
     } finally {
       setBusySubscription(null);
     }
@@ -169,10 +161,24 @@ export function PaymentSettings() {
       await refreshWallet();
       setLastPayment(null);
     } catch (e) {
-      setError(toErrorMessage(e, '환불 실패'));
+      handleAsyncError(e, '환불');
     } finally {
       setBusyRefund(false);
     }
+  };
+
+  /**
+   * 사용자 취소(USER_CLOSED)는 에러로 표시하지 않는다 (조용히 무시).
+   * Rate limit(P011)은 사용자 잘못이 아닌 단순 연타 → 안내 톤으로 표시.
+   * 그 외에는 사람이 읽을 수 있는 메시지로 정제해 빨간 박스에 노출.
+   */
+  const handleAsyncError = (e: unknown, action: string) => {
+    if (isUserClosed(e)) return;
+    if (e instanceof ApiError && (e.status === 429 || e.code === 'P011')) {
+      setInfo('요청이 너무 빠르게 반복됐어요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    setError(toErrorMessage(e, `${action} 실패`));
   };
 
   const bonusExpiry = useMemo(
@@ -460,8 +466,8 @@ function formatSubscriptionStatus(sub: SubscriptionResponse): string {
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso;
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
@@ -469,15 +475,34 @@ function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
+/**
+ * 사용자가 결제창/카드등록창을 그냥 닫은 경우인지 판별.
+ * IPC 경계를 넘어오면 .code 속성이 보존되지 않으므로 메시지 본문도 함께 검사.
+ */
+function isUserClosed(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  if ((e as Error & { code?: string }).code === 'USER_CLOSED') return true;
+  return /결제창이 닫혔습니다/.test(e.message);
+}
+
+/**
+ * Electron IPC가 throw한 에러는 `Error invoking remote method '...': Error: 본문`
+ * 처럼 wrap되므로 사용자에게는 본문만 보여준다.
+ */
+function stripIpcWrap(message: string): string {
+  return message
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '');
+}
+
 function toErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof ApiError) {
-    return `${fallback}: [${e.status}] ${e.message}`;
+    // 서버 message는 이미 한국어 안내문이므로 그대로 노출.
+    return e.message || fallback;
   }
   if (e instanceof Error) {
-    if ((e as Error & { code?: string }).code === 'USER_CLOSED') {
-      return '결제창이 닫혔습니다.';
-    }
-    return `${fallback}: ${e.message}`;
+    const cleaned = stripIpcWrap(e.message).trim();
+    return cleaned || fallback;
   }
-  return `${fallback}: ${String(e)}`;
+  return fallback;
 }

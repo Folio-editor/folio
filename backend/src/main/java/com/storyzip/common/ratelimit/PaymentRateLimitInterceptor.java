@@ -12,7 +12,10 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * 결제 API 레이트 리밋 인터셉터.
- * 유저당 분당 10회 제한 — 초과 시 429 Too Many Requests.
+ *
+ * <p>변경 액션(POST/PUT/PATCH/DELETE)만 유저당 분당 10회 제한.
+ * 단순 조회(GET/HEAD)는 페이지 로딩 시 자연스럽게 누적되므로 제외 — 보호 대상은
+ * 결제·해지·환불처럼 돈이 움직이는 변경 호출에 한정한다.
  */
 public class PaymentRateLimitInterceptor implements HandlerInterceptor {
 
@@ -23,6 +26,9 @@ public class PaymentRateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        if (isReadOnly(request.getMethod())) {
+            return true;
+        }
         String key = resolveKey(request);
         if (!rateLimiter.tryConsume(key)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
@@ -32,6 +38,10 @@ public class PaymentRateLimitInterceptor implements HandlerInterceptor {
             return false;
         }
         return true;
+    }
+
+    private boolean isReadOnly(String method) {
+        return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
     }
 
     private String resolveKey(HttpServletRequest request) {

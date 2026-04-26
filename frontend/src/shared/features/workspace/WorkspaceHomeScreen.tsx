@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
@@ -409,9 +410,8 @@ function autoGrow(el: HTMLTextAreaElement) {
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso || '';
   return d.toLocaleString('ko-KR', {
     year: 'numeric',
     month: '2-digit',
