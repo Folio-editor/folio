@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface PlanHeaderProps {
@@ -31,15 +32,16 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
       onSendToRight={currentNote?.onSendToRight}
       title={
         currentNote ? (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-sm text-muted-foreground">기획</span>
-            <span className="shrink-0 text-sm text-muted-foreground">/</span>
-            <NoteTitleInput
-              key={currentNote.id}
-              title={currentNote.title}
-              onTitleChange={currentNote.onTitleChange}
-            />
-          </div>
+          <BreadcrumbTitle
+            items={['기획']}
+            trailing={
+              <NoteTitleInput
+                key={currentNote.id}
+                title={currentNote.title}
+                onTitleChange={currentNote.onTitleChange}
+              />
+            }
+          />
         ) : (
           <span className="text-lg font-semibold text-foreground">기획</span>
         )

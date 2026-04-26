@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
 import { cn } from '../../lib/cn';
@@ -56,17 +57,31 @@ function PlotEditor({ item, onBack }: { item: PlotRow; onBack: () => void }) {
   const { id } = item;
   const title = useDeferredText(id, item.title, (v) => void updatePlot(id, { title: v }));
 
+  // 부모 막 제목 fetch — breadcrumb 표시용
+  const { data: parentRows = [] } = useQuery<{ title: string }>(
+    item.parent_id
+      ? `SELECT title FROM plot WHERE id = ? LIMIT 1`
+      : `SELECT '' AS title WHERE 0`,
+    item.parent_id ? [item.parent_id] : [],
+  );
+  const parentTitle = parentRows[0]?.title ?? '';
+
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
         leading={<IconButton onClick={onBack} title="목록으로">←</IconButton>}
         title={
-          <Input
-            value={title.value}
-            onChange={(e) => title.onChange(e.target.value)}
-            onBlur={title.onBlur}
-            placeholder="플롯 제목"
-            className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          <BreadcrumbTitle
+            items={['플롯', parentTitle]}
+            trailing={
+              <Input
+                value={title.value}
+                onChange={(e) => title.onChange(e.target.value)}
+                onBlur={title.onBlur}
+                placeholder="플롯 제목"
+                className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
           />
         }
         trailing={
@@ -120,12 +135,17 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
       <MainPanelHeader
         leading={<IconButton onClick={onBack} title="목록으로">←</IconButton>}
         title={
-          <Input
-            value={title.value}
-            onChange={(e) => title.onChange(e.target.value)}
-            onBlur={title.onBlur}
-            placeholder="막 제목"
-            className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          <BreadcrumbTitle
+            items={['플롯']}
+            trailing={
+              <Input
+                value={title.value}
+                onChange={(e) => title.onChange(e.target.value)}
+                onBlur={title.onBlur}
+                placeholder="막 제목"
+                className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
           />
         }
         trailing={

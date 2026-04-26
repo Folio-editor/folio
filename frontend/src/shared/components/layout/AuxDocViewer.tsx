@@ -286,7 +286,7 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
         </div>
       )}
 
-      {/* 하위 문서 카드 */}
+      {/* 하위 문서 카드 — breadcrumb: 캐릭터 > 노트제목 */}
       {visibleNotes.length > 0 && (
         <div className="border-t border-border/50 pt-2">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -360,6 +360,9 @@ function NonWorldNoteAuxView({
 
   return (
     <div className="px-3 py-2">
+      <h3 className="mb-2 text-sm font-bold text-foreground">
+        {doc.title?.trim() || '(제목 없음)'}
+      </h3>
       {docType === 'character' && (doc.gender || doc.age) && (
         <div className="mb-2 flex gap-3 text-xs text-muted-foreground">
           {doc.gender && <span>성별: {doc.gender}</span>}
@@ -441,7 +444,7 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
     );
   }
 
-  // 회차 — 단일 편집
+  // 회차 — 단일 편집 (단순 제목)
   if (!isAct) {
     return (
       <div className="flex flex-col px-3 py-2">
@@ -465,7 +468,7 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
     );
   }
 
-  // 막 — 본문 + 자식 회차 카드
+  // 막 — 본문 + 자식 회차 카드 (단순 제목)
   return (
     <div className="flex flex-col px-3 py-2">
       <div className="mb-2 flex items-baseline gap-1.5">

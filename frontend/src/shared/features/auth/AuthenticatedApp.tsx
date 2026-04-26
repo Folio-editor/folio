@@ -286,9 +286,10 @@ export function AuthenticatedApp() {
   const pendingOriginPanelIdRef = useRef<string | null>(null);
 
   // 특정 (section, itemId) 의 제목을 로컬 DB에서 조회
+  // 부모 chain이 있으면 " / " separator로 합성: "부모 / 자기" / "조부모 / 부모 / 자기"
   const fetchItemTitle = useCallback(
     async (section: WorkspaceSection, itemId: string): Promise<string> => {
-      // plot은 막/회차 분기 — 회차면 "부모막 / 회차제목" 합성
+      // plot — 회차면 "막 / 회차" 합성
       if (section === 'plot') {
         if (itemId === '__all__') return '전체 플롯';
         try {
@@ -305,11 +306,9 @@ export function AuthenticatedApp() {
             parent_title: string | null;
           }[])?.[0];
           if (!row) return '';
-          const own = row.title?.trim() || '';
+          const own = row.title?.trim() || '(제목 없음)';
           if (row.parent_id && row.parent_title) {
-            const parent = row.parent_title.trim() || '(제목 없음)';
-            const child = own || '(제목 없음)';
-            return `${parent} / ${child}`;
+            return `${row.parent_title.trim() || '(제목 없음)'} / ${own}`;
           }
           return own;
         } catch {
@@ -317,16 +316,68 @@ export function AuthenticatedApp() {
         }
       }
 
+      // world-note — 모든 ancestor chain 합성 (RECURSIVE CTE)
+      if (section === 'world-note') {
+        try {
+          const result = await db.execute(
+            `WITH RECURSIVE ancestors AS (
+               SELECT id, parent_id, name, 0 AS lvl FROM world_note WHERE id = ?
+               UNION ALL
+               SELECT w.id, w.parent_id, w.name, a.lvl + 1
+               FROM world_note w JOIN ancestors a ON w.id = a.parent_id
+             )
+             SELECT name FROM ancestors ORDER BY lvl DESC`,
+            [itemId],
+          );
+          const rows = (result.rows?._array as { name: string }[]) ?? [];
+          if (rows.length === 0) return '';
+          return rows.map((r) => r.name?.trim() || '(이름 없음)').join(' / ');
+        } catch {
+          return '';
+        }
+      }
+
+      // character — 노트면 "캐릭터 / 노트" 합성
+      if (section === 'character') {
+        try {
+          if (itemId.startsWith('cnote:')) {
+            const noteId = itemId.slice(6);
+            const result = await db.execute(
+              `SELECT cn.title AS title, c.name AS character_name
+               FROM character_note cn
+               LEFT JOIN character c ON c.id = cn.character_id
+               WHERE cn.id = ? LIMIT 1`,
+              [noteId],
+            );
+            const row = (result.rows?._array as {
+              title: string;
+              character_name: string | null;
+            }[])?.[0];
+            if (!row) return '';
+            const own = row.title?.trim() || '(제목 없음)';
+            if (row.character_name) {
+              return `${row.character_name.trim() || '(이름 없음)'} / ${own}`;
+            }
+            return own;
+          }
+          if (itemId.startsWith('char:')) {
+            const charId = itemId.slice(5);
+            const result = await db.execute(
+              'SELECT name AS title FROM character WHERE id = ? LIMIT 1',
+              [charId],
+            );
+            return (result.rows?._array as { title: string }[])?.[0]?.title ?? '';
+          }
+          return '';
+        } catch {
+          return '';
+        }
+      }
+
       const TITLE_QUERIES: Partial<Record<WorkspaceSection, { sql: string; id: string }>> = {
-        'episode':    { sql: 'SELECT title FROM episode WHERE id = ?',            id: itemId },
-        'world-note': { sql: 'SELECT name AS title FROM world_note WHERE id = ?', id: itemId },
-        'plan':       { sql: 'SELECT title FROM plan_note WHERE id = ?',          id: itemId },
-        'foreshadow': { sql: 'SELECT title FROM foreshadow WHERE id = ?',         id: itemId },
-        'character':  itemId.startsWith('cnote:')
-          ? { sql: 'SELECT title FROM character_note WHERE id = ?', id: itemId.slice(6) }
-          : itemId.startsWith('char:')
-            ? { sql: 'SELECT name AS title FROM character WHERE id = ?', id: itemId.slice(5) }
-            : undefined,
+        'episode':    { sql: 'SELECT title FROM episode WHERE id = ?',     id: itemId },
+        'plan':       { sql: 'SELECT title FROM plan_note WHERE id = ?',   id: itemId },
+        'foreshadow': { sql: 'SELECT title FROM foreshadow WHERE id = ?',  id: itemId },
       };
       const q = TITLE_QUERIES[section];
       if (!q) return '';

@@ -19,6 +19,7 @@ import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
 import { cn } from '../../lib/cn';
 
@@ -276,12 +277,17 @@ function CharacterOverviewInner({
         onClose={onBack}
         onSendToRight={onSendToRight}
         title={
-          <Input
-            value={name.value}
-            onChange={(e) => name.onChange(e.target.value)}
-            onBlur={name.onBlur}
-            placeholder="이름"
-            className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          <BreadcrumbTitle
+            items={['등장인물']}
+            trailing={
+              <Input
+                value={name.value}
+                onChange={(e) => name.onChange(e.target.value)}
+                onBlur={name.onBlur}
+                placeholder="이름"
+                className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
           />
         }
         trailing={

@@ -6,6 +6,7 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
@@ -97,17 +98,18 @@ function NoteEditorInner({
         leading={<IconButton onClick={onBack} title="인물로 돌아가기">←</IconButton>}
         onSendToRight={onSendToRight}
         title={
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm text-muted-foreground">{characterName}</span>
-            <span className="text-sm text-muted-foreground">{'>'}</span>
-            <Input
-              value={title.value}
-              onChange={(e) => title.onChange(e.target.value)}
-              onBlur={title.onBlur}
-              placeholder="문서 제목"
-              className="min-w-0 flex-1 border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
-            />
-          </div>
+          <BreadcrumbTitle
+            items={['등장인물', characterName]}
+            trailing={
+              <Input
+                value={title.value}
+                onChange={(e) => title.onChange(e.target.value)}
+                onBlur={title.onBlur}
+                placeholder="문서 제목"
+                className="min-w-0 flex-1 border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
+          />
         }
         trailing={
           <button

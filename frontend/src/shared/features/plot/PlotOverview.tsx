@@ -38,6 +38,7 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 import type { WorkspaceSection } from '../../types/workspace';
@@ -222,8 +223,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <MainPanelHeader
-        title={<h2 className="text-lg font-semibold">플롯</h2>}
-        subtitle="줄거리 구조와 회차별 전개를 설계합니다"
+        title={<BreadcrumbTitle items={['플롯', '전체']} />}
         trailing={
           <div className="flex items-center gap-2">
             <ViewToggle mode={viewMode} onChange={setViewMode} />

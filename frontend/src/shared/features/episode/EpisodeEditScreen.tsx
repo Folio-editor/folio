@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import type { WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
@@ -107,12 +108,17 @@ function EpisodeEditor({
         onClose={onBack}
         onSendToRight={onSendToRight}
         title={
-          <Input
-            value={title.value}
-            onChange={(e) => title.onChange(e.target.value)}
-            onBlur={title.onBlur}
-            placeholder="회차 제목"
-            className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          <BreadcrumbTitle
+            items={['원고']}
+            trailing={
+              <Input
+                value={title.value}
+                onChange={(e) => title.onChange(e.target.value)}
+                onBlur={title.onBlur}
+                placeholder="회차 제목"
+                className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
           />
         }
         trailing={

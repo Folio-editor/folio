@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { ResizeHandle } from './ResizeHandle';
 import { AuxDocViewer } from './AuxDocViewer';
+import { BreadcrumbTitle } from './BreadcrumbTitle';
 import { ContentEditor } from '../editor/ContentEditor';
 import { Select } from '../ui/Select';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
@@ -1529,9 +1530,14 @@ function SortableAuxPanel({
           >
             {panel.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
           </button>
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-            {panel.title || '(제목 없음)'}
-          </span>
+          <BreadcrumbTitle
+            className="min-w-0 flex-1 text-xs"
+            items={
+              panel.title
+                ? panel.title.split(' / ').map((s) => s.trim())
+                : ['(제목 없음)']
+            }
+          />
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {AUX_DOC_LABELS[panel.docType]}
           </span>

@@ -6,6 +6,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
@@ -214,44 +215,45 @@ export function WorldNoteHierarchyScreen({
         onClose={onBack}
         onSendToRight={onSendToRight}
         title={
-          <span className="flex min-w-0 items-center gap-1 whitespace-nowrap text-lg">
-            <span className="shrink-0 text-sm text-muted-foreground">세계관</span>
-            <span className="shrink-0 text-sm text-muted-foreground">/</span>
-            {headerEditing ? (
-              <input
-                ref={headerInputRef}
-                autoFocus
-                type="text"
-                value={headerDraft}
-                onChange={(e) => setHeaderDraft(e.target.value)}
-                onBlur={commitHeader}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing) return;
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitHeader();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelHeader();
-                  }
-                }}
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground outline-none"
-              />
-            ) : (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={() => setHeaderEditing(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') setHeaderEditing(true);
-                }}
-                className="min-w-0 flex-1 cursor-text truncate text-sm font-semibold text-foreground hover:text-primary"
-                title="클릭하여 제목 편집"
-              >
-                {tree.name || '(이름 없음)'}
-              </span>
-            )}
-          </span>
+          <BreadcrumbTitle
+            items={['세계관']}
+            trailing={
+              headerEditing ? (
+                <input
+                  ref={headerInputRef}
+                  autoFocus
+                  type="text"
+                  value={headerDraft}
+                  onChange={(e) => setHeaderDraft(e.target.value)}
+                  onBlur={commitHeader}
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return;
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitHeader();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelHeader();
+                    }
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground outline-none"
+                />
+              ) : (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setHeaderEditing(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') setHeaderEditing(true);
+                  }}
+                  className="min-w-0 flex-1 cursor-text truncate text-sm font-semibold text-foreground hover:text-primary"
+                  title="클릭하여 제목 편집"
+                >
+                  {tree.name || '(이름 없음)'}
+                </span>
+              )
+            }
+          />
         }
         trailing={
           <button
