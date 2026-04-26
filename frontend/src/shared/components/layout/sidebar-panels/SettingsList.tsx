@@ -1,9 +1,10 @@
-import { CreditCard, Palette, Type } from 'lucide-react';
+import { CreditCard, Palette, Type, User } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 
-export type SettingsItemId = 'theme' | 'font' | 'payment';
+export type SettingsItemId = 'account' | 'theme' | 'font' | 'payment';
 
 const SETTINGS_ITEMS: { id: SettingsItemId; label: string; icon: typeof Palette }[] = [
+  { id: 'account', label: '계정', icon: User },
   { id: 'theme', label: '색상 테마', icon: Palette },
   { id: 'font', label: '폰트 설정', icon: Type },
   { id: 'payment', label: '결제/구독', icon: CreditCard },

@@ -14,7 +14,7 @@ from app.middleware.auth import require_internal_api_key
 from app.services.providers import get_llm
 from app.services.rag import assemble_context
 from app.services.settings_loader import load_settings
-from app.services.text_extractor import extract_plain_text
+from app.services.text_extractor import extract_numbered_text, extract_plain_text
 
 # 기존 MCP 기반 검수 경로는 비용 절감 작업 때문에 비활성화했다.
 # 나중에 설정집 크기 분기 시 다시 사용할 수 있으므로 삭제하지 않고 남겨둔다.
@@ -31,6 +31,10 @@ router = APIRouter(
 REVIEW_SYSTEM_PROMPT = (
     """당신은 웹소설 전문 검수 AI입니다.
 작가가 작성한 원고를 설정집, 이전 맥락과 대조하여 오류를 찾아냅니다.
+
+## 원고 형식
+검수할 원고는 각 줄 앞에 [N] 형태의 줄 번호가 붙어 있다.
+예: [1] 리운은 사무실 의자에 앉아 창밖을 바라보았다.
 
 ## 검수 항목
 
@@ -66,6 +70,8 @@ REVIEW_SYSTEM_PROMPT = (
 - 문제가 없으면 빈 배열을 반환하라. 억지로 문제를 만들어내지 마라.
 - 제공된 설정집과 이전 회차 정보만 근거로 사용하라. 추측하지 마라.
 - 각 issue에 수정 제안(suggestion)을 반드시 포함하라.
+- lines 필드에는 원고에 표시된 [N] 줄 번호를 정수 배열로 표기하라. 여러 줄에 걸치면 모든 해당 줄 번호를 포함하라.
+- location에는 문제가 되는 줄의 텍스트를 짧게 인용하라 (줄 번호 [N]은 제외).
 
 반드시 JSON으로만 응답하라. 마크다운 코드블록을 사용하지 마라."""
 )
@@ -75,7 +81,8 @@ REVIEW_SCHEMA_HINT = """{
     {
       "type": "setting_conflict | narration_conflict | tone_conflict | context_conflict",
       "severity": "critical | warning | info",
-      "location": "문제가 있는 원고 부분 인용 (짧게)",
+      "lines": [3],
+      "location": "해당 줄 텍스트 짧게 인용 (줄 번호 제외)",
       "description": "무엇이 왜 문제인지 설명",
       "reference": "근거가 되는 설정/이전 화 내용",
       "suggestion": "수정 제안"
@@ -135,12 +142,28 @@ def _normalize_review_result(result: dict[str, Any]) -> dict[str, Any]:
             "score": 100,
         }
 
-    issues = result.get("issues", [])
+    raw_issues = result.get("issues", [])
     summary = result.get("summary", "검수 결과 없음")
     score = result.get("score", 100)
 
+    issues: list[dict[str, Any]] = []
+    if isinstance(raw_issues, list):
+        for issue in raw_issues:
+            if not isinstance(issue, dict):
+                continue
+            # lines 필드 정규화: 정수 배열로 보장
+            lines = issue.get("lines", [])
+            if isinstance(lines, int):
+                lines = [lines]
+            elif not isinstance(lines, list):
+                lines = []
+            else:
+                lines = [n for n in lines if isinstance(n, int)]
+            issue["lines"] = lines
+            issues.append(issue)
+
     return {
-        "issues": issues if isinstance(issues, list) else [],
+        "issues": issues,
         "summary": summary if isinstance(summary, str) else "검수 결과 없음",
         "score": score if isinstance(score, int | float) else 100,
     }
@@ -165,7 +188,7 @@ async def review_episode(
     else:
         character_settings = settings_bundle["characters_text"]
         world_note_settings = settings_bundle["world_notes_text"]
-    cleaned_content = extract_plain_text(req.content)
+    cleaned_content = extract_numbered_text(req.content)
 
     user_prompt = (
         f"## 작품 정보\n{context}\n\n"

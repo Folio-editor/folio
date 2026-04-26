@@ -6,6 +6,11 @@
 # - SQL 로깅: 끔
 # - 모든 시크릿은 환경변수 필수 (default 없음)
 # ============================================================
+server:
+  tomcat:
+    max-http-form-post-size: 50MB
+    max-swallow-size: 50MB
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
@@ -13,7 +18,7 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: ${DB_POOL_SIZE:20}
+      maximum-pool-size: ${DB_POOL_SIZE:50}
       connection-timeout: 30000
 
   jpa:
@@ -39,8 +44,4 @@ springdoc:
   api-docs:
     enabled: false
 
-logging:
-  level:
-    root: INFO
-    com.storyzip: INFO
-    org.hibernate.SQL: WARN
+# 로깅 설정은 logback-spring.xml 에서 관리 (prod 프로필은 JSON 포맷)

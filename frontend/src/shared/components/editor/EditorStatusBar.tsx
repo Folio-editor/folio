@@ -33,6 +33,9 @@ export default function EditorStatusBar({
           목표 {Math.max(0, sessionDelta)}/{dailyGoalChars.toLocaleString()}
         </span>
       )}
+      {charCount > 50000 && (
+        <span className="text-amber-600 dark:text-amber-400">· 대용량 문서</span>
+      )}
 
       <div className="flex-1" />
 

@@ -9,7 +9,7 @@
 #
 # DB 스키마 원본:
 #   infra/db/schema.sql          — 최초 기동 시 자동 적용 (01-)
-#   infra/db/powersync-init.sql  — replication role + publication (02-)
+#   infra/db/powersync-init.sh   — replication role + publication (02-)
 # ============================================================
 services:
   postgresql:
@@ -24,7 +24,7 @@ services:
     volumes:
       - storyzip-pgdata-dev:/var/lib/postgresql/data
       - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../db/powersync-init.sql:/docker-entrypoint-initdb.d/02-powersync.sql:ro
+      - ../db/powersync-init.sh:/docker-entrypoint-initdb.d/02-powersync.sh:ro
     command: >
       postgres
         -c wal_level=logical
@@ -88,7 +88,7 @@ services:
       - ../powersync/powersync.yaml:/app/powersync.yaml:ro
       - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
     environment:
-      PS_DATA_SOURCE_URI: postgresql://powersync_repl:storyzip_repl_dev@postgresql:5432/${DB_NAME:-storyzip}
+      PS_DATA_SOURCE_URI: postgresql://folio_repl:storyzip_repl_dev@postgresql:5432/${DB_NAME:-storyzip}
       PS_MONGO_URI: mongodb://mongo:27017/powersync
       PS_JWT_K: ${PS_JWT_K}
     healthcheck:

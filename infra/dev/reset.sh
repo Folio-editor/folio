@@ -23,7 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.dev.yml"
-INIT_SQL="$SCRIPT_DIR/../db/powersync-init.sql"
+INIT_SH="$SCRIPT_DIR/../db/powersync-init.sh"
 
 PG_CONTAINER="storyzip-postgresql-dev"
 REDIS_CONTAINER="storyzip-redis-dev"

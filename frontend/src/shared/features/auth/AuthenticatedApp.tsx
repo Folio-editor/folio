@@ -222,7 +222,7 @@ export function AuthenticatedApp() {
   const handleSettingsClick = () => {
     if (sidebarCollapsed) setSidebarCollapsed(false);
     setSettingsMode(true);
-    setSelectedSettingsItem('theme');
+    setSelectedSettingsItem('account');
   };
 
   const handleWorkSelect = (id: string) => {

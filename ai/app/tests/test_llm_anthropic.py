@@ -33,7 +33,9 @@ def _response(
     )
 
 
-class FakeStreamManager:
+class FakeRawStreamResponse:
+    """messages.create(stream=True) 가 반환하는 저수준 이벤트 스트림 모킹."""
+
     def __init__(
         self,
         chunks: list[str],
@@ -42,24 +44,29 @@ class FakeStreamManager:
         output_tokens: int = 0,
     ) -> None:
         self._chunks = chunks
-        self._final_message = SimpleNamespace(usage=_usage(input_tokens, output_tokens))
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
 
-    async def __aenter__(self) -> FakeStreamManager:
-        return self
+    def __aiter__(self):
+        return self._events()
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool:
-        return False
-
-    @property
-    def text_stream(self):
-        async def _iterator():
-            for chunk in self._chunks:
-                yield chunk
-
-        return _iterator()
-
-    async def get_final_message(self):
-        return self._final_message
+    async def _events(self):
+        # message_start
+        yield SimpleNamespace(
+            type="message_start",
+            message=SimpleNamespace(usage=_usage(self._input_tokens, 0)),
+        )
+        # content_block_delta per chunk
+        for chunk in self._chunks:
+            yield SimpleNamespace(
+                type="content_block_delta",
+                delta=SimpleNamespace(type="text_delta", text=chunk),
+            )
+        # message_delta
+        yield SimpleNamespace(
+            type="message_delta",
+            usage=SimpleNamespace(output_tokens=self._output_tokens),
+        )
 
 
 class FakeMessagesAPI:
@@ -76,19 +83,17 @@ class FakeMessagesAPI:
         self._stream_input_tokens = stream_input_tokens
         self._stream_output_tokens = stream_output_tokens
         self.create_calls: list[dict] = []
-        self.stream_calls: list[dict] = []
 
     async def create(self, **kwargs):
+        is_stream = kwargs.pop("stream", False)
         self.create_calls.append(kwargs)
+        if is_stream:
+            return FakeRawStreamResponse(
+                self._stream_chunks,
+                input_tokens=self._stream_input_tokens,
+                output_tokens=self._stream_output_tokens,
+            )
         return self._responses.pop(0)
-
-    def stream(self, **kwargs):
-        self.stream_calls.append(kwargs)
-        return FakeStreamManager(
-            self._stream_chunks,
-            input_tokens=self._stream_input_tokens,
-            output_tokens=self._stream_output_tokens,
-        )
 
 
 def _install_fake_anthropic(
@@ -170,7 +175,7 @@ async def test_generate_stream_yields_text_chunks(monkeypatch: pytest.MonkeyPatc
 
     assert chunks == ["안녕", "하세요"]
     assert llm.last_usage == {"input_tokens": 200, "output_tokens": 40}
-    assert messages_api.stream_calls[0]["model"] == "sonnet"
+    assert messages_api.create_calls[0]["model"] == "sonnet"
 
 
 @pytest.mark.asyncio
@@ -182,7 +187,7 @@ async def test_generate_stream_uses_model_override(monkeypatch: pytest.MonkeyPat
     chunks = [chunk async for chunk in llm.generate_stream("system", "user", model_override="opus")]
 
     assert chunks == ["op", "us"]
-    assert messages_api.stream_calls[0]["model"] == "opus"
+    assert messages_api.create_calls[0]["model"] == "opus"
 
 
 @pytest.mark.asyncio

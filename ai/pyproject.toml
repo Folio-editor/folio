@@ -32,6 +32,9 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "mypy>=1.13",
+    # CI Python 3.13 호환성 — 시스템에 설치된 구식 zope.interface가 structlog의
+    # 내부 twisted import를 터뜨리는 것을 사용자 설치 최신 버전으로 우회.
+    "zope.interface>=7.0",
 ]
 
 [build-system]

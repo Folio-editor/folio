@@ -1,0 +1,16 @@
+# ============================================================
+# Grafana 데이터소스 자동 프로비저닝 — Loki
+# 컨테이너 시작 시 자동 등록됨, UI에서 편집 불가 (editable: false)
+# ============================================================
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+    editable: false
+    jsonData:
+      maxLines: 1000
+      timeout: 60
