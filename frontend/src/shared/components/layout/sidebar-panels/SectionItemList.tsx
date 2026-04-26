@@ -20,6 +20,11 @@ import {
   useSortPreferenceStore,
   type SortPanelKey,
 } from '../../../stores/sortPreferenceStore';
+import {
+  buildInClause,
+  useFilterPreferenceStore,
+  EMPTY_FILTER,
+} from '../../../stores/filterPreferenceStore';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
@@ -72,15 +77,26 @@ export function SectionItemList({
   // section은 ('plan'/'world-note'/'plot'/'episode')를 제외한 SortPanelKey의 부분집합
   const panelKey = section as SortPanelKey;
   const sortMode = useSortPreferenceStore((s) => s.byPanel[panelKey] ?? 'manual');
+  const filterValues = useFilterPreferenceStore(
+    (s) => s.byPanel[panelKey] ?? (EMPTY_FILTER as string[]),
+  );
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
   const orderBy = buildOrderBy(sortMode, { titleColumn: labelField });
+  // section별 필터 컬럼 — foreshadow: status, character: gender, idea-archive: tag
+  const filterColumn = FILTER_COLUMNS[section];
+  const filterClause = filterColumn
+    ? buildInClause(filterColumn, filterValues)
+    : { sql: '', params: [] };
   const sql = `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
-     WHERE work_id = ? AND writer_id = ? ${whereSearch}
+     WHERE work_id = ? AND writer_id = ? ${whereSearch} ${filterClause.sql}
      ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
+  const params = [
+    workId,
+    writerId,
+    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
+    ...filterClause.params,
+  ];
 
   const { data: rawRows = [] } = useQuery<Row>(sql, params);
   const rows = useOptimisticRows(rawRows, {
@@ -115,33 +131,36 @@ export function SectionItemList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {showCreateButton && (
-        <div className="shrink-0 px-3 pt-2 pb-1">
-          {creating ? (
-            <input
-              autoFocus
-              type="text"
-              value={createTitle}
-              onChange={(e) => setCreateTitle(e.target.value)}
-              onKeyDown={handleCreateKeyDown}
-              onBlur={handleCreateCancel}
-              placeholder="복선 제목을 입력 후 Enter"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-            />
+      <div className="shrink-0 px-3 pt-2 pb-1">
+        <div className="flex items-center gap-1.5">
+          {showCreateButton ? (
+            creating ? (
+              <input
+                autoFocus
+                type="text"
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                onKeyDown={handleCreateKeyDown}
+                onBlur={handleCreateCancel}
+                placeholder="복선 제목을 입력 후 Enter"
+                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              >
+                <Plus size={14} strokeWidth={2} />
+                <span>새 복선</span>
+              </button>
+            )
           ) : (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-            >
-              <Plus size={14} strokeWidth={2} />
-              <span>새 복선</span>
-            </button>
+            <div className="min-w-0 flex-1" />
           )}
+          <SidebarSortPicker panelKey={panelKey} />
         </div>
-      )}
-
-      <SidebarSortPicker panelKey={panelKey} />
+      </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
         {rows.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -404,6 +423,13 @@ const LABEL_FIELDS: Record<Section, string> = {
   character: 'name',
   foreshadow: 'title',
   'idea-archive': 'content',
+};
+
+/** 섹션별 필터 SQL 컬럼 매핑 — null이면 필터링 없음 */
+const FILTER_COLUMNS: Record<Section, string | null> = {
+  character: 'gender',
+  foreshadow: 'status',  // 중요도(상/중/하)는 status 컬럼
+  'idea-archive': 'tag',
 };
 
 const EMPTY_LABELS: Record<Section, string> = {

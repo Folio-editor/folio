@@ -155,7 +155,7 @@ export function docTypeToRoute(
     case 'character_note': return { activity: 'character',  section: 'character',    itemId: 'cnote:' + docId };
     case 'character':      return { activity: 'character',  section: 'character',    itemId: 'char:' + docId };
     case 'foreshadow':     return { activity: 'foreshadow', section: 'foreshadow',   itemId: docId };
-    case 'plot':           return null; // PlotOverview 전체만 가능, 개별 편집 불가
+    case 'plot':           return { activity: 'plot',       section: 'plot',         itemId: docId };
   }
 }
 
@@ -170,6 +170,9 @@ export function currentDocToAuxItem(
     case 'world-note':   return { docType: 'world_note',     docId: itemId, title };
     case 'plan':         return { docType: 'plan_note',      docId: itemId, title };
     case 'foreshadow':   return { docType: 'foreshadow',     docId: itemId, title };
+    case 'plot':
+      // '__all__' (전체 통합 뷰)도 우측 패널 핀 가능 — list 형태로만 표시
+      return { docType: 'plot', docId: itemId, title };
     case 'character': {
       if (itemId.startsWith('cnote:'))
         return { docType: 'character_note', docId: itemId.slice(6), title };

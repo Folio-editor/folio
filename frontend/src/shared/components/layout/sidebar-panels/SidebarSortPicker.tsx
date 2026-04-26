@@ -1,16 +1,15 @@
 // ============================================================
-// SidebarSortPicker — 사이드바 패널 검색창 아래 정렬 토글
-// ============================================================
-// 클릭마다 모드 순환 (manual → recent → alpha → manual ...)
-// 작은 라벨 + 아이콘 — 좁은 사이드바 공간에 적합
+// SidebarSortPicker — 새 문서 버튼 옆 작은 정렬 버튼 (popover)
 // ============================================================
 
-import { ArrowDownUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowDownUp, Check } from 'lucide-react';
 import {
   useSortPreferenceStore,
   type SortMode,
   type SortPanelKey,
 } from '../../../stores/sortPreferenceStore';
+import { cn } from '../../../lib/cn';
 
 const LABELS: Record<SortMode, string> = {
   manual: '기본순',
@@ -27,25 +26,72 @@ interface Props {
 export function SidebarSortPicker({ panelKey }: Props) {
   const mode = useSortPreferenceStore((s) => s.byPanel[panelKey] ?? 'manual');
   const setMode = useSortPreferenceStore((s) => s.set);
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
-  const cycle = () => {
-    const i = ORDER.indexOf(mode);
-    const next = ORDER[(i + 1) % ORDER.length];
-    setMode(panelKey, next);
-  };
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const isCustom = mode !== 'manual';
 
   return (
-    <div className="flex shrink-0 items-center justify-end px-3 py-1">
+    <div ref={wrapRef} className="relative shrink-0">
       <button
         type="button"
-        onClick={cycle}
-        title={`정렬: ${LABELS[mode]} (클릭하여 변경)`}
+        onClick={() => setOpen((v) => !v)}
+        title={`정렬: ${LABELS[mode]}`}
         aria-label={`정렬 기준: ${LABELS[mode]}`}
-        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className={cn(
+          'inline-flex items-center justify-center rounded p-1 transition-colors',
+          isCustom
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        )}
       >
-        <ArrowDownUp size={11} strokeWidth={1.75} />
-        <span>{LABELS[mode]}</span>
+        <ArrowDownUp size={12} strokeWidth={1.75} />
       </button>
+
+      {open && (
+        <div className="absolute right-0 top-6 z-50 min-w-35 rounded-md border border-border bg-popover p-1 shadow-md">
+          {ORDER.map((m) => {
+            const active = mode === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  setMode(panelKey, m);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
+                  active
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-foreground hover:bg-accent',
+                )}
+              >
+                <span className="flex h-3 w-3 shrink-0 items-center justify-center">
+                  {active && <Check size={10} strokeWidth={2.5} />}
+                </span>
+                {LABELS[m]}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

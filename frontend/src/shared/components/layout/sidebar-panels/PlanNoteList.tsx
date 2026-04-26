@@ -123,29 +123,31 @@ export function PlanNoteList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            value={createTitle}
-            onChange={(e) => setCreateTitle(e.target.value)}
-            onKeyDown={handleCreateKeyDown}
-            onBlur={handleCreateCancel}
-            placeholder="문서 이름을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={handleStartCreate}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 문서</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {creating ? (
+            <input
+              autoFocus
+              type="text"
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={handleCreateKeyDown}
+              onBlur={handleCreateCancel}
+              placeholder="문서 이름을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={handleStartCreate}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 문서</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="plan" />
+        </div>
       </div>
-      <SidebarSortPicker panelKey="plan" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {notes.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">

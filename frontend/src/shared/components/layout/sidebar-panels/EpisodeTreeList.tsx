@@ -18,6 +18,11 @@ import {
   buildOrderBy,
   useSortPreferenceStore,
 } from '../../../stores/sortPreferenceStore';
+import {
+  buildInClause,
+  useFilterPreferenceStore,
+  EMPTY_FILTER,
+} from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import {
@@ -72,15 +77,22 @@ export function EpisodeTreeList({
   const [createTitle, setCreateTitle] = useState('');
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['episode'] ?? 'manual');
+  const statusFilter = useFilterPreferenceStore(
+    (s) => s.byPanel['episode'] ?? (EMPTY_FILTER as string[]),
+  );
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
   const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
+  const filterClause = buildInClause('status', statusFilter);
   const sql = `SELECT id, title, status, word_count, work_id, sort_order FROM episode
-     WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch}
+     WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch} ${filterClause.sql}
      ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
+  const baseParams = [workId, writerId];
+  const params = [
+    ...baseParams,
+    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
+    ...filterClause.params,
+  ];
   const { data: rawEpisodes = [] } = useQuery<EpisodeRow>(sql, params);
   const episodes = useOptimisticRows(rawEpisodes, {
     docType: 'episode',
@@ -113,29 +125,31 @@ export function EpisodeTreeList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            value={createTitle}
-            onChange={(e) => setCreateTitle(e.target.value)}
-            onKeyDown={handleCreateKeyDown}
-            onBlur={handleCreateCancel}
-            placeholder="원고 제목을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 원고</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {creating ? (
+            <input
+              autoFocus
+              type="text"
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={handleCreateKeyDown}
+              onBlur={handleCreateCancel}
+              placeholder="원고 제목을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 원고</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="episode" />
+        </div>
       </div>
-      <SidebarSortPicker panelKey="episode" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {episodes.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">

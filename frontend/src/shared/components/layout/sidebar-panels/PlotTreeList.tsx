@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, LayoutList, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -18,6 +18,11 @@ import {
   buildOrderBy,
   useSortPreferenceStore,
 } from '../../../stores/sortPreferenceStore';
+import {
+  buildInClause,
+  useFilterPreferenceStore,
+  EMPTY_FILTER,
+} from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import {
@@ -140,30 +145,37 @@ export function PlotTreeList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            value={createTitle}
-            onChange={(e) => setCreateTitle(e.target.value)}
-            onKeyDown={handleCreateKeyDown}
-            onBlur={handleCreateCancel}
-            placeholder="막 제목을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 막</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {creating ? (
+            <input
+              autoFocus
+              type="text"
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={handleCreateKeyDown}
+              onBlur={handleCreateCancel}
+              placeholder="막 제목을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 막</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="plot" />
+        </div>
       </div>
-      <SidebarSortPicker panelKey="plot" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
+      {/* 전체 — 작품의 모든 막+회차를 메인 PlotOverview로 표시 (검색 무관 항상 노출) */}
+      <PlotAllItem
+        selected={selectedItemId === '__all__'}
+        onSelect={(intent) => onItemSelect('__all__', intent)}
+      />
       {acts.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '플롯이 없습니다.'}
@@ -340,15 +352,19 @@ function ActTreeItem({
 
   const actClickHandlers = useSidebarClickHandler((intent) => onSelect(act.id, intent));
   const childSortMode = useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual');
+  const childStatusFilter = useFilterPreferenceStore(
+    (s) => s.byPanel['plot'] ?? (EMPTY_FILTER as string[]),
+  );
   const childOrderBy = buildOrderBy(childSortMode, { titleColumn: 'title' });
+  const childFilterClause = buildInClause('status', childStatusFilter);
 
   const { data: rawEpisodes = [] } = useQuery<PlotRow>(
     isExpanded
       ? `SELECT id, title, status, work_id, parent_id, sort_order FROM plot
-         WHERE parent_id = ? AND writer_id = ?
+         WHERE parent_id = ? AND writer_id = ? ${childFilterClause.sql}
          ${childOrderBy}`
       : `SELECT '' AS id, '' AS title, '' AS status, '' AS work_id, '' AS parent_id, 0 AS sort_order WHERE 0`,
-    isExpanded ? [act.id, writerId] : [],
+    isExpanded ? [act.id, writerId, ...childFilterClause.params] : [],
   );
   const episodes = useOptimisticRows(rawEpisodes, {
     docType: 'plot',
@@ -705,4 +721,32 @@ function InlineCreateInput({
 
 function escapeLike(input: string): string {
   return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/* ── 플롯 "전체" 가상 항목 — 클릭 시 메인 PlotOverview로 진입 ── */
+
+function PlotAllItem({
+  selected,
+  onSelect,
+}: {
+  selected: boolean;
+  onSelect: (intent: ClickIntent) => void;
+}) {
+  const clickHandlers = useSidebarClickHandler(onSelect);
+  return (
+    <button
+      type="button"
+      {...clickHandlers}
+      title="전체 플롯 — 작품의 모든 막과 회차"
+      className={cn(
+        'flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent',
+        selected
+          ? 'bg-secondary font-medium text-primary'
+          : 'text-sidebar-foreground',
+      )}
+    >
+      <LayoutList size={12} strokeWidth={2} className="shrink-0" />
+      <span className="truncate">전체</span>
+    </button>
+  );
 }

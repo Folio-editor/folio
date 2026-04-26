@@ -20,6 +20,7 @@ export type SortPanelKey =
   | 'episode'
   | 'plan'
   | 'character'
+  | 'character-tag'
   | 'foreshadow'
   | 'idea-archive'
   | 'home-work';

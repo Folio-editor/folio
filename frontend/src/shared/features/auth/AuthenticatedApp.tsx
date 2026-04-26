@@ -45,6 +45,7 @@ import { WorldNoteHierarchyScreen } from '../world-note/WorldNoteHierarchyScreen
 import { CharacterOverview } from '../character/CharacterOverview';
 import { CharacterNoteEditor } from '../character/CharacterNoteEditor';
 import { PlotOverview } from '../plot/PlotOverview';
+import { PlotEditScreen } from '../plot/PlotEditScreen';
 import { EpisodeEditScreen } from '../episode/EpisodeEditScreen';
 import { ForeshadowEditScreen } from '../foreshadow/ForeshadowEditScreen';
 import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
@@ -137,6 +138,11 @@ export function AuthenticatedApp() {
         'idea-archive': 'idea_archive',
       };
       for (const doc of docs) {
+        // '__all__' magic itemId — DB 검증 대상 아님, 항상 valid
+        if (doc.itemId === '__all__') {
+          validIds.add(`${doc.section}:${doc.itemId}`);
+          continue;
+        }
         let table = sectionTable[doc.section];
         let id = doc.itemId;
         if (doc.section === 'character') {
@@ -282,6 +288,35 @@ export function AuthenticatedApp() {
   // 특정 (section, itemId) 의 제목을 로컬 DB에서 조회
   const fetchItemTitle = useCallback(
     async (section: WorkspaceSection, itemId: string): Promise<string> => {
+      // plot은 막/회차 분기 — 회차면 "부모막 / 회차제목" 합성
+      if (section === 'plot') {
+        if (itemId === '__all__') return '전체 플롯';
+        try {
+          const result = await db.execute(
+            `SELECT p.title AS title, p.parent_id AS parent_id, parent.title AS parent_title
+             FROM plot p
+             LEFT JOIN plot parent ON parent.id = p.parent_id
+             WHERE p.id = ? LIMIT 1`,
+            [itemId],
+          );
+          const row = (result.rows?._array as {
+            title: string;
+            parent_id: string | null;
+            parent_title: string | null;
+          }[])?.[0];
+          if (!row) return '';
+          const own = row.title?.trim() || '';
+          if (row.parent_id && row.parent_title) {
+            const parent = row.parent_title.trim() || '(제목 없음)';
+            const child = own || '(제목 없음)';
+            return `${parent} / ${child}`;
+          }
+          return own;
+        } catch {
+          return '';
+        }
+      }
+
       const TITLE_QUERIES: Partial<Record<WorkspaceSection, { sql: string; id: string }>> = {
         'episode':    { sql: 'SELECT title FROM episode WHERE id = ?',            id: itemId },
         'world-note': { sql: 'SELECT name AS title FROM world_note WHERE id = ?', id: itemId },
@@ -1107,16 +1142,7 @@ function renderMain({
       />
     );
   }
-  // 플롯은 막/회차 시각화 가치 있어 PlotOverview 보존 (예외)
-  if (activity === 'plot') {
-    return (
-      <PlotOverview
-        workId={workId}
-        selectedItemId={null}
-        onNavigateTo={onNavigateTo}
-      />
-    );
-  }
+  // plot도 다른 activity와 동일하게 안내 화면으로 (PlotOverview는 사이드바 "전체" 항목으로 진입)
   return <EmptyMainState activity={activity} />;
 }
 
@@ -1190,13 +1216,17 @@ function renderEditor({
       return null;
     }
     case 'plot':
-      return (
-        <PlotOverview
-          workId={workId}
-          selectedItemId={itemId}
-          onNavigateTo={onNavigateTo}
-        />
-      );
+      // '__all__' = 전체 플롯 통합 뷰 / 그 외 = 막·회차 개별 디테일 편집 화면
+      if (itemId === '__all__') {
+        return (
+          <PlotOverview
+            workId={workId}
+            selectedItemId={null}
+            onNavigateTo={onNavigateTo}
+          />
+        );
+      }
+      return <PlotEditScreen key={itemId} id={itemId} onBack={onClose} />;
     case 'episode':
       return (
         <EpisodeEditScreen

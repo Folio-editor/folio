@@ -6,12 +6,17 @@ import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
 import {
   Activity,
-  ACTIVITY_LABELS,
   WorkspaceSection,
   type ClickIntent,
   type MainDoc,
 } from '../../types/workspace';
 import { Input } from '../ui/Input';
+import { TAG_LIST } from '../../features/idea-archive/ideaConstants';
+import {
+  SidebarFilterPicker,
+  type FilterOption,
+} from './sidebar-panels/SidebarFilterPicker';
+import type { SortPanelKey } from '../../stores/sortPreferenceStore';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
 import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
@@ -22,6 +27,66 @@ import { EpisodeTreeList } from './sidebar-panels/EpisodeTreeList';
 import { SettingsList, type SettingsItemId } from './sidebar-panels/SettingsList';
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
+
+// activity별 필터 옵션 명세 — 검색창 옆 필터 아이콘이 자동 분기 렌더
+interface ActivityFilterSpec {
+  panelKey: SortPanelKey;
+  options: FilterOption[];
+  groupLabel: string;
+}
+
+/** activity 당 여러 spec 가능 (예: character는 gender + tag 두 그룹) */
+const ACTIVITY_FILTER_SPEC: Partial<Record<Activity, ActivityFilterSpec[]>> = {
+  episode: [
+    {
+      panelKey: 'episode',
+      groupLabel: '진행 상태',
+      options: [
+        { value: '미작성', label: '미작성' },
+        { value: '초고', label: '초고' },
+        { value: '퇴고', label: '퇴고' },
+        { value: '완성', label: '완성' },
+      ],
+    },
+  ],
+  plot: [
+    {
+      panelKey: 'plot',
+      groupLabel: '회차 상태',
+      options: [
+        { value: '예정', label: '예정' },
+        { value: '작성중', label: '작성중' },
+        { value: '완료', label: '완료' },
+      ],
+    },
+  ],
+  // character — tag(dynamic, world_note 목록)만 지원. gender 필터는 제거.
+  character: [
+    {
+      panelKey: 'character-tag',
+      groupLabel: '태그(세계관)',
+      options: [],
+    },
+  ],
+  foreshadow: [
+    {
+      panelKey: 'foreshadow',
+      groupLabel: '중요도',
+      options: [
+        { value: '상', label: '상' },
+        { value: '중', label: '중' },
+        { value: '하', label: '하' },
+      ],
+    },
+  ],
+  'idea-archive': [
+    {
+      panelKey: 'idea-archive',
+      groupLabel: '태그',
+      options: TAG_LIST.map((t) => ({ value: t, label: t })),
+    },
+  ],
+};
 
 interface SecondarySidebarProps {
   activity: Activity;
@@ -117,8 +182,6 @@ export function SecondarySidebar({
         ? workTitle
         : '작품 미선택';
 
-  const subHeader = settingsMode ? '설정' : ACTIVITY_LABELS[activity];
-
   const handleLoginClick = () => void login();
 
   const cycleTheme = () => {
@@ -131,14 +194,11 @@ export function SecondarySidebar({
       style={{ width }}
       className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
     >
-      {/* 헤더 — 메인 패널 h-12와 높이 일치 */}
-      <div className="flex h-12 shrink-0 items-center border-b border-sidebar-border px-4">
+      {/* 헤더 — 작품 제목 (h-10) */}
+      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
         <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-sidebar-foreground">{header}</div>
-            {subHeader && (
-              <div className="truncate text-[11px] text-muted-foreground">{subHeader}</div>
-            )}
+          <div className="min-w-0 flex-1 truncate text-sm font-semibold text-sidebar-foreground">
+            {header}
           </div>
           <button
             type="button"
@@ -152,20 +212,26 @@ export function SecondarySidebar({
         </div>
       </div>
 
-      {/* 검색 */}
+      {/* 검색 + 필터 — activity별 가능한 필터 옵션 자동 분기 */}
       <div className="shrink-0 border-b border-sidebar-border/50 px-3 py-2">
-        <div className="relative">
-          <Search
-            size={14}
-            strokeWidth={2}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.currentTarget.value)}
-            placeholder="검색"
-            className="pl-7 text-xs"
+        <div className="flex items-center gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={14}
+              strokeWidth={2}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.currentTarget.value)}
+              placeholder="검색"
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
+          <ActivityFilters
+            activity={activity}
+            workId={selectedWorkId}
           />
         </div>
       </div>
@@ -247,6 +313,58 @@ export function SecondarySidebar({
         ariaLabel="사이드바 너비 조절"
       />
     </aside>
+  );
+}
+
+/** activity별 필터 picker 렌더 — 다중 spec 지원 + character의 tag 옵션은 world_note 동적 fetch */
+function ActivityFilters({
+  activity,
+  workId,
+}: {
+  activity: Activity;
+  workId: string | null;
+}) {
+  const specs = ACTIVITY_FILTER_SPEC[activity];
+
+  // character 패널일 때만 — 작품 내 캐릭터 중 한 명에라도 태그로 등록된 world_note만 옵션
+  // (전체 world_note가 아니라 실제 사용 중인 태그만)
+  const isCharacter = activity === 'character';
+  const { data: worldNoteRows = [] } = useQuery<{ id: string; name: string }>(
+    isCharacter && workId
+      ? `SELECT DISTINCT wn.id, wn.name
+         FROM world_note wn
+         JOIN character_tag ct ON ct.world_note_id = wn.id
+         JOIN character c ON c.id = ct.character_id
+         WHERE c.work_id = ?
+         ORDER BY wn.sort_order ASC, wn.created_at ASC`
+      : `SELECT NULL AS id, NULL AS name WHERE 0`,
+    isCharacter && workId ? [workId] : [],
+  );
+  const tagOptions: FilterOption[] = isCharacter
+    ? worldNoteRows
+        .filter((r) => r.id)
+        .map((r) => ({ value: r.id, label: r.name?.trim() || '(이름 없음)' }))
+    : [];
+
+  if (!specs || specs.length === 0) return null;
+
+  return (
+    <>
+      {specs.map((spec) => {
+        // character-tag spec은 동적 옵션
+        const options =
+          spec.panelKey === 'character-tag' ? tagOptions : spec.options;
+        if (options.length === 0) return null;
+        return (
+          <SidebarFilterPicker
+            key={spec.panelKey}
+            panelKey={spec.panelKey}
+            options={options}
+            groupLabel={spec.groupLabel}
+          />
+        );
+      })}
+    </>
   );
 }
 

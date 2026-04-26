@@ -101,8 +101,15 @@ export function RightPanels({
         ariaLabel="우측 패널 너비 조절"
       />
 
-      {/* 탭 헤더 */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
+      {/* 상단 헤더 — 활성 탭 라벨 (좌측 사이드바/메인 탭바와 동일한 h-10) */}
+      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
+        <span className="truncate text-sm font-semibold text-sidebar-foreground">
+          {TABS.find((t) => t.key === activeTab)?.label}
+        </span>
+      </div>
+
+      {/* 아이콘 탭 행 — 검색창 영역(h-12)과 동일 높이 */}
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
         {TABS.map(({ key, icon: Icon, label }) => (
           <button
             key={key}
@@ -120,9 +127,6 @@ export function RightPanels({
             <Icon size={15} strokeWidth={1.75} />
           </button>
         ))}
-        <span className="ml-1 truncate text-xs text-muted-foreground">
-          {TABS.find((t) => t.key === activeTab)?.label}
-        </span>
       </div>
 
       {/* 탭 콘텐츠 */}
@@ -138,6 +142,7 @@ export function RightPanels({
             isDraggingDoc={isDraggingDoc}
             mainSection={mainSection}
             mainItemId={mainItemId}
+            selectedWorkId={selectedWorkId}
           />
         )}
         {activeTab === 'idea' && (
@@ -168,6 +173,7 @@ function DocsTabContent({
   isDraggingDoc,
   mainSection,
   mainItemId,
+  selectedWorkId,
 }: {
   panels: AuxPanelItem[];
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
@@ -178,6 +184,7 @@ function DocsTabContent({
   isDraggingDoc: boolean;
   mainSection: import('../../types/workspace').WorkspaceSection | null;
   mainItemId: string | null;
+  selectedWorkId: string | null;
 }) {
   void isDraggingDoc; // 부모 RightPanels에서 외부 dragOver 감지용
   const [isDragOver, setIsDragOver] = useState(false);
@@ -276,6 +283,7 @@ function DocsTabContent({
                     onAddPanel={onAddPanel}
                     mainSection={mainSection}
                     mainItemId={mainItemId}
+                    selectedWorkId={selectedWorkId}
                   />
                 </div>
               ))}
@@ -1478,6 +1486,7 @@ function SortableAuxPanel({
   onAddPanel,
   mainSection,
   mainItemId,
+  selectedWorkId,
 }: {
   panel: AuxPanelItem;
   onRemove: () => void;
@@ -1486,6 +1495,7 @@ function SortableAuxPanel({
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
   mainSection: WorkspaceSection | null;
   mainItemId: string | null;
+  selectedWorkId: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: panel.id, data: { type: 'panel' } });
@@ -1533,17 +1543,15 @@ function SortableAuxPanel({
               메인에서 편집 중
             </span>
           )}
-          {panel.docType !== 'plot' && (
-            <button
-              type="button"
-              onClick={onOpenInMain}
-              title="본문으로 열기"
-              className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-              aria-label="본문으로 열기"
-            >
-              <ArrowUpRight size={12} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onOpenInMain}
+            title="본문으로 열기"
+            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            aria-label="본문으로 열기"
+          >
+            <ArrowUpRight size={12} />
+          </button>
           <button
             type="button"
             onClick={onRemove}
@@ -1563,6 +1571,7 @@ function SortableAuxPanel({
               <AuxDocViewer
                 docType={panel.docType}
                 docId={panel.docId}
+                workId={selectedWorkId ?? undefined}
                 editable={true}
                 onAddPanel={onAddPanel}
               />

@@ -18,6 +18,10 @@ import {
   buildOrderBy,
   useSortPreferenceStore,
 } from '../../../stores/sortPreferenceStore';
+import {
+  useFilterPreferenceStore,
+  EMPTY_FILTER,
+} from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import {
@@ -104,15 +108,29 @@ export function CharacterNoteList({
   }, [noteParentRows]);
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['character'] ?? 'manual');
+  const tagFilter = useFilterPreferenceStore(
+    (s) => s.byPanel['character-tag'] ?? (EMPTY_FILTER as string[]),
+  );
   const trimmed = searchTerm.trim();
   const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
   const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
+  // 태그 필터 — character_tag 다대다 EXISTS 절 (선택된 world_note 중 하나라도 가진 캐릭터)
+  const tagPlaceholders = tagFilter.map(() => '?').join(', ');
+  const tagClause =
+    tagFilter.length > 0
+      ? `AND EXISTS (SELECT 1 FROM character_tag ct
+                       WHERE ct.character_id = character.id
+                         AND ct.world_note_id IN (${tagPlaceholders}))`
+      : '';
   const sql = `SELECT id, name, work_id, sort_order FROM character
-     WHERE work_id = ? AND writer_id = ? ${whereName}
+     WHERE work_id = ? AND writer_id = ? ${whereName} ${tagClause}
      ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
+  const params = [
+    workId,
+    writerId,
+    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
+    ...tagFilter,
+  ];
   const { data: rawCharacters = [] } = useQuery<CharacterRow>(sql, params);
   const characters = useOptimisticRows(rawCharacters, {
     docType: 'character',
@@ -147,29 +165,31 @@ export function CharacterNoteList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            value={createTitle}
-            onChange={(e) => setCreateTitle(e.target.value)}
-            onKeyDown={handleCreateKeyDown}
-            onBlur={handleCreateCancel}
-            placeholder="인물 이름을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 인물</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {creating ? (
+            <input
+              autoFocus
+              type="text"
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={handleCreateKeyDown}
+              onBlur={handleCreateCancel}
+              placeholder="인물 이름을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 인물</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="character" />
+        </div>
       </div>
-      <SidebarSortPicker panelKey="character" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
         {characters.length === 0 && !creating ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
