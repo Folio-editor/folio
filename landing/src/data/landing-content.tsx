@@ -26,7 +26,7 @@ export type Tool = {
 export const TOOLS: Tool[] = [
   {
     number: '01 / 03',
-    keyword: '강력한 AI 도구',
+    keyword: '섬세한 AI 도구',
     oneline:
       '쌓인 설정을 바탕으로 검수하고, 다음 화 초안을 만들고, 기존 원고를 정리합니다.',
     features: [
@@ -50,7 +50,7 @@ export const TOOLS: Tool[] = [
     oneline: '연재에 필요한 구조와 서식을 한 화면에 모았습니다.',
     features: [
       '캐릭터·플롯·원고 등 카테고리 구분',
-      '볼드·기울임 등 스타일링',
+      '볼드·기울임 등 서식',
       '설정 기반 맞춤법 감지',
     ],
     mockup: 'editor',
@@ -79,8 +79,8 @@ export const EXTRA_TOOLS: ExtraTool[] = [
   },
   {
     num: '06',
-    title: '떡밥 추적',
-    desc: '언제 뿌린 떡밥인지, 몇 화째 미회수인지 한눈에. 독자 이탈 전에 정리하세요.',
+    title: '복선 추적',
+    desc: '언제 심어둔 복선인지, 몇 화째 미회수인지 한눈에. 독자 이탈 전에 정리하세요.',
     meta: '누적 타임라인',
   },
   {
@@ -110,7 +110,7 @@ export const EXTRA_TOOLS: ExtraTool[] = [
   {
     num: '11',
     title: '복선 추적',
-    desc: '언제 뿌린 떡밥인지, 몇 화째 미회수인지 한눈에. 독자 이탈 전에 정리하세요.',
+    desc: '언제 심어둔 복선인지, 몇 화째 미회수인지 한눈에. 독자 이탈 전에 정리하세요.',
     meta: '누적 타임라인',
   },
   {
@@ -153,7 +153,7 @@ export const STEPS: FlowStep[] = [
   {
     num: 'Step 03',
     label: '분석',
-    body: '요약·인물·떡밥 자동 추출 → 지식 베이스',
+    body: '요약·인물·복선 자동 추출 → 지식 베이스',
   },
   {
     num: 'Step 04',
@@ -184,7 +184,7 @@ export const PRICING: PricingCard[] = [
     featured: false,
     features: [
       '오프라인 + 클라우드 동기화',
-      '집필 친화 에디터 (카테고리·스타일링·맞춤법)',
+      '집필 친화 에디터 (카테고리·서식·맞춤법)',
       '설정집 · 아이디어 노트',
       '토큰 500/월 (AI 맛보기)',
     ],
