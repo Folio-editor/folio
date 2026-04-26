@@ -11,6 +11,23 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+
+// 통합 뷰의 TipTap 본문 텍스트 선택/편집과 dnd-kit 드래그 충돌 방지
+// input/textarea/select/[contenteditable] 위에서 PointerDown은 드래그 트리거에서 제외
+class SmartPointerSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: ({ nativeEvent }: { nativeEvent: PointerEvent }) => {
+        const target = nativeEvent.target as HTMLElement | null;
+        if (target?.closest('input, textarea, select, [contenteditable]')) {
+          return false;
+        }
+        return true;
+      },
+    },
+  ];
+}
 import { arrayMove } from '@dnd-kit/sortable';
 import { useDragZoneStore } from '../../lib/dragZoneStore';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
@@ -414,8 +431,10 @@ export function AuthenticatedApp() {
   }, [mainDoc, fetchItemTitle, addPinnedAndShow, setMainDoc]);
 
   // ── 통합 DndContext: 좌측 트리 ↔ 우측 사이드바 cross-component drag ──
+  // SmartPointerSensor: input/textarea/contenteditable 위에서는 드래그 비활성
+  // → 통합 뷰의 TipTap 본문 텍스트 선택/편집과 충돌 방지 (사이드바엔 해당 영역 없음)
   const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(SmartPointerSensor, { activationConstraint: { distance: 8 } }),
   );
   const setDragZone = useDragZoneStore((s) => s.set);
   const clearDragZone = useDragZoneStore((s) => s.clear);

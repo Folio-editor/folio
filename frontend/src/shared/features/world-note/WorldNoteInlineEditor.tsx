@@ -36,10 +36,11 @@ export function WorldNoteInlineEditor({
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
   const pendingRef = useRef<(() => void) | null>(null);
-  // mount/setContent 이후 첫 onUpdate transaction은 placeholder/plugin 초기화로 인한 가짜 → 무시
-  const skipNextUpdateRef = useRef(true);
-  // 마지막으로 저장된 JSON 직렬화 — 동일 내용 중복 update 차단
-  const lastSavedJsonRef = useRef<string>('');
+  // 마지막으로 저장된(또는 mount/노드 전환 시 동기화된) JSON 직렬화 — 자기 onUpdate echo skip용
+  const lastSavedJsonRef = useRef<string | null>(null);
+  // 마지막으로 DB로 emit한 raw string — 외부 변경 vs 자기 echo 식별용
+  // (외부 PowerSync sync로 들어온 initialContent와 비교)
+  const lastEmittedRawRef = useRef<string | null>(null);
 
   const editor = useEditor(
     {
@@ -54,20 +55,26 @@ export function WorldNoteInlineEditor({
         Highlight.configure({ multicolor: false }),
       ],
       content: parseContent(initialContent),
+      onCreate: ({ editor: ed }) => {
+        lastSavedJsonRef.current = JSON.stringify(ed.getJSON());
+        lastEmittedRawRef.current = initialContent ?? '';
+      },
       onUpdate: ({ editor: ed }) => {
         const next = JSON.stringify(ed.getJSON());
-        // mount/noteId 전환 직후 첫 transaction(placeholder 등)은 무시
-        if (skipNextUpdateRef.current) {
-          skipNextUpdateRef.current = false;
+        // onCreate 전(매우 드문 race)이면 동기화만 하고 종료
+        if (lastSavedJsonRef.current === null) {
           lastSavedJsonRef.current = next;
           return;
         }
-        // 동일 내용 (예: setContent로 이미 같은 JSON 적용된 직후) → skip
         if (next === lastSavedJsonRef.current) return;
         lastSavedJsonRef.current = next;
 
         const cb = onUpdateRef.current;
-        pendingRef.current = () => cb(next);
+        pendingRef.current = () => {
+          // DB로 emit하기 직전에 lastEmittedRaw 갱신 — 외부 sync useEffect가 자기 echo로 인식해 skip
+          lastEmittedRawRef.current = next;
+          cb(next);
+        };
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
           pendingRef.current?.();
@@ -76,10 +83,6 @@ export function WorldNoteInlineEditor({
         }, DEBOUNCE_MS);
       },
     },
-    // 빈 의존성: editor 인스턴스를 컴포넌트 lifetime 동안 1회만 생성.
-    // noteId 변경 시 setContent useEffect(emitUpdate: false)로 콘텐츠만 교체.
-    // → noteId 전환마다 Placeholder/StarterKit plugin 초기화 transaction이 발동되어
-    //    빈 doc을 자동 저장(=DB UPDATE → PowerSync sync)하던 현상 차단.
     [],
   );
 
@@ -95,11 +98,28 @@ export function WorldNoteInlineEditor({
     editor.commands.setContent(parseContent(initialContent), {
       emitUpdate: false,
     });
-    // setContent 직후 placeholder/plugin이 발동시키는 첫 onUpdate transaction 무시 + lastSaved 동기화
-    skipNextUpdateRef.current = true;
+    // setContent 후 lastSaved/lastEmitted 갱신 — 다음 사용자 입력은 자연스럽게 비교/저장
     lastSavedJsonRef.current = JSON.stringify(editor.getJSON());
+    lastEmittedRawRef.current = initialContent ?? '';
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId]);
+
+  // 외부 DB 변경(다른 화면/패널에서 같은 노드 편집) 즉시 반영 — initialContent prop 변경 감지
+  // 가드 4중: 자기 echo / pending / focus / 노드 전환 effect와의 충돌
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const incoming = initialContent ?? '';
+    // 가드 1: 자기가 마지막으로 emit한 raw string과 동일 → 자기 echo, skip
+    if (incoming === lastEmittedRawRef.current) return;
+    // 가드 2: 자기 debounce pending 중 → 자기 입력 우선 (last-write-wins 경계)
+    if (debounceRef.current) return;
+    // 가드 3: 자기 focus 중 → cursor 점프 방지로 skip
+    if (editor.isFocused) return;
+    // 가드 4: 외부 변경 적용 + lastSaved/lastEmitted 모두 동기화
+    editor.commands.setContent(parseContent(incoming), { emitUpdate: false });
+    lastSavedJsonRef.current = JSON.stringify(editor.getJSON());
+    lastEmittedRawRef.current = incoming;
+  }, [initialContent, editor]);
 
   // 언마운트 flush
   useEffect(() => {
@@ -128,7 +148,7 @@ export function WorldNoteInlineEditor({
   return (
     <EditorContent
       editor={editor}
-      className={`${proseClass} [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:h-0 [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]`}
+      className={`note-inline-editor ${proseClass} [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:h-0 [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]`}
     />
   );
 }

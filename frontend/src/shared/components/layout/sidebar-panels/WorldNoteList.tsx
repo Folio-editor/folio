@@ -30,6 +30,7 @@ interface NoteRow {
   work_id?: string;
   parent_id?: string | null;
   sort_order?: number | null;
+  child_count?: number;
 }
 
 interface WorldNoteListProps {
@@ -54,9 +55,11 @@ export function WorldNoteList({
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, name, work_id, parent_id, sort_order FROM world_note
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
+  const sql = `SELECT n.id, n.name, n.work_id, n.parent_id, n.sort_order,
+     (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
+     FROM world_note n
+     WHERE n.work_id = ? AND n.writer_id = ? AND n.parent_id IS NULL ${whereSearch}
+     ORDER BY n.sort_order ASC, n.created_at ASC`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -330,10 +333,12 @@ function WorldNoteTreeItem({
 
   const { data: rawChildren = [] } = useQuery<NoteRow>(
     isExpanded
-      ? `SELECT id, name, work_id, parent_id, sort_order FROM world_note
-         WHERE parent_id = ? AND writer_id = ?
-         ORDER BY sort_order ASC, created_at ASC`
-      : `SELECT '' AS id, '' AS name, '' AS work_id, '' AS parent_id, 0 AS sort_order WHERE 0`,
+      ? `SELECT n.id, n.name, n.work_id, n.parent_id, n.sort_order,
+           (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
+         FROM world_note n
+         WHERE n.parent_id = ? AND n.writer_id = ?
+         ORDER BY n.sort_order ASC, n.created_at ASC`
+      : `SELECT '' AS id, '' AS name, '' AS work_id, '' AS parent_id, 0 AS sort_order, 0 AS child_count WHERE 0`,
     isExpanded ? [note.id, writerId] : [],
   );
   const children = useOptimisticRows(rawChildren, {
@@ -378,18 +383,22 @@ function WorldNoteTreeItem({
                     : 'text-sidebar-foreground',
                 )}
               >
-                <ChevronRight
-                  size={12}
-                  strokeWidth={2}
-                  className={cn(
-                    'shrink-0 transition-transform',
-                    isExpanded && 'rotate-90',
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleExpand(note.id);
-                  }}
-                />
+                {(note.child_count ?? 0) > 0 ? (
+                  <ChevronRight
+                    size={12}
+                    strokeWidth={2}
+                    className={cn(
+                      'shrink-0 transition-transform',
+                      isExpanded && 'rotate-90',
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleExpand(note.id);
+                    }}
+                  />
+                ) : (
+                  <span className="inline-block w-3 shrink-0" aria-hidden="true" />
+                )}
                 {note.name?.trim() || '(이름 없음)'}
               </button>
               <button

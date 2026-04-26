@@ -31,6 +31,12 @@
   --sidebar-accent: oklch(0.97 0.001 285.82);
   --sidebar-accent-foreground: oklch(0.205 0.015 285.82);
 
+  /* ── A-2. ActivityBar (좌측 아이콘 탭) — sidebar 보다 한 톤 진한 면 ── */
+  --activity-bar: oklch(0.95 0.005 285.82);
+  --activity-bar-foreground: oklch(0.145 0.004 285.82);
+  --activity-bar-border: oklch(0.90 0.005 285.82);
+  --activity-bar-accent: oklch(0.92 0.008 285.82);
+
   /* ── B. Brand & Action ────────────────────────────────────────── */
   --primary: oklch(0.205 0.015 285.82);
   --primary-foreground: oklch(0.985 0.001 285.82);
@@ -109,6 +115,12 @@
   --sidebar-foreground: oklch(0.85 0.001 285.82);
   --sidebar-accent: oklch(0.269 0.015 285.82);
   --sidebar-accent-foreground: oklch(0.985 0.001 285.82);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.13 0.008 285.82);
+  --activity-bar-foreground: oklch(0.985 0.001 285.82);
+  --activity-bar-border: oklch(0.26 0.012 285.82);
+  --activity-bar-accent: oklch(0.22 0.012 285.82);
 
   /* ── B. Brand & Action ────────────────────────────────────────── */
   --primary: oklch(100% 0.00011 271.152 / 0.36);

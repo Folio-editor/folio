@@ -87,27 +87,13 @@ export function RightPanels({
   selectedWorkId,
   mainDoc,
 }: RightPanelsProps) {
-  // mainDoc 객체에서 sub 필드 분리 — 기존 lockedReadOnly / AI 탭 컨텍스트 로직 호환
+  // mainDoc 객체에서 sub 필드 분리 — AI 탭 컨텍스트 + isSameAsMain 시각 표시 용도
   const mainSection = mainDoc?.section ?? null;
   const mainItemId = mainDoc?.itemId ?? null;
-
-  // 메인 world_note의 root id 계산 — child면 그 parent, root면 자기 자신.
-  // 우측 패널에서 같은 root tree에 속한 모든 노드를 lockedReadOnly로 잠그기 위함.
-  const isMainWorldNote = mainSection === 'world-note';
-  const { data: mainWorldNoteRows = [] } = useQuery<{ parent_id: string | null }>(
-    isMainWorldNote && mainItemId
-      ? 'SELECT parent_id FROM world_note WHERE id = ?'
-      : 'SELECT NULL AS parent_id WHERE 0',
-    isMainWorldNote && mainItemId ? [mainItemId] : [],
-  );
-  const mainWorldNoteRootId =
-    isMainWorldNote && mainItemId
-      ? (mainWorldNoteRows[0]?.parent_id ?? mainItemId)
-      : null;
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col overflow-hidden border-l border-border"
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
     >
       <ResizeHandle
         side="left"
@@ -116,7 +102,7 @@ export function RightPanels({
       />
 
       {/* 탭 헤더 */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
         {TABS.map(({ key, icon: Icon, label }) => (
           <button
             key={key}
@@ -128,7 +114,7 @@ export function RightPanels({
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
               activeTab === key
                 ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
             )}
           >
             <Icon size={15} strokeWidth={1.75} />
@@ -152,7 +138,6 @@ export function RightPanels({
             isDraggingDoc={isDraggingDoc}
             mainSection={mainSection}
             mainItemId={mainItemId}
-            mainWorldNoteRootId={mainWorldNoteRootId}
           />
         )}
         {activeTab === 'idea' && (
@@ -183,7 +168,6 @@ function DocsTabContent({
   isDraggingDoc,
   mainSection,
   mainItemId,
-  mainWorldNoteRootId,
 }: {
   panels: AuxPanelItem[];
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
@@ -194,12 +178,15 @@ function DocsTabContent({
   isDraggingDoc: boolean;
   mainSection: import('../../types/workspace').WorkspaceSection | null;
   mainItemId: string | null;
-  mainWorldNoteRootId: string | null;
 }) {
   void isDraggingDoc; // 부모 RightPanels에서 외부 dragOver 감지용
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // 잠금 정책 폐지 — WorldNoteInlineEditor가 외부 변경을 자동 동기화하므로
+  // 메인/우측 패널 어디든 같은 노드를 동시 표시 + 즉시 반영. 동시 타이핑 한계는 collaborative
+  // 도입 전까지 수용.
 
   // dnd-kit cross-component drop — 트리 노드를 우측 사이드바로 끌어왔을 때
   const { setNodeRef: setAuxDropRef, isOver: isAuxOver } = useDroppable({
@@ -289,7 +276,6 @@ function DocsTabContent({
                     onAddPanel={onAddPanel}
                     mainSection={mainSection}
                     mainItemId={mainItemId}
-                    mainWorldNoteRootId={mainWorldNoteRootId}
                   />
                 </div>
               ))}
@@ -1492,7 +1478,6 @@ function SortableAuxPanel({
   onAddPanel,
   mainSection,
   mainItemId,
-  mainWorldNoteRootId,
 }: {
   panel: AuxPanelItem;
   onRemove: () => void;
@@ -1501,7 +1486,6 @@ function SortableAuxPanel({
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
   mainSection: WorkspaceSection | null;
   mainItemId: string | null;
-  mainWorldNoteRootId: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: panel.id, data: { type: 'panel' } });
@@ -1515,26 +1499,8 @@ function SortableAuxPanel({
 
   const [contentHeight, setContentHeight] = useState(PANEL_DEFAULT_H);
 
-  // 우측 패널의 root id 계산 — child면 그 parent, root면 자기 자신.
-  // 메인 root와 같은 tree면 lockedReadOnly (메인 통합 뷰에서 이미 편집 중이므로 충돌 방지).
-  const isPanelWorldNote = panel.docType === 'world_note';
-  const { data: panelWorldNoteRows = [] } = useQuery<{ parent_id: string | null }>(
-    isPanelWorldNote
-      ? 'SELECT parent_id FROM world_note WHERE id = ?'
-      : 'SELECT NULL AS parent_id WHERE 0',
-    isPanelWorldNote ? [panel.docId] : [],
-  );
-  const panelWorldNoteRootId = isPanelWorldNote
-    ? (panelWorldNoteRows[0]?.parent_id ?? panel.docId)
-    : null;
-
-  const sameTreeAsMain =
-    mainWorldNoteRootId !== null &&
-    panelWorldNoteRootId !== null &&
-    mainWorldNoteRootId === panelWorldNoteRootId;
-
-  const lockedReadOnly =
-    isSameAsMain(panel, mainSection, mainItemId) || sameTreeAsMain;
+  // 메인과 동일 문서면 시각 표시 (badge) 용도로만 — 편집은 InlineEditor가 외부 sync로 처리
+  const sameAsMain = isSameAsMain(panel, mainSection, mainItemId);
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} data-panel-id={panel.id}>
@@ -1559,10 +1525,10 @@ function SortableAuxPanel({
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {AUX_DOC_LABELS[panel.docType]}
           </span>
-          {lockedReadOnly && (
+          {sameAsMain && (
             <span
-              className="shrink-0 text-[9px] text-warning"
-              title={sameTreeAsMain ? '메인에서 편집 중인 트리' : '메인에서 편집 중'}
+              className="shrink-0 text-[9px] text-muted-foreground"
+              title="메인에서도 편집 중 — 양쪽 즉시 동기화"
             >
               메인에서 편집 중
             </span>
@@ -1597,7 +1563,7 @@ function SortableAuxPanel({
               <AuxDocViewer
                 docType={panel.docType}
                 docId={panel.docId}
-                editable={!lockedReadOnly}
+                editable={true}
                 onAddPanel={onAddPanel}
               />
             </div>

@@ -67,8 +67,8 @@ export function ActivityBar({ activity, onActivityChange, workSelected, settings
         className={cn(
           'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
           isActive && !isDisabled
-            ? 'text-sidebar-foreground'
-            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            ? 'text-activity-bar-foreground'
+            : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
           isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
         )}
       >
@@ -85,7 +85,7 @@ export function ActivityBar({ activity, onActivityChange, workSelected, settings
 
   return (
     <nav
-      className="flex w-14 shrink-0 flex-col items-center justify-between border-r border-sidebar-border bg-sidebar py-2"
+      className="flex w-14 shrink-0 flex-col items-center justify-between border-r border-activity-bar-border bg-activity-bar py-2"
       aria-label="액티비티 바"
     >
       {/* 상단: 메인 액티비티 */}
@@ -105,8 +105,8 @@ export function ActivityBar({ activity, onActivityChange, workSelected, settings
           className={cn(
             'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
             settingsMode
-              ? 'text-sidebar-foreground'
-              : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              ? 'text-activity-bar-foreground'
+              : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
           )}
         >
           {settingsMode && (

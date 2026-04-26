@@ -38,8 +38,13 @@ frontend/src/styles/
 | `--card` / `--card-foreground` | 카드/섹션 배경 | `bg-card` / `text-card-foreground` |
 | `--popover` / `--popover-foreground` | 팝오버/드롭다운 | `bg-popover` |
 | `--muted` / `--muted-foreground` | 보조/억제 영역 | `bg-muted` / `text-muted-foreground` |
-| `--sidebar` / `--sidebar-foreground` | 좌측 사이드바 | `bg-sidebar` |
-| `--sidebar-accent` / `--sidebar-accent-foreground` | 사이드바 활성 항목 | `bg-sidebar-accent` |
+| `--sidebar` / `--sidebar-foreground` | 좌측 사이드바 (트리 패널 + 우측 패널) | `bg-sidebar` |
+| `--sidebar-accent` / `--sidebar-accent-foreground` | 사이드바 hover 항목 | `bg-sidebar-accent` |
+| `--activity-bar` / `--activity-bar-foreground` | **좌측 아이콘 탭 — sidebar와 분리된 진한 톤** | `bg-activity-bar` |
+| `--activity-bar-border` | ActivityBar 우측 구분선 | `border-activity-bar-border` |
+| `--activity-bar-accent` | ActivityBar 아이콘 hover 배경 | `bg-activity-bar-accent` |
+
+> **메모**: ActivityBar는 sidebar 토큰 패밀리와 분리되어 있다. 테마별로 더 진하거나 채도가 강조된 색을 부여해 좌→우 시각 위계(아이콘 탭 진함 → 트리 보통 → 본문 옅음)를 만든다. 활성 탭 인디케이터(좌측 2px 라인)는 `--primary` 사용.
 
 ### B. Brand & Action (10 토큰)
 

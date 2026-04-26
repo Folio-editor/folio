@@ -31,6 +31,7 @@ interface PlotRow {
   work_id?: string;
   parent_id?: string | null;
   sort_order?: number | null;
+  child_count?: number;
 }
 
 interface PlotTreeListProps {
@@ -68,9 +69,11 @@ export function PlotTreeList({
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, title, status, work_id, parent_id, sort_order FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
+  const sql = `SELECT p.id, p.title, p.status, p.work_id, p.parent_id, p.sort_order,
+     (SELECT COUNT(*) FROM plot c WHERE c.parent_id = p.id) AS child_count
+     FROM plot p
+     WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NULL ${whereSearch}
+     ORDER BY p.sort_order ASC, p.created_at ASC`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
@@ -376,18 +379,22 @@ function ActTreeItem({
                     : 'text-sidebar-foreground',
                 )}
               >
-                <ChevronRight
-                  size={12}
-                  strokeWidth={2}
-                  className={cn(
-                    'shrink-0 transition-transform',
-                    isExpanded && 'rotate-90',
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleExpand(act.id);
-                  }}
-                />
+                {(act.child_count ?? 0) > 0 ? (
+                  <ChevronRight
+                    size={12}
+                    strokeWidth={2}
+                    className={cn(
+                      'shrink-0 transition-transform',
+                      isExpanded && 'rotate-90',
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleExpand(act.id);
+                    }}
+                  />
+                ) : (
+                  <span className="inline-block w-3 shrink-0" aria-hidden="true" />
+                )}
                 {act.title?.trim() || '(제목 없음)'}
               </button>
               <button

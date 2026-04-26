@@ -49,6 +49,12 @@
   --sidebar-accent: oklch(69.913% 0.06559 75.914 / 0.312);
   --sidebar-accent-foreground: oklch(24.89% 0.02012 56.577 / 0.562);
 
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(86.363% 0.03109 76.904 / 0.651);
+  --activity-bar-foreground: oklch(0.25 0.02 60);
+  --activity-bar-border: oklch(0.82 0.03 60);
+  --activity-bar-accent: oklch(0.85 0.04 60);
+
   /* ── B. Brand & Action ── */
   --primary: oklch(44.767% 0.08663 57.592 / 0.774);
   --primary-foreground: oklch(96.634% 0.01347 78.166 / 0.983);
@@ -78,6 +84,11 @@
   --sidebar-foreground: oklch(0.92 0.015 75);
   --sidebar-accent: oklch(0.26 0.015 60);
   --sidebar-accent-foreground: oklch(0.92 0.015 75);
+
+  --activity-bar: oklch(0.14 0.018 60);
+  --activity-bar-foreground: oklch(0.92 0.015 75);
+  --activity-bar-border: oklch(0.26 0.018 60);
+  --activity-bar-accent: oklch(0.20 0.018 60);
 
   --primary: oklch(0.78 0.08 55);
   --primary-foreground: oklch(0.18 0.015 60);
@@ -111,6 +122,12 @@
   --sidebar-accent: oklch(0.91 0.015 150);
   --sidebar-accent-foreground: oklch(0.20 0.03 155);
 
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.91 0.025 152);
+  --activity-bar-foreground: oklch(0.20 0.03 155);
+  --activity-bar-border: oklch(0.85 0.025 150);
+  --activity-bar-accent: oklch(0.88 0.030 150);
+
   /* ── B. Brand & Action ── */
   --primary: oklch(0.42 0.10 155);
   --primary-foreground: oklch(0.98 0.005 150);
@@ -137,6 +154,11 @@
   --sidebar-foreground: oklch(0.92 0.012 150);
   --sidebar-accent: oklch(0.24 0.018 155);
   --sidebar-accent-foreground: oklch(0.92 0.012 150);
+
+  --activity-bar: oklch(0.13 0.020 155);
+  --activity-bar-foreground: oklch(0.92 0.012 150);
+  --activity-bar-border: oklch(0.24 0.020 155);
+  --activity-bar-accent: oklch(0.18 0.022 155);
 
   --primary: oklch(0.72 0.10 155);
   --primary-foreground: oklch(0.16 0.015 155);
@@ -170,6 +192,12 @@
   --sidebar-accent: oklch(0.91 0.015 238);
   --sidebar-accent-foreground: oklch(0.20 0.025 240);
 
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.91 0.025 240);
+  --activity-bar-foreground: oklch(0.20 0.025 240);
+  --activity-bar-border: oklch(0.85 0.022 238);
+  --activity-bar-accent: oklch(0.88 0.025 240);
+
   /* ── B. Brand & Action ── */
   --primary: oklch(0.45 0.14 245);
   --primary-foreground: oklch(0.98 0.005 240);
@@ -196,6 +224,11 @@
   --sidebar-foreground: oklch(0.92 0.01 238);
   --sidebar-accent: oklch(0.24 0.02 240);
   --sidebar-accent-foreground: oklch(0.92 0.01 238);
+
+  --activity-bar: oklch(0.13 0.025 240);
+  --activity-bar-foreground: oklch(0.92 0.01 238);
+  --activity-bar-border: oklch(0.24 0.025 240);
+  --activity-bar-accent: oklch(0.18 0.025 240);
 
   --primary: oklch(0.72 0.12 245);
   --primary-foreground: oklch(0.16 0.02 240);
@@ -229,6 +262,12 @@
   --sidebar-accent: oklch(0.91 0.018 5);
   --sidebar-accent-foreground: oklch(0.22 0.02 355);
 
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.92 0.030 8);
+  --activity-bar-foreground: oklch(0.22 0.02 355);
+  --activity-bar-border: oklch(0.86 0.025 8);
+  --activity-bar-accent: oklch(0.89 0.030 8);
+
   /* ── B. Brand & Action ── */
   --primary: oklch(0.55 0.15 355);
   --primary-foreground: oklch(0.98 0.005 10);
@@ -255,6 +294,11 @@
   --sidebar-foreground: oklch(0.92 0.012 5);
   --sidebar-accent: oklch(0.25 0.02 350);
   --sidebar-accent-foreground: oklch(0.92 0.012 5);
+
+  --activity-bar: oklch(0.14 0.025 350);
+  --activity-bar-foreground: oklch(0.92 0.012 5);
+  --activity-bar-border: oklch(0.25 0.025 350);
+  --activity-bar-accent: oklch(0.19 0.025 350);
 
   --primary: oklch(0.75 0.12 355);
   --primary-foreground: oklch(0.17 0.02 350);
@@ -288,6 +332,12 @@
   --sidebar-accent: oklch(0.91 0.018 293);
   --sidebar-accent-foreground: oklch(0.22 0.02 290);
 
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.92 0.025 295);
+  --activity-bar-foreground: oklch(0.22 0.02 290);
+  --activity-bar-border: oklch(0.86 0.022 295);
+  --activity-bar-accent: oklch(0.89 0.025 295);
+
   /* ── B. Brand & Action ── */
   --primary: oklch(0.50 0.14 300);
   --primary-foreground: oklch(0.98 0.005 295);
@@ -314,6 +364,11 @@
   --sidebar-foreground: oklch(0.92 0.012 293);
   --sidebar-accent: oklch(0.25 0.02 295);
   --sidebar-accent-foreground: oklch(0.92 0.012 293);
+
+  --activity-bar: oklch(0.14 0.025 295);
+  --activity-bar-foreground: oklch(0.92 0.012 293);
+  --activity-bar-border: oklch(0.25 0.025 295);
+  --activity-bar-accent: oklch(0.19 0.025 295);
 
   --primary: oklch(0.75 0.12 300);
   --primary-foreground: oklch(0.17 0.02 295);

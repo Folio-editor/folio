@@ -61,6 +61,8 @@ export function ContentEditor({
   // flush용: 디바운스 생성 시점의 콜백을 캡처하여 itemId 전환 시 올바른 대상에 저장
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const pendingCharCountSaveRef = useRef<(() => void) | null>(null);
+  // 마지막으로 DB로 emit한 raw string — 외부 변경 vs 자기 echo 식별용
+  const lastEmittedRawRef = useRef<string | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [charCount, setCharCount] = useState(0);
@@ -132,7 +134,10 @@ export function ContentEditor({
         // 현재 시점의 콜백을 캡처 — itemId 전환 시에도 이전 item에 정확히 저장
         const updateCb = onUpdateRef.current;
         pendingSaveRef.current = () => {
-          updateCb(JSON.stringify(ed.getJSON()));
+          const json = JSON.stringify(ed.getJSON());
+          // emit 직전에 lastEmittedRaw 갱신 — 외부 sync useEffect가 자기 echo로 인식해 skip
+          lastEmittedRawRef.current = json;
+          updateCb(json);
           setSaveStatus('saved');
         };
 
@@ -201,9 +206,27 @@ export function ContentEditor({
     flushRef.current();
     if (!editor || editor.isDestroyed) return;
     editor.commands.setContent(parseContent(initialContent), { emitUpdate: false });
+    lastEmittedRawRef.current = initialContent ?? '';
     setSaveStatus('idle');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
+
+  // 외부 DB 변경(다른 화면/패널에서 같은 노트 편집) 즉시 반영 — initialContent prop 변경 감지
+  // 가드: 자기 echo / pending debounce / focus 중에는 skip
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const incoming = initialContent ?? '';
+    // mount 직후 lastEmittedRaw가 null이면 초기 sync — 초기값과 동일하면 skip, 아니면 emit echo로 간주
+    if (lastEmittedRawRef.current === null) {
+      lastEmittedRawRef.current = incoming;
+      return;
+    }
+    if (incoming === lastEmittedRawRef.current) return;
+    if (debounceRef.current) return; // 자기 입력 중
+    if (editor.isFocused) return; // cursor 점프 방지
+    editor.commands.setContent(parseContent(incoming), { emitUpdate: false });
+    lastEmittedRawRef.current = incoming;
+  }, [initialContent, editor]);
 
   // 언마운트 시 보류 중인 변경사항 즉시 저장
   useEffect(() => {
