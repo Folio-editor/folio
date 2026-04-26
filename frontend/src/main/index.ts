@@ -49,13 +49,39 @@ const createWindow = () => {
     mainWindow.setTitle('Folio (dev)');
   }
 
-  // 메뉴 제거 시 DevTools 단축키(F12, Ctrl+Shift+I)가 사라지므로 직접 등록
-  mainWindow.webContents.on('before-input-event', (_event, input) => {
+  // 메뉴 제거 시 사라지는 기본 단축키들을 직접 등록
+  // - F12 / Ctrl+Shift+I  → DevTools 토글
+  // - F5  / Ctrl+R        → 일반 새로고침 (캐시 사용)
+  // - Ctrl+Shift+R        → 강력 새로고침 (캐시 무시)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
-    const toggle =
+    const wc = mainWindow.webContents;
+
+    const toggleDevTools =
       input.key === 'F12' ||
       (input.control && input.shift && input.key === 'I');
-    if (toggle) mainWindow.webContents.toggleDevTools();
+    if (toggleDevTools) {
+      wc.toggleDevTools();
+      event.preventDefault();
+      return;
+    }
+
+    const hardReload =
+      input.control && input.shift && (input.key === 'R' || input.key === 'r');
+    if (hardReload) {
+      wc.reloadIgnoringCache();
+      event.preventDefault();
+      return;
+    }
+
+    const reload =
+      input.key === 'F5' ||
+      (input.control && !input.shift && (input.key === 'R' || input.key === 'r'));
+    if (reload) {
+      wc.reload();
+      event.preventDefault();
+      return;
+    }
   });
 
   if (process.env.NODE_ENV === 'development') {

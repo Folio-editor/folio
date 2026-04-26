@@ -1,30 +1,35 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronRight, GripVertical, Pencil, Plus } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
+import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
-import { setupDragTransfer } from '../../../lib/dragTransfer';
+import { useDragZoneStore } from '../../../lib/dragZoneStore';
+import { useOptimisticRows } from '../../../lib/useOptimisticRows';
 import type { ClickIntent } from '../../../types/workspace';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../../ui/context-menu';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 
 interface NoteRow {
   id: string;
   name: string;
+  work_id?: string;
+  parent_id?: string | null;
+  sort_order?: number | null;
 }
 
 interface WorldNoteListProps {
@@ -35,8 +40,6 @@ interface WorldNoteListProps {
   onNewWorldNote: (parentId?: string | null) => void;
 }
 
-const MAX_DEPTH = 1;
-
 export function WorldNoteList({
   workId,
   searchTerm,
@@ -45,22 +48,24 @@ export function WorldNoteList({
   onNewWorldNote,
 }: WorldNoteListProps) {
   const writerId = useWriterId();
-  const { createWorldNote, reorderItems } = useLocalWrite();
-  const sensors = useSensors(
-    useSensor(HandleOnlyPointerSensor),
-  );
+  const { createWorldNote } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, name FROM world_note
+  const sql = `SELECT id, name, work_id, parent_id, sort_order FROM world_note
      WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
      ORDER BY sort_order ASC, created_at ASC`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: notes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const notes = useOptimisticRows(rawNotes, {
+    docType: 'world_note',
+    parentId: null,
+    matches: (row) => row.work_id === workId,
+  });
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -132,47 +137,56 @@ export function WorldNoteList({
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
       {notes.length === 0 && !creating ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
         </p>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(event: DragEndEvent) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = notes.findIndex((n) => n.id === active.id);
-            const newIndex = notes.findIndex((n) => n.id === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-            const reordered = arrayMove(notes, oldIndex, newIndex);
-            void reorderItems(
-              'world_note',
-              reordered.map((n, i) => ({ id: n.id, sortOrder: i * 1000 })),
-            );
-          }}
-        >
-          <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-            {notes.map((note) => (
-              <SortableWorldNoteItem
-                key={note.id}
-                workId={workId}
-                note={note}
-                depth={0}
-                selectedItemId={selectedItemId}
-                expandedIds={expandedIds}
-                onSelect={handleSelect}
-                onToggleExpand={toggleExpand}
-                onItemSelect={onItemSelect}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+        <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+          {notes.map((note) => (
+            <SortableWorldNoteItem
+              key={note.id}
+              workId={workId}
+              note={note}
+              depth={0}
+              parentId={null}
+              selectedItemId={selectedItemId}
+              expandedIds={expandedIds}
+              onSelect={handleSelect}
+              onToggleExpand={toggleExpand}
+              onItemSelect={onItemSelect}
+            />
+          ))}
+        </SortableContext>
       )}
+      {/* 트리 끝 빈 영역 — 자식 노드를 root level로 빼낼 때 drop 타깃 (시각은 마지막 노드 after 밑줄로) */}
+      <TreeRootEndDropZone
+        docType="world_note"
+        lastItemId={notes[notes.length - 1]?.id ?? null}
+      />
       </div>
     </div>
+  );
+}
+
+function TreeRootEndDropZone({
+  docType,
+  lastItemId,
+}: {
+  docType: 'world_note' | 'plot';
+  lastItemId: string | null;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: `${docType}-tree-root-end`,
+    data: { type: 'tree-root-end', docType, lastItemId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="mt-1 min-h-15 flex-1"
+      aria-label="root level로 빼내기"
+    />
   );
 }
 
@@ -180,6 +194,7 @@ interface WorldNoteTreeItemProps {
   workId: string;
   note: NoteRow;
   depth: number;
+  parentId: string | null;
   selectedItemId: string | null;
   expandedIds: Set<string>;
   onSelect: (id: string, intent: ClickIntent) => void;
@@ -188,18 +203,46 @@ interface WorldNoteTreeItemProps {
 }
 
 function SortableWorldNoteItem(props: WorldNoteTreeItemProps) {
-  const { listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.note.id });
-  const style = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useSortable({
+      id: props.note.id,
+      data: {
+        type: 'tree-node',
+        docType: 'world_note',
+        docId: props.note.id,
+        depth: props.depth,
+        parentId: props.parentId,
+        title: props.note.name,
+        sortOrder: props.note.sort_order ?? 0,
+        rowSnapshot: {
+          id: props.note.id,
+          name: props.note.name,
+          work_id: props.workId,
+          parent_id: props.parentId,
+          sort_order: props.note.sort_order ?? 0,
+        },
+      },
+    });
+  // transform/transition 제거 — 다른 노드 reflow 없음. DragOverlay가 미리보기.
+  const style = { opacity: isDragging ? 0 : 1 };
+  // 현재 노드의 over zone (병합/위/아래)
+  const zoneInfo = useDragZoneStore((s) =>
+    s.overId === props.note.id ? s.zone : null,
+  );
   return (
-    <div ref={setNodeRef} style={style}>
-      <WorldNoteTreeItem {...props} dragListeners={listeners} />
+    <div ref={setNodeRef} style={style} className="relative">
+      {zoneInfo === 'before' && (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
+      )}
+      <WorldNoteTreeItem
+        {...props}
+        dragAttributes={attributes}
+        dragListeners={listeners}
+        isMergeOver={zoneInfo === 'merge'}
+      />
+      {zoneInfo === 'after' && (
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary z-10" />
+      )}
     </div>
   );
 }
@@ -208,24 +251,32 @@ function WorldNoteTreeItem({
   workId,
   note,
   depth,
+  parentId: _parentId,
   selectedItemId,
   expandedIds,
   onSelect,
   onToggleExpand,
   onItemSelect,
+  dragAttributes,
   dragListeners,
-}: WorldNoteTreeItemProps & { dragListeners?: Record<string, unknown> }) {
+  isMergeOver,
+}: WorldNoteTreeItemProps & {
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: SyntheticListenerMap;
+  isMergeOver?: boolean;
+}) {
+  void _parentId;
   const writerId = useWriterId();
-  const { updateWorldNoteName, createWorldNote, reorderItems } = useLocalWrite();
-  const childSensors = useSensors(
-    useSensor(HandleOnlyPointerSensor),
-  );
+  const { updateWorldNoteName, createWorldNote, deleteWorldNote } =
+    useLocalWrite();
   const isExpanded = expandedIds.has(note.id);
   const isSelected = selectedItemId === note.id;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.name);
   const [creatingChild, setCreatingChild] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!editing) setDraft(note.name);
@@ -259,16 +310,37 @@ function WorldNoteTreeItem({
     onItemSelect(id, 'default');
   };
 
+  const handleQuickAddChild = () => {
+    if (!isExpanded) onToggleExpand(note.id);
+    setCreatingChild(true);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteWorldNote(note.id);
+      if (selectedItemId === note.id) onItemSelect(null);
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const clickHandlers = useSidebarClickHandler((intent) => onSelect(note.id, intent));
 
-  const { data: children = [] } = useQuery<NoteRow>(
+  const { data: rawChildren = [] } = useQuery<NoteRow>(
     isExpanded
-      ? `SELECT id, name FROM world_note
+      ? `SELECT id, name, work_id, parent_id, sort_order FROM world_note
          WHERE parent_id = ? AND writer_id = ?
          ORDER BY sort_order ASC, created_at ASC`
-      : `SELECT '' AS id, '' AS name WHERE 0`,
+      : `SELECT '' AS id, '' AS name, '' AS work_id, '' AS parent_id, 0 AS sort_order WHERE 0`,
     isExpanded ? [note.id, writerId] : [],
   );
+  const children = useOptimisticRows(rawChildren, {
+    docType: 'world_note',
+    parentId: note.id,
+    matches: (row) => row.parent_id === note.id,
+  });
 
   return (
     <div>
@@ -285,119 +357,107 @@ function WorldNoteTreeItem({
           className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
         />
       ) : (
-        <div
-          className="group flex items-center"
-          draggable="true"
-          onDragStart={(e) => setupDragTransfer(e, 'world_note', note.id, note.name)}
-        >
-          {dragListeners && (
-            <span
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              {...dragAttributes}
               {...dragListeners}
-              data-dnd-handle
-              className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+              className={cn(
+                'group flex items-center rounded-md',
+                isMergeOver && 'bg-primary/15 ring-1 ring-primary',
+              )}
             >
-              <GripVertical size={12} className="text-muted-foreground" />
-            </span>
-          )}
-          <button
-            type="button"
-            {...clickHandlers}
-            title="클릭=메인 / 더블·⌘+클릭=핀"
-            className={cn(
-              'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-              isSelected
-                ? 'bg-primary/5 font-medium text-primary'
-                : 'text-sidebar-foreground',
-            )}
-          >
-            {depth < MAX_DEPTH && (
-              <ChevronRight
-                size={12}
-                strokeWidth={2}
+              <button
+                type="button"
+                {...clickHandlers}
+                title="클릭=메인 / 더블·⌘+클릭=핀"
                 className={cn(
-                  'shrink-0 transition-transform',
-                  isExpanded && 'rotate-90',
+                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                  isSelected
+                    ? 'bg-secondary font-medium text-primary'
+                    : 'text-sidebar-foreground',
                 )}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleExpand(note.id);
-                }}
-              />
-            )}
-            {note.name?.trim() || '(이름 없음)'}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-            title="이름 변경"
-            aria-label="이름 변경"
-            className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
-          >
-            <Pencil size={12} strokeWidth={1.75} />
-          </button>
-        </div>
+              >
+                <ChevronRight
+                  size={12}
+                  strokeWidth={2}
+                  className={cn(
+                    'shrink-0 transition-transform',
+                    isExpanded && 'rotate-90',
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleExpand(note.id);
+                  }}
+                />
+                {note.name?.trim() || '(이름 없음)'}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleQuickAddChild(); }}
+                title="하위 문서 추가"
+                aria-label="하위 문서 추가"
+                className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
+              >
+                <Plus size={12} strokeWidth={1.75} />
+              </button>
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => handleQuickAddChild()}>
+              <Plus size={12} /> 하위 추가
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => setEditing(true)}>
+              <Pencil size={12} /> 이름 변경
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+              <Trash2 size={12} /> 삭제
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      )}
+
+      {deleteOpen && (
+        <DeleteConfirmDialog
+          title="세계관 문서 삭제"
+          message={`'${note.name?.trim() || '(이름 없음)'}'을(를) 삭제하시겠습니까?`}
+          warning="하위 문서가 있다면 함께 처리됩니다. 이 작업은 되돌릴 수 없습니다."
+          busy={deleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setDeleteOpen(false)}
+        />
       )}
 
       {isExpanded && (
         <div className="ml-3 border-l border-border/50 pl-2">
-          {depth < MAX_DEPTH && children.length > 0 && (
-            <DndContext
-              sensors={childSensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(event: DragEndEvent) => {
-                const { active, over } = event;
-                if (!over || active.id === over.id) return;
-                const oldIndex = children.findIndex((c) => c.id === active.id);
-                const newIndex = children.findIndex((c) => c.id === over.id);
-                if (oldIndex === -1 || newIndex === -1) return;
-                const reordered = arrayMove(children, oldIndex, newIndex);
-                void reorderItems(
-                  'world_note',
-                  reordered.map((c, i) => ({ id: c.id, sortOrder: i * 1000 })),
-                );
-              }}
-            >
-              <SortableContext items={children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                {children.map((child) => (
-                  <SortableWorldNoteItem
-                    key={child.id}
-                    workId={workId}
-                    note={child}
-                    depth={depth + 1}
-                    selectedItemId={selectedItemId}
-                    expandedIds={expandedIds}
-                    onSelect={onSelect}
-                    onToggleExpand={onToggleExpand}
-                    onItemSelect={onItemSelect}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
-          {depth >= MAX_DEPTH && children.length > 0 && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              (최대 깊이 도달)
-            </p>
+          {children.length > 0 && (
+            <SortableContext items={children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              {children.map((child) => (
+                <SortableWorldNoteItem
+                  key={child.id}
+                  workId={workId}
+                  note={child}
+                  depth={depth + 1}
+                  parentId={note.id}
+                  selectedItemId={selectedItemId}
+                  expandedIds={expandedIds}
+                  onSelect={onSelect}
+                  onToggleExpand={onToggleExpand}
+                  onItemSelect={onItemSelect}
+                />
+              ))}
+            </SortableContext>
           )}
 
-          {depth < MAX_DEPTH && creatingChild && (
+          {creatingChild && (
             <InlineCreateInput
               placeholder="하위 문서 이름"
               onConfirm={(name) => void handleCreateChild(name)}
               onCancel={() => setCreatingChild(false)}
               small
             />
-          )}
-
-          {depth < MAX_DEPTH && (
-          <button
-            type="button"
-            onClick={() => setCreatingChild(true)}
-            className="mt-1 flex w-full items-center justify-center gap-1 rounded-md bg-primary/15 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/25"
-          >
-            <Plus size={11} strokeWidth={2} />
-            <span>하위 추가</span>
-          </button>
           )}
         </div>
       )}

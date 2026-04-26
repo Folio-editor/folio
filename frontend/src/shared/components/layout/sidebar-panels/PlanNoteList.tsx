@@ -1,32 +1,36 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Pencil, Plus } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
-import { setupDragTransfer } from '../../../lib/dragTransfer';
+import { useDragZoneStore } from '../../../lib/dragZoneStore';
+import { useOptimisticRows } from '../../../lib/useOptimisticRows';
 import type { ClickIntent } from '../../../types/workspace';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../../ui/context-menu';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 import { PlanTemplatePickerModal } from '../../../features/plan/PlanTemplatePickerModal';
 import { serializeTemplateContent, type PlanTemplate } from '../../../features/plan/planTemplates';
 
 interface NoteRow {
   id: string;
   title: string;
+  work_id?: string;
+  sort_order?: number | null;
 }
 
 interface PlanNoteListProps {
@@ -34,7 +38,8 @@ interface PlanNoteListProps {
   searchTerm: string;
   selectedItemId: string | null;
   onItemSelect: (id: string | null, intent?: ClickIntent) => void;
-  onNewPlanNote: () => void;
+  /** caller에서 전달되지만 컴포넌트 내부에서 자체 모달로 처리하므로 미사용 */
+  onNewPlanNote?: () => void;
 }
 
 export function PlanNoteList({
@@ -42,36 +47,34 @@ export function PlanNoteList({
   searchTerm,
   selectedItemId,
   onItemSelect,
-  onNewPlanNote,
 }: PlanNoteListProps) {
   const writerId = useWriterId();
-  const { updatePlanNoteTitle, reorderItems } = useLocalWrite();
+  const { createPlanNote } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
-  // 신규 문서 흐름 1단계: 템플릿 선택 모달.
-  // 모달에서 템플릿 선택 → setCreating(true)로 인라인 입력 단계 진입.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PlanTemplate | null>(null);
-  const sensors = useSensors(
-    useSensor(HandleOnlyPointerSensor),
-  );
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, title FROM plan_note
+  const sql = `SELECT id, title, work_id, sort_order FROM plan_note
      WHERE work_id = ? AND writer_id = ? ${whereSearch}
      ORDER BY sort_order ASC, created_at ASC`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: notes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const notes = useOptimisticRows(rawNotes, {
+    docType: 'plan_note',
+    workId,
+    matches: (row) => row.work_id === workId,
+  });
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
     setCreating(false);
     setCreateTitle('');
     if (!trimmedTitle) {
-      // 빈 제목으로 종료 시 템플릿 선택도 무효화 (다음 시도엔 다시 모달부터)
       setSelectedTemplate(null);
       return;
     }
@@ -90,7 +93,6 @@ export function PlanNoteList({
     if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
-  const { createPlanNote } = useLocalWrite();
   const createWithName = async (name: string) => {
     const content = selectedTemplate ? serializeTemplateContent(selectedTemplate) : null;
     const id = await createPlanNote(workId, name, Date.now(), content);
@@ -98,17 +100,14 @@ export function PlanNoteList({
     onItemSelect(id, 'default');
   };
 
-  // "+ 새 문서" 클릭 → 템플릿 선택 모달 진입
   const handleStartCreate = () => setPickerOpen(true);
 
-  // 모달에서 템플릿 카드 선택 → 인라인 제목 입력 단계로 전환
   const handleTemplateSelect = (template: PlanTemplate) => {
     setSelectedTemplate(template);
     setPickerOpen(false);
     setCreating(true);
   };
 
-  // 모달 ESC/배경 클릭 — creating 미진입 (모든 상태 초기화)
   const handlePickerClose = () => {
     setPickerOpen(false);
     setSelectedTemplate(null);
@@ -139,41 +138,28 @@ export function PlanNoteList({
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
-      {notes.length === 0 && !creating ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : '기획 문서가 없습니다.'}
-        </p>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(event: DragEndEvent) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = notes.findIndex((n) => n.id === active.id);
-            const newIndex = notes.findIndex((n) => n.id === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-            const reordered = arrayMove(notes, oldIndex, newIndex);
-            void reorderItems(
-              'plan_note',
-              reordered.map((n, i) => ({ id: n.id, sortOrder: i * 1000 })),
-            );
-          }}
-        >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
+        {notes.length === 0 && !creating ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : '기획 문서가 없습니다.'}
+          </p>
+        ) : (
           <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
             {notes.map((note) => (
               <SortableNoteItem
                 key={note.id}
                 note={note}
+                workId={workId}
                 selected={selectedItemId === note.id}
                 onSelect={(intent) => onItemSelect(note.id, intent)}
-                onRename={(title) => void updatePlanNoteTitle(note.id, title)}
+                onAfterDelete={() => {
+                  if (selectedItemId === note.id) onItemSelect(null);
+                }}
               />
             ))}
           </SortableContext>
-        </DndContext>
-      )}
+        )}
+        <TreeRootEndDropZone lastItemId={notes[notes.length - 1]?.id ?? null} />
       </div>
 
       <PlanTemplatePickerModal
@@ -185,47 +171,93 @@ export function PlanNoteList({
   );
 }
 
-/* ── 정렬 가능한 항목 래퍼 ── */
-
-function SortableNoteItem(props: {
-  note: NoteRow;
-  selected: boolean;
-  onSelect: (intent: ClickIntent) => void;
-  onRename: (title: string) => void;
-}) {
-  const { listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.note.id });
-  const style = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+function TreeRootEndDropZone({ lastItemId }: { lastItemId: string | null }) {
+  const { setNodeRef } = useDroppable({
+    id: 'plan_note-tree-root-end',
+    data: { type: 'tree-root-end', docType: 'plan_note', lastItemId },
+  });
   return (
-    <div ref={setNodeRef} style={style}>
-      <NoteItem {...props} dragListeners={listeners} />
-    </div>
+    <div
+      ref={setNodeRef}
+      className="mt-1 min-h-15 flex-1"
+      aria-label="목록 끝으로 이동"
+    />
   );
 }
 
-/* ── 기존 항목 ── */
+interface SortableNoteItemProps {
+  note: NoteRow;
+  workId: string;
+  selected: boolean;
+  onSelect: (intent: ClickIntent) => void;
+  onAfterDelete: () => void;
+}
+
+function SortableNoteItem(props: SortableNoteItemProps) {
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useSortable({
+      id: props.note.id,
+      data: {
+        type: 'tree-node',
+        docType: 'plan_note',
+        docId: props.note.id,
+        depth: 0,
+        parentId: null,
+        workId: props.workId,
+        title: props.note.title,
+        sortOrder: props.note.sort_order ?? 0,
+        rowSnapshot: {
+          id: props.note.id,
+          title: props.note.title,
+          work_id: props.workId,
+          sort_order: props.note.sort_order ?? 0,
+        },
+      },
+    });
+  const style = { opacity: isDragging ? 0 : 1 };
+  const zoneInfo = useDragZoneStore((s) =>
+    s.overId === props.note.id ? s.zone : null,
+  );
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      {zoneInfo === 'before' && (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
+      )}
+      <NoteItem
+        note={props.note}
+        selected={props.selected}
+        onSelect={props.onSelect}
+        onAfterDelete={props.onAfterDelete}
+        dragAttributes={attributes}
+        dragListeners={listeners}
+      />
+      {zoneInfo === 'after' && (
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary z-10" />
+      )}
+    </div>
+  );
+}
 
 function NoteItem({
   note,
   selected,
   onSelect,
-  onRename,
+  onAfterDelete,
+  dragAttributes,
   dragListeners,
 }: {
   note: NoteRow;
   selected: boolean;
   onSelect: (intent: ClickIntent) => void;
-  onRename: (title: string) => void;
-  dragListeners?: Record<string, unknown>;
+  onAfterDelete: () => void;
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: SyntheticListenerMap;
 }) {
+  const { updatePlanNoteTitle, deletePlanNote } = useLocalWrite();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const clickHandlers = useSidebarClickHandler(onSelect);
 
   useEffect(() => {
@@ -239,7 +271,7 @@ function NoteItem({
       setDraft(note.title);
       return;
     }
-    onRename(next.slice(0, 200));
+    void updatePlanNoteTitle(note.id, next.slice(0, 200));
   };
 
   const cancel = () => {
@@ -251,6 +283,17 @@ function NoteItem({
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deletePlanNote(note.id);
+      onAfterDelete();
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (editing) {
@@ -270,43 +313,50 @@ function NoteItem({
   }
 
   return (
-    <div
-      className="group flex items-center"
-      draggable="true"
-      onDragStart={(e) => setupDragTransfer(e, 'plan_note', note.id, note.title)}
-    >
-      {dragListeners && (
-        <span
-          {...dragListeners}
-          data-dnd-handle
-          className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <GripVertical size={12} className="text-muted-foreground" />
-        </span>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...dragAttributes}
+            {...dragListeners}
+            className="group flex items-center"
+          >
+            <button
+              type="button"
+              {...clickHandlers}
+              title="클릭=메인 / 더블·⌘+클릭=핀"
+              className={cn(
+                'flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                selected
+                  ? 'bg-secondary font-medium text-primary'
+                  : 'text-sidebar-foreground',
+              )}
+            >
+              {note.title?.trim() || '(제목 없음)'}
+            </button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => setEditing(true)}>
+            <Pencil size={12} /> 이름 변경
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+            <Trash2 size={12} /> 삭제
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {deleteOpen && (
+        <DeleteConfirmDialog
+          title="기획 문서 삭제"
+          message={`'${note.title?.trim() || '(제목 없음)'}'을(를) 삭제하시겠습니까?`}
+          busy={deleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setDeleteOpen(false)}
+        />
       )}
-      <button
-        type="button"
-        {...clickHandlers}
-        title="클릭=메인 / 더블·⌘+클릭=핀"
-        className={cn(
-          'flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-          selected
-            ? 'bg-primary/5 font-medium text-primary'
-            : 'text-sidebar-foreground',
-        )}
-      >
-        {note.title?.trim() || '(제목 없음)'}
-      </button>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-        title="이름 변경"
-        aria-label="이름 변경"
-        className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover:opacity-100"
-      >
-        <Pencil size={12} strokeWidth={1.75} />
-      </button>
-    </div>
+    </>
   );
 }
 

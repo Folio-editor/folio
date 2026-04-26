@@ -13,9 +13,9 @@ interface TimelineGaugeProps {
 }
 
 const MARKER_COLOR: Record<string, string> = {
-  plant: 'bg-blue-500',
-  resolve: 'bg-amber-500',
-  final_resolve: 'bg-emerald-500',
+  plant: 'bg-foreshadow-plant',
+  resolve: 'bg-foreshadow-resolve',
+  final_resolve: 'bg-foreshadow-final',
 };
 
 const MARKER_LABEL: Record<string, string> = {

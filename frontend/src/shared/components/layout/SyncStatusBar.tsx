@@ -102,11 +102,11 @@ export function SyncStatusBar() {
   // ─── 색상 결정 (도트/게이지 공통) ─────────────────────────
   // 우선순위: 오류 > 대량경고 > 오프라인 > 동기화 완료(잠시) > 진행 중 > 평소
   const color = (() => {
-    if (hasError) return 'bg-red-500';
-    if (queueCount >= WARN_THRESHOLD) return 'bg-amber-500';
+    if (hasError) return 'bg-danger';
+    if (queueCount >= WARN_THRESHOLD) return 'bg-warning';
     if (effectivelyOffline) return 'bg-muted-foreground/40';
-    if (!isGuest && queueCount === 0 && showComplete) return 'bg-green-500';
-    if (!isGuest && queueCount > 0) return 'bg-blue-500';
+    if (!isGuest && queueCount === 0 && showComplete) return 'bg-success';
+    if (!isGuest && queueCount > 0) return 'bg-info';
     if (isGuest && queueCount > 0) return 'bg-muted-foreground/60';
     // 평소(온라인 + 큐 0): 차분한 muted — 도트만 옅게 보이고 게이지는 빈 트랙
     return 'bg-muted-foreground/50';

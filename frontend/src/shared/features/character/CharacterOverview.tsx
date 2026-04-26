@@ -59,9 +59,9 @@ function nextSortOrder(rows: { sort_order: number | null }[]) {
 
 const GENDER_ICON_STYLE: Record<string, { color: string }> = {
   미설정: { color: 'text-muted-foreground' },
-  남: { color: 'text-blue-500' },
-  여: { color: 'text-pink-500' },
-  기타: { color: 'text-violet-500' },
+  남: { color: 'text-character-male' },
+  여: { color: 'text-character-female' },
+  기타: { color: 'text-character-other' },
 };
 
 const GENDER_ICON_MAP: Record<

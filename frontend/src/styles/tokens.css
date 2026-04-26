@@ -1,0 +1,160 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Folio Design Tokens — 모든 색상 토큰의 단일 진실 소스
+   ───────────────────────────────────────────────────────────────────────────
+   계층 구조:
+     A. Surface          — 면(배경/카드/사이드바). 테마별 오버라이드 O
+     B. Brand & Action   — 강조/버튼/포커스. 테마별 오버라이드 O
+     C. Semantic State   — success/warning/info/danger. 기본값 정의, 테마 미세조정 가능
+     D. Domain           — 캐릭터 성별, 복선 단계. 유니버설 (테마 무관)
+     E. Editor           — TipTap 데코레이션. 유니버설 (작가 시각언어 고정)
+
+   편집 가이드:
+     - 테마별 색을 바꾸려면 themes.css 만 수정
+     - C/D/E 토큰을 전 테마에서 동시에 바꾸려면 이 파일의 :root / .dark 수정
+     - 새 토큰을 Tailwind 유틸리티로 노출하려면 global.css 의 @theme inline 도 수정
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --radius: 0.5rem;
+
+  /* ── A. Surface ───────────────────────────────────────────────── */
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0.004 285.82);
+  --card: oklch(0.985 0 0);
+  --card-foreground: oklch(0.145 0.004 285.82);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0.004 285.82);
+  --muted: oklch(0.95 0.001 285.82);
+  --muted-foreground: oklch(0.556 0.015 285.82);
+  --sidebar: oklch(0.97 0.001 285.82);
+  --sidebar-foreground: oklch(0.145 0.004 285.82);
+  --sidebar-accent: oklch(0.97 0.001 285.82);
+  --sidebar-accent-foreground: oklch(0.205 0.015 285.82);
+
+  /* ── B. Brand & Action ────────────────────────────────────────── */
+  --primary: oklch(0.205 0.015 285.82);
+  --primary-foreground: oklch(0.985 0.001 285.82);
+  --secondary: oklch(0.97 0.001 285.82);
+  --secondary-foreground: oklch(0.205 0.015 285.82);
+  --accent: oklch(0.97 0.001 285.82);
+  --accent-foreground: oklch(0.205 0.015 285.82);
+  --border: oklch(0.922 0.004 285.82);
+  --sidebar-border: oklch(0.922 0.004 285.82);
+  --input: oklch(0.922 0.004 285.82);
+  --ring: oklch(0.708 0.165 254.62);
+
+  /* ── C. Semantic State ────────────────────────────────────────── */
+  /* 각 상태마다 3개 토큰: solid (본색), foreground (solid 위 글자색), soft (옅은 배경) */
+  --success: oklch(0.55 0.13 150);
+  --success-foreground: oklch(0.98 0 0);
+  --success-soft: oklch(0.94 0.04 150);
+
+  --warning: oklch(0.65 0.15 75);
+  --warning-foreground: oklch(0.20 0.02 75);
+  --warning-soft: oklch(0.95 0.06 85);
+
+  --info: oklch(0.55 0.14 245);
+  --info-foreground: oklch(0.98 0 0);
+  --info-soft: oklch(0.94 0.04 245);
+
+  --danger: oklch(0.577 0.245 27.33);
+  --danger-foreground: oklch(0.985 0 0);
+  --danger-soft: oklch(0.95 0.06 25);
+
+  /* shadcn 호환 별칭 — destructive == danger */
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+
+  /* ── D. Domain (유니버설 — themes.css 에서 오버라이드 금지) ──── */
+  --character-male: oklch(0.55 0.18 250);
+  --character-female: oklch(0.65 0.18 0);
+  --character-other: oklch(0.55 0.18 295);
+
+  --foreshadow-plant: oklch(0.55 0.18 245);
+  --foreshadow-resolve: oklch(0.70 0.15 75);
+  --foreshadow-final: oklch(0.60 0.15 155);
+
+  /* ── E. Editor Decoration (유니버설) ──────────────────────────── */
+  --editor-dialogue: oklch(0.45 0.15 250);
+  --editor-inner-thought: oklch(0.50 0.15 160);
+  --editor-author-note: oklch(0.45 0.10 70);
+  --editor-author-note-bg: oklch(0.95 0.10 90);
+  --editor-name-character: oklch(0.60 0.20 290);
+  --editor-name-place: oklch(0.60 0.15 170);
+  --editor-mark: oklch(0.90 0.15 90);
+  --editor-find-match: oklch(0.85 0.15 90);
+  --editor-find-match-current: oklch(0.75 0.20 50);
+  --editor-review-critical: oklch(0.95 0.06 25);
+  --editor-review-warning: oklch(0.95 0.06 85);
+  --editor-review-info: oklch(0.95 0.05 250);
+  --editor-review-focused: oklch(0.65 0.20 270);
+  --editor-review-badge-critical: oklch(0.50 0.20 25);
+  --editor-review-badge-warning: oklch(0.45 0.15 85);
+  --editor-review-badge-info: oklch(0.45 0.12 250);
+  --editor-scrollbar-thumb: oklch(0.75 0 0);
+  --editor-scrollbar-thumb-hover: oklch(0.60 0 0);
+}
+
+.dark {
+  /* ── A. Surface ───────────────────────────────────────────────── */
+  --background: oklch(0.22 0.01 285.82);
+  --foreground: oklch(0.85 0.001 285.82);
+  --card: oklch(22.933% 0.009 255.654);
+  --card-foreground: oklch(0.985 0.001 285.82);
+  --popover: oklch(0.205 0.015 285.82);
+  --popover-foreground: oklch(0.985 0.001 285.82);
+  --muted: oklch(0.269 0.015 285.82);
+  --muted-foreground: oklch(0.70 0.015 285.82);
+  --sidebar: oklch(0.19 0.01 285.82);
+  --sidebar-foreground: oklch(0.85 0.001 285.82);
+  --sidebar-accent: oklch(0.269 0.015 285.82);
+  --sidebar-accent-foreground: oklch(0.985 0.001 285.82);
+
+  /* ── B. Brand & Action ────────────────────────────────────────── */
+  --primary: oklch(100% 0.00011 271.152 / 0.36);
+  --primary-foreground: oklch(0.205 0.015 285.82);
+  --secondary: oklch(0.269 0.015 285.82);
+  --secondary-foreground: oklch(0.985 0.001 285.82);
+  --accent: oklch(0.269 0.015 285.82);
+  --accent-foreground: oklch(0.985 0.001 285.82);
+  --border: oklch(0.30 0.015 285.82);
+  --sidebar-border: oklch(0.30 0.015 285.82);
+  --input: oklch(0.30 0.015 285.82);
+  --ring: oklch(0.708 0.165 254.62);
+
+  /* ── C. Semantic State ────────────────────────────────────────── */
+  /* solid·foreground 는 light 와 공통 (대비 충분), soft 만 다크용으로 재정의 */
+  --success-soft: oklch(0.28 0.05 150);
+  --warning-soft: oklch(0.30 0.05 85);
+  --info-soft: oklch(0.28 0.04 245);
+  --danger-soft: oklch(0.28 0.05 25);
+
+  /* ── D. Domain ────────────────────────────────────────────────── */
+  --character-male: oklch(0.72 0.14 250);
+  --character-female: oklch(0.78 0.14 0);
+  --character-other: oklch(0.72 0.14 295);
+
+  --foreshadow-plant: oklch(0.72 0.14 245);
+  --foreshadow-resolve: oklch(0.78 0.13 75);
+  --foreshadow-final: oklch(0.72 0.13 155);
+
+  /* ── E. Editor Decoration ─────────────────────────────────────── */
+  --editor-dialogue: oklch(0.72 0.15 250);
+  --editor-inner-thought: oklch(0.70 0.15 160);
+  --editor-author-note: oklch(0.80 0.08 90);
+  --editor-author-note-bg: oklch(0.30 0.08 70);
+  --editor-name-character: oklch(0.75 0.18 290);
+  --editor-name-place: oklch(0.75 0.13 170);
+  --editor-mark: oklch(0.40 0.10 90);
+  --editor-find-match: oklch(0.40 0.12 90);
+  --editor-find-match-current: oklch(0.50 0.18 50);
+  --editor-review-critical: oklch(0.25 0.05 25);
+  --editor-review-warning: oklch(0.25 0.05 85);
+  --editor-review-info: oklch(0.25 0.04 250);
+  --editor-review-focused: oklch(0.65 0.20 270);
+  --editor-review-badge-critical: oklch(0.70 0.20 25);
+  --editor-review-badge-warning: oklch(0.70 0.15 85);
+  --editor-review-badge-info: oklch(0.70 0.12 250);
+  --editor-scrollbar-thumb: oklch(0.35 0 0);
+  --editor-scrollbar-thumb-hover: oklch(0.45 0 0);
+}

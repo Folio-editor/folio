@@ -53,6 +53,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@powersync/react": "^1.10.0",
     "@powersync/web": "^1.37.2",
+    "@radix-ui/react-context-menu": "^2.2.16",
     "@radix-ui/react-slot": "^1.2.4",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-bubble-menu": "^3.22.3",

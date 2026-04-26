@@ -265,7 +265,7 @@ function AuthenticatedView() {
                   <span className="text-muted-foreground">저장 공간</span>
                   <span className={cn(
                     'font-medium',
-                    storageFull ? 'text-red-500' : storageWarning ? 'text-amber-500' : 'text-foreground',
+                    storageFull ? 'text-danger' : storageWarning ? 'text-warning' : 'text-foreground',
                   )}>
                     {formatBytes(usage.storageUsedBytes)} / {formatBytes(plan.storageLimitBytes)}
                   </span>
@@ -274,18 +274,18 @@ function AuthenticatedView() {
                   <div
                     className={cn(
                       'h-full rounded-full transition-all duration-500',
-                      storageFull ? 'bg-red-500' : storageWarning ? 'bg-amber-500' : 'bg-ring',
+                      storageFull ? 'bg-danger' : storageWarning ? 'bg-warning' : 'bg-ring',
                     )}
                     style={{ width: `${Math.min(100, usage.storagePercent)}%` }}
                   />
                 </div>
                 {storageFull && (
-                  <p className="mt-1.5 text-xs text-red-500">
+                  <p className="mt-1.5 text-xs text-danger">
                     클라우드 용량을 초과했습니다. 불필요한 문서를 삭제하거나 Pro로 업그레이드하세요.
                   </p>
                 )}
                 {storageWarning && (
-                  <p className="mt-1.5 text-xs text-amber-500">
+                  <p className="mt-1.5 text-xs text-warning">
                     저장 공간이 부족합니다.
                   </p>
                 )}
@@ -360,7 +360,7 @@ function CachedCloudUsageSection({ cached }: { cached: CachedAccountInfo }) {
             <span className="text-muted-foreground">저장 공간</span>
             <span className={cn(
               'font-medium',
-              storageFull ? 'text-red-500' : storageWarning ? 'text-amber-500' : 'text-foreground',
+              storageFull ? 'text-danger' : storageWarning ? 'text-warning' : 'text-foreground',
             )}>
               {formatBytes(usage.storageUsedBytes)} / {formatBytes(plan.storageLimitBytes)}
             </span>
@@ -369,18 +369,18 @@ function CachedCloudUsageSection({ cached }: { cached: CachedAccountInfo }) {
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-500',
-                storageFull ? 'bg-red-500' : storageWarning ? 'bg-amber-500' : 'bg-ring',
+                storageFull ? 'bg-danger' : storageWarning ? 'bg-warning' : 'bg-ring',
               )}
               style={{ width: `${Math.min(100, usage.storagePercent)}%` }}
             />
           </div>
           {storageFull && (
-            <p className="mt-1.5 text-xs text-red-500">
+            <p className="mt-1.5 text-xs text-danger">
               클라우드 용량을 초과했습니다. 불필요한 문서를 삭제하거나 Pro로 업그레이드하세요.
             </p>
           )}
           {storageWarning && (
-            <p className="mt-1.5 text-xs text-amber-500">
+            <p className="mt-1.5 text-xs text-warning">
               저장 공간이 부족합니다.
             </p>
           )}
@@ -425,7 +425,7 @@ function SyncPendingGauge({
   if (pendingCount === 0) {
     return (
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Cloud size={14} className="text-green-500" />
+        <Cloud size={14} className="text-success" />
         <span>모든 변경사항이 동기화되었습니다</span>
       </div>
     );
@@ -440,17 +440,17 @@ function SyncPendingGauge({
         : '동기화 대기 중';
 
   const barColor = isCritical
-    ? 'bg-red-500'
+    ? 'bg-danger'
     : isWarning
-      ? 'bg-amber-500'
+      ? 'bg-warning'
       : !connected
         ? 'bg-muted-foreground/40'
-        : 'bg-blue-500';
+        : 'bg-info';
 
   const textColor = isCritical
-    ? 'text-red-500'
+    ? 'text-danger'
     : isWarning
-      ? 'text-amber-500'
+      ? 'text-warning'
       : 'text-muted-foreground';
 
   // 게이지: 0~100 → 100건 미만은 비율 표시, 이상은 100%
@@ -475,7 +475,7 @@ function SyncPendingGauge({
       </div>
       <p className={cn('text-[11px]', textColor)}>{label}</p>
       {isCritical && (
-        <p className="text-[11px] text-red-500/80">
+        <p className="text-[11px] text-danger/80">
           네트워크 연결을 확인하거나, 앱을 재시작해 보세요.
         </p>
       )}
@@ -524,10 +524,10 @@ function OfflineBanner({
   isOnline: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+    <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
       <div className="flex items-center gap-2 text-xs">
-        <CloudOff size={14} className="text-amber-500" />
-        <span className="font-medium text-amber-500">
+        <CloudOff size={14} className="text-warning" />
+        <span className="font-medium text-warning">
           {isOnline ? '서버 통신 오류' : '오프라인 모드'}
         </span>
       </div>
@@ -566,10 +566,10 @@ function OfflineNoCacheView({
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-lg space-y-6">
           {/* 오프라인 안내 */}
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
             <div className="flex items-center gap-2 text-xs">
-              <CloudOff size={14} className="text-amber-500" />
-              <span className="font-medium text-amber-500">오프라인 모드</span>
+              <CloudOff size={14} className="text-warning" />
+              <span className="font-medium text-warning">오프라인 모드</span>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
               연결이 복구되면 클라우드 사용량과 요금제 정보가 표시됩니다.

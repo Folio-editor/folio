@@ -1,28 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
-  arrayMove,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
-import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
+import { useDragZoneStore } from '../../../lib/dragZoneStore';
+import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../../ui/context-menu';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
+
+type Section = Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot' | 'episode'>;
 
 interface SectionItemListProps {
-  section: Exclude<WorkspaceSection, 'plan' | 'world-note' | 'plot' | 'episode'>;
+  section: Section;
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
@@ -32,6 +37,8 @@ interface SectionItemListProps {
 interface Row {
   id: string;
   label: string | null;
+  work_id?: string;
+  sort_order?: number | null;
 }
 
 /**
@@ -48,24 +55,29 @@ export function SectionItemList({
   onItemSelect,
 }: SectionItemListProps) {
   const writerId = useWriterId();
-  const { createForeshadow, reorderItems } = useLocalWrite();
-  const sensors = useSensors(useSensor(HandleOnlyPointerSensor));
+  const { createForeshadow } = useLocalWrite();
   const table = SECTION_TABLES[section];
   const labelField = LABEL_FIELDS[section];
+  const docType = table; // SECTION_TABLES가 곧 dnd 시스템의 docType
 
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, ${labelField} AS label FROM ${table}
+  const sql = `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
      WHERE work_id = ? AND writer_id = ? ${whereSearch}
      ORDER BY sort_order ASC, created_at ASC`;
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
 
-  const { data: rows = [] } = useQuery<Row>(sql, params);
+  const { data: rawRows = [] } = useQuery<Row>(sql, params);
+  const rows = useOptimisticRows(rawRows, {
+    docType,
+    workId,
+    matches: (row) => row.work_id === workId,
+  });
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
@@ -120,27 +132,11 @@ export function SectionItemList({
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
-      {rows.length === 0 && !creating ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
-        </p>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(event: DragEndEvent) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = rows.findIndex((row) => row.id === active.id);
-            const newIndex = rows.findIndex((row) => row.id === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-            const reordered = arrayMove(rows, oldIndex, newIndex);
-            void reorderItems(
-              table,
-              reordered.map((row, i) => ({ id: row.id, sortOrder: i * 1000 })),
-            );
-          }}
-        >
+        {rows.length === 0 && !creating ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
+          </p>
+        ) : (
           <SortableContext items={rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
             {rows.map((row) => {
               const raw = row.label?.trim() || '';
@@ -153,88 +149,261 @@ export function SectionItemList({
                   key={row.id}
                   id={row.id}
                   label={display}
+                  rawLabel={raw}
+                  section={section}
+                  docType={docType}
+                  workId={workId}
+                  sortOrder={row.sort_order ?? 0}
                   selected={selectedItemId === row.id}
                   onSelect={(intent) => onItemSelect(row.id, intent)}
+                  onAfterDelete={() => {
+                    if (selectedItemId === row.id) onItemSelect(null);
+                  }}
                 />
               );
             })}
           </SortableContext>
-        </DndContext>
-      )}
+        )}
+        <TreeRootEndDropZone docType={docType} lastItemId={rows[rows.length - 1]?.id ?? null} />
       </div>
     </div>
   );
 }
 
-function SortableSectionItem({
-  id,
-  label,
-  selected,
-  onSelect,
+function TreeRootEndDropZone({
+  docType,
+  lastItemId,
 }: {
+  docType: string;
+  lastItemId: string | null;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: `${docType}-tree-root-end`,
+    data: { type: 'tree-root-end', docType, lastItemId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="mt-1 min-h-15 flex-1"
+      aria-label="목록 끝으로 이동"
+    />
+  );
+}
+
+interface SortableProps {
   id: string;
   label: string;
+  rawLabel: string;
+  section: Section;
+  docType: string;
+  workId: string;
+  sortOrder: number;
   selected: boolean;
   onSelect: (intent: ClickIntent) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
-  const style = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-  const clickHandlers = useSidebarClickHandler(onSelect);
+  onAfterDelete: () => void;
+}
 
+function SortableSectionItem(props: SortableProps) {
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useSortable({
+      id: props.id,
+      data: {
+        type: 'tree-node',
+        docType: props.docType,
+        docId: props.id,
+        depth: 0,
+        parentId: null,
+        workId: props.workId,
+        title: props.label,
+        sortOrder: props.sortOrder,
+        rowSnapshot: {
+          id: props.id,
+          label: props.rawLabel,
+          work_id: props.workId,
+          sort_order: props.sortOrder,
+        },
+      },
+    });
+  const style = { opacity: isDragging ? 0 : 1 };
+  const zoneInfo = useDragZoneStore((s) => (s.overId === props.id ? s.zone : null));
   return (
-    <div ref={setNodeRef} style={style} className="group flex w-full items-center">
-      <span
-        {...attributes}
-        {...listeners}
-        data-dnd-handle
-        className="cursor-grab opacity-0 transition-opacity group-hover:opacity-100"
-      >
-        <GripVertical size={12} className="text-muted-foreground" />
-      </span>
-      <button
-        type="button"
-        {...clickHandlers}
-        title="클릭=메인 / 더블·⌘+클릭=핀"
-        className={cn(
-          'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-          selected
-            ? 'bg-primary/5 font-medium text-primary'
-            : 'text-sidebar-foreground',
-        )}
-      >
-        {label}
-      </button>
+    <div ref={setNodeRef} style={style} className="relative">
+      {zoneInfo === 'before' && (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
+      )}
+      <SectionItem
+        {...props}
+        dragAttributes={attributes}
+        dragListeners={listeners}
+      />
+      {zoneInfo === 'after' && (
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary z-10" />
+      )}
     </div>
   );
 }
 
-const LABEL_FIELDS: Record<SectionItemListProps['section'], string> = {
+function SectionItem({
+  id,
+  label,
+  rawLabel,
+  section,
+  selected,
+  onSelect,
+  onAfterDelete,
+  dragAttributes,
+  dragListeners,
+}: SortableProps & {
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: SyntheticListenerMap;
+}) {
+  const {
+    deleteCharacter,
+    deleteForeshadow,
+    deleteIdeaArchive,
+    updateCharacter,
+    updateForeshadow,
+    updateIdea,
+  } = useLocalWrite();
+  const clickHandlers = useSidebarClickHandler(onSelect);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(rawLabel);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // idea-archive는 본문 편집이 별도 화면(메인) — 사이드바 인라인 편집 X
+  const allowInlineRename = section !== 'idea-archive';
+
+  useEffect(() => {
+    if (!editing) setDraft(rawLabel);
+  }, [editing, rawLabel]);
+
+  const commit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === rawLabel) {
+      setDraft(rawLabel);
+      return;
+    }
+    if (section === 'character') {
+      void updateCharacter(id, { name: next.slice(0, 200) });
+    } else if (section === 'foreshadow') {
+      void updateForeshadow(id, { title: next.slice(0, 200) });
+    }
+  };
+
+  const cancel = () => {
+    setDraft(rawLabel);
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      if (section === 'character') await deleteCharacter(id);
+      else if (section === 'foreshadow') await deleteForeshadow(id);
+      else await deleteIdeaArchive(id);
+      onAfterDelete();
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value.replace(/\n/g, ''))}
+        onBlur={commit}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={handleKeyDown}
+        maxLength={200}
+        className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
+      />
+    );
+  }
+
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...dragAttributes}
+            {...dragListeners}
+            className="group flex w-full items-center"
+          >
+            <button
+              type="button"
+              {...clickHandlers}
+              title="클릭=메인 / 더블·⌘+클릭=핀"
+              className={cn(
+                'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                selected
+                  ? 'bg-secondary font-medium text-primary'
+                  : 'text-sidebar-foreground',
+              )}
+            >
+              {label}
+            </button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {allowInlineRename && (
+            <>
+              <ContextMenuItem onSelect={() => setEditing(true)}>
+                <Pencil size={12} /> 이름 변경
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+            <Trash2 size={12} /> 삭제
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {deleteOpen && (
+        <DeleteConfirmDialog
+          title={DELETE_LABELS[section]}
+          message={`'${label}'을(를) 삭제하시겠습니까?`}
+          busy={deleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+const LABEL_FIELDS: Record<Section, string> = {
   character: 'name',
   foreshadow: 'title',
   'idea-archive': 'content',
 };
 
-const EMPTY_LABELS: Record<SectionItemListProps['section'], string> = {
+const EMPTY_LABELS: Record<Section, string> = {
   character: '등장인물이 없습니다.',
   foreshadow: '복선이 없습니다.',
   'idea-archive': '아이디어가 없습니다.',
 };
 
-const PLACEHOLDER_LABELS: Record<SectionItemListProps['section'], string> = {
+const PLACEHOLDER_LABELS: Record<Section, string> = {
   character: '(이름 없음)',
   foreshadow: '(제목 없음)',
   'idea-archive': '(내용 없음)',
 };
 
-const DELETE_LABELS: Record<SectionItemListProps['section'], string> = {
-  character: '삭제',
+const DELETE_LABELS: Record<Section, string> = {
+  character: '등장인물 삭제',
   foreshadow: '복선 삭제',
   'idea-archive': '아이디어 삭제',
 };

@@ -34,15 +34,15 @@ interface RangeRow {
 }
 
 const IMPORTANCE_COLOR: Record<string, string> = {
-  '상': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  '중': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  '하': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  '상': 'bg-danger-soft text-danger',
+  '중': 'bg-warning-soft text-warning',
+  '하': 'bg-muted text-muted-foreground',
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  '진행중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '완결': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  '폐기': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  '진행중': 'bg-info-soft text-info',
+  '완결': 'bg-success-soft text-success',
+  '폐기': 'bg-muted text-muted-foreground',
 };
 
 const STATUS_FILTERS = [

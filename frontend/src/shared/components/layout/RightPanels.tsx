@@ -3,19 +3,11 @@ import { useQuery } from '@powersync/react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Typography from '@tiptap/extension-typography';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import { useDroppable } from '@dnd-kit/core';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import {
   AlertTriangle,
@@ -27,7 +19,6 @@ import {
   ArrowUpRight,
   ClipboardCopy,
   Clock,
-  Eye,
   FileStack,
   GripVertical,
   History,
@@ -35,7 +26,6 @@ import {
   Lightbulb,
   Loader2,
   OctagonAlert,
-  Pencil,
   Search,
   Send,
   Sparkles,
@@ -100,6 +90,20 @@ export function RightPanels({
   // mainDoc 객체에서 sub 필드 분리 — 기존 lockedReadOnly / AI 탭 컨텍스트 로직 호환
   const mainSection = mainDoc?.section ?? null;
   const mainItemId = mainDoc?.itemId ?? null;
+
+  // 메인 world_note의 root id 계산 — child면 그 parent, root면 자기 자신.
+  // 우측 패널에서 같은 root tree에 속한 모든 노드를 lockedReadOnly로 잠그기 위함.
+  const isMainWorldNote = mainSection === 'world-note';
+  const { data: mainWorldNoteRows = [] } = useQuery<{ parent_id: string | null }>(
+    isMainWorldNote && mainItemId
+      ? 'SELECT parent_id FROM world_note WHERE id = ?'
+      : 'SELECT NULL AS parent_id WHERE 0',
+    isMainWorldNote && mainItemId ? [mainItemId] : [],
+  );
+  const mainWorldNoteRootId =
+    isMainWorldNote && mainItemId
+      ? (mainWorldNoteRows[0]?.parent_id ?? mainItemId)
+      : null;
   return (
     <div
       style={{ width }}
@@ -148,6 +152,7 @@ export function RightPanels({
             isDraggingDoc={isDraggingDoc}
             mainSection={mainSection}
             mainItemId={mainItemId}
+            mainWorldNoteRootId={mainWorldNoteRootId}
           />
         )}
         {activeTab === 'idea' && (
@@ -178,6 +183,7 @@ function DocsTabContent({
   isDraggingDoc,
   mainSection,
   mainItemId,
+  mainWorldNoteRootId,
 }: {
   panels: AuxPanelItem[];
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
@@ -188,14 +194,18 @@ function DocsTabContent({
   isDraggingDoc: boolean;
   mainSection: import('../../types/workspace').WorkspaceSection | null;
   mainItemId: string | null;
+  mainWorldNoteRootId: string | null;
 }) {
   void isDraggingDoc; // 부모 RightPanels에서 외부 dragOver 감지용
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+
+  // dnd-kit cross-component drop — 트리 노드를 우측 사이드바로 끌어왔을 때
+  const { setNodeRef: setAuxDropRef, isOver: isAuxOver } = useDroppable({
+    id: 'aux-pinned-area',
+    data: { type: 'aux-area' },
+  });
 
   const calcDropIndex = (clientY: number): number => {
     if (!listRef.current) return panels.length;
@@ -238,18 +248,13 @@ function DocsTabContent({
     } catch { /* invalid payload */ }
   };
 
-  const handleSortEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = panels.findIndex((p) => p.id === active.id);
-    const newIdx = panels.findIndex((p) => p.id === over.id);
-    if (oldIdx === -1 || newIdx === -1) return;
-    onReorderPanels(arrayMove(panels, oldIdx, newIdx));
-  };
-
   return (
     <div
-      className={cn('flex min-h-0 flex-1 flex-col', isDragOver && 'bg-primary/5')}
+      ref={setAuxDropRef}
+      className={cn(
+        'flex min-h-0 flex-1 flex-col',
+        (isDragOver || isAuxOver) && 'bg-primary/5',
+      )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -258,7 +263,7 @@ function DocsTabContent({
         <div className="flex flex-1 items-center justify-center p-4">
           <div className={cn(
             'rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
-            isDragOver ? 'border-primary bg-primary/10' : 'border-primary/30',
+            (isDragOver || isAuxOver) ? 'border-primary bg-primary/10' : 'border-primary/30',
           )}>
             <p className="text-sm font-medium text-primary/70">여기에 문서를 놓으세요</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -268,34 +273,29 @@ function DocsTabContent({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-2">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleSortEnd}
+          <SortableContext
+            items={panels.map((p) => p.id)}
+            strategy={verticalListSortingStrategy}
           >
-            <SortableContext
-              items={panels.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div ref={listRef} className="flex flex-col gap-1.5">
-                {panels.map((panel, i) => (
-                  <div key={panel.id}>
-                    {isDragOver && dropIndex === i && <DropIndicatorLine />}
-                    <SortableAuxPanel
-                      panel={panel}
-                      onRemove={() => onRemovePanel(panel.id)}
-                      onToggleCollapse={() => onToggleCollapse(panel.id)}
-                      onOpenInMain={() => onOpenInMain(panel)}
-                      onAddPanel={onAddPanel}
-                      mainSection={mainSection}
-                      mainItemId={mainItemId}
-                    />
-                  </div>
-                ))}
-                {isDragOver && dropIndex === panels.length && <DropIndicatorLine />}
-              </div>
-            </SortableContext>
-          </DndContext>
+            <div ref={listRef} className="flex flex-col gap-1.5">
+              {panels.map((panel, i) => (
+                <div key={panel.id}>
+                  {isDragOver && dropIndex === i && <DropIndicatorLine />}
+                  <SortableAuxPanel
+                    panel={panel}
+                    onRemove={() => onRemovePanel(panel.id)}
+                    onToggleCollapse={() => onToggleCollapse(panel.id)}
+                    onOpenInMain={() => onOpenInMain(panel)}
+                    onAddPanel={onAddPanel}
+                    mainSection={mainSection}
+                    mainItemId={mainItemId}
+                    mainWorldNoteRootId={mainWorldNoteRootId}
+                  />
+                </div>
+              ))}
+              {isDragOver && dropIndex === panels.length && <DropIndicatorLine />}
+            </div>
+          </SortableContext>
         </div>
       )}
     </div>
@@ -1002,7 +1002,7 @@ function DraftInputScreen({
         </div>
 
         {isStreaming && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
+          <p className="text-xs text-warning">
             현재 초안이 생성 중입니다. 중단 후 새로운 생성을 시작할 수 있습니다.
           </p>
         )}
@@ -1248,7 +1248,7 @@ function ReviewInputScreen({
                       </span>
                       <span className={cn(
                         'font-medium',
-                        entry.result.score >= 80 ? 'text-emerald-600' : entry.result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                        entry.result.score >= 80 ? 'text-success' : entry.result.score >= 50 ? 'text-warning' : 'text-danger',
                       )}>
                         {entry.result.score}점
                       </span>
@@ -1282,9 +1282,9 @@ function circledNumber(n: number): string {
 }
 
 const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
-  critical: { bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800', icon: OctagonAlert, label: '심각' },
-  warning: { bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800', icon: AlertTriangle, label: '주의' },
-  info: { bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800', icon: Info, label: '참고' },
+  critical: { bg: 'bg-danger-soft border-danger/30', icon: OctagonAlert, label: '심각' },
+  warning: { bg: 'bg-warning-soft border-warning/30', icon: AlertTriangle, label: '주의' },
+  info: { bg: 'bg-info-soft border-info/30', icon: Info, label: '참고' },
 };
 
 function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
@@ -1363,7 +1363,7 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
                 <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
                 <span className={cn(
                   'text-lg font-bold',
-                  result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                  result.score >= 80 ? 'text-success' : result.score >= 50 ? 'text-warning' : 'text-danger',
                 )}>
                   {result.score}
                   <span className="text-xs font-normal text-muted-foreground">/100</span>
@@ -1373,7 +1373,7 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
             </div>
 
             {result.issues.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-3 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+              <div className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-3 text-sm text-success">
                 <Check size={16} strokeWidth={2} />
                 검수에서 발견된 문제가 없습니다.
               </div>
@@ -1401,9 +1401,9 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
                       <div className="mb-1.5 flex items-center gap-1.5">
                         <span className={cn(
                           'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-                          issue.severity === 'critical' && 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200',
-                          issue.severity === 'warning' && 'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200',
-                          issue.severity === 'info' && 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+                          issue.severity === 'critical' && 'bg-danger text-danger-foreground',
+                          issue.severity === 'warning' && 'bg-warning text-warning-foreground',
+                          issue.severity === 'info' && 'bg-info text-info-foreground',
                         )}>
                           {circledNumber(i + 1)}
                         </span>
@@ -1492,6 +1492,7 @@ function SortableAuxPanel({
   onAddPanel,
   mainSection,
   mainItemId,
+  mainWorldNoteRootId,
 }: {
   panel: AuxPanelItem;
   onRemove: () => void;
@@ -1500,9 +1501,10 @@ function SortableAuxPanel({
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
   mainSection: WorkspaceSection | null;
   mainItemId: string | null;
+  mainWorldNoteRootId: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: panel.id });
+    useSortable({ id: panel.id, data: { type: 'panel' } });
   const style = {
     transform: transform
       ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
@@ -1512,22 +1514,31 @@ function SortableAuxPanel({
   };
 
   const [contentHeight, setContentHeight] = useState(PANEL_DEFAULT_H);
-  const [editMode, setEditMode] = useState(false);
-  const lockedReadOnly = isSameAsMain(panel, mainSection, mainItemId);
-  const showEditor = editMode && !lockedReadOnly;
 
-  // 패널 접기 시 편집 모드 해제
-  const handleToggleCollapse = () => {
-    if (!panel.collapsed) setEditMode(false);
-    onToggleCollapse();
-  };
+  // 우측 패널의 root id 계산 — child면 그 parent, root면 자기 자신.
+  // 메인 root와 같은 tree면 lockedReadOnly (메인 통합 뷰에서 이미 편집 중이므로 충돌 방지).
+  const isPanelWorldNote = panel.docType === 'world_note';
+  const { data: panelWorldNoteRows = [] } = useQuery<{ parent_id: string | null }>(
+    isPanelWorldNote
+      ? 'SELECT parent_id FROM world_note WHERE id = ?'
+      : 'SELECT NULL AS parent_id WHERE 0',
+    isPanelWorldNote ? [panel.docId] : [],
+  );
+  const panelWorldNoteRootId = isPanelWorldNote
+    ? (panelWorldNoteRows[0]?.parent_id ?? panel.docId)
+    : null;
+
+  const sameTreeAsMain =
+    mainWorldNoteRootId !== null &&
+    panelWorldNoteRootId !== null &&
+    mainWorldNoteRootId === panelWorldNoteRootId;
+
+  const lockedReadOnly =
+    isSameAsMain(panel, mainSection, mainItemId) || sameTreeAsMain;
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} data-panel-id={panel.id}>
-      <div className={cn(
-        'rounded-md border bg-background',
-        showEditor ? 'border-primary/30' : 'border-border',
-      )}>
+      <div className="rounded-md border border-border bg-background">
         <div className="flex items-center gap-1 border-b border-border/50 px-2 py-1.5">
           <span
             {...listeners}
@@ -1537,7 +1548,7 @@ function SortableAuxPanel({
           </span>
           <button
             type="button"
-            onClick={handleToggleCollapse}
+            onClick={onToggleCollapse}
             className="text-muted-foreground hover:text-foreground"
           >
             {panel.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
@@ -1548,23 +1559,13 @@ function SortableAuxPanel({
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {AUX_DOC_LABELS[panel.docType]}
           </span>
-          {lockedReadOnly ? (
-            <span className="shrink-0 text-[9px] text-amber-500">읽기 전용</span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditMode((v) => !v)}
-              title={editMode ? '보기 모드' : '편집 모드'}
-              className={cn(
-                'shrink-0 rounded p-0.5 transition-colors',
-                editMode
-                  ? 'text-primary hover:bg-primary/10'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-              aria-label={editMode ? '보기 모드로 전환' : '편집 모드로 전환'}
+          {lockedReadOnly && (
+            <span
+              className="shrink-0 text-[9px] text-warning"
+              title={sameTreeAsMain ? '메인에서 편집 중인 트리' : '메인에서 편집 중'}
             >
-              {editMode ? <Eye size={12} /> : <Pencil size={12} />}
-            </button>
+              메인에서 편집 중
+            </span>
           )}
           {panel.docType !== 'plot' && (
             <button
@@ -1591,20 +1592,14 @@ function SortableAuxPanel({
           <>
             <div
               style={{ height: contentHeight }}
-              className={showEditor ? 'flex flex-col' : 'overflow-y-auto'}
+              className="overflow-y-auto"
             >
-              {showEditor ? (
-                <AuxDocEditable
-                  docType={panel.docType}
-                  docId={panel.docId}
-                />
-              ) : (
-                <AuxDocViewer
-                  docType={panel.docType}
-                  docId={panel.docId}
-                  onAddPanel={onAddPanel}
-                />
-              )}
+              <AuxDocViewer
+                docType={panel.docType}
+                docId={panel.docId}
+                editable={!lockedReadOnly}
+                onAddPanel={onAddPanel}
+              />
             </div>
             <VerticalResizeHandle
               onResize={(delta) =>
@@ -1619,65 +1614,6 @@ function SortableAuxPanel({
     </div>
   );
 }
-
-/* ── 편집 가능 패널 본문 ── */
-
-function AuxDocEditable({ docType, docId }: { docType: AuxDocType; docId: string }) {
-  const { data: rows = [] } = useQuery<{ content: string | null }>(
-    DOC_CONTENT_QUERIES[docType],
-    [docId],
-  );
-  const {
-    updateEpisode, updateWorldNoteContent, updatePlanNoteContent,
-    updateCharacterNoteContent, updatePlot, updateForeshadow,
-  } = useLocalWrite();
-
-  const loaded = rows.length > 0;
-  const content = rows[0]?.content ?? null;
-
-  const handleUpdate = (json: string) => {
-    switch (docType) {
-      case 'episode':        return void updateEpisode(docId, { content: json });
-      case 'world_note':     return void updateWorldNoteContent(docId, json);
-      case 'plan_note':      return void updatePlanNoteContent(docId, json);
-      case 'character_note': return void updateCharacterNoteContent(docId, json);
-      case 'plot':           return void updatePlot(docId, { content: json });
-      case 'foreshadow':     return void updateForeshadow(docId, { content: json });
-    }
-  };
-
-  // useQuery 로딩 완료 후에만 ContentEditor를 마운트 (initialContent가 확정된 상태)
-  if (!loaded) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
-        불러오는 중…
-      </div>
-    );
-  }
-
-  return (
-    <ContentEditor
-      key={docId}
-      itemId={docId}
-      initialContent={content}
-      placeholder="내용을 입력하세요…"
-      onUpdate={handleUpdate}
-      debounceMs={1500}
-      showStatusBar={false}
-      compact
-    />
-  );
-}
-
-const DOC_CONTENT_QUERIES: Record<AuxDocType, string> = {
-  episode: 'SELECT content FROM episode WHERE id = ?',
-  world_note: 'SELECT content FROM world_note WHERE id = ?',
-  plan_note: 'SELECT content FROM plan_note WHERE id = ?',
-  character_note: 'SELECT content FROM character_note WHERE id = ?',
-  plot: 'SELECT content FROM plot WHERE id = ?',
-  character: 'SELECT content FROM character WHERE id = ?',
-  foreshadow: 'SELECT content FROM foreshadow WHERE id = ?',
-};
 
 /* ── 수직 리사이즈 핸들 (패널 하단) ── */
 
