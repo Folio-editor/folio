@@ -1,0 +1,219 @@
+import { BrowserWindow } from 'electron';
+import type { BrowserWindow as BrowserWindowType } from 'electron';
+
+/**
+ * Electron 안에서 토스 결제창을 띄우는 전용 BrowserWindow.
+ *
+ * <p>토스 SDK를 data URL HTML에 로드해 `requestPayment` / `requestBillingAuth`를 호출한다.
+ * successUrl/failUrl은 `https://folio-checkout.local/success|fail` 같은 가상 호스트를 사용하고,
+ * `will-redirect` 이벤트에서 이를 가로채 쿼리 파라미터를 파싱한 뒤 창을 닫는다.
+ * → 외부 브라우저 리다이렉트 없이 SPA 상태를 보존한 채 결제 결과를 수신.
+ */
+
+const CHECKOUT_SUCCESS_URL = 'https://folio-checkout.local/success';
+const CHECKOUT_FAIL_URL = 'https://folio-checkout.local/fail';
+
+export interface OneTimePaymentParams {
+  clientKey: string;
+  amount: number;
+  orderId: string;
+  orderName: string;
+  customerKey: string;
+}
+
+export interface OneTimePaymentResult {
+  paymentKey: string;
+  orderId: string;
+  amount: number;
+}
+
+export interface BillingAuthParams {
+  clientKey: string;
+  customerKey: string;
+}
+
+export interface BillingAuthResult {
+  authKey: string;
+  customerKey: string;
+}
+
+export type CheckoutFailure = {
+  code: string | null;
+  message: string | null;
+};
+
+function buildOneTimeHtml(p: OneTimePaymentParams): string {
+  const payload = JSON.stringify(p);
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Folio 결제</title>
+<script src="https://js.tosspayments.com/v1/payment"></script>
+<style>
+  body { font-family: system-ui, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; color:#4b5563; }
+</style>
+</head>
+<body>
+<div id="status">결제창을 여는 중…</div>
+<script>
+  const P = ${payload};
+  try {
+    const toss = TossPayments(P.clientKey);
+    toss.requestPayment("카드", {
+      amount: Number(P.amount),
+      orderId: String(P.orderId),
+      orderName: String(P.orderName),
+      customerName: "Folio 사용자",
+      customerKey: String(P.customerKey),
+      successUrl: ${JSON.stringify(CHECKOUT_SUCCESS_URL)},
+      failUrl: ${JSON.stringify(CHECKOUT_FAIL_URL)},
+    }).catch((e) => {
+      const qs = new URLSearchParams({ code: e.code || '', message: e.message || String(e) });
+      location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+    });
+  } catch (e) {
+    const qs = new URLSearchParams({ code: 'SDK_INIT', message: String(e) });
+    location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+  }
+</script>
+</body>
+</html>`;
+}
+
+function buildBillingAuthHtml(p: BillingAuthParams): string {
+  const payload = JSON.stringify(p);
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Folio 구독 카드 등록</title>
+<script src="https://js.tosspayments.com/v1/payment"></script>
+<style>
+  body { font-family: system-ui, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; color:#4b5563; }
+</style>
+</head>
+<body>
+<div id="status">카드 등록창을 여는 중…</div>
+<script>
+  const P = ${payload};
+  try {
+    const toss = TossPayments(P.clientKey);
+    toss.requestBillingAuth("카드", {
+      customerKey: String(P.customerKey),
+      successUrl: ${JSON.stringify(CHECKOUT_SUCCESS_URL)},
+      failUrl: ${JSON.stringify(CHECKOUT_FAIL_URL)},
+    }).catch((e) => {
+      const qs = new URLSearchParams({ code: e.code || '', message: e.message || String(e) });
+      location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+    });
+  } catch (e) {
+    const qs = new URLSearchParams({ code: 'SDK_INIT', message: String(e) });
+    location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+  }
+</script>
+</body>
+</html>`;
+}
+
+function openCheckout<T>(
+  parent: BrowserWindowType | null,
+  html: string,
+  parseSuccess: (url: URL) => T | null,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const win = new BrowserWindow({
+      width: 520,
+      height: 720,
+      parent: parent ?? undefined,
+      modal: Boolean(parent),
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      title: 'Folio 결제',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+      if (!win.isDestroyed()) win.close();
+    };
+
+    const handleNavigation = (urlString: string) => {
+      if (!urlString.startsWith('https://folio-checkout.local/')) return false;
+      try {
+        const u = new URL(urlString);
+        if (u.pathname === '/success') {
+          const result = parseSuccess(u);
+          if (result) {
+            settle(() => resolve(result));
+          } else {
+            settle(() => reject(new Error('결제 결과 파라미터가 올바르지 않습니다.')));
+          }
+          return true;
+        }
+        if (u.pathname === '/fail') {
+          const code = u.searchParams.get('code');
+          const message = u.searchParams.get('message') ?? '결제가 취소되었습니다.';
+          const err = new Error(message);
+          (err as Error & { code?: string }).code = code ?? undefined;
+          settle(() => reject(err));
+          return true;
+        }
+      } catch {
+        // 파싱 실패 시 그대로 통과
+      }
+      return false;
+    };
+
+    win.webContents.on('will-redirect', (event, url) => {
+      if (handleNavigation(url)) event.preventDefault();
+    });
+    win.webContents.on('will-navigate', (event, url) => {
+      if (handleNavigation(url)) event.preventDefault();
+    });
+
+    win.on('closed', () => {
+      if (!settled) {
+        settled = true;
+        const err = new Error('결제창이 닫혔습니다.');
+        (err as Error & { code?: string }).code = 'USER_CLOSED';
+        reject(err);
+      }
+    });
+
+    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+    void win.loadURL(dataUrl);
+  });
+}
+
+export async function openOneTimePayment(
+  parent: BrowserWindowType | null,
+  params: OneTimePaymentParams,
+): Promise<OneTimePaymentResult> {
+  return openCheckout(parent, buildOneTimeHtml(params), (u) => {
+    const paymentKey = u.searchParams.get('paymentKey');
+    const orderId = u.searchParams.get('orderId');
+    const amount = u.searchParams.get('amount');
+    if (!paymentKey || !orderId || !amount) return null;
+    return { paymentKey, orderId, amount: Number(amount) };
+  });
+}
+
+export async function openBillingAuth(
+  parent: BrowserWindowType | null,
+  params: BillingAuthParams,
+): Promise<BillingAuthResult> {
+  return openCheckout(parent, buildBillingAuthHtml(params), (u) => {
+    const authKey = u.searchParams.get('authKey');
+    const customerKey = u.searchParams.get('customerKey');
+    if (!authKey || !customerKey) return null;
+    return { authKey, customerKey };
+  });
+}

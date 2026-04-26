@@ -9,7 +9,6 @@ import com.storyzip.payment.client.TossPaymentsClient;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.domain.PaymentStatus;
-import com.storyzip.payment.domain.TokenTransactionType;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
@@ -134,9 +133,8 @@ class PaymentServiceTest {
         assertThat(response.method()).isEqualTo(PaymentMethod.CARD);
         assertThat(response.approvedAt()).isNotNull();
 
-        verify(tokenWalletService).charge(
+        verify(tokenWalletService).chargePurchase(
                 eq(writerId), eq(20_000),
-                eq(TokenTransactionType.CHARGE),
                 eq("PAYMENT_SZ-ABC"),
                 eq(paymentId));
     }
@@ -155,7 +153,7 @@ class PaymentServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
 
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -171,7 +169,7 @@ class PaymentServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
 
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -190,7 +188,7 @@ class PaymentServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.orderId()).isEqualTo("SZ-ABC");
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -218,7 +216,7 @@ class PaymentServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_FAILED);
 
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     // ===== getByOrderId =====
