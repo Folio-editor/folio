@@ -7,6 +7,8 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
+import { SharedEditorToolbar } from '../../components/editor/SharedEditorToolbar';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
@@ -85,12 +87,15 @@ function PlotEditor({ item, onBack }: { item: PlotRow; onBack: () => void }) {
           />
         }
         trailing={
-          <div className="w-32">
-            <Select
-              options={STATUS_OPTIONS}
-              value={item.status}
-              onChange={(e) => void updatePlot(id, { status: e.target.value })}
-            />
+          <div className="flex items-center gap-2">
+            <div className="w-32">
+              <Select
+                options={STATUS_OPTIONS}
+                value={item.status}
+                onChange={(e) => void updatePlot(id, { status: e.target.value })}
+              />
+            </div>
+            <EditorToolbarToggle />
           </div>
         }
       />
@@ -149,16 +154,20 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
           />
         }
         trailing={
-          <div className="w-32">
-            <Select
-              options={STATUS_OPTIONS}
-              value={act.status}
-              onChange={(e) => void updatePlot(id, { status: e.target.value })}
-            />
+          <div className="flex items-center gap-2">
+            <div className="w-32">
+              <Select
+                options={STATUS_OPTIONS}
+                value={act.status}
+                onChange={(e) => void updatePlot(id, { status: e.target.value })}
+              />
+            </div>
+            <EditorToolbarToggle />
           </div>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <SharedEditorToolbar />
         <div className="mx-auto max-w-3xl px-8 py-6">
           {/* 막 본문 */}
           <WorldNoteInlineEditor

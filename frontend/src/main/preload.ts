@@ -6,6 +6,7 @@ import type {
   FolioOneTimePaymentResult,
   FolioBillingAuthParams,
   FolioBillingAuthResult,
+  UpdaterState,
 } from '../shared/types/auth';
 
 const api: FolioApi = {
@@ -50,6 +51,19 @@ const api: FolioApi = {
   spellcheck: {
     syncWords: (words: string[]) =>
       ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
+  updater: {
+    getCurrentVersion: () =>
+      ipcRenderer.invoke('updater:getCurrentVersion') as Promise<string>,
+    check: () => ipcRenderer.invoke('updater:check') as Promise<UpdaterState>,
+    download: () => ipcRenderer.invoke('updater:download') as Promise<UpdaterState>,
+    installAndRestart: () =>
+      ipcRenderer.invoke('updater:installAndRestart') as Promise<void>,
+    onStateChange: (callback: (state: UpdaterState) => void) => {
+      const listener = (_e: unknown, state: UpdaterState) => callback(state);
+      ipcRenderer.on('updater:state', listener);
+      return () => ipcRenderer.removeListener('updater:state', listener);
+    },
   },
 };
 

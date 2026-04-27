@@ -234,5 +234,21 @@ export function createWebFolioApi(): FolioApi {
         throw new Error('웹 환경에서는 결제 기능을 사용할 수 없습니다.');
       },
     },
+    updater: {
+      // 웹은 자동 업데이트 대상이 아님 — 브라우저가 알아서 새 버전을 로드.
+      // UI는 platform === 'web' 가드로 섹션 자체를 숨기지만, API 호출 시 안전하게 unsupported 반환.
+      getCurrentVersion: async () =>
+        (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '0.0.0',
+      check: async () => ({
+        phase: 'unsupported',
+        error: '웹에서는 앱 업데이트가 자동 처리됩니다',
+      }),
+      download: async () => ({
+        phase: 'unsupported',
+        error: '웹에서는 앱 업데이트가 자동 처리됩니다',
+      }),
+      installAndRestart: async () => {},
+      onStateChange: () => () => {},
+    },
   };
 }

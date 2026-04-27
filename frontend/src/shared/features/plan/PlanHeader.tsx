@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 
 interface PlanHeaderProps {
   /** plan_note 가 선택된 상태면 브레드크럼 + 문서 제목 표시 */
@@ -49,15 +50,20 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
       subtitle={currentNote ? undefined : '작품의 방향성과 정체성을 정의합니다'}
       trailing={
         currentNote ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="문서 삭제"
-            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
-        ) : undefined
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="문서 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
+        ) : (
+          <EditorToolbarToggle />
+        )
       }
     />
     {confirmDelete && currentNote && (

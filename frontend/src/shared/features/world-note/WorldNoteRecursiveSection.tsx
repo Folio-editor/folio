@@ -205,10 +205,9 @@ function NodeBody({
     await createWorldNote(workId, name.trim(), Date.now(), node.id);
   };
 
-  // root는 항상 본문 표시. 자식은 chevron 토글
+  // root는 헤더에서 이미 제목/삭제를 제공하므로 본문 제목/삭제 행 미노출.
+  // 자식 노드는 chevron 토글 + 좌측 계층 가이드라인으로 하위 문서임을 명시.
   const showBody = isRoot || bodyExpanded;
-  // chevron은 자식 노드에서만 (root는 항상 펼침)
-  const showChevron = !isRoot;
 
   return (
     <ContextMenu>
@@ -218,12 +217,13 @@ function NodeBody({
           {...(isRoot ? {} : dragListeners)}
           className={cn(
             'group rounded-md',
+            !isRoot && 'border-l-2 border-l-border/60 pl-3 transition-colors hover:border-l-primary/40',
             isMergeOver && 'bg-primary/10 ring-1 ring-primary',
           )}
         >
-          {/* 제목 행 */}
-          <div className="flex items-center gap-1.5">
-            {showChevron && (
+          {/* 제목 행 — root는 헤더가 대신함, 자식만 표시 */}
+          {!isRoot && (
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={(e) => {
@@ -240,47 +240,47 @@ function NodeBody({
                   <ChevronRight size={14} strokeWidth={1.75} />
                 )}
               </button>
-            )}
 
-            <input
-              type="text"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value.replace(/\n/g, ''))}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="제목"
-              maxLength={200}
-              data-note-title-id={node.id}
-              className={cn(
-                'min-w-0 flex-1 border-none bg-transparent px-0 font-bold text-foreground outline-none placeholder:text-muted-foreground/40',
-                headingClass,
-              )}
-            />
+              <input
+                type="text"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value.replace(/\n/g, ''))}
+                onBlur={commitName}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="제목"
+                maxLength={200}
+                data-note-title-id={node.id}
+                className={cn(
+                  'min-w-0 flex-1 border-none bg-transparent px-0 font-bold text-foreground outline-none placeholder:text-muted-foreground/40',
+                  headingClass,
+                )}
+              />
 
-            {/* hover '+' — 하위 추가 */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setCreatingChild(true);
-              }}
-              title="하위 문서 추가"
-              aria-label="하위 문서 추가"
-              className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
-            >
-              <Plus size={14} strokeWidth={1.75} />
-            </button>
-          </div>
+              {/* hover '+' — 하위 추가 */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCreatingChild(true);
+                }}
+                title="하위 문서 추가"
+                aria-label="하위 문서 추가"
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              >
+                <Plus size={14} strokeWidth={1.75} />
+              </button>
+            </div>
+          )}
 
           {/* 본문 */}
           {showBody && (
-            <div className="mt-2">
+            <div className={cn(!isRoot && 'mt-2')}>
               <WorldNoteInlineEditor
                 noteId={node.id}
                 initialContent={node.content}
@@ -289,6 +289,21 @@ function NodeBody({
                 size={bodySize}
               />
             </div>
+          )}
+
+          {/* root 전용: 본문 하단 "+ 하위 문서 추가" 버튼 — 헤더에 행을 노출하지 않으므로 분명한 진입점 제공 */}
+          {isRoot && !creatingChild && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCreatingChild(true);
+              }}
+              className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Plus size={12} strokeWidth={1.75} />
+              하위 문서 추가
+            </button>
           )}
 
           {/* 인라인 자식 추가 input */}
@@ -310,7 +325,7 @@ function NodeBody({
         <ContextMenuSeparator />
         <ContextMenuItem
           onSelect={() => {
-            // 제목 input focus 이동
+            // root는 헤더의 input으로 focus, 자식은 본문 input으로 focus
             requestAnimationFrame(() => {
               const inputs = document.querySelectorAll<HTMLInputElement>(
                 `input[data-note-title-id="${node.id}"]`,

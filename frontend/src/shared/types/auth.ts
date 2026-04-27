@@ -100,12 +100,61 @@ export interface FolioSpellcheckApi {
   syncWords: (words: string[]) => Promise<void>;
 }
 
+/**
+ * 앱 자동 업데이트 (수동 트리거).
+ * 사용자가 명시적으로 "확인/다운로드/설치" 버튼을 누를 때만 진행.
+ */
+export type UpdaterPhase =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  /** 패키징 안 된 dev 빌드 또는 web 플랫폼 */
+  | 'unsupported';
+
+export interface UpdaterDownloadProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdaterState {
+  phase: UpdaterPhase;
+  /** 발견되거나 설치 대기 중인 새 버전 */
+  version?: string;
+  releaseNotes?: string;
+  releaseDate?: string;
+  progress?: UpdaterDownloadProgress;
+  error?: string;
+}
+
+export interface FolioUpdaterApi {
+  /** 현재 설치된 앱 버전 (package.json#version 기반) */
+  getCurrentVersion: () => Promise<string>;
+  /** 새 버전 메타데이터 조회. 자동 다운로드는 하지 않는다. */
+  check: () => Promise<UpdaterState>;
+  /** 새 버전 바이너리 다운로드. download-progress 이벤트가 onStateChange로 push 된다. */
+  download: () => Promise<UpdaterState>;
+  /** 다운로드 완료된 업데이트를 즉시 설치하고 앱을 재시작한다. */
+  installAndRestart: () => Promise<void>;
+  /**
+   * 메인 프로세스가 push 하는 상태 변화 구독.
+   * 반환되는 함수를 호출해 구독을 해지한다.
+   */
+  onStateChange: (callback: (state: UpdaterState) => void) => () => void;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
   window: FolioWindowApi;
   spellcheck: FolioSpellcheckApi;
   payment: FolioPaymentApi;
+  updater: FolioUpdaterApi;
 }
 
 declare global {

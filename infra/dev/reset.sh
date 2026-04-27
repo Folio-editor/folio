@@ -157,7 +157,8 @@ else
 
   echo "[3/5] 인프라 재기동 (Doppler env 주입)"
   if command -v doppler >/dev/null; then
-    (cd "$SCRIPT_DIR" && doppler run -- docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
+    # --project / --config 명시 — 사용자 머신의 doppler setup 캐시(legacy 'storyzip' 등)와 무관하게 동작
+    (cd "$SCRIPT_DIR" && doppler run --project folio --config dev -- docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
   else
     (cd "$SCRIPT_DIR" && docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
   fi

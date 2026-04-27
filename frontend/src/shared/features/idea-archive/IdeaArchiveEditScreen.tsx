@@ -5,6 +5,7 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Select } from '../../components/ui/Select';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { TAG_OPTIONS, TAG_DOT_COLOR } from './ideaConstants';
 import { parseServerDate } from '../../lib/dateTime';
@@ -63,6 +64,7 @@ export function IdeaArchiveEditScreen({ id, onBack, onSendToRight }: IdeaArchive
                 onChange={(e) => void updateIdea(id, { tag: e.target.value || null })}
               />
             </div>
+            <EditorToolbarToggle />
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}

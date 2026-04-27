@@ -8,6 +8,7 @@ import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface CharacterNoteEditorProps {
@@ -112,14 +113,17 @@ function NoteEditorInner({
           />
         }
         trailing={
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="문서 삭제"
-            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="문서 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         }
       />
       <ContentEditor

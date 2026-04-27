@@ -3,6 +3,9 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Highlight from '@tiptap/extension-highlight';
+import TextAlign from '@tiptap/extension-text-align';
+import Typography from '@tiptap/extension-typography';
+import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 
 interface WorldNoteInlineEditorProps {
   noteId: string;
@@ -53,11 +56,19 @@ export function WorldNoteInlineEditor({
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder }),
         Highlight.configure({ multicolor: false }),
+        TextAlign.configure({ types: ['heading', 'paragraph'] }),
+        Typography,
       ],
       content: parseContent(initialContent),
       onCreate: ({ editor: ed }) => {
         lastSavedJsonRef.current = JSON.stringify(ed.getJSON());
         lastEmittedRawRef.current = initialContent ?? '';
+      },
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
+      onBlur: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().blurEditor(ed);
       },
       onUpdate: ({ editor: ed }) => {
         const next = JSON.stringify(ed.getJSON());
@@ -121,12 +132,17 @@ export function WorldNoteInlineEditor({
     lastEmittedRawRef.current = incoming;
   }, [initialContent, editor]);
 
-  // 언마운트 flush
+  // 언마운트 flush + focusedEditorStore 정리 (자기 자신만 비움)
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       pendingRef.current?.();
+      if (editor && !editor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(editor);
+      }
     };
+    // editor 인스턴스가 mount 시 결정되어 변하지 않으므로 [] 사용 — destroy는 editor 자체가 처리
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // editable prop 변경 시 editor에 반영 (mode 전환 없이 cursor 활성/비활성만)

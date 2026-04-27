@@ -8,6 +8,8 @@ import {
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
+import { SharedEditorToolbar } from '../../components/editor/SharedEditorToolbar';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
 import {
@@ -256,19 +258,23 @@ export function WorldNoteHierarchyScreen({
           />
         }
         trailing={
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(tree)}
-            title="세계관 문서 삭제 (하위 포함)"
-            aria-label="세계관 문서 삭제"
-            className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setDeleteTarget(tree)}
+              title="세계관 문서 삭제 (하위 포함)"
+              aria-label="세계관 문서 삭제"
+              className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <SharedEditorToolbar />
         <div className="mx-auto max-w-3xl px-10 pt-8 pb-12">
           <SortableContext
             items={[`recursive:${tree.id}`]}

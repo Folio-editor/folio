@@ -21,6 +21,13 @@ files:
 # Fuses 적용. forge plugin-fuses와 동일한 옵션을 afterPack 훅에서 flipFuses 로 적용.
 afterPack: ./build/afterPack.js
 
+# 자동 업데이트 피드 — Nginx 정적 서빙 (운영 EC2의 /opt/folio/releases/win/).
+# 빌드 시 release/latest.yml 자동 생성, 런타임 electron-updater가 동일 URL을 기본 피드로 사용.
+publish:
+  - provider: generic
+    url: https://folio-editor.co.kr/releases/win
+    channel: latest
+
 win:
   target:
     - target: nsis

@@ -5,6 +5,7 @@ import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { WorldNoteInlineEditor } from '../../features/world-note/WorldNoteInlineEditor';
+import { SharedEditorToolbar } from '../editor/SharedEditorToolbar';
 
 interface AuxDocViewerProps {
   docType: AuxDocType;
@@ -154,8 +155,11 @@ function WorldNoteAuxView({ docId, editable }: { docId: string; editable: boolea
   }
 
   return (
-    <div className="flex flex-col px-3 py-2">
-      <WorldNoteAuxSection node={tree} depth={0} editable={editable} />
+    <div className="flex flex-col">
+      <SharedEditorToolbar />
+      <div className="flex flex-col px-3 py-2">
+        <WorldNoteAuxSection node={tree} depth={0} editable={editable} />
+      </div>
     </div>
   );
 }
@@ -170,28 +174,39 @@ function WorldNoteAuxSection({
   editable: boolean;
 }) {
   const { updateWorldNoteContent } = useLocalWrite();
+  const isRoot = depth === 0;
   const headingClass =
-    depth === 0
-      ? 'text-sm font-bold'
-      : depth === 1
-        ? 'text-xs font-bold'
-        : 'text-[11px] font-semibold';
+    depth === 1 ? 'text-xs font-bold' : 'text-[11px] font-semibold';
   return (
     <section
       style={{ paddingLeft: depth > 0 ? Math.min(depth, 4) * 8 : undefined }}
       className={depth > 0 ? 'mt-2' : undefined}
     >
-      <h3 className={`${headingClass} mb-1 text-foreground`}>
-        {node.name?.trim() || '(이름 없음)'}
-      </h3>
-      <WorldNoteInlineEditor
-        noteId={node.id}
-        initialContent={node.content}
-        placeholder={editable ? '내용을 입력하세요…' : '내용 없음'}
-        onUpdate={(json) => void updateWorldNoteContent(node.id, json)}
-        editable={editable}
-        size="xs"
-      />
+      {/* root는 스테이지 카드 헤더에서 이미 제목을 제공하므로 본문 제목 미노출 */}
+      {!isRoot ? (
+        <div className="mb-1 border-l-2 border-l-border/60 pl-2">
+          <h3 className={`${headingClass} text-foreground`}>
+            {node.name?.trim() || '(이름 없음)'}
+          </h3>
+          <WorldNoteInlineEditor
+            noteId={node.id}
+            initialContent={node.content}
+            placeholder={editable ? '내용을 입력하세요…' : '내용 없음'}
+            onUpdate={(json) => void updateWorldNoteContent(node.id, json)}
+            editable={editable}
+            size="xs"
+          />
+        </div>
+      ) : (
+        <WorldNoteInlineEditor
+          noteId={node.id}
+          initialContent={node.content}
+          placeholder={editable ? '내용을 입력하세요…' : '내용 없음'}
+          onUpdate={(json) => void updateWorldNoteContent(node.id, json)}
+          editable={editable}
+          size="xs"
+        />
+      )}
       {node.children.length > 0 && (
         <div className="mt-1.5">
           {node.children.map((child) => (
@@ -359,10 +374,10 @@ function NonWorldNoteAuxView({
   }
 
   return (
-    <div className="px-3 py-2">
-      <h3 className="mb-2 text-sm font-bold text-foreground">
-        {doc.title?.trim() || '(제목 없음)'}
-      </h3>
+    <div className="flex flex-col">
+      <SharedEditorToolbar />
+      <div className="px-3 py-2">
+      {/* 제목은 스테이지 카드 헤더가 제공 — 중복 제거. character의 메타(성별/나이)만 노출. */}
       {docType === 'character' && (doc.gender || doc.age) && (
         <div className="mb-2 flex gap-3 text-xs text-muted-foreground">
           {doc.gender && <span>성별: {doc.gender}</span>}
@@ -403,6 +418,7 @@ function NonWorldNoteAuxView({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -444,41 +460,36 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
     );
   }
 
-  // 회차 — 단일 편집 (단순 제목)
+  // 회차 — 단일 편집. 제목은 스테이지 헤더가 제공하므로 본문에 미노출. 상태만 인라인.
   if (!isAct) {
     return (
-      <div className="flex flex-col px-3 py-2">
-        <div className="mb-2 flex items-baseline gap-1.5">
-          <span className="text-sm font-bold text-foreground">
-            {item.title?.trim() || '(제목 없음)'}
-          </span>
+      <div className="flex flex-col">
+        <SharedEditorToolbar />
+        <div className="flex flex-col px-3 py-2">
           {item.status && (
-            <span className="text-[10px] text-muted-foreground">{item.status}</span>
+            <div className="mb-2 text-[10px] text-muted-foreground">{item.status}</div>
           )}
+          <WorldNoteInlineEditor
+            noteId={item.id}
+            initialContent={item.content}
+            placeholder={editable ? '회차의 줄거리와 핵심 사건을 정리하세요…' : '내용 없음'}
+            onUpdate={(json) => void updatePlot(item.id, { content: json })}
+            editable={editable}
+            size="xs"
+          />
         </div>
-        <WorldNoteInlineEditor
-          noteId={item.id}
-          initialContent={item.content}
-          placeholder={editable ? '회차의 줄거리와 핵심 사건을 정리하세요…' : '내용 없음'}
-          onUpdate={(json) => void updatePlot(item.id, { content: json })}
-          editable={editable}
-          size="xs"
-        />
       </div>
     );
   }
 
-  // 막 — 본문 + 자식 회차 카드 (단순 제목)
+  // 막 — 본문 + 자식 회차. 막 자체 제목은 헤더가 제공하므로 미노출. 자식 회차는 계층 가이드라인.
   return (
-    <div className="flex flex-col px-3 py-2">
-      <div className="mb-2 flex items-baseline gap-1.5">
-        <span className="text-sm font-bold text-foreground">
-          {item.title?.trim() || '(제목 없음)'}
-        </span>
-        {item.status && (
-          <span className="text-[10px] text-muted-foreground">{item.status}</span>
-        )}
-      </div>
+    <div className="flex flex-col">
+      <SharedEditorToolbar />
+      <div className="flex flex-col px-3 py-2">
+      {item.status && (
+        <div className="mb-2 text-[10px] text-muted-foreground">{item.status}</div>
+      )}
       <WorldNoteInlineEditor
         noteId={item.id}
         initialContent={item.content}
@@ -488,13 +499,16 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
         size="xs"
       />
       {episodes.length > 0 && (
-        <div className="mt-2 border-t border-border/50 pt-2">
+        <div className="mt-3 border-t border-border/50 pt-2">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             회차 ({episodes.length})
           </p>
-          <div className="flex flex-col divide-y divide-border">
+          <div className="flex flex-col gap-2">
             {episodes.map((ep) => (
-              <div key={ep.id} className="py-2">
+              <div
+                key={ep.id}
+                className="border-l-2 border-l-border/60 pl-2 transition-colors hover:border-l-primary/40"
+              >
                 <div className="mb-1 flex items-baseline gap-1.5">
                   <h3 className="text-xs font-bold text-foreground">
                     {ep.title?.trim() || '(제목 없음)'}
@@ -516,6 +530,7 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -562,7 +577,9 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
   }
 
   return (
-    <div className="flex flex-col gap-3 px-3 py-2">
+    <div className="flex flex-col">
+      <SharedEditorToolbar />
+      <div className="flex flex-col gap-3 px-3 py-2">
       {acts.map((act) => {
         const actEps = episodesByAct.get(act.id) ?? [];
         return (
@@ -591,9 +608,12 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
             />
             {actEps.length > 0 && (
               <div className="mt-2 border-t border-border/50 pt-2">
-                <div className="flex flex-col divide-y divide-border">
+                <div className="flex flex-col gap-2">
                   {actEps.map((ep) => (
-                    <div key={ep.id} className="py-2">
+                    <div
+                      key={ep.id}
+                      className="border-l-2 border-l-border/60 pl-2 transition-colors hover:border-l-primary/40"
+                    >
                       <div className="mb-1 flex items-baseline gap-1.5">
                         <h4 className="text-[11px] font-semibold text-foreground">
                           {ep.title?.trim() || '(제목 없음)'}
@@ -618,6 +638,7 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

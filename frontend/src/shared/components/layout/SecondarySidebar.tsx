@@ -299,6 +299,23 @@ export function SecondarySidebar({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
+            {/* 잔여 크레딧 — 프로필 위 강조 박스 (클릭 시 결제 화면) */}
+            <button
+              type="button"
+              onClick={() => openSettings('payment')}
+              title="결제 / 충전"
+              className="flex items-center justify-between gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+            >
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Coins size={12} strokeWidth={1.75} />
+                잔여 크레딧
+              </span>
+              <span className="text-sm font-semibold text-foreground">
+                {wallet ? wallet.balance.toLocaleString() : '—'}
+              </span>
+            </button>
+
+            {/* 프로필 — 닉네임 + 테마 + 로그아웃 */}
             <div className="flex items-center gap-2 px-2 py-1.5">
               {writer?.profileImageUrl ? (
                 <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
@@ -307,22 +324,9 @@ export function SecondarySidebar({
                   ●
                 </span>
               )}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-xs text-sidebar-foreground">
-                  {writer?.nickname ?? writer?.email ?? ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => openSettings('payment')}
-                  title="결제 / 충전"
-                  className="mt-0.5 flex items-center gap-1 self-start rounded-sm text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  <Coins size={10} strokeWidth={1.75} />
-                  <span>
-                    {wallet ? `${wallet.balance.toLocaleString()} 크레딧` : '— 크레딧'}
-                  </span>
-                </button>
-              </div>
+              <span className="min-w-0 flex-1 truncate text-xs text-sidebar-foreground">
+                {writer?.nickname ?? writer?.email ?? ''}
+              </span>
               <ThemeToggle theme={theme} onCycle={cycleTheme} />
               <button
                 type="button"
@@ -334,8 +338,6 @@ export function SecondarySidebar({
                 <LogOut size={14} strokeWidth={2} />
               </button>
             </div>
-            {/* 동기화 큐 게이지 */}
-            <SyncStatusBar />
           </div>
         )}
       </div>

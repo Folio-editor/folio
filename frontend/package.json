@@ -71,6 +71,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^4.0.0",
+    "electron-updater": "^6.8.3",
     "immer": "^10.0.0",
     "lucide-react": "^0.400.0",
     "react": "^19.0.0",

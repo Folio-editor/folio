@@ -9,6 +9,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
+import { useEditorToolbarStore } from '../../stores/editorToolbarStore';
 import SceneBreak from './extensions/SceneBreak';
 import KoreanPunctuation from './extensions/KoreanPunctuation';
 import AutoPairQuotes from './extensions/AutoPairQuotes';
@@ -73,6 +74,10 @@ export function ContentEditor({
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
 
   const settings = useEditorSettings();
+  const globalToolbarVisible = useEditorToolbarStore((s) => s.visible);
+  // compact prop은 호출처 강제 override(우측 사이드바 등 좁은 폭)
+  // 그 외엔 글로벌 토글이 단일 진실 소스
+  const toolbarVisible = !compact && globalToolbarVisible;
 
   const editor = useEditor(
     {
@@ -260,8 +265,8 @@ export function ContentEditor({
 
   return (
     <div className={wrapperClasses} style={editorStyle}>
-      {/* 툴바 — compact 모드에서는 숨김 (단축키 전용 편집) */}
-      {!compact && (
+      {/* 툴바 — compact 모드 / 글로벌 토글 OFF에서는 숨김 (단축키 전용 편집) */}
+      {toolbarVisible && (
         <>
           <EditorToolbar
             editor={editor}

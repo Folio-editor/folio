@@ -4,6 +4,7 @@ import { Trash2 } from 'lucide-react';
 import { WorldNoteEditor } from './WorldNoteEditor';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface WorldNoteScreenProps {
@@ -121,15 +122,18 @@ export function WorldNoteScreen({ noteId, onBack, onSendToRight }: WorldNoteScre
           </span>
         }
         trailing={
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="세계관 문서 삭제"
-            aria-label="세계관 문서 삭제"
-            className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="세계관 문서 삭제"
+              aria-label="세계관 문서 삭제"
+              className="rounded p-2 text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         }
       />
 
