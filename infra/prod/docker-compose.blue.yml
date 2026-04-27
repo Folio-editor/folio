@@ -85,8 +85,13 @@ services:
       # 미설정 시 SDK 기본값(https://api.anthropic.com) 사용 — 그 경우 GMS 키는
       # 진짜 Anthropic에서 invalid x-api-key 401 발생.
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      # GMS proxy의 모델 alias가 anthropic 정식 이름과 다를 수 있음 → Doppler 우선,
+      # 빈 값이면 ai/app/config.py의 코드 default(anthropic 정식 이름)로 fallback.
+      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL:-claude-sonnet-4-20250514}
+      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL:-claude-opus-4-5-20251101}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      # 모델명/프로바이더는 ai/app/config.py 코드 default 사용 (도플러 미잔류)
+      # provider 선택은 도플러 미잔류 (코드 hardcode)
       LLM_PROVIDER: anthropic
       EMBEDDING_PROVIDER: openai
     depends_on:
@@ -116,8 +121,12 @@ services:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL:-claude-haiku-4-5-20251001}
+      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL:-claude-sonnet-4-20250514}
+      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL:-claude-opus-4-5-20251101}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      # 모델명/프로바이더는 ai/app/config.py 코드 default 사용
+      # provider 선택은 도플러 미잔류 (코드 hardcode)
       LLM_PROVIDER: anthropic
       EMBEDDING_PROVIDER: openai
     depends_on:
