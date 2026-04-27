@@ -63,7 +63,7 @@ public class PaymentService {
 
         return new CreatePaymentResponse(
                 payment.getOrderId(),
-                "StoryZip 토큰 " + pkg.getTokenQty(),
+                "Folio 토큰 " + pkg.getTokenQty(),
                 payment.getAmount(),
                 payment.getTokenQty()
         );

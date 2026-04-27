@@ -1,5 +1,5 @@
 # ============================================================
-# PowerSync Sync Rules — StoryZip
+# PowerSync Sync Rules — Folio
 # ============================================================
 # - 각 writer는 자신의 writer_id와 일치하는 데이터만 동기화 받음
 # - request.user_id()는 JWT `sub` 클레임에서 추출
