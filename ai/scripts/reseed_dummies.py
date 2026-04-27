@@ -38,10 +38,17 @@ def meta_to_description(meta: dict) -> str:
     return "\n".join(parts)
 
 
-async def reseed(writer_id: str, db_url: str) -> None:
+async def reseed(writer_id: str, db_url: str, only: list[str] | None = None) -> None:
+    """only가 주어지면 해당 폴더만 재시드. 기본은 전체.
+
+    예: only=["dummy-work-2"] → work-1/3은 건드리지 않음.
+    """
     conn = await asyncpg.connect(db_url)
     try:
-        for sort_order, (folder, work_id) in enumerate(WORK_IDS.items(), start=1):
+        targets = (
+            [(f, WORK_IDS[f]) for f in only] if only else list(WORK_IDS.items())
+        )
+        for sort_order, (folder, work_id) in enumerate(targets, start=1):
             base = FIXTURES_DIR / folder
             meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
             characters = json.loads((base / "characters.json").read_text(encoding="utf-8"))
@@ -104,6 +111,23 @@ async def reseed(writer_id: str, db_url: str) -> None:
                     )
                     note_order += 1
 
+                # custom_fields: 픽스처에 있으면 character_custom_field 테이블에 삽입
+                for cf in ch.get("custom_fields") or []:
+                    name = cf.get("field_name") or cf.get("name")
+                    value = cf.get("field_value") or cf.get("value")
+                    if not name:
+                        continue
+                    await conn.execute(
+                        "INSERT INTO character_custom_field "
+                        "(id, character_id, field_name, field_value, sort_order, created_at, updated_at) "
+                        "VALUES ($1, $2, $3, $4, $5, now(), now())",
+                        uuid.uuid4(),
+                        char_id,
+                        str(name),
+                        str(value or ""),
+                        cf.get("sort_order", 0),
+                    )
+
             # 3. world_notes (two-pass: 1st pass inserts, 2nd pass links parent_id)
             name_to_id: dict[str, uuid.UUID] = {}
             for wn in worldnotes:
@@ -151,8 +175,12 @@ async def reseed(writer_id: str, db_url: str) -> None:
                 )
 
             # 5. episodes
+            # 프론트엔드는 sort_order를 0-indexed로 다루고 UI에서 sort_order+1을
+            # "N화"로 렌더링한다. fixture가 episode_number(1-indexed)를 그대로 쓰면
+            # 새 회차 생성 시(episodes.length=N → 새 sort_order=N) 기존 화와 충돌.
             for ep in episodes:
                 content = ep.get("content") or ""
+                ep_num = ep.get("episode_number", 1)
                 await conn.execute(
                     "INSERT INTO episode "
                     "(id, work_id, writer_id, title, status, content, word_count, sort_order) "
@@ -160,10 +188,10 @@ async def reseed(writer_id: str, db_url: str) -> None:
                     uuid.uuid4(),
                     uuid.UUID(work_id),
                     uuid.UUID(writer_id),
-                    ep.get("title") or f"{ep.get('episode_number', 1)}화",
+                    ep.get("title") or f"{ep_num}화",
                     content,
                     len(content),
-                    ep.get("episode_number", 1),
+                    ep_num - 1,  # 0-indexed
                 )
 
             print(
@@ -182,8 +210,14 @@ def main() -> None:
         "--db-url",
         default="postgresql://storyzip:storyzip_dev@localhost:5432/storyzip",
     )
+    ap.add_argument(
+        "--only",
+        nargs="+",
+        choices=list(WORK_IDS.keys()),
+        help="특정 dummy-work만 재시드 (예: --only dummy-work-2). 기본은 전체.",
+    )
     args = ap.parse_args()
-    asyncio.run(reseed(args.writer_id, args.db_url))
+    asyncio.run(reseed(args.writer_id, args.db_url, only=args.only))
 
 
 if __name__ == "__main__":
