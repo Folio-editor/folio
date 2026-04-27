@@ -27,6 +27,7 @@ from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
 from app.services.settings_loader import load_settings
 from app.services.text_extractor import extract_plain_text
+from app.services.timeline_extractor import build_timeline
 
 TOKEN_BUDGET = 40_000
 
@@ -37,7 +38,7 @@ RECENT_RAW_LIMIT = {
     "draft": 4,           # 하위 호환 기본값
     "draft_sonnet": 2,
     "draft_opus": 4,
-    "review": 2,
+    "review": 1,
 }
 VECTOR_SEARCH_LIMIT = {
     "draft": 15,          # 하위 호환 기본값
@@ -47,6 +48,8 @@ VECTOR_SEARCH_LIMIT = {
 }
 # 복선(foreshadows)을 컨텍스트에 포함할지 여부 — 초안에서는 제거(작가 주도 영역)
 FORESHADOWS_MODES = {"review"}
+# 회차별 시간 표지(타임라인) 메타데이터를 prompt에 주입할지 — 검수의 시간 충돌 검출용
+TIMELINE_MODES = {"review"}
 
 # 캐릭터 서브노트(외형/성격/MBTI 등) 본문 문자 제한
 SUBNOTE_TRUNC = 150
@@ -71,6 +74,17 @@ def _clean(text: str | None) -> str:
 
 def _plain(content: Any) -> str:
     return _clean(extract_plain_text(content))
+
+
+# 검수 모드에서는 등장인물 카드가 트리밍되면 부차 인물(예: 김우식, 노정희) 정보가
+# 사라져 같은 종류 함정의 검출 일관성이 깨진다. 따라서 review 모드에서는 characters를
+# 트리밍 대상에서 제외해 결정론적으로 전부 포함시킨다.
+PROTECTED_KEYS_BY_MODE: dict[str, set[str]] = {
+    # 검수 모드: 등장인물·세계관 노트 둘 다 트리밍하지 않는다.
+    # - characters: 부차 인물(예: 김우식 직업) 정보가 사라지면 검출 일관성이 깨진다.
+    # - world_notes: 채팅 코러스 닉네임/플랫폼 룰 등 보조 정보가 사라지면 검출 사각지대 생김.
+    "review": {"characters", "world_notes"},
+}
 
 
 async def assemble_context(
@@ -98,6 +112,10 @@ async def assemble_context(
                 sections["world_notes"] = settings_bundle["world_notes_text"]
             if include_foreshadows:
                 sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
+            if mode in TIMELINE_MODES:
+                sections["timeline"] = await build_timeline(
+                    session, work_id, current_episode_num
+                )
             sections["storyline"] = await _fetch_storyline(session, work_id)
             recent_raw_text, recent_raw_orders = await _fetch_recent_raw(
                 session, work_id, current_episode_num, limit=recent_raw_limit
@@ -113,7 +131,8 @@ async def assemble_context(
                 limit=vector_search_limit,
             )
 
-        return _trim_to_budget(sections)
+        protected = PROTECTED_KEYS_BY_MODE.get(mode, set())
+        return _trim_to_budget(sections, protected_keys=protected)
     finally:
         await engine.dispose()
 
@@ -175,11 +194,19 @@ async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
     for idx, char in enumerate(chars):
         char_id = char[0] if isinstance(char[0], uuid.UUID) else uuid.UUID(str(char[0]))
         role_label = "주인공" if idx == 0 else "부캐릭터"
-        parts = [f"- [{role_label}] {char[1]}"]
+        # 이름 라인 — 성별·나이를 헤더에 묶어 LLM이 핵심 속성을 한눈에 파악하게 한다.
+        # 검수 시 "노정희 28세 → 본문에서 스무 살" 같은 속성 모순을 일관되게 잡기 위함.
+        # 추가로 [C번호] 라벨을 붙여 시스템 프롬프트의 "캐릭터 룰 체크리스트"가
+        # 각 인물을 한 명씩 차례로 본문과 1:1 대조하도록 강제한다 (attention 분산 완화).
+        attrs: list[str] = []
         if char[2]:
-            parts.append(f"성별:{char[2]}")
+            attrs.append(f"성별 {char[2]}")
         if char[3]:
-            parts.append(f"나이:{char[3]}")
+            attrs.append(f"나이 {char[3]}")
+        head = f"- [C{idx + 1}] [{role_label}] {char[1]}"
+        if attrs:
+            head += f" ({', '.join(attrs)})"
+        parts = [head]
         char_notes = notes_by_char.get(char_id, [])
         for note in char_notes:
             content = note[3]
@@ -203,10 +230,13 @@ async def _fetch_world_notes(session: AsyncSession, work_id: str) -> str:
     rows = r.fetchall()
     if not rows:
         return ""
+    # 각 항목에 번호를 매겨 체크리스트 식 검수가 가능하게 한다.
+    # 검수 LLM은 시스템 프롬프트의 "세계관 룰 체크리스트" 지시에 따라
+    # 각 번호 항목을 본문과 1:1로 점검하게 된다 (attention 분산 완화).
     lines = []
-    for row in rows:
+    for idx, row in enumerate(rows, start=1):
         content = _plain(row[1])[:WORLD_NOTE_TRUNC] if row[1] else ""
-        lines.append(f"- {row[0]}: {content}")
+        lines.append(f"[W{idx}] {row[0]}: {content}")
     return "\n".join(lines)
 
 
@@ -366,20 +396,31 @@ async def _fetch_vector_similar(
     return "\n---\n".join(picked)
 
 
-def _trim_to_budget(sections: dict[str, str]) -> str:
-    """토큰 예산 내로 트리밍. 우선순위: 최근 원문 > 최근 요약 > 나머지."""
+def _trim_to_budget(
+    sections: dict[str, str],
+    protected_keys: set[str] | None = None,
+) -> str:
+    """토큰 예산 내로 트리밍. 우선순위: 최근 원문 > 최근 요약 > 나머지.
+
+    protected_keys: 모드별로 트리밍하지 않을 섹션. (예: review 모드의 'characters')
+    """
+    protected = protected_keys or set()
 
     template = [
         ("work_meta", "## 작품 정보"),
         ("characters", "## 등장인물"),
         ("world_notes", "## 세계관 설정"),
         ("foreshadows", "## 복선/떡밥"),
+        ("timeline", "## 회차별 시간 흐름"),
         ("storyline", "## 스토리라인"),
         ("recent_raw", "## 최근 회차 원문"),
         ("vector_search", "## 관련 과거 장면"),
     ]
 
-    trimmable_keys = ["vector_search", "foreshadows", "world_notes", "characters"]
+    trimmable_keys = [
+        k for k in ["vector_search", "foreshadows", "world_notes", "characters"]
+        if k not in protected
+    ]
 
     blocks = {}
     for key, header in template:
