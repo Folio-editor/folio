@@ -67,9 +67,8 @@ export function PaymentSettings() {
     setBusyPackage(code);
     try {
       const created = await paymentApi.createPayment(code);
-      const clientKey = await paymentApi.getDevClientKey();
       const checkout = await window.folio.payment.openOneTime({
-        clientKey,
+        clientKey: created.clientKey,
         amount: created.amount,
         orderId: created.orderId,
         orderName: created.orderName,

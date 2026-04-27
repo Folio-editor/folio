@@ -83,16 +83,28 @@ html {
   color: var(--ink);
 }
 .folio-landing .nav-cta {
-  color: var(--bg);
-  background: var(--ink);
+  color: var(--ink);
+  background: transparent;
   padding: 8px 14px;
+  border: 1.5px solid var(--ink);
   text-decoration: none;
   font-weight: 500;
   font-size: 14px;
-  transition: opacity 0.15s;
+  outline: 2.5px solid transparent;
+  outline-offset: 0;
+  transition:
+    transform 0.18s ease,
+    outline-color 0.22s ease,
+    outline-offset 0.22s ease,
+    border-color 0.22s ease;
 }
 .folio-landing .nav-cta:hover {
-  opacity: 0.85;
+  outline-color: #d9d0cb;
+  outline-offset: 3px;
+}
+.folio-landing .nav-cta:active {
+  transform: translateY(1px);
+  outline-color: var(--ink);
 }
 
 /* ── Hero (first viewport) ────────────────────────────── */
@@ -145,25 +157,29 @@ html {
   border: 1.5px solid var(--ink);
   text-decoration: none;
   cursor: pointer;
+  outline: 2.5px solid transparent;
+  outline-offset: 0;
   transition:
-    background 0.2s,
-    color 0.2s;
+    transform 0.18s ease,
+    outline-color 0.22s ease,
+    outline-offset 0.22s ease,
+    border-color 0.22s ease;
+}
+.folio-landing .cta:hover {
+  outline-color: #d9d0cb;
+  outline-offset: 4px;
+}
+.folio-landing .cta:active {
+  transform: translateY(1px);
+  outline-color: var(--ink);
 }
 .folio-landing .cta-primary {
-  background: var(--ink);
-  color: var(--bg);
-}
-.folio-landing .cta-primary:hover {
-  background: var(--bg);
+  background: transparent;
   color: var(--ink);
 }
 .folio-landing .cta-ghost {
-  background: var(--bg);
+  background: transparent;
   color: var(--ink);
-}
-.folio-landing .cta-ghost:hover {
-  background: var(--ink);
-  color: var(--bg);
 }
 .folio-landing .cta-download-group {
   display: inline-flex;
@@ -183,23 +199,28 @@ html {
   padding: 4px;
   text-decoration: none;
   cursor: pointer;
+  outline: 2.5px solid transparent;
+  outline-offset: 0;
   transition:
-    background 0.2s,
-    color 0.2s;
+    transform 0.18s ease,
+    outline-color 0.22s ease,
+    outline-offset 0.22s ease,
+    border-color 0.22s ease;
 }
 .folio-landing .cta-download-inner {
   display: block;
   padding: 10px 44px;
   border: 1px solid #2a2420;
   border-radius: 999px;
-  transition: border-color 0.2s;
+  transition: border-color 0.22s ease;
 }
 .folio-landing .cta-download:hover {
-  background: #2a2420;
-  color: #faf6ed;
+  outline-color: #d9d0cb;
+  outline-offset: 4px;
 }
-.folio-landing .cta-download:hover .cta-download-inner {
-  border-color: #faf6ed;
+.folio-landing .cta-download:active {
+  transform: translateY(1px);
+  outline-color: #2a2420;
 }
 .folio-landing .cta-download:focus-visible {
   outline: 2px solid var(--accent);
@@ -788,25 +809,29 @@ html {
   border: 1.5px solid var(--ink);
   text-decoration: none;
   margin-bottom: 2rem;
+  outline: 2.5px solid transparent;
+  outline-offset: 0;
   transition:
-    background 0.2s,
-    color 0.2s;
+    transform 0.18s ease,
+    outline-color 0.22s ease,
+    outline-offset 0.22s ease,
+    border-color 0.22s ease;
+}
+.folio-landing .price-cta:hover {
+  outline-color: #d9d0cb;
+  outline-offset: 4px;
+}
+.folio-landing .price-cta:active {
+  transform: translateY(1px);
+  outline-color: var(--ink);
 }
 .folio-landing .price-cta.primary {
-  background: var(--ink);
-  color: var(--bg);
-}
-.folio-landing .price-cta.primary:hover {
   background: transparent;
   color: var(--ink);
 }
 .folio-landing .price-cta.ghost {
   background: transparent;
   color: var(--ink);
-}
-.folio-landing .price-cta.ghost:hover {
-  background: var(--ink);
-  color: var(--bg);
 }
 .folio-landing .price-list {
   list-style: none;
@@ -821,6 +846,125 @@ html {
   content: '—';
   color: var(--ink-mid);
   margin-right: 0.6rem;
+}
+.folio-landing .price-list li.price-list-sub {
+  padding-left: 1.6rem;
+  color: var(--ink-mid);
+  font-size: 13.5px;
+  line-height: 1.7;
+  margin-top: -0.2rem;
+}
+.folio-landing .price-list li.price-list-sub::before {
+  content: '└';
+  color: var(--ink-faint);
+  margin-right: 0.5rem;
+}
+
+/* Credit packs (보조 영역) */
+.folio-landing .credit-section {
+  max-width: 800px;
+  margin: 4rem auto 0;
+  padding: 2.5rem 2rem;
+  border-top: 1px solid var(--ink-faint);
+  text-align: center;
+}
+.folio-landing .credit-section-label {
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--ink-mid);
+  margin: 0 0 1.75rem;
+}
+.folio-landing .credit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid var(--ink-border);
+  margin-bottom: 1.75rem;
+}
+.folio-landing .credit-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.75rem 1rem 1.5rem;
+  border-right: 1px solid var(--ink-faint);
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  outline: 2.5px solid transparent;
+  outline-offset: 0;
+  transition:
+    transform 0.18s ease,
+    outline-color 0.22s ease,
+    outline-offset 0.22s ease;
+}
+.folio-landing .credit-card:last-child {
+  border-right: none;
+}
+.folio-landing .credit-card:hover {
+  outline-color: #d9d0cb;
+  outline-offset: 4px;
+}
+.folio-landing .credit-card:active {
+  transform: translateY(1px);
+  outline-color: var(--ink);
+}
+.folio-landing .credit-card-cta {
+  margin-top: 0.85rem;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-mid);
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.folio-landing .credit-card:hover .credit-card-cta {
+  color: var(--ink);
+}
+.folio-landing .credit-card:hover .credit-card-cta {
+  opacity: 1;
+  transform: translateY(0);
+}
+.folio-landing .credit-price {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+}
+.folio-landing .credit-amount {
+  font-size: 13px;
+  color: var(--ink-mid);
+  letter-spacing: 0.06em;
+  margin-bottom: 0.25rem;
+}
+.folio-landing .credit-bonus {
+  font-size: 12px;
+  color: #9a9a9a;
+  letter-spacing: 0.03em;
+}
+.folio-landing .credit-cta {
+  display: inline-block;
+  padding: 11px 30px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.folio-landing .credit-cta:hover {
+  background: var(--ink);
+  color: var(--bg);
 }
 
 /* FAQ (Chapter IV) */
@@ -944,6 +1088,67 @@ html {
   line-height: 2;
 }
 
+.folio-landing .fin-business {
+  margin-top: 2rem;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-mid);
+  text-align: center;
+}
+.folio-landing .fin-business-brand {
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.04em;
+}
+.folio-landing .fin-business p {
+  margin: 0;
+}
+.folio-landing .fin-business a {
+  color: var(--ink-mid);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--ink-faint);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.folio-landing .fin-business a:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+.folio-landing .fin-business-notice {
+  margin-top: 0.6rem !important;
+  color: #9a9a9a;
+  font-size: 11px;
+}
+.folio-landing .fin-sep {
+  color: var(--ink-faint);
+  margin: 0 0.35rem;
+}
+.folio-landing .fin-policy {
+  margin-top: 1.75rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 12px;
+  color: var(--ink-mid);
+}
+.folio-landing .fin-policy a {
+  color: var(--ink-mid);
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.15s ease;
+}
+.folio-landing .fin-policy a:hover {
+  color: var(--ink);
+}
+.folio-landing .fin-copyright {
+  margin-top: 1.25rem;
+  font-size: 11px;
+  color: #9a9a9a;
+  letter-spacing: 0.08em;
+}
+
 /* ── Scroll reveal initial state ──────────────────────── */
 .folio-landing .reveal-on-scroll {
   opacity: 0;
@@ -1062,6 +1267,21 @@ html {
     border-bottom: 1px solid var(--ink-border);
   }
   .folio-landing .price-cell:last-child {
+    border-bottom: none;
+  }
+
+  .folio-landing .credit-section {
+    padding: 2rem 1.25rem;
+    margin-top: 3rem;
+  }
+  .folio-landing .credit-grid {
+    grid-template-columns: 1fr;
+  }
+  .folio-landing .credit-card {
+    border-right: none;
+    border-bottom: 1px solid var(--ink-faint);
+  }
+  .folio-landing .credit-card:last-child {
     border-bottom: none;
   }
 

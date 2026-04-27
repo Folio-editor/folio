@@ -1,0 +1,157 @@
+/* Folio Legal pages — Terms / Privacy / Refund */
+
+.folio-landing.legal-page {
+  background: var(--bg);
+}
+
+.folio-landing .legal-main {
+  min-height: calc(100vh - var(--nav-h));
+  padding: 6vh 1.5rem 8vh;
+}
+
+.folio-landing .legal-container {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.folio-landing .legal-back {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--ink-mid);
+  text-decoration: none;
+  margin-bottom: 3rem;
+  letter-spacing: 0.04em;
+  transition: color 0.15s ease;
+}
+.folio-landing .legal-back:hover {
+  color: var(--ink);
+}
+
+.folio-landing .legal-header {
+  margin-bottom: 3.5rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--ink-faint);
+}
+
+.folio-landing .legal-title {
+  font-family: var(--serif);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+}
+
+.folio-landing .legal-effective {
+  font-size: 12px;
+  color: var(--ink-mid);
+  letter-spacing: 0.12em;
+  margin: 0;
+}
+
+.folio-landing .legal-content {
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--ink);
+}
+
+.folio-landing .legal-content h2 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 3rem 0 1rem;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+.folio-landing .legal-content h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 2rem 0 0.75rem;
+  color: var(--ink);
+}
+
+.folio-landing .legal-content p {
+  margin: 0 0 1rem;
+}
+
+.folio-landing .legal-content ul,
+.folio-landing .legal-content ol {
+  margin: 0 0 1rem;
+  padding-left: 1.4rem;
+}
+
+.folio-landing .legal-content li {
+  margin-bottom: 0.4rem;
+}
+
+.folio-landing .legal-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.folio-landing .legal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.folio-landing .legal-table thead th {
+  background: #fafafa;
+  border: 1px solid var(--ink-border);
+  padding: 0.65rem 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink);
+}
+.folio-landing .legal-table tbody td {
+  border: 1px solid var(--ink-faint);
+  padding: 0.65rem 0.85rem;
+  vertical-align: top;
+  color: var(--ink);
+}
+
+.folio-landing .legal-divider {
+  margin: 3rem 0 2rem;
+  border: 0;
+  border-top: 1px solid var(--ink-faint);
+}
+
+.folio-landing .legal-effective-foot {
+  margin-top: 2rem;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  letter-spacing: 0.04em;
+}
+
+.folio-landing .legal-placeholder {
+  display: block;
+  padding: 1.5rem 1.75rem;
+  background: #fafafa;
+  border: 1px dashed var(--ink-border);
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 600px) {
+  .folio-landing .legal-main {
+    padding: 4vh 1.25rem 6vh;
+  }
+  .folio-landing .legal-header {
+    margin-bottom: 2.5rem;
+  }
+  .folio-landing .legal-content {
+    font-size: 15px;
+  }
+  .folio-landing .legal-content h2 {
+    font-size: 18px;
+  }
+}

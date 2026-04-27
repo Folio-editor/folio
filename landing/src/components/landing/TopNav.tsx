@@ -10,17 +10,22 @@ export function TopNav() {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <a href="#" className="nav-brand" aria-label="Folio">
+        <Link
+          to="/"
+          className="nav-brand"
+          aria-label="Folio 홈으로"
+          onClick={handleBrandClick}
+        >
           <img src="/nav-logo.png" alt="Folio" className="nav-logo" />
-        </a>
+        </Link>
         <div className="nav-links">
-          <a href="#features" className="nav-link">
+          <a href="/#features" className="nav-link">
             기능
           </a>
-          <a href="#pricing" className="nav-link">
+          <a href="/#pricing" className="nav-link">
             가격
           </a>
-          <a href="#faq" className="nav-link">
+          <a href="/#faq" className="nav-link">
             문답
           </a>
           {isAuthenticated && writer ? (
