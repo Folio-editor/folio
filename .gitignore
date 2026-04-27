@@ -12,6 +12,11 @@ out/
 build/
 *.tsbuildinfo
 
+# electron-builder 자산 디렉토리는 git 추적 (afterPack.js, license_ko.txt 등)
+# build/ 광범위 ignore 보다 우선 적용
+!frontend/build/
+!frontend/build/**
+
 # Vite
 vite.config.ts.timestamp-*
 
