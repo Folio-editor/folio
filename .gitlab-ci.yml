@@ -110,6 +110,9 @@ build-electron-windows:
       #   - COREPACK_HOME 을 user-writable 경로로 명시 → user-local 활성화 성공
       #   - corepack prepare --activate 후에도 which pnpm은 여전히 9.4 system 경로 →
       #     반드시 'corepack pnpm ...' 으로 호출해야 prepare된 10.33.0이 사용됨
+      #   - Wine은 보안상 world-writable($HOME=/tmp 같은 sticky-bit dir) 거부 →
+      #     WINEPREFIX를 user 소유 디렉토리(workspace 마운트는 호스트 gitlab-runner uid 소유)
+      #     로 명시. HOME=/tmp는 npm/pnpm/corepack에는 무해하므로 건드리지 않는다.
       RUNNER_UID=$(id -u)
       RUNNER_GID=$(id -g)
       docker run --rm \
@@ -118,6 +121,7 @@ build-electron-windows:
         -w /workspace/frontend \
         -e HOME=/tmp \
         -e COREPACK_HOME=/tmp/.corepack \
+        -e WINEPREFIX=/workspace/.wine \
         -e ELECTRON_CACHE=/workspace/.cache/electron \
         -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
         electronuserland/builder:wine \
