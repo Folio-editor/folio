@@ -6,9 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_session
+from app.db.session import async_session
 from app.middleware.auth import require_internal_api_key
 from app.services.providers import get_llm
 from app.services.settings_loader import load_settings
@@ -112,11 +111,11 @@ def _normalize_result(result: dict[str, Any]) -> ExtractSettingsResponse:
 
 
 @router.post("", response_model=ExtractSettingsResponse)
-async def extract_settings(
-    req: ExtractSettingsRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    settings_bundle = await load_settings(session, req.work_id)
+async def extract_settings(req: ExtractSettingsRequest):
+    # LLM 호출 동안 DB 커넥션을 점유하지 않도록, 설정 조회만 짧게 마치고 풀에 반납한다.
+    async with async_session() as session:
+        settings_bundle = await load_settings(session, req.work_id)
+
     if settings_bundle["mode"] == "full":
         existing_characters = _format_existing_characters(settings_bundle["characters"])
         existing_world_notes = _format_existing_world_notes(settings_bundle["world_notes"])

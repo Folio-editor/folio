@@ -30,6 +30,7 @@ services:
         -c wal_level=logical
         -c max_replication_slots=4
         -c max_wal_senders=4
+        -c max_connections=200
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-storyzip}"]
       interval: 10s
