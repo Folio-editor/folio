@@ -11,6 +11,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { PowerSyncContext } from '@powersync/react';
+import { Toaster } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { AuthenticatedApp } from '../features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -103,6 +104,7 @@ export function AppRoot({ router, basename }: AppRootProps) {
             <AuthenticatedApp />
           </Router>
         </PowerSyncContext.Provider>
+        <Toaster position="bottom-right" richColors closeButton />
       </ThemeProvider>
     );
   }
