@@ -113,8 +113,41 @@ function normalizeSpellcheckWords(words: unknown): string[] {
   return out;
 }
 
+function bringWindowToFront(win: BrowserWindow | null) {
+  if (!win || win.isDestroyed()) return;
+
+  if (win.isMinimized()) {
+    win.restore();
+  }
+  if (!win.isVisible()) {
+    win.show();
+  }
+
+  win.focus();
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.show();
+  win.focus();
+
+  setTimeout(() => {
+    if (win.isDestroyed()) return;
+    win.setAlwaysOnTop(false);
+    win.focus();
+  }, 250);
+}
+
+function bringWindowToFrontAfter(win: BrowserWindow | null, delayMs: number) {
+  setTimeout(() => bringWindowToFront(win), delayMs);
+}
+
 function registerAuthHandlers() {
-  ipcMain.handle('auth:login', async () => loginWithGoogle());
+  ipcMain.handle('auth:login', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await loginWithGoogle({
+      onCodeReceived: () => bringWindowToFrontAfter(win, 500),
+    });
+    bringWindowToFront(win);
+    return result;
+  });
   ipcMain.handle('auth:logout', async () => logout());
   ipcMain.handle('auth:tryRestore', async () => tryRestoreLogin());
   ipcMain.handle('auth:getAccessToken', () => getAccessToken());
