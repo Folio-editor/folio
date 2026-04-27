@@ -111,14 +111,14 @@ class TokenWalletServiceTest {
     }
 
     @Test
-    @DisplayName("grantSignupBonus: bonus 버킷에 100 크레딧 + 90일 만료를 설정하고 BONUS_GRANT 기록")
+    @DisplayName("grantSignupBonus: bonus 버킷에 300 크레딧 + 90일 만료를 설정하고 BONUS_GRANT 기록")
     void grantSignupBonus_setsBonusAndLogs() {
         TokenWallet wallet = TokenWallet.createEmpty(writerId);
         given(walletRepository.findWithLockByWriterId(writerId)).willReturn(Optional.of(wallet));
 
         tokenWalletService.grantSignupBonus(writerId);
 
-        assertThat(wallet.getBonusBalance()).isEqualTo(100);
+        assertThat(wallet.getBonusBalance()).isEqualTo(300);
         assertThat(wallet.getBonusExpiresAt()).isNotNull();
 
         ArgumentCaptor<TokenTransaction> captor = ArgumentCaptor.forClass(TokenTransaction.class);
@@ -126,7 +126,7 @@ class TokenWalletServiceTest {
         TokenTransaction tx = captor.getValue();
         assertThat(tx.getBucket()).isEqualTo(TokenBucket.BONUS);
         assertThat(tx.getType()).isEqualTo(TokenTransactionType.BONUS_GRANT);
-        assertThat(tx.getAmount()).isEqualTo(100);
+        assertThat(tx.getAmount()).isEqualTo(300);
     }
 
     @Test
