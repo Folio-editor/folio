@@ -104,6 +104,12 @@ build-electron-windows:
       # 파일을 남기는 문제 차단. 다음 job이 워크스페이스 정리 시 Permission denied 회피.
       # HOME=/tmp — non-root 사용자라 컨테이너 내부에 home dir 없을 수 있음, npm/pnpm
       # cache 경로를 임시 디렉토리로.
+      # 컨테이너 환경 사전 검증된 사실:
+      #   - 이미지에 pnpm 9.4.0 + corepack 0.31.0 + Wine 사전 설치됨
+      #   - non-root(--user) 실행 시 /usr/local/bin 쓰기 거부됨 → corepack enable 실패
+      #   - COREPACK_HOME 을 user-writable 경로로 명시 → user-local 활성화 성공
+      #   - corepack prepare --activate 후에도 which pnpm은 여전히 9.4 system 경로 →
+      #     반드시 'corepack pnpm ...' 으로 호출해야 prepare된 10.33.0이 사용됨
       RUNNER_UID=$(id -u)
       RUNNER_GID=$(id -g)
       docker run --rm \
@@ -111,18 +117,22 @@ build-electron-windows:
         -v "$CI_PROJECT_DIR":/workspace \
         -w /workspace/frontend \
         -e HOME=/tmp \
+        -e COREPACK_HOME=/tmp/.corepack \
         -e ELECTRON_CACHE=/workspace/.cache/electron \
         -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
         electronuserland/builder:wine \
         bash -c "
           set -Eeuo pipefail
-          corepack enable
+          # pnpm 10.33.0 user-local 활성화 (system path 안 건드림)
           corepack prepare pnpm@10.33.0 --activate
+
           # tag가 source of truth — package.json version 강제 sync (commit-back 안 함)
           sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/' package.json
           grep '\"version\"' package.json
-          pnpm install --frozen-lockfile
-          pnpm build:win
+
+          # corepack 으로 호출해야 prepare된 pnpm 10.33.0이 사용됨
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm build:win
         "
 
       # 산출물 검증 — 3개 파일 모두 존재해야 함
