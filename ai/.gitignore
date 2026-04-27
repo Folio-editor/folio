@@ -19,3 +19,4 @@ test_reports/*.log
 test_reports/orchestration*.log
 test_reports/draft_sonnet.*
 test_reports/draft_payload.json
+test_reports/concurrency_*.txt
