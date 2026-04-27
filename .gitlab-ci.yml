@@ -71,40 +71,42 @@ test-ai:
 
 build-electron-windows:
   stage: release
-  image: electronuserland/builder:wine
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-  cache:
-    key:
-      files:
-        - frontend/pnpm-lock.yaml
-    paths:
-      - frontend/node_modules/
-      - .cache/electron/
-      - .cache/electron-builder/
-  variables:
-    ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
-    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
   before_script:
-    - apt-get update && apt-get install -y openssh-client
+    # Runner는 shell executor (deploy-production과 동일). image: 디렉티브는 무시됨.
+    # ssh/scp는 EC2 runner host에 이미 설치되어 있다(deploy-production이 사용 중).
+    # Wine 빌드는 docker run으로 인라인 격리 — runner host에 Wine 설치 불필요.
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
     - chmod 400 $SSH_PRIVATE_KEY
-    - corepack enable && corepack prepare pnpm@10.33.0 --activate
   script:
     - |
       set -Eeuo pipefail
       VERSION="${CI_COMMIT_TAG#v}"
       echo "[release] tag=${CI_COMMIT_TAG} version=${VERSION}"
 
-      cd frontend
-      # package.json version 강제 sync — tag가 source of truth (commit-back 안 함)
-      sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
-      grep '"version"' package.json
-
-      pnpm install --frozen-lockfile
-      pnpm build:win   # electron-vite build && electron-builder --win nsis
+      # Wine + Mono + Node + pnpm이 사전 설치된 공식 이미지로 격리 빌드.
+      # Runner host에는 docker만 있으면 됨 (이미 deploy-production이 docker 사용 중).
+      # workspace를 마운트하고 frontend 디렉토리에서 빌드 실행.
+      docker run --rm \
+        -v "$CI_PROJECT_DIR":/workspace \
+        -w /workspace/frontend \
+        -e ELECTRON_CACHE=/workspace/.cache/electron \
+        -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
+        electronuserland/builder:wine \
+        bash -c "
+          set -Eeuo pipefail
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          # tag가 source of truth — package.json version 강제 sync (commit-back 안 함)
+          sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/' package.json
+          grep '\"version\"' package.json
+          pnpm install --frozen-lockfile
+          pnpm build:win
+        "
 
       # 산출물 검증 — 3개 파일 모두 존재해야 함
-      cd release
+      cd "$CI_PROJECT_DIR/frontend/release"
       EXE="Folio-${VERSION}-Setup.exe"
       BLOCKMAP="${EXE}.blockmap"
       YML="latest.yml"
