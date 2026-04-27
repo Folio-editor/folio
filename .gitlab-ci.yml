@@ -21,9 +21,42 @@ variables:
   IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
 
 stages:
+  - .pre
   - test
   - release
   - deploy
+
+# ────────────────────────────────────────────────────────────
+# Preflight: Runner 워크스페이스 root 잔재 강제 회수
+# ────────────────────────────────────────────────────────────
+# 이전 docker run 컨테이너가 root 권한으로 만든 .pnpm-store/node_modules 등이
+# host에 남으면 다음 job의 git clean이 Permission denied로 실패한다.
+# 이 job은 모든 pipeline 시작 시 가장 먼저 실행되어 host 워크스페이스를
+# gitlab-runner UID로 chown 회수 — 사용자 SSH 작업 0번.
+#
+# stage가 ".pre" 이라 GitLab이 무조건 모든 다른 stage 전에 실행해줌.
+# ────────────────────────────────────────────────────────────
+
+preflight-cleanup:
+  stage: .pre
+  before_script:
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+  script:
+    - |
+      RUNNER_UID=$(id -u)
+      RUNNER_GID=$(id -g)
+      # alpine 컨테이너로 root 권한 chown — 워크스페이스 전체 회수
+      # workspace 마운트 + 하위 root 파일도 모두 소유권 변경
+      docker run --rm \
+        -v "$CI_PROJECT_DIR":/workspace \
+        --entrypoint sh \
+        alpine:3 \
+        -c "chown -R ${RUNNER_UID}:${RUNNER_GID} /workspace 2>/dev/null || true; \
+            rm -rf /workspace/.pnpm-store /workspace/.cache 2>/dev/null || true"
+      echo "[preflight] workspace ownership 회수 완료 (uid=${RUNNER_UID})"
+  rules:
+    # 모든 pipeline에서 항상 실행 (MR/master/tag/develop 무관)
+    - when: always
 
 # ────────────────────────────────────────────────────────────
 # Test (단위 테스트 + 린트)
@@ -89,18 +122,7 @@ build-electron-windows:
         exit 1
       fi
     - chmod 400 $SSH_PRIVATE_KEY
-    # 이전 docker run이 (--user 누락된 옛 버전 등으로) root 소유 잔재를 남겼다면
-    # gitlab-runner 권한으로 정리 못 함 → 새 컨테이너로 chown 후 정리.
-    # 이 단계 자체가 root 권한 컨테이너로 강제 회수 — 사용자 SSH 작업 불필요.
-    - |
-      docker run --rm \
-        -v "$CI_PROJECT_DIR":/workspace \
-        -w /workspace \
-        --entrypoint sh \
-        alpine:3 \
-        -c "chown -R $(id -u):$(id -g) /workspace 2>/dev/null || true; \
-            rm -rf /workspace/.pnpm-store /workspace/frontend/node_modules \
-                   /workspace/frontend/release /workspace/.cache 2>/dev/null || true"
+    # 워크스페이스 권한은 preflight-cleanup job(stage: .pre)에서 이미 회수됨.
   script:
     - |
       set -Eeuo pipefail
