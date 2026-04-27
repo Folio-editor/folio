@@ -70,7 +70,7 @@ export interface SubscriptionPlanInfo {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlanInfo[] = [
-  { code: 'PRO_MONTHLY', amount: 9_900, monthlyTokens: 1_300, displayName: 'StoryZip Pro 월간' },
+  { code: 'PRO_MONTHLY', amount: 9_900, monthlyTokens: 1_300, displayName: 'Folio Pro 월간' },
 ];
 
 export interface BillingAuthPrepareResponse {
