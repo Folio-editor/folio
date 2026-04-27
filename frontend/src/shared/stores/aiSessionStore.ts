@@ -270,8 +270,8 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
     saveHistory(updated);
     set((s) => ({
       history: updated,
-      // 삭제한 항목을 보고 있었으면 메뉴로 복귀
-      ...(s.viewingHistoryId === id ? { screen: 'menu' as const, viewingHistoryId: null } : {}),
+      // 삭제한 항목을 보고 있었으면 초안 입력 화면으로 복귀
+      ...(s.viewingHistoryId === id ? { screen: 'draft-input' as const, viewingHistoryId: null } : {}),
     }));
   },
 

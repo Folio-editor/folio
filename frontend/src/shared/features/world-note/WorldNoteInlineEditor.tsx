@@ -67,9 +67,8 @@ export function WorldNoteInlineEditor({
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },
-      onBlur: ({ editor: ed }) => {
-        useFocusedEditorStore.getState().blurEditor(ed);
-      },
+      // onBlur는 의도적으로 등록 해제 안 함 — 블러 후에도 마지막 포커스 에디터를
+      // 유지해서 툴바가 항상 동작 가능하게. 언마운트 cleanup에서만 자기 자신 해제.
       onUpdate: ({ editor: ed }) => {
         const next = JSON.stringify(ed.getJSON());
         // onCreate 전(매우 드문 race)이면 동기화만 하고 종료

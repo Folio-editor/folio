@@ -40,13 +40,35 @@ export function getWebAccessToken(): string | null {
  *
  * @returns 로그인 성공 시 Writer, 그 외 (auth_code 없음/만료/네트워크 실패) null
  */
+function landingUrl(): string {
+  const url = (import.meta.env.VITE_LANDING_URL as string | undefined) ?? '';
+  return url.replace(/\/$/, '');
+}
+
+/** 교환 직후 fromLanding=1 플래그가 있었다면 랜딩으로 다시 bounce. */
+function bounceToLandingIfRequested(fromLanding: boolean): void {
+  if (!fromLanding) return;
+  const target = landingUrl() || window.location.origin + '/';
+  // 무한 redirect 방지 flag 정리 (랜딩에서 명시적 로그인 시도 후 도착했으므로)
+  try {
+    sessionStorage.removeItem('folio:web:noredirect');
+  } catch {
+    /* ignore */
+  }
+  window.location.replace(target);
+}
+
 export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('auth_code');
   if (!code) return null;
 
-  // URL에서 auth_code를 즉시 제거 — 새로고침 시 재교환 시도 방지
+  // URL 정리 전에 fromLanding 플래그 캡처 — 교환 후 랜딩으로 bounce 여부 결정
+  const fromLanding = params.get('fromLanding') === '1';
+
+  // URL에서 auth_code + fromLanding 즉시 제거 — 새로고침 시 재교환/재bounce 방지
   params.delete('auth_code');
+  params.delete('fromLanding');
   const newSearch = params.toString();
   const newUrl =
     window.location.pathname +
@@ -61,6 +83,8 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
     );
     if (!res.ok) {
       console.warn('[web/folioApi] auth_code 교환 실패:', res.status);
+      // 실패해도 랜딩으로 돌려보내 사용자가 다시 시도할 수 있게 함
+      bounceToLandingIfRequested(fromLanding);
       return null;
     }
     const payload = (await res.json()) as {
@@ -77,6 +101,9 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
     localStorage.setItem(WRITER_KEY, JSON.stringify(payload.writer));
     localStorage.setItem(LAST_WRITER_ID_KEY, payload.writer.id);
 
+    // 교환 성공 — 랜딩으로 돌아가야 한다면 즉시 bounce
+    bounceToLandingIfRequested(fromLanding);
+
     return {
       accessToken: payload.accessToken,
       writer: payload.writer,
@@ -84,6 +111,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
     };
   } catch (e) {
     console.warn('[web/folioApi] auth_code 교환 에러:', e);
+    bounceToLandingIfRequested(fromLanding);
     return null;
   }
 }

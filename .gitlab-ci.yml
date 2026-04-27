@@ -103,11 +103,13 @@ deploy-production:
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
           --build-arg VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
           --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
         # 랜딩 빌드: VITE_API_URL + VITE_EDITOR_URL 추가 (이전 누락 정정)
         docker build -f infra/dockerfiles/Dockerfile.landing \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_EDITOR_URL=https://folio-editor.co.kr/editor \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
           -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
         cd /opt/folio/S14P31F203/infra/prod
 

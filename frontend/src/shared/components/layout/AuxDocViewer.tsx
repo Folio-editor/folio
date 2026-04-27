@@ -5,7 +5,6 @@ import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { WorldNoteInlineEditor } from '../../features/world-note/WorldNoteInlineEditor';
-import { SharedEditorToolbar } from '../editor/SharedEditorToolbar';
 
 interface AuxDocViewerProps {
   docType: AuxDocType;
@@ -155,11 +154,8 @@ function WorldNoteAuxView({ docId, editable }: { docId: string; editable: boolea
   }
 
   return (
-    <div className="flex flex-col">
-      <SharedEditorToolbar />
-      <div className="flex flex-col px-3 py-2">
-        <WorldNoteAuxSection node={tree} depth={0} editable={editable} />
-      </div>
+    <div className="flex flex-col px-3 py-2">
+      <WorldNoteAuxSection node={tree} depth={0} editable={editable} />
     </div>
   );
 }
@@ -374,9 +370,7 @@ function NonWorldNoteAuxView({
   }
 
   return (
-    <div className="flex flex-col">
-      <SharedEditorToolbar />
-      <div className="px-3 py-2">
+    <div className="px-3 py-2">
       {/* 제목은 스테이지 카드 헤더가 제공 — 중복 제거. character의 메타(성별/나이)만 노출. */}
       {docType === 'character' && (doc.gender || doc.age) && (
         <div className="mb-2 flex gap-3 text-xs text-muted-foreground">
@@ -418,7 +412,6 @@ function NonWorldNoteAuxView({
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -463,30 +456,25 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
   // 회차 — 단일 편집. 제목은 스테이지 헤더가 제공하므로 본문에 미노출. 상태만 인라인.
   if (!isAct) {
     return (
-      <div className="flex flex-col">
-        <SharedEditorToolbar />
-        <div className="flex flex-col px-3 py-2">
-          {item.status && (
-            <div className="mb-2 text-[10px] text-muted-foreground">{item.status}</div>
-          )}
-          <WorldNoteInlineEditor
-            noteId={item.id}
-            initialContent={item.content}
-            placeholder={editable ? '회차의 줄거리와 핵심 사건을 정리하세요…' : '내용 없음'}
-            onUpdate={(json) => void updatePlot(item.id, { content: json })}
-            editable={editable}
-            size="xs"
-          />
-        </div>
+      <div className="flex flex-col px-3 py-2">
+        {item.status && (
+          <div className="mb-2 text-[10px] text-muted-foreground">{item.status}</div>
+        )}
+        <WorldNoteInlineEditor
+          noteId={item.id}
+          initialContent={item.content}
+          placeholder={editable ? '회차의 줄거리와 핵심 사건을 정리하세요…' : '내용 없음'}
+          onUpdate={(json) => void updatePlot(item.id, { content: json })}
+          editable={editable}
+          size="xs"
+        />
       </div>
     );
   }
 
   // 막 — 본문 + 자식 회차. 막 자체 제목은 헤더가 제공하므로 미노출. 자식 회차는 계층 가이드라인.
   return (
-    <div className="flex flex-col">
-      <SharedEditorToolbar />
-      <div className="flex flex-col px-3 py-2">
+    <div className="flex flex-col px-3 py-2">
       {item.status && (
         <div className="mb-2 text-[10px] text-muted-foreground">{item.status}</div>
       )}
@@ -530,7 +518,6 @@ function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) 
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -577,9 +564,7 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
   }
 
   return (
-    <div className="flex flex-col">
-      <SharedEditorToolbar />
-      <div className="flex flex-col gap-3 px-3 py-2">
+    <div className="flex flex-col gap-3 px-3 py-2">
       {acts.map((act) => {
         const actEps = episodesByAct.get(act.id) ?? [];
         return (
@@ -638,7 +623,6 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
           </div>
         );
       })}
-      </div>
     </div>
   );
 }

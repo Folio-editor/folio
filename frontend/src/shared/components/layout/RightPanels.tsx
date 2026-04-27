@@ -739,9 +739,6 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
 
   const handleStop = () => stopGeneration();
 
-  const history = useAiSessionStore((s) => s.history);
-  const viewHistory = useAiSessionStore((s) => s.viewHistory);
-  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
   const startReview = useAiSessionStore((s) => s.startReview);
   const finishReview = useAiSessionStore((s) => s.finishReview);
   const failReview = useAiSessionStore((s) => s.failReview);
@@ -783,7 +780,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         targetEpisode={targetEpisode}
         isHistoryView
         onStop={handleStop}
-        onBack={() => setScreen('menu')}
+        onBack={() => setScreen('draft-input')}
       />
     );
   }
@@ -852,12 +849,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   // 메뉴 화면
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-      <p className="text-xs font-medium text-muted-foreground">AI 도구</p>
-
       <button
         type="button"
         onClick={() => setScreen('draft-input')}
-        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <Sparkles size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -871,7 +866,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('review-input')}
-        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <Search size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -881,54 +876,6 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           </p>
         </div>
       </button>
-
-      {/* 히스토리 목록 */}
-      {history.length > 0 && (
-        <div className="mt-2">
-          <div className="flex items-center gap-1.5 px-1 pb-1.5">
-            <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
-            <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
-            <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            {history.map((entry) => (
-              <div
-                key={entry.id}
-                className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
-              >
-                <button
-                  type="button"
-                  onClick={() => viewHistory(entry.id)}
-                  className="flex min-w-0 flex-1 flex-col text-left"
-                >
-                  <span className="truncate text-xs font-medium text-foreground">
-                    {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
-                  </span>
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
-                  </span>
-                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
-                    <span className="flex items-center gap-0.5">
-                      <Clock size={9} />
-                      {formatHistoryTime(entry.createdAt)}
-                    </span>
-                    <span>{entry.result.length.toLocaleString()}자</span>
-                    <span className="uppercase">{entry.model}</span>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteHistory(entry.id)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                  title="삭제"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -960,6 +907,10 @@ function DraftInputScreen({
   onGenerate: () => void;
   onBack: () => void;
 }) {
+  const history = useAiSessionStore((s) => s.history);
+  const viewHistory = useAiSessionStore((s) => s.viewHistory);
+  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
+
   const canGenerate = isEpisode && episode != null && storyline.trim().length > 0 && !isStreaming;
 
   return (
@@ -1047,6 +998,54 @@ function DraftInputScreen({
           <p className="text-xs text-warning">
             현재 초안이 생성 중입니다. 중단 후 새로운 생성을 시작할 수 있습니다.
           </p>
+        )}
+
+        {/* 히스토리 목록 */}
+        {history.length > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5">
+              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+              <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
+              <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {history.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+                >
+                  <button
+                    type="button"
+                    onClick={() => viewHistory(entry.id)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
+                    </span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {formatHistoryTime(entry.createdAt)}
+                      </span>
+                      <span>{entry.result.length.toLocaleString()}자</span>
+                      <span className="uppercase">{entry.model}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteHistory(entry.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    title="삭제"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -1,0 +1,6 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { FAQ } from '../../data/landing-content';
+import { ChapterHead } from './ChapterHead';
+export function FAQSection() {
+    return (_jsxs(_Fragment, { children: [_jsx(ChapterHead, { label: "Chapter IV \u00B7 \uBB38\uB2F5", heading: "\uAD81\uAE08\uD55C \uAC8C \uC788\uB098\uC694?", id: "faq" }), _jsxs("section", { className: "chapter", children: [_jsx("div", { className: "faq-list", children: FAQ.map((item, i) => (_jsxs("details", { className: "faq-item", children: [_jsxs("summary", { children: [_jsx("span", { className: "faq-num sans", children: String(i + 1).padStart(2, '0') }), _jsx("span", { className: "faq-q", children: item.q }), _jsx("span", { className: "faq-short sans", children: item.short }), _jsx("span", { className: "faq-toggle sans", "aria-hidden": "true", children: "+" })] }), _jsx("p", { className: "faq-a", children: item.a })] }, item.q))) }), _jsxs("div", { className: "faq-contact", children: [_jsx("p", { className: "faq-contact-label sans", children: "\uBB38\uC758\uC0AC\uD56D\uC774 \uC788\uB098\uC694?" }), _jsxs("p", { className: "faq-contact-body", children: [_jsx("a", { href: "mailto:yuwolxx@gmail.com", className: "sans", children: "yuwolxx@gmail.com" }), "\uC73C\uB85C \uD3B8\uD558\uAC8C \uBB38\uC758 \uC8FC\uC138\uC694."] })] })] })] }));
+}

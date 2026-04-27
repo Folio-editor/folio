@@ -14,8 +14,10 @@ WORKDIR /workspace
 # .gitlab-ci.yml의 docker build --build-arg로 주입됨 (도플러 의존 없음)
 ARG VITE_API_URL
 ARG VITE_EDITOR_URL
+ARG VITE_LANDING_URL
 ENV VITE_API_URL=${VITE_API_URL} \
-    VITE_EDITOR_URL=${VITE_EDITOR_URL}
+    VITE_EDITOR_URL=${VITE_EDITOR_URL} \
+    VITE_LANDING_URL=${VITE_LANDING_URL}
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 

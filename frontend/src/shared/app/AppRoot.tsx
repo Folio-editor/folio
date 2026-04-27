@@ -108,16 +108,42 @@ export function AppRoot({ router, basename }: AppRootProps) {
   }
 
   // restore 완료 후 isGuest=false, isAuthenticated=false → 웹 비인증 상태(또는 Electron 방어 분기).
-  // 웹에서는 백엔드 OAuth start로 이동하는 단순한 진입 화면 제공.
+  // 웹: 랜딩 페이지로 redirect (?login=1). sessionStorage flag로 1회 한정 (무한 루프 방지).
+  // Electron: 기존 WebLoginScreen 폴백 유지.
   return (
     <ThemeProvider>
-      <WebLoginScreen />
+      <UnauthenticatedFallback />
     </ThemeProvider>
   );
 }
 
-function WebLoginScreen() {
+function UnauthenticatedFallback() {
   const login = useAuthStore((s) => s.login);
+  const isWeb =
+    typeof window !== 'undefined' && window.folio?.platform === 'web';
+
+  // web: 랜딩으로 redirect (1회 한정). sessionStorage flag로 무한 루프 방지.
+  useEffect(() => {
+    if (!isWeb) return;
+    let alreadyRedirected = false;
+    try {
+      alreadyRedirected = sessionStorage.getItem('folio:web:noredirect') === '1';
+    } catch {
+      /* ignore */
+    }
+    if (alreadyRedirected) return;
+    try {
+      sessionStorage.setItem('folio:web:noredirect', '1');
+    } catch {
+      /* ignore */
+    }
+    const landing =
+      ((import.meta.env.VITE_LANDING_URL as string | undefined) ?? '').replace(/\/$/, '') ||
+      window.location.origin;
+    window.location.replace(`${landing}/?login=1`);
+  }, [isWeb]);
+
+  // web에서 redirect 직전 또는 1회 차단 후 fallback / Electron 미인증 폴백
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
       <div className="text-center">
