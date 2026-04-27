@@ -36,8 +36,9 @@ win:
   # PNG 512x512를 사용 — electron-builder가 자동으로 다중 해상도 ICO 생성.
   # 기존 resources/folio.ico는 16x16 단일 사이즈라 NSIS의 256x256 최소 요건 미달.
   icon: resources/folio.png
-  publisherName: Folio
-  # 코드 사이닝 인증서 보유 시 활성화
+  # publisherName 미설정 → electron-updater가 Authenticode publisher 검증 스킵.
+  # 코드 사이닝 인증서가 없는 환경에서 자동 업데이트가 작동하도록 하려면 비워둬야 함.
+  # 인증서 보유 시 publisherName: Folio + 아래 cert 옵션 활성화.
   # certificateFile: cert.pfx
   # certificatePassword: ${env.CERT_PWD}
   # signingHashAlgorithms: [sha256]
