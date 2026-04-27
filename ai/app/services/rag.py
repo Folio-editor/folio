@@ -196,12 +196,14 @@ async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
         role_label = "주인공" if idx == 0 else "부캐릭터"
         # 이름 라인 — 성별·나이를 헤더에 묶어 LLM이 핵심 속성을 한눈에 파악하게 한다.
         # 검수 시 "노정희 28세 → 본문에서 스무 살" 같은 속성 모순을 일관되게 잡기 위함.
+        # 추가로 [C번호] 라벨을 붙여 시스템 프롬프트의 "캐릭터 룰 체크리스트"가
+        # 각 인물을 한 명씩 차례로 본문과 1:1 대조하도록 강제한다 (attention 분산 완화).
         attrs: list[str] = []
         if char[2]:
             attrs.append(f"성별 {char[2]}")
         if char[3]:
             attrs.append(f"나이 {char[3]}")
-        head = f"- [{role_label}] {char[1]}"
+        head = f"- [C{idx + 1}] [{role_label}] {char[1]}"
         if attrs:
             head += f" ({', '.join(attrs)})"
         parts = [head]
@@ -228,10 +230,13 @@ async def _fetch_world_notes(session: AsyncSession, work_id: str) -> str:
     rows = r.fetchall()
     if not rows:
         return ""
+    # 각 항목에 번호를 매겨 체크리스트 식 검수가 가능하게 한다.
+    # 검수 LLM은 시스템 프롬프트의 "세계관 룰 체크리스트" 지시에 따라
+    # 각 번호 항목을 본문과 1:1로 점검하게 된다 (attention 분산 완화).
     lines = []
-    for row in rows:
+    for idx, row in enumerate(rows, start=1):
         content = _plain(row[1])[:WORLD_NOTE_TRUNC] if row[1] else ""
-        lines.append(f"- {row[0]}: {content}")
+        lines.append(f"[W{idx}] {row[0]}: {content}")
     return "\n".join(lines)
 
 
