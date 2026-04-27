@@ -78,7 +78,29 @@ build-electron-windows:
     # ssh/scp는 EC2 runner host에 이미 설치되어 있다(deploy-production이 사용 중).
     # Wine 빌드는 docker run으로 인라인 격리 — runner host에 Wine 설치 불필요.
     - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    # SSH_PRIVATE_KEY가 빈 값이면 GitLab CI Variables가 Protected라 tag에서 노출 안 됨.
+    # 명확한 에러로 즉시 fail — chmod 단계의 모호한 missing operand 회피.
+    - |
+      if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+        echo "[FATAL] SSH_PRIVATE_KEY 변수가 비어있습니다." >&2
+        echo "        GitLab → Settings → CI/CD → Variables 에서" >&2
+        echo "        SSH_PRIVATE_KEY/EC2_HOST/EC2_USER 의 'Protect variable' 체크 해제 또는" >&2
+        echo "        Settings → Repository → Protected tags 에 v* 추가가 필요합니다." >&2
+        exit 1
+      fi
     - chmod 400 $SSH_PRIVATE_KEY
+    # 이전 docker run이 (--user 누락된 옛 버전 등으로) root 소유 잔재를 남겼다면
+    # gitlab-runner 권한으로 정리 못 함 → 새 컨테이너로 chown 후 정리.
+    # 이 단계 자체가 root 권한 컨테이너로 강제 회수 — 사용자 SSH 작업 불필요.
+    - |
+      docker run --rm \
+        -v "$CI_PROJECT_DIR":/workspace \
+        -w /workspace \
+        --entrypoint sh \
+        alpine:3 \
+        -c "chown -R $(id -u):$(id -g) /workspace 2>/dev/null || true; \
+            rm -rf /workspace/.pnpm-store /workspace/frontend/node_modules \
+                   /workspace/frontend/release /workspace/.cache 2>/dev/null || true"
   script:
     - |
       set -Eeuo pipefail
@@ -88,9 +110,18 @@ build-electron-windows:
       # Wine + Mono + Node + pnpm이 사전 설치된 공식 이미지로 격리 빌드.
       # Runner host에는 docker만 있으면 됨 (이미 deploy-production이 docker 사용 중).
       # workspace를 마운트하고 frontend 디렉토리에서 빌드 실행.
+      #
+      # --user 호스트 UID:GID — 컨테이너 안에서 root로 실행되어 호스트에 root 소유
+      # 파일을 남기는 문제 차단. 다음 job이 워크스페이스 정리 시 Permission denied 회피.
+      # HOME=/tmp — non-root 사용자라 컨테이너 내부에 home dir 없을 수 있음, npm/pnpm
+      # cache 경로를 임시 디렉토리로.
+      RUNNER_UID=$(id -u)
+      RUNNER_GID=$(id -g)
       docker run --rm \
+        --user "${RUNNER_UID}:${RUNNER_GID}" \
         -v "$CI_PROJECT_DIR":/workspace \
         -w /workspace/frontend \
+        -e HOME=/tmp \
         -e ELECTRON_CACHE=/workspace/.cache/electron \
         -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
         electronuserland/builder:wine \
@@ -131,6 +162,13 @@ build-electron-windows:
 
       echo "[release] uploaded v${VERSION} to /opt/folio/releases/win/"
       echo "[release] verify: https://folio-editor.co.kr/releases/win/latest.yml"
+
+  # job 종료 시 호스트의 빌드 산출물/캐시 정리 — 이전 root 잔재 사고 방지선.
+  # --user 매핑으로 root 파일이 더이상 안 생기지만, 누군가 옵션 빠뜨려도 막힘.
+  after_script:
+    - |
+      cd "$CI_PROJECT_DIR" || exit 0
+      rm -rf frontend/release frontend/node_modules .pnpm-store .cache 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────
 # Deploy (SSH로 EC2 접속 → 직접 빌드 + Blue/Green 배포)
