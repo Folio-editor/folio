@@ -62,7 +62,7 @@ class RefundServiceTest {
     void within24h_fullRefund() {
         Payment payment = createDonePayment("SZ-001", 9_900, 25_000,
                 LocalDateTime.now().minusHours(12));
-        given(paymentRepository.findByOrderId("SZ-001")).willReturn(Optional.of(payment));
+        given(paymentRepository.findWithLockByOrderId("SZ-001")).willReturn(Optional.of(payment));
         given(tossPaymentsClient.cancelPayment(anyString(), anyString(), isNull()))
                 .willReturn(new TossConfirmResponse("pk_SZ-001", "SZ-001", "CANCELED", "카드", 9_900, null));
 
@@ -79,19 +79,22 @@ class RefundServiceTest {
     @Test
     @DisplayName("24시간 이후 환불은 잔여 일수 비례 부분 환불된다")
     void after24h_partialRefund() {
-        // 10일 전 결제 → 잔여 20일 → 9900 * 20/30 = 6600
+        // 10일 전 결제 → 잔여 약 20일 (자정 경계로 ±1일 가능) → 비례 부분 환불
+        // production은 UTC로 비교하므로 테스트도 UTC 기준으로 시각을 만든다.
         Payment payment = createDonePayment("SZ-002", 9_900, 25_000,
-                LocalDateTime.now().minusDays(10));
-        given(paymentRepository.findByOrderId("SZ-002")).willReturn(Optional.of(payment));
-        given(tossPaymentsClient.cancelPayment(anyString(), anyString(), eq(6_600)))
-                .willReturn(new TossConfirmResponse("pk_SZ-002", "SZ-002", "CANCELED", "카드", 6_600, null));
+                LocalDateTime.now(java.time.ZoneOffset.UTC).minusDays(10));
+        given(paymentRepository.findWithLockByOrderId("SZ-002")).willReturn(Optional.of(payment));
+        given(tossPaymentsClient.cancelPayment(anyString(), anyString(), anyInt()))
+                .willAnswer(inv -> new TossConfirmResponse(
+                        "pk_SZ-002", "SZ-002", "CANCELED", "카드",
+                        inv.getArgument(2), null));
 
         RefundResponse response = refundService.refund(writerId, "SZ-002");
 
         assertThat(response.refundType()).isEqualTo("PARTIAL");
-        assertThat(response.refundAmount()).isEqualTo(6_600);
-        // 토큰도 비례 회수: 25000 * 20/30 = 16666
-        assertThat(response.tokenDeducted()).isEqualTo(16_666);
+        // 자정 경계에서 daysUsed가 9 또는 10이 될 수 있어 두 값 모두 허용.
+        assertThat(response.refundAmount()).isIn(6_600, 6_930);
+        assertThat(response.tokenDeducted()).isIn(16_666, 17_500);
     }
 
     @Test
@@ -99,7 +102,7 @@ class RefundServiceTest {
     void after30days_refundDenied() {
         Payment payment = createDonePayment("SZ-003", 9_900, 25_000,
                 LocalDateTime.now().minusDays(31));
-        given(paymentRepository.findByOrderId("SZ-003")).willReturn(Optional.of(payment));
+        given(paymentRepository.findWithLockByOrderId("SZ-003")).willReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> refundService.refund(writerId, "SZ-003"))
                 .isInstanceOf(PaymentException.class)
@@ -112,7 +115,7 @@ class RefundServiceTest {
         Payment payment = Payment.builder()
                 .writer(writer).orderId("SZ-004").amount(9_900).tokenQty(25_000).build();
         ReflectionTestUtils.setField(payment, "id", UUID.randomUUID());
-        given(paymentRepository.findByOrderId("SZ-004")).willReturn(Optional.of(payment));
+        given(paymentRepository.findWithLockByOrderId("SZ-004")).willReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> refundService.refund(writerId, "SZ-004"))
                 .isInstanceOf(PaymentException.class)
@@ -125,7 +128,7 @@ class RefundServiceTest {
     @DisplayName("다른 유저의 결제는 환불할 수 없다")
     void otherUser_forbidden() {
         Payment payment = createDonePayment("SZ-005", 9_900, 25_000, LocalDateTime.now());
-        given(paymentRepository.findByOrderId("SZ-005")).willReturn(Optional.of(payment));
+        given(paymentRepository.findWithLockByOrderId("SZ-005")).willReturn(Optional.of(payment));
 
         UUID otherWriterId = UUID.randomUUID();
 

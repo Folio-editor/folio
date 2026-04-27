@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { LoginResult, FolioApi } from '../shared/types/auth';
+import type {
+  LoginResult,
+  FolioApi,
+  FolioOneTimePaymentParams,
+  FolioOneTimePaymentResult,
+  FolioBillingAuthParams,
+  FolioBillingAuthResult,
+} from '../shared/types/auth';
 
 const api: FolioApi = {
   platform: 'electron',
@@ -33,6 +40,12 @@ const api: FolioApi = {
       return () => ipcRenderer.removeListener('window:maximizeChanged', listener);
     },
     platform: process.platform as 'win32' | 'darwin' | 'linux' | 'web',
+  },
+  payment: {
+    openOneTime: (params: FolioOneTimePaymentParams) =>
+      ipcRenderer.invoke('payment:openOneTime', params) as Promise<FolioOneTimePaymentResult>,
+    openBillingAuth: (params: FolioBillingAuthParams) =>
+      ipcRenderer.invoke('payment:openBillingAuth', params) as Promise<FolioBillingAuthResult>,
   },
 };
 

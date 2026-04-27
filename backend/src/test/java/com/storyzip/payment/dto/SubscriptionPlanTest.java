@@ -10,11 +10,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SubscriptionPlanTest {
 
     @Test
-    @DisplayName("fromCode: PRO_MONTHLY는 9,900원 / 25,000 토큰")
+    @DisplayName("fromCode: PRO_MONTHLY는 9,900원 / 1,300 크레딧")
     void fromCode_returnsFixedPricing() {
         SubscriptionPlan plan = SubscriptionPlan.fromCode("PRO_MONTHLY");
         assertThat(plan.getAmount()).isEqualTo(9_900);
-        assertThat(plan.getMonthlyTokens()).isEqualTo(25_000);
+        assertThat(plan.getMonthlyTokens()).isEqualTo(1_300);
         assertThat(plan.getDisplayName()).contains("Pro");
     }
 

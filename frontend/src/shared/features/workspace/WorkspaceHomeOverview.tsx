@@ -5,6 +5,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface WorkspaceHomeOverviewProps {
   onSelectWork: (id: string) => void;
@@ -196,9 +197,8 @@ function WorkWideCard({ work, onClick }: { work: WorkRow; onClick: () => void })
 /* ── 유틸 ── */
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso || '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

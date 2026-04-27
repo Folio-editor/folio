@@ -7,6 +7,7 @@ import { Select } from '../../components/ui/Select';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { TAG_OPTIONS, TAG_DOT_COLOR } from './ideaConstants';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface IdeaArchiveEditScreenProps {
   id: string;
@@ -22,8 +23,8 @@ interface IdeaRow {
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseServerDate(iso);
+  if (!d) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

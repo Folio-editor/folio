@@ -62,10 +62,50 @@ export interface FolioWindowApi {
   platform: 'win32' | 'darwin' | 'linux' | 'web';
 }
 
+export interface FolioOneTimePaymentParams {
+  clientKey: string;
+  amount: number;
+  orderId: string;
+  orderName: string;
+  customerKey: string;
+}
+
+export interface FolioOneTimePaymentResult {
+  paymentKey: string;
+  orderId: string;
+  amount: number;
+}
+
+export interface FolioBillingAuthParams {
+  clientKey: string;
+  customerKey: string;
+}
+
+export interface FolioBillingAuthResult {
+  authKey: string;
+  customerKey: string;
+}
+
+export interface FolioPaymentApi {
+  openOneTime: (
+    params: FolioOneTimePaymentParams,
+  ) => Promise<FolioOneTimePaymentResult>;
+  openBillingAuth: (
+    params: FolioBillingAuthParams,
+  ) => Promise<FolioBillingAuthResult>;
+}
+
+/** OS spellchecker 사전 동기화 — 렌더러가 사용자 추가 단어 set을 main에 푸시 */
+export interface FolioSpellcheckApi {
+  syncWords: (words: string[]) => Promise<void>;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
   window: FolioWindowApi;
+  spellcheck: FolioSpellcheckApi;
+  payment: FolioPaymentApi;
 }
 
 declare global {

@@ -12,6 +12,12 @@ import {
   commitLastKnownWriterId,
 } from './auth/googleOAuth';
 import { getOrCreateGuestId } from './auth/guestId';
+import {
+  openOneTimePayment,
+  openBillingAuth,
+  type OneTimePaymentParams,
+  type BillingAuthParams,
+} from './payment/checkoutWindow';
 
 const createWindow = () => {
   Menu.setApplicationMenu(null);
@@ -92,6 +98,20 @@ const createWindow = () => {
   }
 };
 
+// Spellchecker dictionary 동기화 — 렌더러 신호로 유저 사전 단어 set을 OS spellchecker에 반영
+const syncedSpellcheckWords = new Set<string>();
+
+function normalizeSpellcheckWords(words: unknown): string[] {
+  if (!Array.isArray(words)) return [];
+  const out: string[] = [];
+  for (const w of words) {
+    if (typeof w !== 'string') continue;
+    const trimmed = w.trim();
+    if (trimmed) out.push(trimmed);
+  }
+  return out;
+}
+
 function registerAuthHandlers() {
   ipcMain.handle('auth:login', async () => loginWithGoogle());
   ipcMain.handle('auth:logout', async () => logout());
@@ -123,6 +143,45 @@ function registerWindowHandlers() {
   });
 }
 
+function registerPaymentHandlers() {
+  ipcMain.handle('payment:openOneTime', async (event, params: OneTimePaymentParams) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    return openOneTimePayment(parent, params);
+  });
+  ipcMain.handle('payment:openBillingAuth', async (event, params: BillingAuthParams) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    return openBillingAuth(parent, params);
+  });
+}
+
+function registerSpellcheckHandlers() {
+  ipcMain.handle('spellcheck:syncWords', async (event, words: unknown) => {
+    const session = event.sender.session as Electron.Session & {
+      removeWordFromSpellCheckerDictionary?: (word: string) => boolean;
+    };
+    const nextWords = new Set(normalizeSpellcheckWords(words));
+
+    if (typeof session.removeWordFromSpellCheckerDictionary === 'function') {
+      for (const word of syncedSpellcheckWords) {
+        if (!nextWords.has(word)) {
+          session.removeWordFromSpellCheckerDictionary(word);
+        }
+      }
+    }
+
+    for (const word of nextWords) {
+      if (!syncedSpellcheckWords.has(word)) {
+        session.addWordToSpellCheckerDictionary(word);
+      }
+    }
+
+    syncedSpellcheckWords.clear();
+    for (const word of nextWords) {
+      syncedSpellcheckWords.add(word);
+    }
+  });
+}
+
 /** 새 창 생성 시 maximize/unmaximize 이벤트를 렌더러로 push — TitleBar의 Max/Restore 아이콘 토글용. */
 function bindMaximizeEvents(win: BrowserWindow) {
   const send = (state: boolean) => win.webContents.send('window:maximizeChanged', state);
@@ -133,6 +192,8 @@ function bindMaximizeEvents(win: BrowserWindow) {
 app.on('ready', () => {
   registerAuthHandlers();
   registerWindowHandlers();
+  registerPaymentHandlers();
+  registerSpellcheckHandlers();
   // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
   tokenRefreshScheduler.on('session-expired', () => {
     for (const win of BrowserWindow.getAllWindows()) {

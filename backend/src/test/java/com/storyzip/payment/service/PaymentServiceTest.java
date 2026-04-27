@@ -9,7 +9,6 @@ import com.storyzip.payment.client.TossPaymentsClient;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.domain.PaymentStatus;
-import com.storyzip.payment.domain.TokenTransactionType;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
@@ -73,19 +72,19 @@ class PaymentServiceTest {
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
 
         CreatePaymentResponse response = paymentService.createPayment(
-                writerId, new CreatePaymentRequest("TOKEN_20000"));
+                writerId, new CreatePaymentRequest("TOKEN_550"));
 
-        assertThat(response.amount()).isEqualTo(9_900);
-        assertThat(response.tokenQty()).isEqualTo(20_000);
+        assertThat(response.amount()).isEqualTo(5_000);
+        assertThat(response.tokenQty()).isEqualTo(550);
         assertThat(response.orderId()).startsWith("SZ-");
-        assertThat(response.orderName()).contains("20000");
+        assertThat(response.orderName()).contains("550");
 
         ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).save(captor.capture());
         Payment saved = captor.getValue();
         assertThat(saved.getStatus()).isEqualTo(PaymentStatus.READY);
-        assertThat(saved.getAmount()).isEqualTo(9_900);
-        assertThat(saved.getTokenQty()).isEqualTo(20_000);
+        assertThat(saved.getAmount()).isEqualTo(5_000);
+        assertThat(saved.getTokenQty()).isEqualTo(550);
     }
 
     @Test
@@ -94,7 +93,7 @@ class PaymentServiceTest {
         given(writerRepository.findById(writerId)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.createPayment(
-                writerId, new CreatePaymentRequest("TOKEN_5000")))
+                writerId, new CreatePaymentRequest("TOKEN_300")))
                 .isInstanceOf(PaymentException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WRITER_NOT_FOUND);
     }
@@ -134,9 +133,8 @@ class PaymentServiceTest {
         assertThat(response.method()).isEqualTo(PaymentMethod.CARD);
         assertThat(response.approvedAt()).isNotNull();
 
-        verify(tokenWalletService).charge(
+        verify(tokenWalletService).chargePurchase(
                 eq(writerId), eq(20_000),
-                eq(TokenTransactionType.CHARGE),
                 eq("PAYMENT_SZ-ABC"),
                 eq(paymentId));
     }
@@ -155,7 +153,7 @@ class PaymentServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
 
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -171,7 +169,7 @@ class PaymentServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
 
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -190,7 +188,7 @@ class PaymentServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.orderId()).isEqualTo("SZ-ABC");
         verify(tossPaymentsClient, never()).confirmPayment(anyString(), anyString(), anyInt());
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -218,7 +216,7 @@ class PaymentServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.PAYMENT_FAILED);
 
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargePurchase(any(), anyInt(), anyString(), any());
     }
 
     // ===== getByOrderId =====
