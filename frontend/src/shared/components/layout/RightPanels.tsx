@@ -33,13 +33,16 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { ResizeHandle } from './ResizeHandle';
 import { AuxDocViewer } from './AuxDocViewer';
 import { BreadcrumbTitle } from './BreadcrumbTitle';
 import { ContentEditor } from '../editor/ContentEditor';
 import { Select } from '../ui/Select';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
+import { Skeleton } from '../ui/Skeleton';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
 import { useWriterId } from '../../hooks/useWriterId';
 import { apiClient, ApiError } from '../../lib/apiClient';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -51,6 +54,14 @@ import { useNavigationStore } from '../../stores/navigationStore';
 const INSUFFICIENT_CREDITS_PREFIX = '__INSUFFICIENT_CREDITS__:';
 const INSUFFICIENT_CREDITS_MESSAGE =
   '크레딧이 부족합니다. 설정 → 결제에서 충전 후 다시 시도해주세요.';
+
+const REVIEW_PROGRESS_STAGES: ProgressStage[] = [
+  { at: 0, message: '원고를 분석하고 있어요...' },
+  { at: 5000, message: '설정집과 대조하는 중...' },
+  { at: 15000, message: '이전 회차 맥락을 확인하는 중...' },
+  { at: 30000, message: '이슈를 정리하는 중...' },
+  { at: 45000, message: '거의 다 됐어요...' },
+];
 
 function describeAiError(err: unknown, fallback: string): string {
   if (err instanceof ApiError && err.status === 402) {
@@ -765,8 +776,20 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
       void refreshWallet();
+      const issueCount = reviewResult.issues.length;
+      toast.success(
+        issueCount === 0
+          ? '검수 완료 — 발견된 이슈가 없어요'
+          : `검수 완료 — 이슈 ${issueCount}건 발견`,
+        { description: `점수 ${reviewResult.score}/100` },
+      );
     } catch (err) {
-      failReview(describeAiError(err, 'AI 서버 오류가 발생했습니다.'));
+      const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
+      failReview(message);
+      const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
+        ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
+        : message;
+      toast.error('검수 실패', { description: display });
     }
   }, [currentEpisode, startReview, finishReview, failReview, refreshWallet]);
 
@@ -1334,6 +1357,7 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
   const error = useAiSessionStore((s) => s.reviewError);
   const targetEpisode = useAiSessionStore((s) => s.reviewTargetEpisode);
   const focusedIndex = useReviewHighlightStore((s) => s.focusedIndex);
+  const progressMessage = useProgressMessage(reviewState === 'loading', REVIEW_PROGRESS_STAGES);
 
   // 하이라이트 연동: 결과가 있으면 하이라이트 스토어에 이슈 전달
   useEffect(() => {
@@ -1386,13 +1410,37 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
 
         {/* 로딩 */}
         {reviewState === 'loading' && (
-          <div className="flex flex-col items-center gap-2 py-8">
-            <Loader2 size={24} className="animate-spin text-primary" />
-            <p className="text-center text-xs text-muted-foreground">
-              설정집과 이전 맥락을 대조하여 원고를 검수합니다.
-              <br />
-              최대 1분 정도 소요될 수 있습니다.
-            </p>
+          <div className="flex flex-col gap-3">
+            {/* 점수 카드 자리 */}
+            <div className="rounded-md border border-border bg-background p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-6 w-14" />
+              </div>
+              <Skeleton className="mt-3 h-3 w-full" />
+              <Skeleton className="mt-1.5 h-3 w-4/5" />
+            </div>
+
+            {/* 이슈 카드 자리 — 3개 */}
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-3 w-24" />
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-background p-3">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
+              ))}
+            </div>
+
+            {/* 진행 메시지 */}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              <span className="text-xs text-muted-foreground">{progressMessage}</span>
+            </div>
           </div>
         )}
 
