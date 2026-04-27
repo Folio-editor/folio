@@ -556,11 +556,6 @@ function ForeshadowStageTimeline({
                         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {getLinkTargetKind(link)}
                         </span>
-                        {link.episode_sort != null && (
-                          <span className="text-[10px] text-muted-foreground">
-                            현재 정렬 #{link.episode_sort + 1}
-                          </span>
-                        )}
                       </div>
                       <p
                         className="truncate text-xs font-medium text-foreground"
