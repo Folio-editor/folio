@@ -39,6 +39,9 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
+import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
+import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 import type { WorkspaceSection } from '../../types/workspace';
@@ -228,11 +231,14 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
           <div className="flex items-center gap-2">
             <ViewToggle mode={viewMode} onChange={setViewMode} />
             <Button onClick={() => void handleNewAct()}>+ 새 막</Button>
+            <EditorToolbarToggle />
           </div>
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <UnifiedEditorToolbar mode="shared" />
+        <div className="p-6">
         {acts.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
             아직 플롯이 없습니다. 새 막을 추가하여 줄거리를 설계하세요.
@@ -321,6 +327,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
@@ -373,9 +380,12 @@ function ActSection({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
       ],
       content: parseNoteContent(act.content),
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
       onUpdate: ({ editor: ed }) => {
         if (actDebounceRef.current) clearTimeout(actDebounceRef.current);
         const updateCb = actUpdateRef.current;
@@ -413,7 +423,11 @@ function ActSection({
   useEffect(() => {
     return () => {
       actFlushRef.current();
+      if (actEditor && !actEditor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(actEditor);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasContent = actEditor ? actEditor.state.doc.textContent.length > 0 : !!act.content;
@@ -650,9 +664,12 @@ function TimelineCard({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder: '플롯 내용을 입력하세요…' }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
       ],
       content: parseNoteContent(episode.content),
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
       onUpdate: ({ editor: ed }) => {
         if (epDebounceRef.current) clearTimeout(epDebounceRef.current);
         const updateCb = epUpdateRef.current;
@@ -690,7 +707,11 @@ function TimelineCard({
   useEffect(() => {
     return () => {
       epFlushRef.current();
+      if (epEditor && !epEditor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(epEditor);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const cycleStatus = () => {
@@ -928,9 +949,12 @@ function ActGridSection({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
       ],
       content: parseNoteContent(act.content),
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
       onUpdate: ({ editor: ed }) => {
         if (gridActDebounceRef.current) clearTimeout(gridActDebounceRef.current);
         gridActDebounceRef.current = setTimeout(() => {
@@ -955,7 +979,11 @@ function ActGridSection({
   useEffect(() => {
     return () => {
       if (gridActDebounceRef.current) clearTimeout(gridActDebounceRef.current);
+      if (gridActEditor && !gridActEditor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(gridActEditor);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -1151,9 +1179,12 @@ function ActGridEpisodeContentEditor({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder: '회차 내용을 입력하세요…' }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
       ],
       content: parseNoteContent(episode.content),
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
       onUpdate: ({ editor: ed }) => {
         if (gridEpDebounceRef.current) clearTimeout(gridEpDebounceRef.current);
         gridEpDebounceRef.current = setTimeout(() => {
@@ -1178,7 +1209,11 @@ function ActGridEpisodeContentEditor({
   useEffect(() => {
     return () => {
       if (gridEpDebounceRef.current) clearTimeout(gridEpDebounceRef.current);
+      if (gridEpEditor && !gridEpEditor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(gridEpEditor);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { data: linkRows = [] } = useQuery<LinkRow>(

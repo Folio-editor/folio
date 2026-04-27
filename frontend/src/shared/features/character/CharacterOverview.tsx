@@ -20,6 +20,9 @@ import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
+import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
+import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
 import { cn } from '../../lib/cn';
 
@@ -76,7 +79,7 @@ const GENDER_ICON_MAP: Record<
   미설정: IconQuestionMark,
 };
 
-function GenderIcon({ gender, size = 18 }: { gender: string; size?: number }) {
+export function GenderIcon({ gender, size = 18 }: { gender: string; size?: number }) {
   const style = GENDER_ICON_STYLE[gender] ?? GENDER_ICON_STYLE.미설정;
   const Icon = GENDER_ICON_MAP[gender] ?? IconQuestionMark;
   return <Icon size={size} stroke={1.75} className={style.color} />;
@@ -291,18 +294,23 @@ function CharacterOverviewInner({
           />
         }
         trailing={
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="캐릭터 삭제"
-            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="캐릭터 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         }
       />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <UnifiedEditorToolbar mode="shared" />
+        <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
         <div className="mb-6 flex gap-6">
           <div className="group/img relative shrink-0">
             <button
@@ -477,6 +485,7 @@ function CharacterOverviewInner({
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {confirmDelete && (
@@ -522,9 +531,12 @@ function InlineNoteItem({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder: '내용을 입력하세요...' }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
       ],
       content: parseNoteContent(note.content),
+      onFocus: ({ editor: ed }) => {
+        useFocusedEditorStore.getState().focusEditor(ed);
+      },
       onUpdate: ({ editor: ed }) => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
@@ -549,7 +561,11 @@ function InlineNoteItem({
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (editor && !editor.isDestroyed) {
+        useFocusedEditorStore.getState().blurEditor(editor);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

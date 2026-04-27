@@ -59,6 +59,9 @@ importers:
       '@tiptap/extension-text-align':
         specifier: ^3.0.0
         version: 3.22.3(@tiptap/core@3.22.3(@tiptap/pm@3.22.3))
+      '@tiptap/extension-text-style':
+        specifier: 3.22.3
+        version: 3.22.3(@tiptap/core@3.22.3(@tiptap/pm@3.22.3))
       '@tiptap/extension-typography':
         specifier: ^3.0.0
         version: 3.22.3(@tiptap/core@3.22.3(@tiptap/pm@3.22.3))

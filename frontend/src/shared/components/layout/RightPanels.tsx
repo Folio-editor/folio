@@ -703,7 +703,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const stopGeneration = useAiSessionStore((s) => s.stopGeneration);
   const setAbort = useAiSessionStore((s) => s.setAbort);
 
-  const refreshWallet = useWalletStore((s) => s.refresh);
+  const refreshWalletAfterUsage = useWalletStore((s) => s.refreshAfterUsage);
 
   const handleGenerate = useCallback(async () => {
     if (!storyline.trim() || !currentEpisode) return;
@@ -732,7 +732,6 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         const d = data as { type?: string; content?: string };
         if (d.type === 'done') {
           finishGeneration();
-          void refreshWallet();
           return true;
         }
         if (d.type === 'chunk' && d.content) {
@@ -740,13 +739,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         }
       },
       () => {
+        // SSE 정상 종료 (early-done 또는 stream end) — 차감 반영 위한 즉시+지연 refresh
         finishGeneration();
-        void refreshWallet();
+        refreshWalletAfterUsage();
       },
       (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
     );
     setAbort(controller);
-  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWallet]);
+  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
 
   const handleStop = () => stopGeneration();
 
@@ -775,7 +775,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
-      void refreshWallet();
+      refreshWalletAfterUsage();
       const issueCount = reviewResult.issues.length;
       toast.success(
         issueCount === 0
@@ -786,12 +786,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failReview(message);
+      // 부분 차감 가능성 — 실패해도 잔액 갱신
+      refreshWalletAfterUsage();
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
         ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
         : message;
       toast.error('검수 실패', { description: display });
     }
-  }, [currentEpisode, startReview, finishReview, failReview, refreshWallet]);
+  }, [currentEpisode, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {

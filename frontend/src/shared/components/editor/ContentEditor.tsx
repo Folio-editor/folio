@@ -7,6 +7,7 @@ import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
+import { TextStyle, FontFamily, FontSize } from '@tiptap/extension-text-style';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
 import { useEditorToolbarStore } from '../../stores/editorToolbarStore';
@@ -14,12 +15,13 @@ import SceneBreak from './extensions/SceneBreak';
 import KoreanPunctuation from './extensions/KoreanPunctuation';
 import AutoPairQuotes from './extensions/AutoPairQuotes';
 import AuthorNote from './extensions/AuthorNote';
+import TabIndent from './extensions/TabIndent';
 import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
 import ReviewHighlight from './extensions/ReviewHighlight';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
-import EditorToolbar from './EditorToolbar';
+import { UnifiedEditorToolbar } from './UnifiedEditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
 import EditorSettingsPanel from './EditorSettingsPanel';
@@ -96,15 +98,19 @@ export function ContentEditor({
           link: { openOnClick: false },
         }),
         Placeholder.configure({ placeholder }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
         Typography,
         CharacterCount,
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
-        Color,
+        TextStyle,
+        Color.configure({ types: ['textStyle'] }),
+        FontFamily.configure({ types: ['textStyle'] }),
+        FontSize.configure({ types: ['textStyle'] }),
         SceneBreak,
         KoreanPunctuation.configure({ enabled: settings.autoKoreanPunctuation }),
         AutoPairQuotes.configure({ enabled: settings.autoPairQuotes }),
         AuthorNote,
+        TabIndent,
         TypewriterMode.configure({
           enabled: settings.typewriterMode,
           position: settings.typewriterPosition,
@@ -240,6 +246,26 @@ export function ContentEditor({
     };
   }, []);
 
+  // Ctrl+F / Ctrl+H — FindReplace 패널 열기
+  // FindReplace extension은 브라우저 기본 동작만 차단하므로 UI 토글은 여기서 직접 처리
+  useEffect(() => {
+    if (!editor) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === 'f' || e.key === 'F') {
+        if (!editor.isFocused) return;
+        e.preventDefault();
+        setFindReplaceOpen(true);
+      } else if (e.key === 'h' || e.key === 'H') {
+        if (!editor.isFocused) return;
+        e.preventDefault();
+        setFindReplaceOpen(true);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [editor]);
+
   // CSS 변수로 서식 프리셋 적용
   const editorStyle: React.CSSProperties = {
     '--editor-font-size': `${settings.fontSize}px`,
@@ -268,7 +294,8 @@ export function ContentEditor({
       {/* 툴바 — compact 모드 / 글로벌 토글 OFF에서는 숨김 (단축키 전용 편집) */}
       {toolbarVisible && (
         <>
-          <EditorToolbar
+          <UnifiedEditorToolbar
+            mode="single"
             editor={editor}
             onToggleFindReplace={() => setFindReplaceOpen((v) => !v)}
             onToggleShortcutHelp={() => setShortcutHelpOpen(true)}
@@ -316,6 +343,7 @@ export function ContentEditor({
           wordCount={wordCount}
           saveStatus={saveStatus}
           sessionStartChars={sessionStartChars}
+          showManuscriptCount
         />
       )}
 
