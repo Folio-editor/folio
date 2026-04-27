@@ -1,4 +1,4 @@
-import { PRICING } from '../../data/landing-content';
+import { CREDIT_PACKS, PRICING } from '../../data/landing-content';
 import { ChapterHead } from './ChapterHead';
 
 export function PricingSection() {
@@ -26,12 +26,38 @@ export function PricingSection() {
                 {p.cta}
               </a>
               <ul className="price-list">
-                {p.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
+                {p.features.map((f) => {
+                  const isSub = f.startsWith('└');
+                  return (
+                    <li key={f} className={isSub ? 'price-list-sub' : ''}>
+                      {isSub ? f.replace(/^└\s*/, '') : f}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
+        </div>
+
+        <div className="credit-section">
+          <p className="credit-section-label sans">
+            구독 없이 한 번만 충전하고 싶다면
+          </p>
+          <div className="credit-grid">
+            {CREDIT_PACKS.map((pack) => (
+              <a
+                key={pack.price}
+                href="#"
+                className="credit-card"
+                aria-label={`${pack.price} 크레딧 구매하기`}
+              >
+                <div className="credit-price sans">{pack.price}</div>
+                <div className="credit-amount sans">{pack.credit}</div>
+                <div className="credit-bonus sans">{pack.bonus}</div>
+                <span className="credit-card-cta sans">구매하기 →</span>
+              </a>
+            ))}
+          </div>
         </div>
       </section>
     </>
