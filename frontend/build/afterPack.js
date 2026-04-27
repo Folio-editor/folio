@@ -23,7 +23,12 @@ module.exports = async function afterPack(context) {
     [FuseV1Options.EnableCookieEncryption]: true,
     [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
     [FuseV1Options.EnableNodeCliInspectArguments]: false,
-    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    // Asar integrity 검증은 코드 사이닝 인증서 보유 + 정식 sign 워크플로우와 함께
+    // 사용해야 신뢰 가능. 미인증 빌드 환경에서는 packaging 후 단계(rcedit 등)가
+    // exe를 변경해 integrity 정보가 invalidate → 시작 시 즉시 종료(FATAL Failed
+    // to find file integrity info for resources\app.asar) 발생.
+    // OV/EV 코드 사이닝 도입 시 다시 true로 활성 권장.
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
     [FuseV1Options.OnlyLoadAppFromAsar]: true,
   });
 };
