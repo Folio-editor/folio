@@ -3,7 +3,7 @@
 // ============================================================
 // 모든 메인 편집 화면 헤더의 토글 버튼이 이 store를 단일 진실 소스로 사용.
 // - true: 단일 에디터 화면(ContentEditor) 툴바 노출 + 다중 에디터 화면(WorldNote
-//          hierarchy / AuxDocViewer) sticky SharedEditorToolbar 활성
+//          hierarchy / Character·Plot 통합뷰) sticky UnifiedEditorToolbar 활성
 // - false: 모든 컨텍스트에서 툴바 숨김 (단축키 전용 편집)
 // 디폴트: true
 // ============================================================

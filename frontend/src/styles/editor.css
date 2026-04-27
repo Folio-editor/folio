@@ -10,6 +10,9 @@
 .ProseMirror {
   color: var(--foreground);
   caret-color: var(--ring);
+  /* TabIndent 확장: \t 문자가 들어올 때 시각적 폭 확보 */
+  tab-size: 4;
+  -moz-tab-size: 4;
 }
 
 .ProseMirror:focus {
@@ -80,13 +83,14 @@
   color: var(--editor-inner-thought);
 }
 
-/* ── 작가 메모 ── */
+/* ── 주석 (구 작가 메모, mark type은 authorNote 유지 — AI 파서 호환) ── */
 .folio-editor .author-note {
-  background: var(--editor-author-note-bg);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-size: 0.85em;
-  color: var(--editor-author-note);
+  color: var(--editor-comment-fg);
+  text-decoration: underline dotted var(--editor-comment-accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  background: transparent;
+  font-style: italic;
 }
 
 /* ── 이름 태그 ── */
@@ -103,12 +107,20 @@
   border-bottom: 2px solid var(--editor-name-place);
 }
 
-/* ── 형광펜 ── */
+/* ── 형광펜 (multicolor) ── */
 .folio-editor .ProseMirror mark {
   background-color: var(--editor-mark);
   border-radius: 2px;
   padding: 0 2px;
 }
+.folio-editor .ProseMirror mark[data-color='yellow'] { background-color: var(--editor-mark-yellow); }
+.folio-editor .ProseMirror mark[data-color='green']  { background-color: var(--editor-mark-green);  }
+.folio-editor .ProseMirror mark[data-color='blue']   { background-color: var(--editor-mark-blue);   }
+.folio-editor .ProseMirror mark[data-color='pink']   { background-color: var(--editor-mark-pink);   }
+.folio-editor .ProseMirror mark[data-color='purple'] { background-color: var(--editor-mark-purple); }
+.folio-editor .ProseMirror mark[data-color='orange'] { background-color: var(--editor-mark-orange); }
+.folio-editor .ProseMirror mark[data-color='red']    { background-color: var(--editor-mark-red);    }
+.folio-editor .ProseMirror mark[data-color='gray']   { background-color: var(--editor-mark-gray);   }
 
 /* ── 집중 모드 ── */
 .folio-editor.focus-mode .ProseMirror > *:not(.has-focus) {

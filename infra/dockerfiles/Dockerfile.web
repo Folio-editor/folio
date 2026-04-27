@@ -34,8 +34,11 @@ ENV VITE_API_URL=${VITE_API_URL} \
     VITE_GOOGLE_DESKTOP_CLIENT_ID=${VITE_GOOGLE_DESKTOP_CLIENT_ID} \
     VITE_LANDING_URL=${VITE_LANDING_URL}
 
-# 의존성 캐시: lockfile 먼저 복사
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+# 의존성 캐시: lockfile + .npmrc 먼저 복사
+# .npmrc(node-linker=hoisted) 가 누락되면 pnpm이 isolated 모드로 install →
+# transitive deps 미노출로 빌드 시점 unresolved import 발생 가능. 로컬 dev와 동일한
+# 디렉토리 구조 보장 위해 반드시 함께 복사.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # 소스 복사 후 웹 빌드

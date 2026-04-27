@@ -16,10 +16,16 @@ interface WalletState {
   error: string | null;
 
   refresh: () => Promise<void>;
+  /**
+   * AI 사용 직후 차감 반영용 — 즉시 1회 + 1.5초 후 1회 더 refresh.
+   * 서버의 토큰 차감이 완전히 commit되기까지 약간의 지연이 있을 수 있으므로
+   * 이중 호출로 사용자가 "즉각 반영"으로 체감하도록 보장.
+   */
+  refreshAfterUsage: () => void;
   reset: () => void;
 }
 
-export const useWalletStore = create<WalletState>((set) => ({
+export const useWalletStore = create<WalletState>((set, get) => ({
   wallet: null,
   loading: false,
   error: null,
@@ -40,6 +46,13 @@ export const useWalletStore = create<WalletState>((set) => ({
         error: e instanceof Error ? e.message : '지갑 조회 실패',
       });
     }
+  },
+
+  refreshAfterUsage: () => {
+    void get().refresh();
+    setTimeout(() => {
+      void get().refresh();
+    }, 1500);
   },
 
   reset: () => set({ wallet: null, loading: false, error: null }),

@@ -251,10 +251,15 @@ export function AuthenticatedApp() {
   );
 
   // 핀 슬롯 조작
+  // 스테이징에 문서가 추가되면 우측 패널 탭을 'docs'(문서 뷰어)로 자동 전환 —
+  // 사용자가 'idea'/'ai' 탭을 보던 중 더블클릭/드래그로 핀 추가했을 때
+  // 추가된 문서가 즉시 보이지 않는 UX 문제 해소.
   const addPinned = useCallback(
     (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => {
+      let added = false;
       setAuxPinned((prev) => {
         if (prev.some((p) => p.docType === item.docType && p.docId === item.docId)) return prev;
+        added = true;
         const newItem = { ...item, id: crypto.randomUUID(), collapsed: false };
         if (index !== undefined && index >= 0 && index <= prev.length) {
           const next = [...prev];
@@ -263,8 +268,9 @@ export function AuthenticatedApp() {
         }
         return [...prev, newItem];
       });
+      if (added) setRightPanelTab('docs');
     },
-    [setAuxPinned],
+    [setAuxPinned, setRightPanelTab],
   );
   const removePinned = useCallback(
     (panelId: string) =>
