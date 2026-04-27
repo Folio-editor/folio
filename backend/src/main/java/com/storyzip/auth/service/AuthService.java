@@ -11,6 +11,7 @@ import com.storyzip.auth.oauth.GoogleUserInfo;
 import com.storyzip.auth.repository.WriterRepository;
 import com.storyzip.common.exception.AuthException;
 import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.payment.service.TokenWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class AuthService {
     private final WriterRepository writerRepository;
     private final RefreshTokenRedisService refreshTokenRedisService;
     private final JwtProvider jwtProvider;
+    private final TokenWalletService tokenWalletService;
 
     /**
      * Electron PKCE 로그인 — Google 인증 완료 후 code/code_verifier 수신 → JWT 발급.
@@ -64,6 +66,7 @@ public class AuthService {
                             .oauthId(userInfo.sub())
                             .build()
             );
+            tokenWalletService.grantSignupBonus(writer.getId());
             isNewUser = true;
         }
 

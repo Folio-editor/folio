@@ -11,7 +11,6 @@ import com.storyzip.payment.config.TossPaymentsProperties;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.Subscription;
 import com.storyzip.payment.domain.SubscriptionStatus;
-import com.storyzip.payment.domain.TokenTransactionType;
 import com.storyzip.payment.dto.CreateSubscriptionRequest;
 import com.storyzip.payment.dto.SubscriptionResponse;
 import com.storyzip.payment.repository.PaymentRepository;
@@ -115,10 +114,10 @@ class SubscriptionServiceTest {
 
         assertThat(response.status()).isEqualTo(SubscriptionStatus.ACTIVE);
         assertThat(response.monthlyAmount()).isEqualTo(9_900);
-        assertThat(response.monthlyTokens()).isEqualTo(25_000);
+        assertThat(response.monthlyTokens()).isEqualTo(1_300);
 
-        verify(tokenWalletService).charge(eq(writerId), eq(25_000),
-                eq(TokenTransactionType.SUBSCRIPTION), anyString(), any());
+        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(1_300),
+                anyString(), any());
     }
 
     @Test
@@ -212,8 +211,8 @@ class SubscriptionServiceTest {
 
         assertThat(s.getNextBillingAt()).isAfter(originalNext);
         assertThat(s.getRetryCount()).isZero();
-        verify(tokenWalletService).charge(eq(writerId), eq(25_000),
-                eq(TokenTransactionType.SUBSCRIPTION), anyString(), any());
+        verify(tokenWalletService).chargeSubscription(eq(writerId), eq(1_300),
+                anyString(), any());
     }
 
     @Test
@@ -231,7 +230,7 @@ class SubscriptionServiceTest {
 
         assertThat(s.getRetryCount()).isEqualTo(1);
         assertThat(s.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
-        verify(tokenWalletService, never()).charge(any(), anyInt(), any(), anyString(), any());
+        verify(tokenWalletService, never()).chargeSubscription(any(), anyInt(), anyString(), any());
     }
 
     @Test

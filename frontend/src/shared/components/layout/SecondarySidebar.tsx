@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronsLeft, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import {
   Activity,
   ACTIVITY_LABELS,
@@ -77,9 +79,24 @@ export function SecondarySidebar({
   const writerId = useWriterId();
   const isGuest = useIsGuest();
   const writer = useAuthStore((s) => s.writer);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
+
+  const wallet = useWalletStore((s) => s.wallet);
+  const refreshWallet = useWalletStore((s) => s.refresh);
+  const resetWallet = useWalletStore((s) => s.reset);
+  const openSettings = useNavigationStore((s) => s.openSettings);
+
+  // 로그인 상태 변화에 따라 잔액을 refresh / reset
+  useEffect(() => {
+    if (isAuthenticated) {
+      void refreshWallet();
+    } else {
+      resetWallet();
+    }
+  }, [isAuthenticated, refreshWallet, resetWallet]);
 
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -212,9 +229,22 @@ export function SecondarySidebar({
                   ●
                 </span>
               )}
-              <span className="flex-1 truncate text-xs text-sidebar-foreground">
-                {writer?.nickname ?? writer?.email ?? ''}
-              </span>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-xs text-sidebar-foreground">
+                  {writer?.nickname ?? writer?.email ?? ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openSettings('payment')}
+                  title="결제 / 충전"
+                  className="mt-0.5 flex items-center gap-1 self-start rounded-sm text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Coins size={10} strokeWidth={1.75} />
+                  <span>
+                    {wallet ? `${wallet.balance.toLocaleString()} 크레딧` : '— 크레딧'}
+                  </span>
+                </button>
+              </div>
               <ThemeToggle theme={theme} onCycle={cycleTheme} />
               <button
                 type="button"

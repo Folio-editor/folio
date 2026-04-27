@@ -1,3 +1,5 @@
+import { parseServerDate } from '../../lib/dateTime';
+
 export function extractText(raw: string): string {
   if (!raw) return '';
   try {
@@ -24,8 +26,9 @@ export function textToTiptap(text: string): string {
 }
 
 export function timeAgo(iso: string): string {
-  if (!iso) return '';
-  const diff = Date.now() - new Date(iso).getTime();
+  const d = parseServerDate(iso);
+  if (!d) return '';
+  const diff = Date.now() - d.getTime();
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return '방금 전';
   if (minutes < 60) return `${minutes}분 전`;

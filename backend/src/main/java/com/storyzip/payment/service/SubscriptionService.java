@@ -12,7 +12,6 @@ import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.domain.Subscription;
 import com.storyzip.payment.domain.SubscriptionStatus;
-import com.storyzip.payment.domain.TokenTransactionType;
 import com.storyzip.payment.dto.BillingAuthPrepareResponse;
 import com.storyzip.payment.dto.CreateSubscriptionRequest;
 import com.storyzip.payment.dto.SubscriptionPlan;
@@ -137,6 +136,7 @@ public class SubscriptionService {
         }
         if (subscription.isCancelReserved()) {
             subscription.expire();
+            tokenWalletService.expireSubscription(subscription.getWriter().getId(), subscription.getId());
             log.info("Subscription expired by reservation: subscriptionId={}", subscriptionId);
             return;
         }
@@ -181,10 +181,9 @@ public class SubscriptionService {
 
             subscription.recordPaymentSuccess(now, now.plusMonths(1));
 
-            tokenWalletService.charge(
+            tokenWalletService.chargeSubscription(
                     writer.getId(),
                     plan.getMonthlyTokens(),
-                    TokenTransactionType.SUBSCRIPTION,
                     "SUBSCRIPTION_" + orderId,
                     payment.getId()
             );

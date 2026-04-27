@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { LoginResult, FolioApi } from '../shared/types/auth';
+import type {
+  LoginResult,
+  FolioApi,
+  FolioOneTimePaymentParams,
+  FolioOneTimePaymentResult,
+  FolioBillingAuthParams,
+  FolioBillingAuthResult,
+} from '../shared/types/auth';
 
 const api: FolioApi = {
   platform: 'electron',
@@ -25,6 +32,12 @@ const api: FolioApi = {
   spellcheck: {
     syncDictionaryWords: (words: string[]) =>
       ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
+  payment: {
+    openOneTime: (params: FolioOneTimePaymentParams) =>
+      ipcRenderer.invoke('payment:openOneTime', params) as Promise<FolioOneTimePaymentResult>,
+    openBillingAuth: (params: FolioBillingAuthParams) =>
+      ipcRenderer.invoke('payment:openBillingAuth', params) as Promise<FolioBillingAuthResult>,
   },
 };
 

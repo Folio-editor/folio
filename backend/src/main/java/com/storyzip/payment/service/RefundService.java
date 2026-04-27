@@ -43,11 +43,16 @@ public class RefundService {
 
     @Transactional
     public RefundResponse refund(UUID writerId, String orderId) {
-        Payment payment = paymentRepository.findByOrderId(orderId)
+        // 행 잠금 조회 — 동일 orderId로 환불이 동시 호출되어도 한 번만 처리되도록.
+        // 두 번째 트랜잭션은 첫 번째가 status=CANCELED로 commit한 뒤 진입해 즉시 거절된다.
+        Payment payment = paymentRepository.findWithLockByOrderId(orderId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_NOT_FOUND));
 
         if (!payment.getWriter().getId().equals(writerId)) {
             throw new PaymentException(ErrorCode.FORBIDDEN);
+        }
+        if (payment.getStatus() == PaymentStatus.CANCELED) {
+            throw new PaymentException(ErrorCode.REFUND_FAILED, "이미 환불된 결제입니다");
         }
         if (payment.getStatus() != PaymentStatus.DONE) {
             throw new PaymentException(ErrorCode.REFUND_FAILED, "완료된 결제만 환불할 수 있습니다");

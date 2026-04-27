@@ -51,10 +51,44 @@ export interface FolioSpellcheckApi {
   syncDictionaryWords: (words: string[]) => Promise<void>;
 }
 
+export interface FolioOneTimePaymentParams {
+  clientKey: string;
+  amount: number;
+  orderId: string;
+  orderName: string;
+  customerKey: string;
+}
+
+export interface FolioOneTimePaymentResult {
+  paymentKey: string;
+  orderId: string;
+  amount: number;
+}
+
+export interface FolioBillingAuthParams {
+  clientKey: string;
+  customerKey: string;
+}
+
+export interface FolioBillingAuthResult {
+  authKey: string;
+  customerKey: string;
+}
+
+export interface FolioPaymentApi {
+  openOneTime: (
+    params: FolioOneTimePaymentParams,
+  ) => Promise<FolioOneTimePaymentResult>;
+  openBillingAuth: (
+    params: FolioBillingAuthParams,
+  ) => Promise<FolioBillingAuthResult>;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
   spellcheck: FolioSpellcheckApi;
+  payment: FolioPaymentApi;
 }
 
 declare global {

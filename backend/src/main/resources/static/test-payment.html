@@ -40,9 +40,9 @@
     <h3>2. 결제 시작</h3>
     <label>토큰 패키지</label>
     <select id="packageCode">
-        <option value="TOKEN_5000">TOKEN_5000 (2,900원 / 5,000 토큰)</option>
-        <option value="TOKEN_20000">TOKEN_20000 (9,900원 / 20,000 토큰)</option>
-        <option value="TOKEN_50000">TOKEN_50000 (19,900원 / 50,000 토큰)</option>
+        <option value="TOKEN_300">TOKEN_300 (3,000원 / 300 크레딧)</option>
+        <option value="TOKEN_550">TOKEN_550 (5,000원 / 550 크레딧)</option>
+        <option value="TOKEN_1200">TOKEN_1200 (10,000원 / 1,200 크레딧)</option>
     </select>
     <button id="payBtn" onclick="startPayment()" disabled>결제창 열기</button>
     <div class="log" id="payLog">로그인 먼저 하세요</div>
@@ -57,6 +57,19 @@
 <section>
     <h3>4. 지갑 조회</h3>
     <button onclick="fetchWallet()" id="walletBtn" disabled>내 토큰 잔액 보기</button>
+    <div id="walletSummary" style="display:none; margin-top:12px; border:1px solid #e5e7eb; border-radius:6px; padding:12px; background:#fff;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+            <strong>총 사용 가능</strong>
+            <strong id="balTotal" style="color:#3182f6;">-</strong>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr auto; gap:6px 12px; font-size:13px;">
+            <span>🔵 구독 (월 갱신)</span>             <span id="balSub">-</span>
+            <span>🎁 보너스 <small id="bonusExp" style="color:#9ca3af;"></small></span><span id="balBonus">-</span>
+            <span>💰 종량제 (영구)</span>              <span id="balPurchase">-</span>
+            <span style="color:#9ca3af;">누적 충전</span> <span id="balCharged" style="color:#9ca3af;">-</span>
+            <span style="color:#9ca3af;">누적 사용</span> <span id="balUsed" style="color:#9ca3af;">-</span>
+        </div>
+    </div>
     <div class="log" id="walletLog">—</div>
 </section>
 
@@ -179,10 +192,24 @@
             const res = await fetch(API_BASE + "/api/v1/payments/wallet", { headers: authHeaders() });
             if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
             const wallet = await res.json();
+            renderWalletSummary(wallet);
             log("walletLog", JSON.stringify(wallet, null, 2), "ok");
         } catch (e) {
+            document.getElementById("walletSummary").style.display = "none";
             log("walletLog", "❌ " + e.message, "err");
         }
+    }
+
+    function renderWalletSummary(w) {
+        document.getElementById("walletSummary").style.display = "block";
+        document.getElementById("balTotal").textContent = (w.balance ?? 0).toLocaleString() + " C";
+        document.getElementById("balSub").textContent = (w.subscriptionBalance ?? 0).toLocaleString();
+        document.getElementById("balBonus").textContent = (w.bonusBalance ?? 0).toLocaleString();
+        document.getElementById("balPurchase").textContent = (w.purchaseBalance ?? 0).toLocaleString();
+        document.getElementById("balCharged").textContent = (w.totalCharged ?? 0).toLocaleString();
+        document.getElementById("balUsed").textContent = (w.totalUsed ?? 0).toLocaleString();
+        const exp = w.bonusExpiresAt;
+        document.getElementById("bonusExp").textContent = exp ? "(만료: " + exp.substring(0, 10) + ")" : "";
     }
 
     // 페이지 로드 시 토큰 자동 복원 + 리다이렉트 처리

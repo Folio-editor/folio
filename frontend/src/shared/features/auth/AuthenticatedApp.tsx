@@ -27,6 +27,7 @@ import { useSpellCheckerDictionarySync } from '../../hooks/useSpellCheckerDictio
 import { SyncDecisionDialog } from './SyncDecisionDialog';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
+import { useNavigationStore } from '../../stores/navigationStore';
 import {
   Activity, WorkspaceSection, AuxPanelItem, AUX_DRAG_MIME,
   type RightPanelTab, docTypeToRoute, currentDocToAuxItem,
@@ -58,6 +59,18 @@ export function AuthenticatedApp() {
   const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
   useSpellCheckerDictionarySync(selectedWorkId);
+
+  // 외부 컴포넌트(AI 402 등)에서 설정 화면으로 깊은 링크
+  const pendingSettingsItem = useNavigationStore((s) => s.pendingSettingsItem);
+  const clearPendingSettings = useNavigationStore((s) => s.clearPendingSettings);
+  useEffect(() => {
+    if (!pendingSettingsItem) return;
+    if (sidebarCollapsed) setSidebarCollapsed(false);
+    setSettingsMode(true);
+    setSelectedSettingsItem(pendingSettingsItem);
+    clearPendingSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSettingsItem]);
 
   const { createWork, createWorldNote, createPlanNote, ensureWorldNoteTemplates } = useLocalWrite();
 

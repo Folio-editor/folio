@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,8 @@ from app.config import settings
 from app.middleware.auth import require_internal_api_key
 from app.services.providers import get_llm
 from app.services.rag import assemble_context
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/drafts",
@@ -147,12 +150,14 @@ async def _generate_sse(req: DraftRequest):
         yield f"data: {event}\n\n"
         await asyncio.sleep(0.05)
 
+    final_usage = llm.last_usage
+    logger.info("Draft stream finished: usage=%s, length=%s", final_usage, len("".join(full_text)))
     done_event = json.dumps(
         {
             "type": "done",
             "episode_id": req.episode_id,
             "total_length": len("".join(full_text)),
-            "usage": llm.last_usage,
+            "usage": final_usage,
         },
         ensure_ascii=False,
     )

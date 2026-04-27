@@ -50,9 +50,49 @@ import { Select } from '../ui/Select';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
-import { apiClient } from '../../lib/apiClient';
+import { apiClient, ApiError } from '../../lib/apiClient';
+import { useNavigationStore } from '../../stores/navigationStore';
+
+/**
+ * 402(크레딧 부족) 에러를 다른 일반 에러와 구분하기 위한 sentinel 접두사.
+ * 에러 표시 영역은 이 접두사가 붙은 메시지를 받으면 "결제로 이동" 버튼을 함께 렌더링한다.
+ */
+const INSUFFICIENT_CREDITS_PREFIX = '__INSUFFICIENT_CREDITS__:';
+const INSUFFICIENT_CREDITS_MESSAGE =
+  '크레딧이 부족합니다. 설정 → 결제에서 충전 후 다시 시도해주세요.';
+
+function describeAiError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.status === 402) {
+    return INSUFFICIENT_CREDITS_PREFIX + INSUFFICIENT_CREDITS_MESSAGE;
+  }
+  if (err instanceof Error) return err.message || fallback;
+  return fallback;
+}
+
+function AiErrorBlock({ message }: { message: string }) {
+  const openSettings = useNavigationStore((s) => s.openSettings);
+  const isInsufficient = message.startsWith(INSUFFICIENT_CREDITS_PREFIX);
+  const display = isInsufficient
+    ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
+    : message;
+  return (
+    <div className="flex flex-col gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <span>{display}</span>
+      {isInsufficient && (
+        <button
+          type="button"
+          onClick={() => openSettings('payment')}
+          className="self-start rounded-md bg-destructive px-2 py-1 text-[11px] font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+        >
+          결제 화면으로 이동
+        </button>
+      )}
+    </div>
+  );
+}
 import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
+import { useWalletStore } from '../../stores/walletStore';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
@@ -654,6 +694,8 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const stopGeneration = useAiSessionStore((s) => s.stopGeneration);
   const setAbort = useAiSessionStore((s) => s.setAbort);
 
+  const refreshWallet = useWalletStore((s) => s.refresh);
+
   const handleGenerate = useCallback(async () => {
     if (!storyline.trim() || !currentEpisode) return;
     if (isStreaming) return;
@@ -681,17 +723,21 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         const d = data as { type?: string; content?: string };
         if (d.type === 'done') {
           finishGeneration();
+          void refreshWallet();
           return true;
         }
         if (d.type === 'chunk' && d.content) {
           appendChunk(d.content);
         }
       },
-      () => finishGeneration(),
-      (err) => failGeneration(err.message || 'AI 서버 오류가 발생했습니다.'),
+      () => {
+        finishGeneration();
+        void refreshWallet();
+      },
+      (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
     );
     setAbort(controller);
-  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort]);
+  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWallet]);
 
   const handleStop = () => stopGeneration();
 
@@ -723,10 +769,11 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
+      void refreshWallet();
     } catch (err) {
-      failReview(err instanceof Error ? err.message : 'AI 서버 오류가 발생했습니다.');
+      failReview(describeAiError(err, 'AI 서버 오류가 발생했습니다.'));
     }
-  }, [currentEpisode, startReview, finishReview, failReview]);
+  }, [currentEpisode, startReview, finishReview, failReview, refreshWallet]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {
@@ -1127,8 +1174,8 @@ function DraftViewScreen({
 
       {/* 에러 */}
       {state === 'error' && error && (
-        <div className="shrink-0 border-b border-destructive/20 bg-destructive/10 px-4 py-2 text-xs text-destructive">
-          {error}
+        <div className="shrink-0 border-b border-destructive/20 px-4 py-2">
+          <AiErrorBlock message={error} />
         </div>
       )}
 
@@ -1434,10 +1481,8 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
           </div>
         )}
 
-        {reviewState === 'error' && (
-          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {error}
-          </div>
+        {reviewState === 'error' && error && (
+          <AiErrorBlock message={error} />
         )}
       </div>
     </div>
