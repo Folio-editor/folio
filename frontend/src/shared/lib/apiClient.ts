@@ -1,14 +1,33 @@
 /**
  * 백엔드 API 호출 래퍼.
- * - Main 프로세스의 Access Token을 IPC로 조회하여 Authorization 헤더 자동 삽입
+ * - Access Token을 window.folio.auth.getAccessToken()으로 조회하여 Authorization 헤더 자동 삽입
+ *   (Electron: IPC로 Main 프로세스의 토큰, Web: 메모리 보유 토큰)
  * - 401 응답 시 tryRestore 통해 자동 refresh 후 1회 재시도
+ * - 동시 다발 401에도 refresh는 단일 in-flight Promise로 직렬화 (RT rotation race 방지)
  * - refresh 실패 시 로그아웃 상태로 전환
  * - 오프라인 시 fetch 시도 없이 즉시 에러 반환
+ * - credentials: 'include' — 웹 RT httpOnly 쿠키 첨부 (Electron file://에선 영향 없음)
  */
 
 import { useNetworkStore } from '../hooks/useNetworkStatus';
+import type { LoginResult } from '../types/auth';
 
 const OFFLINE_MESSAGE = '오프라인 상태입니다. 네트워크 연결을 확인하세요.';
+
+/**
+ * 진행 중인 tryRestore Promise 1개를 공유한다.
+ * 동시에 발생한 다중 401 호출이 각자 refresh를 트리거하면
+ * RT rotation 시 일부 요청이 stale RT로 거부될 수 있다 → 직렬화.
+ */
+let inflightRestore: Promise<LoginResult | null> | null = null;
+function sharedTryRestore(): Promise<LoginResult | null> {
+  if (!inflightRestore) {
+    inflightRestore = window.folio.auth.tryRestore().finally(() => {
+      inflightRestore = null;
+    });
+  }
+  return inflightRestore;
+}
 
 function apiUrl(): string {
   // Windows Docker의 IPv6 localhost 이슈 회피를 위해 기본값을 127.0.0.1로 통일
@@ -63,10 +82,14 @@ async function request<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${apiUrl()}${path}`, { ...init, headers });
+  const response = await fetch(`${apiUrl()}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
 
   if (response.status === 401 && retry) {
-    const restored = await window.folio.auth.tryRestore();
+    const restored = await sharedTryRestore();
     if (restored) {
       // body를 새 객체로 재구성 — ReadableStream/FormData 등 1회성 body 재사용 방지
       return request<T>(path, { ...init, body: init.body }, false);
@@ -122,11 +145,12 @@ async function streamSSE(
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,
+      credentials: 'include',
     });
 
     if (response.status === 401 && !triedRefresh) {
       triedRefresh = true;
-      const restored = await window.folio.auth.tryRestore();
+      const restored = await sharedTryRestore();
       if (restored) return attempt();
     }
 

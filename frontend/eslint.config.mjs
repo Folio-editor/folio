@@ -5,6 +5,14 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist/', '.vite/', 'out/', 'node_modules/'],
+    ignores: [
+      'dist/',
+      'dist-web/',
+      '.vite/',
+      'out/',
+      'release/',
+      'node_modules/',
+      'build/afterPack.js',
+    ],
   },
 );

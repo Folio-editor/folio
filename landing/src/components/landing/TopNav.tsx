@@ -1,4 +1,12 @@
+import { buildLoginUrl } from '../../lib/loginUrl';
+import { useLandingAuth } from '../../lib/auth';
+import { UserProfileMenu } from './UserProfileMenu';
+
 export function TopNav() {
+  const { isAuthenticated, writer } = useLandingAuth();
+  // returnPath에 fromLanding=1 — 에디터가 auth_code 교환 후 랜딩으로 다시 bounce
+  const loginUrl = buildLoginUrl('/?fromLanding=1');
+
   return (
     <nav className="nav">
       <div className="nav-inner">
@@ -15,9 +23,13 @@ export function TopNav() {
           <a href="#faq" className="nav-link">
             문답
           </a>
-          <a href="#signup" className="nav-cta sans">
-            무료로 시작
-          </a>
+          {isAuthenticated && writer ? (
+            <UserProfileMenu writer={writer} />
+          ) : (
+            <a href={loginUrl} className="nav-cta sans">
+              로그인
+            </a>
+          )}
         </div>
       </div>
     </nav>

@@ -126,7 +126,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-test}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-test}
       AI_SERVER_URL: http://fastapi-test:8000
-      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-test-internal-key}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-test-internal-key}
       JAVA_OPTS: "-Xms256m -Xmx512m"
     depends_on:
       postgresql-test:
@@ -152,7 +152,7 @@ services:
     environment:
       APP_ENV: test
       APP_PORT: 8000
-      INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-test-internal-key}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-test-internal-key}
       DATABASE_URL: postgresql+asyncpg://${DB_USERNAME:-folio}:${DB_PASSWORD:-folio_test}@postgresql-test:5432/${DB_NAME:-folio_test}
       REDIS_URL: redis://redis-test:6379/0
       CELERY_BROKER_URL: redis://redis-test:6379/1

@@ -1,4 +1,26 @@
-export function Hero() {
+import { useRef, useState } from 'react';
+import { editorUrl } from '../../lib/loginUrl';
+import { useLandingAuth } from '../../lib/auth';
+import { DownloadPopover } from './DownloadPopover';
+
+interface HeroProps {
+  /** 비인증 상태에서 "웹에서 이용하기" 클릭 시 부모(FolioLanding)에 로그인 모달 노출 요청 */
+  onRequestLogin: () => void;
+}
+
+export function Hero({ onRequestLogin }: HeroProps) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const downloadBtnRef = useRef<HTMLButtonElement | null>(null);
+  const { isAuthenticated } = useLandingAuth();
+
+  const handleSecondaryClick = () => {
+    if (isAuthenticated) {
+      window.location.href = editorUrl('/');
+    } else {
+      onRequestLogin();
+    }
+  };
+
   return (
     <section className="hero" id="signup">
       <div className="hero-rule" />
@@ -9,10 +31,26 @@ export function Hero() {
         className="hero-image"
       />
       <div className="cta-download-group">
-        <a href="#" className="cta-download">
-          <span className="cta-download-inner">Download</span>
-        </a>
-        <p className="cta-download-caption">Windows · iOS</p>
+        <div className="cta-download-anchor">
+          <button
+            ref={downloadBtnRef}
+            type="button"
+            onClick={() => setPopoverOpen((v) => !v)}
+            className="cta-download"
+            aria-haspopup="dialog"
+            aria-expanded={popoverOpen}
+          >
+            <span className="cta-download-inner">앱 다운로드</span>
+          </button>
+          <DownloadPopover
+            anchorRef={downloadBtnRef}
+            open={popoverOpen}
+            onClose={() => setPopoverOpen(false)}
+          />
+        </div>
+        <button type="button" className="cta-secondary" onClick={handleSecondaryClick}>
+          → 웹에서 이용하기
+        </button>
       </div>
     </section>
   );

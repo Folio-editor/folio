@@ -22,6 +22,7 @@ variables:
 
 stages:
   - test
+  - release
   - deploy
 
 # ────────────────────────────────────────────────────────────
@@ -51,6 +52,83 @@ test-ai:
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
+
+# ────────────────────────────────────────────────────────────
+# Release (Tag 기반 자동 배포 — Windows .exe + electron-updater 피드)
+#
+# 트리거: SemVer 패턴 tag push (예: v0.4.1) → master HEAD에 tag 권장
+# 산출물: Folio-${VERSION}-Setup.exe + .blockmap + latest.yml
+#         → EC2의 /opt/folio/releases/win/ 에 SCP
+#         → nginx가 정적 서빙 (electron-builder publish.url과 매칭)
+#
+# Wine Docker image 사용 — Linux Runner에서 Windows nsis 빌드.
+# 코드 사이닝 인증서 미보유라 publisher 검증 없이 빌드.
+#
+# 사전 1회 작업:
+#   1) EC2에서 sudo mkdir -p /opt/folio/releases/win && sudo chown -R $USER /opt/folio/releases
+#   2) GitLab Settings → Repository → Protected Tags 에 v* 추가 (master에만 tag 허용)
+# ────────────────────────────────────────────────────────────
+
+build-electron-windows:
+  stage: release
+  image: electronuserland/builder:wine
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  cache:
+    key:
+      files:
+        - frontend/pnpm-lock.yaml
+    paths:
+      - frontend/node_modules/
+      - .cache/electron/
+      - .cache/electron-builder/
+  variables:
+    ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
+    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
+  before_script:
+    - apt-get update && apt-get install -y openssh-client
+    - chmod 400 $SSH_PRIVATE_KEY
+    - corepack enable && corepack prepare pnpm@10.33.0 --activate
+  script:
+    - |
+      set -Eeuo pipefail
+      VERSION="${CI_COMMIT_TAG#v}"
+      echo "[release] tag=${CI_COMMIT_TAG} version=${VERSION}"
+
+      cd frontend
+      # package.json version 강제 sync — tag가 source of truth (commit-back 안 함)
+      sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
+      grep '"version"' package.json
+
+      pnpm install --frozen-lockfile
+      pnpm build:win   # electron-vite build && electron-builder --win nsis
+
+      # 산출물 검증 — 3개 파일 모두 존재해야 함
+      cd release
+      EXE="Folio-${VERSION}-Setup.exe"
+      BLOCKMAP="${EXE}.blockmap"
+      YML="latest.yml"
+      for f in "$EXE" "$BLOCKMAP" "$YML"; do
+        [ -f "$f" ] || { echo "[FATAL] $f missing in release/"; ls -la; exit 1; }
+      done
+      echo "[release] artifacts:"
+      ls -la "$EXE" "$BLOCKMAP" "$YML"
+
+      # EC2 디렉토리 보장 + 권한 (idempotent — 매번 안전)
+      ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST \
+        "sudo mkdir -p /opt/folio/releases/win && sudo chown -R $EC2_USER:$EC2_USER /opt/folio/releases"
+
+      # 업로드 순서: .exe + .blockmap 먼저, latest.yml 마지막
+      # → electron-updater가 latest.yml을 본 시점에 .exe가 이미 존재해 sha512 검증 race 차단
+      scp -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY \
+        "$EXE" "$BLOCKMAP" \
+        $EC2_USER@$EC2_HOST:/opt/folio/releases/win/
+      scp -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY \
+        "$YML" \
+        $EC2_USER@$EC2_HOST:/opt/folio/releases/win/
+
+      echo "[release] uploaded v${VERSION} to /opt/folio/releases/win/"
+      echo "[release] verify: https://folio-editor.co.kr/releases/win/latest.yml"
 
 # ────────────────────────────────────────────────────────────
 # Deploy (SSH로 EC2 접속 → 직접 빌드 + Blue/Green 배포)
@@ -97,13 +175,20 @@ deploy-production:
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
         docker build -f infra/dockerfiles/Dockerfile.celery-worker -t folio-celery-worker:$CI_COMMIT_SHORT_SHA -t folio-celery-worker:latest ./ai
+        # VITE_*는 모두 CI hardcode (도플러 미잔류 — 옵션 B). public OAuth Client ID는 빌드 결과물에 박혀도 무관.
         docker build -f infra/dockerfiles/Dockerfile.web \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
-          --build-arg VITE_GOOGLE_CLIENT_ID=\${VITE_GOOGLE_CLIENT_ID} \
-          --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=\${VITE_GOOGLE_DESKTOP_CLIENT_ID} \
+          --build-arg VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
+          --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
-        docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
+        # 랜딩 빌드: VITE_API_URL + VITE_EDITOR_URL 추가 (이전 누락 정정)
+        docker build -f infra/dockerfiles/Dockerfile.landing \
+          --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+          --build-arg VITE_EDITOR_URL=https://folio-editor.co.kr/editor \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
+          -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
         cd /opt/folio/S14P31F203/infra/prod
 
         # 3.1 upstream-active.conf 초기화 (없으면 기본값 생성)

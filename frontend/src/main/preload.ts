@@ -6,6 +6,7 @@ import type {
   FolioOneTimePaymentResult,
   FolioBillingAuthParams,
   FolioBillingAuthResult,
+  UpdaterState,
 } from '../shared/types/auth';
 
 const api: FolioApi = {
@@ -29,15 +30,40 @@ const api: FolioApi = {
       return () => ipcRenderer.removeListener('auth:session-expired', listener);
     },
   },
-  spellcheck: {
-    syncDictionaryWords: (words: string[]) =>
-      ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize') as Promise<void>,
+    toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize') as Promise<void>,
+    close: () => ipcRenderer.invoke('window:close') as Promise<void>,
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized') as Promise<boolean>,
+    onMaximizeChanged: (callback: (maximized: boolean) => void) => {
+      const listener = (_e: unknown, state: boolean) => callback(state);
+      ipcRenderer.on('window:maximizeChanged', listener);
+      return () => ipcRenderer.removeListener('window:maximizeChanged', listener);
+    },
+    platform: process.platform as 'win32' | 'darwin' | 'linux' | 'web',
   },
   payment: {
     openOneTime: (params: FolioOneTimePaymentParams) =>
       ipcRenderer.invoke('payment:openOneTime', params) as Promise<FolioOneTimePaymentResult>,
     openBillingAuth: (params: FolioBillingAuthParams) =>
       ipcRenderer.invoke('payment:openBillingAuth', params) as Promise<FolioBillingAuthResult>,
+  },
+  spellcheck: {
+    syncWords: (words: string[]) =>
+      ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
+  updater: {
+    getCurrentVersion: () =>
+      ipcRenderer.invoke('updater:getCurrentVersion') as Promise<string>,
+    check: () => ipcRenderer.invoke('updater:check') as Promise<UpdaterState>,
+    download: () => ipcRenderer.invoke('updater:download') as Promise<UpdaterState>,
+    installAndRestart: () =>
+      ipcRenderer.invoke('updater:installAndRestart') as Promise<void>,
+    onStateChange: (callback: (state: UpdaterState) => void) => {
+      const listener = (_e: unknown, state: UpdaterState) => callback(state);
+      ipcRenderer.on('updater:state', listener);
+      return () => ipcRenderer.removeListener('updater:state', listener);
+    },
   },
 };
 

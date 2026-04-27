@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Cloud, CloudOff, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-react';
 import { useQuery, useStatus } from '@powersync/react';
-import { db } from '../../../renderer/sync/db';
+import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
+import type { Writer } from '../../types/auth';
 import { cn } from '../../lib/cn';
 import { parseServerDate } from '../../lib/dateTime';
 
@@ -146,22 +147,49 @@ function GuestView() {
 }
 
 function AuthenticatedView() {
-  const { data, loading } = useAccountInfo();
+  const { data, loading, isStale, cachedAt } = useAccountInfo();
   const logout = useAuthStore((s) => s.logout);
+  const writerFromStore = useAuthStore((s) => s.writer);
   const { localBytes, pendingCount } = useLocalStorageStats();
   const psStatus = useStatus();
   const isOnline = useNetworkStatus();
 
-  if (loading || !data) {
+  // 1) 캐시도 없고 로딩 중 — 첫 진입
+  if (loading && !data) {
     return (
       <div className="flex h-full flex-col bg-background">
         <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
           <h2 className="text-sm font-semibold text-foreground">계정</h2>
         </div>
         <div className="flex flex-1 items-center justify-center">
-          <span className="text-xs text-muted-foreground">
-            {loading ? '불러오는 중…' : '계정 정보를 불러올 수 없습니다'}
-          </span>
+          <span className="text-xs text-muted-foreground">불러오는 중…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2) 데이터/캐시도 없고 오프라인 — authStore.writer 기반 최소 표시
+  if (!data && !isOnline && writerFromStore) {
+    return (
+      <OfflineNoCacheView
+        writer={writerFromStore}
+        localBytes={localBytes}
+        pendingCount={pendingCount}
+        connected={false}
+        logout={logout}
+      />
+    );
+  }
+
+  // 3) 데이터/캐시도 없고 온라인 — API 에러 또는 신규 로그인 직후 첫 호출 실패
+  if (!data) {
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+          <h2 className="text-sm font-semibold text-foreground">계정</h2>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <span className="text-xs text-muted-foreground">계정 정보를 불러올 수 없습니다</span>
         </div>
       </div>
     );
@@ -178,6 +206,9 @@ function AuthenticatedView() {
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-lg space-y-6">
+          {/* 오프라인/통신 오류 배너 — stale 데이터 표시 중일 때 */}
+          {isStale && <OfflineBanner cachedAt={cachedAt} isOnline={isOnline} />}
+
           {/* 프로필 */}
           <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
             {writer.profileImageUrl ? (
@@ -217,7 +248,9 @@ function AuthenticatedView() {
               {plan.tier === 'STARTER' && (
                 <button
                   type="button"
-                  className="rounded-lg bg-ring px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-ring/90"
+                  disabled={!isOnline}
+                  title={!isOnline ? '오프라인 상태에서는 사용할 수 없습니다' : undefined}
+                  className="rounded-lg bg-ring px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-ring/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Pro로 업그레이드
                 </button>
@@ -234,7 +267,7 @@ function AuthenticatedView() {
                   <span className="text-muted-foreground">저장 공간</span>
                   <span className={cn(
                     'font-medium',
-                    storageFull ? 'text-red-500' : storageWarning ? 'text-amber-500' : 'text-foreground',
+                    storageFull ? 'text-danger' : storageWarning ? 'text-warning' : 'text-foreground',
                   )}>
                     {formatBytes(usage.storageUsedBytes)} / {formatBytes(plan.storageLimitBytes)}
                   </span>
@@ -243,18 +276,18 @@ function AuthenticatedView() {
                   <div
                     className={cn(
                       'h-full rounded-full transition-all duration-500',
-                      storageFull ? 'bg-red-500' : storageWarning ? 'bg-amber-500' : 'bg-ring',
+                      storageFull ? 'bg-danger' : storageWarning ? 'bg-warning' : 'bg-ring',
                     )}
                     style={{ width: `${Math.min(100, usage.storagePercent)}%` }}
                   />
                 </div>
                 {storageFull && (
-                  <p className="mt-1.5 text-xs text-red-500">
+                  <p className="mt-1.5 text-xs text-danger">
                     클라우드 용량을 초과했습니다. 불필요한 문서를 삭제하거나 Pro로 업그레이드하세요.
                   </p>
                 )}
                 {storageWarning && (
-                  <p className="mt-1.5 text-xs text-amber-500">
+                  <p className="mt-1.5 text-xs text-warning">
                     저장 공간이 부족합니다.
                   </p>
                 )}
@@ -329,7 +362,7 @@ function CachedCloudUsageSection({ cached }: { cached: CachedAccountInfo }) {
             <span className="text-muted-foreground">저장 공간</span>
             <span className={cn(
               'font-medium',
-              storageFull ? 'text-red-500' : storageWarning ? 'text-amber-500' : 'text-foreground',
+              storageFull ? 'text-danger' : storageWarning ? 'text-warning' : 'text-foreground',
             )}>
               {formatBytes(usage.storageUsedBytes)} / {formatBytes(plan.storageLimitBytes)}
             </span>
@@ -338,18 +371,18 @@ function CachedCloudUsageSection({ cached }: { cached: CachedAccountInfo }) {
             <div
               className={cn(
                 'h-full rounded-full transition-all duration-500',
-                storageFull ? 'bg-red-500' : storageWarning ? 'bg-amber-500' : 'bg-ring',
+                storageFull ? 'bg-danger' : storageWarning ? 'bg-warning' : 'bg-ring',
               )}
               style={{ width: `${Math.min(100, usage.storagePercent)}%` }}
             />
           </div>
           {storageFull && (
-            <p className="mt-1.5 text-xs text-red-500">
+            <p className="mt-1.5 text-xs text-danger">
               클라우드 용량을 초과했습니다. 불필요한 문서를 삭제하거나 Pro로 업그레이드하세요.
             </p>
           )}
           {storageWarning && (
-            <p className="mt-1.5 text-xs text-amber-500">
+            <p className="mt-1.5 text-xs text-warning">
               저장 공간이 부족합니다.
             </p>
           )}
@@ -394,7 +427,7 @@ function SyncPendingGauge({
   if (pendingCount === 0) {
     return (
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Cloud size={14} className="text-green-500" />
+        <Cloud size={14} className="text-success" />
         <span>모든 변경사항이 동기화되었습니다</span>
       </div>
     );
@@ -409,17 +442,17 @@ function SyncPendingGauge({
         : '동기화 대기 중';
 
   const barColor = isCritical
-    ? 'bg-red-500'
+    ? 'bg-danger'
     : isWarning
-      ? 'bg-amber-500'
+      ? 'bg-warning'
       : !connected
         ? 'bg-muted-foreground/40'
-        : 'bg-blue-500';
+        : 'bg-info';
 
   const textColor = isCritical
-    ? 'text-red-500'
+    ? 'text-danger'
     : isWarning
-      ? 'text-amber-500'
+      ? 'text-warning'
       : 'text-muted-foreground';
 
   // 게이지: 0~100 → 100건 미만은 비율 표시, 이상은 100%
@@ -444,7 +477,7 @@ function SyncPendingGauge({
       </div>
       <p className={cn('text-[11px]', textColor)}>{label}</p>
       {isCritical && (
-        <p className="text-[11px] text-red-500/80">
+        <p className="text-[11px] text-danger/80">
           네트워크 연결을 확인하거나, 앱을 재시작해 보세요.
         </p>
       )}
@@ -477,6 +510,123 @@ function StatusRow({
         {label}
       </span>
       <span className="font-medium text-foreground">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * 오프라인/통신 오류 배너.
+ * stale 데이터(캐시) 표시 중임을 명시하고 마지막 동기화 시각을 안내한다.
+ */
+function OfflineBanner({
+  cachedAt,
+  isOnline,
+}: {
+  cachedAt: number | null;
+  isOnline: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+      <div className="flex items-center gap-2 text-xs">
+        <CloudOff size={14} className="text-warning" />
+        <span className="font-medium text-warning">
+          {isOnline ? '서버 통신 오류' : '오프라인 모드'}
+        </span>
+      </div>
+      {cachedAt && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {formatDateTime(cachedAt)} 기준 정보입니다
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 캐시도 없고 오프라인일 때의 최소 화면.
+ * authStore.writer 기반으로 프로필만 표시하고, 클라우드 정보는 안내 문구로 대체.
+ * 로컬 저장소/동기화 상태/로그아웃은 정상 작동 (모두 로컬).
+ */
+function OfflineNoCacheView({
+  writer,
+  localBytes,
+  pendingCount,
+  connected,
+  logout,
+}: {
+  writer: Writer;
+  localBytes: number;
+  pendingCount: number;
+  connected: boolean;
+  logout: () => Promise<void>;
+}) {
+  return (
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+        <h2 className="text-sm font-semibold text-foreground">계정</h2>
+      </div>
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-lg space-y-6">
+          {/* 오프라인 안내 */}
+          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+            <div className="flex items-center gap-2 text-xs">
+              <CloudOff size={14} className="text-warning" />
+              <span className="font-medium text-warning">오프라인 모드</span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              연결이 복구되면 클라우드 사용량과 요금제 정보가 표시됩니다.
+            </p>
+          </div>
+
+          {/* 프로필 — authStore.writer 기반 (요약 정보만) */}
+          <div className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-4">
+            {writer.profileImageUrl ? (
+              <img
+                src={writer.profileImageUrl}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ring/20 text-sm font-medium text-ring">
+                {(writer.nickname ?? writer.email)[0]?.toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">
+                {writer.nickname ?? '이름 없음'}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{writer.email}</p>
+            </div>
+          </div>
+
+          {/* 클라우드 정보 자리 — 표시 불가 */}
+          <Section title="클라우드 사용량">
+            <p className="text-xs text-muted-foreground">
+              오프라인 상태입니다. 연결이 복구되면 정보가 표시됩니다.
+            </p>
+          </Section>
+
+          {/* 로컬 저장소 — 항상 표시 가능 */}
+          <LocalStorageSection localBytes={localBytes} />
+
+          {/* 동기화 대기 */}
+          <Section title="동기화 상태">
+            <SyncPendingGauge pendingCount={pendingCount} connected={connected} />
+          </Section>
+
+          {/* 계정 관리 — 로그아웃은 오프라인에서도 동작 (로컬 토큰 정리) */}
+          <Section title="계정">
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <LogOut size={13} />
+              로그아웃
+            </button>
+          </Section>
+        </div>
+      </div>
     </div>
   );
 }

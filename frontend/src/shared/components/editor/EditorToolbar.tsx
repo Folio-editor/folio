@@ -55,7 +55,7 @@ function ToolbarButton({
       onClick={onClick}
       title={title}
       className={cn(
-        'h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors',
+        'h-7 w-7 shrink-0 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors',
         active && 'bg-accent text-accent-foreground',
       )}
     >
@@ -88,7 +88,9 @@ export default function EditorToolbar({
   if (!editor) return null;
 
   return (
-    <div className="flex h-9 items-center border-b border-border px-2 gap-0.5">
+    // 좁은 메인 영역에서 우측 패널로 시각 침범 방지 + 모든 버튼 접근 가능하도록 가로 스크롤.
+    // scrollbar는 숨겨 시각 노이즈 제거 — 트랙패드 / Shift+휠로 스크롤 가능.
+    <div className="flex h-9 items-center border-b border-border px-2 gap-0.5 overflow-x-auto scrollbar-none">
       {/* Text formatting */}
       <ToolbarButton
         active={editor.isActive('bold')}

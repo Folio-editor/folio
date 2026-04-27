@@ -5,7 +5,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-import { TimelineGauge, type TimelineMarker } from './TimelineGauge';
+import { ForeshadowLifecycleStepper } from './ForeshadowLifecycleStepper';
 import { cn } from '../../lib/cn';
 
 interface ForeshadowOverviewProps {
@@ -23,26 +23,18 @@ interface ForeshadowRow {
 interface LinkRow {
   foreshadow_id: string;
   link_type: string;
-  episode_sort: number | null;
-  episode_title: string | null;
-  plot_title: string | null;
-}
-
-interface RangeRow {
-  min_order: number | null;
-  max_order: number | null;
 }
 
 const IMPORTANCE_COLOR: Record<string, string> = {
-  '상': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  '중': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  '하': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  '상': 'bg-danger-soft text-danger',
+  '중': 'bg-warning-soft text-warning',
+  '하': 'bg-muted text-muted-foreground',
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  '진행중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '완결': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  '폐기': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  '진행중': 'bg-info-soft text-info',
+  '완결': 'bg-success-soft text-success',
+  '폐기': 'bg-muted text-muted-foreground',
 };
 
 const STATUS_FILTERS = [
@@ -65,37 +57,23 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
   );
 
   const { data: links = [] } = useQuery<LinkRow>(
-    `SELECT fl.foreshadow_id, fl.link_type,
-            e.sort_order AS episode_sort, e.title AS episode_title,
-            p.title AS plot_title
-     FROM foreshadow_link fl
-     LEFT JOIN episode e ON e.id = fl.episode_id
-     LEFT JOIN plot p ON p.id = fl.plot_id`,
+    `SELECT fl.foreshadow_id, fl.link_type FROM foreshadow_link fl`,
   );
 
-  const { data: rangeRows = [] } = useQuery<RangeRow>(
-    `SELECT MIN(sort_order) AS min_order, MAX(sort_order) AS max_order
-     FROM episode WHERE work_id = ? AND writer_id = ? AND status != 'trashed'`,
-    [workId, writerId],
-  );
-
-  const linksByForeshadow = useMemo(() => {
-    const map = new Map<string, TimelineMarker[]>();
+  const countsByForeshadow = useMemo(() => {
+    const map = new Map<string, { plant: number; resolve: number; final: number }>();
     for (const l of links) {
-      if (!map.has(l.foreshadow_id)) map.set(l.foreshadow_id, []);
-      map.get(l.foreshadow_id)!.push({
-        link_type: l.link_type,
-        episode_sort: l.episode_sort,
-        episode_title: l.episode_title,
-      });
+      let entry = map.get(l.foreshadow_id);
+      if (!entry) {
+        entry = { plant: 0, resolve: 0, final: 0 };
+        map.set(l.foreshadow_id, entry);
+      }
+      if (l.link_type === 'plant') entry.plant++;
+      else if (l.link_type === 'resolve') entry.resolve++;
+      else if (l.link_type === 'final_resolve') entry.final++;
     }
     return map;
   }, [links]);
-
-  const range = {
-    min: rangeRows[0]?.min_order ?? 0,
-    max: rangeRows[0]?.max_order ?? 0,
-  };
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { '진행중': 0, '완결': 0, '폐기': 0 };
@@ -109,18 +87,6 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
     () => (statusFilter ? items.filter((i) => i.status === statusFilter) : items),
     [items, statusFilter],
   );
-
-  const linkSummary = (foreshadowId: string) => {
-    const fLinks = linksByForeshadow.get(foreshadowId) ?? [];
-    const plant = fLinks.filter((l) => l.link_type === 'plant').length;
-    const resolve = fLinks.filter((l) => l.link_type === 'resolve').length;
-    const final = fLinks.filter((l) => l.link_type === 'final_resolve').length;
-    const parts: string[] = [];
-    if (plant > 0) parts.push(`심기 ${plant}`);
-    if (resolve > 0) parts.push(`강화 ${resolve}`);
-    if (final > 0) parts.push(`회수 ${final}`);
-    return parts.join(' · ') || null;
-  };
 
   const handleNew = async () => {
     const id = await createForeshadow(workId, '새 복선', '중', items.length);
@@ -204,20 +170,21 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
                   {item.title?.trim() || '(제목 없음)'}
                 </p>
 
-                {/* 타임라인 게이지 */}
-                <div className="mt-3 w-full">
-                  <TimelineGauge
-                    links={linksByForeshadow.get(item.id) ?? []}
-                    range={range}
-                  />
-                </div>
-
-                {/* 링크 요약 */}
-                {linkSummary(item.id) && (
-                  <p className="mt-1.5 text-[10px] text-muted-foreground">
-                    {linkSummary(item.id)}
-                  </p>
-                )}
+                {/* 라이프사이클 진행도 (mini) */}
+                {(() => {
+                  const c = countsByForeshadow.get(item.id) ?? { plant: 0, resolve: 0, final: 0 };
+                  return (
+                    <div className="mt-3 w-full">
+                      <ForeshadowLifecycleStepper
+                        plant={c.plant}
+                        resolve={c.resolve}
+                        final={c.final}
+                        status={item.status}
+                        compact
+                      />
+                    </div>
+                  );
+                })()}
               </button>
             ))}
           </div>

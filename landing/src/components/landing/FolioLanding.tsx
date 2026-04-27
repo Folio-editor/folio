@@ -1,10 +1,11 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 import { TopNav } from './TopNav';
 import { Hero } from './Hero';
+import { LoginRequiredModal } from './LoginRequiredModal';
 import { PrologueLabel } from './PrologueLabel';
 import { ProseSection } from './ProseSection';
 import { ChapterHead } from './ChapterHead';
@@ -31,6 +32,22 @@ const MOCKUPS: Record<ToolMockupKey, React.ComponentType> = {
 
 export function FolioLanding() {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+
+  // 에디터에서 비인증 redirect 시 ?login=1 → 모달 자동 노출 후 쿼리 정리
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('login') === '1') {
+      setLoginOpen(true);
+      params.delete('login');
+      const next = params.toString();
+      const newUrl =
+        window.location.pathname +
+        (next ? `?${next}` : '') +
+        window.location.hash;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
 
   useGSAP(
     () => {
@@ -72,7 +89,7 @@ export function FolioLanding() {
   return (
     <div ref={rootRef} className="folio-landing">
       <TopNav />
-      <Hero />
+      <Hero onRequestLogin={() => setLoginOpen(true)} />
       <PrologueLabel />
       <ProseSection />
 
@@ -101,6 +118,8 @@ export function FolioLanding() {
       <PricingSection />
       <FAQSection />
       <FinFooter />
+
+      <LoginRequiredModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>
   );
 }

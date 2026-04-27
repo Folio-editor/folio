@@ -23,28 +23,29 @@ services:
       SERVER_PORT: 8080
       DB_HOST: postgresql
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      # `:?error` 패턴: 도플러 누락 시 즉시 실패 (cascade failure 차단)
+      DB_NAME: ${DB_NAME:?DB_NAME must be set in Doppler}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME must be set in Doppler}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in Doppler}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in Doppler}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in Doppler}
       JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-1800}
       JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-1209600}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-50}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID must be set in Doppler}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in Doppler}
       GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${GOOGLE_DESKTOP_CLIENT_SECRET}
-      PS_JWT_KID: ${PS_JWT_KID}
-      PS_JWT_AUDIENCE: ${PS_JWT_AUDIENCE}
+      PS_JWT_KID: folio-prod
+      PS_JWT_AUDIENCE: powersync-prod
       AI_SERVER_URL: http://fastapi-green:8000
-      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
-      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY}
-      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY}
-      TOSS_API_BASE_URL: ${TOSS_API_BASE_URL}
-      TOSS_WEBHOOK_SECRET: ${TOSS_WEBHOOK_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in Doppler}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
+      TOSS_API_BASE_URL: ${TOSS_API_BASE_URL:-https://api.tosspayments.com}
+      TOSS_WEBHOOK_SECRET: ${TOSS_WEBHOOK_SECRET:-}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
     depends_on:
       postgresql:
@@ -72,19 +73,18 @@ services:
       APP_PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
-      INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY}
+      # INTERNAL_API_KEY로 통일 (이전 AI_INTERNAL_API_KEY 매핑 제거)
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in Doppler}
+      # DB/REDIS 시크릿이 위 spring-boot-green 단계에서 이미 :? validated → 안전
       DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
-      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL}
-      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL}
-      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL}
+      # 모델명/프로바이더는 ai/app/config.py 코드 default 사용
+      LLM_PROVIDER: anthropic
+      EMBEDDING_PROVIDER: openai
     depends_on:
       postgresql:
         condition: service_healthy
@@ -106,18 +106,16 @@ services:
     container_name: folio-celery-worker-green
     environment:
       APP_ENV: prod
+      # DB/REDIS는 위 spring-boot-green에서 :? validated → 안전
       DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
-      CLAUDE_SONNET_MODEL: ${CLAUDE_SONNET_MODEL}
-      CLAUDE_OPUS_MODEL: ${CLAUDE_OPUS_MODEL}
-      CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL}
+      # 모델명/프로바이더는 ai/app/config.py 코드 default 사용
+      LLM_PROVIDER: anthropic
+      EMBEDDING_PROVIDER: openai
     depends_on:
       redis:
         condition: service_healthy

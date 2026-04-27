@@ -27,7 +27,7 @@ import {
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  rectSortingStrategy,
+  horizontalListSortingStrategy,
   verticalListSortingStrategy,
   useSortable,
   arrayMove,
@@ -38,6 +38,7 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 import type { WorkspaceSection } from '../../types/workspace';
@@ -103,9 +104,9 @@ class SmartPointerSensor extends PointerSensor {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  '예정': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  '작성중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '완료': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  '예정': 'bg-muted text-muted-foreground',
+  '작성중': 'bg-info-soft text-info',
+  '완료': 'bg-success-soft text-success',
 };
 
 const STATUS_OPTIONS = ['예정', '작성중', '완료'];
@@ -222,8 +223,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <MainPanelHeader
-        title={<h2 className="text-lg font-semibold">플롯</h2>}
-        subtitle="줄거리 구조와 회차별 전개를 설계합니다"
+        title={<BreadcrumbTitle items={['플롯', '전체']} />}
         trailing={
           <div className="flex items-center gap-2">
             <ViewToggle mode={viewMode} onChange={setViewMode} />
@@ -254,48 +254,71 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
               );
             }}
           >
-            <SortableContext items={acts.map((act) => act.id)} strategy={rectSortingStrategy}>
-              <div className="flex flex-wrap items-start gap-4">
-                {acts.map((act) => (
-                  <SortableActGridSection
-                    key={act.id}
-                    workId={workId}
-                    act={act}
-                    episodes={episodesByAct.get(act.id) ?? []}
-                    selectedItemId={selectedItemId}
-                    registerActRef={registerActRef}
-                    registerEpisodeRef={registerEpisodeRef}
-                    isCollapsed={collapsedActs.has(act.id)}
-                    onToggle={() => toggleCollapse(act.id)}
-                    onNewEpisode={() => void handleNewEpisode(act.id)}
-                    onNavigateTo={onNavigateTo}
-                  />
-                ))}
+            <SortableContext items={acts.map((act) => act.id)} strategy={horizontalListSortingStrategy}>
+              {/* 가로 카루셀 — 리스트와 동일한 막 카드 디자인을 좌우로 나열 */}
+              <div className="flex flex-row items-start gap-4 overflow-x-auto pb-2">
+                {acts.map((act) => {
+                  const actEpisodes = episodesByAct.get(act.id) ?? [];
+                  const isActiveCard =
+                    selectedItemId === act.id ||
+                    actEpisodes.some((ep) => ep.id === selectedItemId);
+                  return (
+                    <SortableActHorizontalCard
+                      key={act.id}
+                      actId={act.id}
+                      isActive={isActiveCard}
+                    >
+                      <ActSection
+                        workId={workId}
+                        act={act}
+                        episodes={actEpisodes}
+                        linkByPlot={linkByPlot}
+                        isCollapsed={collapsedActs.has(act.id)}
+                        onToggle={() => toggleCollapse(act.id)}
+                        onNewEpisode={() => void handleNewEpisode(act.id)}
+                        selectedItemId={selectedItemId}
+                        registerActRef={registerActRef}
+                        registerEpisodeRef={registerEpisodeRef}
+                        onNavigateTo={onNavigateTo}
+                      />
+                    </SortableActHorizontalCard>
+                  );
+                })}
               </div>
             </SortableContext>
           </DndContext>
         ) : (
-          <div className="flex flex-col">
-            {acts.map((act, i) => (
-              <div key={act.id}>
-                <ActSection
-                  workId={workId}
-                  act={act}
-                  episodes={episodesByAct.get(act.id) ?? []}
-                  linkByPlot={linkByPlot}
-                  isCollapsed={collapsedActs.has(act.id)}
-                  onToggle={() => toggleCollapse(act.id)}
-                  onNewEpisode={() => void handleNewEpisode(act.id)}
-                  selectedItemId={selectedItemId}
-                  registerActRef={registerActRef}
-                  registerEpisodeRef={registerEpisodeRef}
-                  onNavigateTo={onNavigateTo}
-                />
-                {i < acts.length - 1 && (
-                  <div className="my-6 h-px bg-linear-to-r from-transparent via-border to-transparent" />
-                )}
-              </div>
-            ))}
+          <div className="flex flex-col gap-4">
+            {acts.map((act) => {
+              const actEpisodes = episodesByAct.get(act.id) ?? [];
+              // 활성 강조 — 막 자체 또는 그 자식 회차가 selectedItemId면 카드에 ring
+              const isActiveCard =
+                selectedItemId === act.id ||
+                actEpisodes.some((ep) => ep.id === selectedItemId);
+              return (
+                <div
+                  key={act.id}
+                  className={cn(
+                    'rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-primary/30',
+                    isActiveCard && 'ring-1 ring-primary/30',
+                  )}
+                >
+                  <ActSection
+                    workId={workId}
+                    act={act}
+                    episodes={actEpisodes}
+                    linkByPlot={linkByPlot}
+                    isCollapsed={collapsedActs.has(act.id)}
+                    onToggle={() => toggleCollapse(act.id)}
+                    onNewEpisode={() => void handleNewEpisode(act.id)}
+                    selectedItemId={selectedItemId}
+                    registerActRef={registerActRef}
+                    registerEpisodeRef={registerEpisodeRef}
+                    onNavigateTo={onNavigateTo}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -434,6 +457,17 @@ function ActSection({
 
         <span className="shrink-0 text-xs text-muted-foreground">{episodes.length}개</span>
 
+        {/* 회차 추가 — 헤더 우측 인라인 버튼 (기존 점선 사각형 대체) */}
+        <button
+          type="button"
+          onClick={onNewEpisode}
+          title="회차 추가"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        >
+          <Plus size={12} />
+          회차 추가
+        </button>
+
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
@@ -508,19 +542,6 @@ function ActSection({
               ))}
             </SortableContext>
           </DndContext>
-
-          {/* + 새 회차 추가 */}
-          <div className="relative pl-7">
-            <div className="absolute left-[3px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-dashed border-muted-foreground" />
-            <button
-              type="button"
-              onClick={onNewEpisode}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-            >
-              <Plus size={14} />
-              <span>새 회차 추가</span>
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -538,6 +559,41 @@ interface TimelineCardProps {
   selected: boolean;
   registerEpisodeRef: (episodeId: string, node: HTMLDivElement | null) => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
+}
+
+/* ── 가로 카루셀 막 카드 — list 카드와 동일 스타일 + horizontal sortable ── */
+function SortableActHorizontalCard({
+  actId,
+  isActive,
+  children,
+}: {
+  actId: string;
+  isActive: boolean;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: actId });
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={style}
+      className={cn(
+        'w-80 shrink-0 cursor-grab rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-primary/30 active:cursor-grabbing',
+        isActive && 'ring-1 ring-primary/30',
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 function SortableTimelineCard(props: TimelineCardProps) {
@@ -826,7 +882,7 @@ function SortableActGridSection(props: {
       {...attributes}
       {...listeners}
       style={style}
-      className="basis-full cursor-grab md:basis-[calc(50%-0.5rem)] 2xl:basis-[calc(33.333%-0.667rem)] active:cursor-grabbing"
+      className="w-80 shrink-0 cursor-grab active:cursor-grabbing"
     >
       <ActGridSection {...props} />
     </div>

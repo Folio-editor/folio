@@ -1,0 +1,308 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Folio Editor — TipTap / ProseMirror Decoration Styles
+   ───────────────────────────────────────────────────────────────────────────
+   모든 색상은 tokens.css 의 --editor-* 토큰을 참조한다.
+   에디터 데코레이션은 작가의 학습된 시각언어 (파랑=대사, 초록=독백 등)이므로
+   테마 전환과 무관하게 유니버설로 유지한다.
+   색을 바꾸려면 tokens.css 의 --editor-* 만 수정하면 모든 테마에 동시 반영된다.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ProseMirror {
+  color: var(--foreground);
+  caret-color: var(--ring);
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+}
+
+/* ── 에디터 본문 레이아웃 ── */
+.folio-editor .ProseMirror {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  font-size: var(--editor-font-size, 1rem);
+  line-height: var(--editor-line-height, 1.8);
+  font-family: var(--editor-font-family, inherit);
+}
+
+/* ── 문단 들여쓰기 ── */
+.folio-editor.auto-indent .ProseMirror p {
+  text-indent: var(--editor-indent, 1em);
+  margin-bottom: 0.25em;
+}
+
+.folio-editor .ProseMirror h1,
+.folio-editor .ProseMirror h2,
+.folio-editor .ProseMirror h3,
+.folio-editor .ProseMirror ul,
+.folio-editor .ProseMirror ol,
+.folio-editor .ProseMirror blockquote {
+  text-indent: 0;
+}
+
+.folio-editor .ProseMirror h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 1em 0 0.4em;
+}
+.folio-editor .ProseMirror h2 {
+  font-size: 1.25em;
+  font-weight: 700;
+  margin: 0.8em 0 0.3em;
+}
+.folio-editor .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.6em 0 0.25em;
+}
+
+/* ── 장면 구분선 ── */
+.folio-editor .scene-break {
+  text-align: center;
+  padding: 1.5em 0;
+  color: var(--muted-foreground);
+  font-size: 1.1em;
+  letter-spacing: 0.5em;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── 대사 / 독백 ── */
+.folio-editor .dialogue {
+  color: var(--editor-dialogue);
+}
+.folio-editor .inner-thought {
+  color: var(--editor-inner-thought);
+}
+
+/* ── 작가 메모 ── */
+.folio-editor .author-note {
+  background: var(--editor-author-note-bg);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.85em;
+  color: var(--editor-author-note);
+}
+
+/* ── 이름 태그 ── */
+.folio-editor .name-tag {
+  background: var(--accent);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 500;
+}
+.folio-editor .name-tag[data-kind='character'] {
+  border-bottom: 2px solid var(--editor-name-character);
+}
+.folio-editor .name-tag[data-kind='place'] {
+  border-bottom: 2px solid var(--editor-name-place);
+}
+
+/* ── 형광펜 ── */
+.folio-editor .ProseMirror mark {
+  background-color: var(--editor-mark);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ── 집중 모드 ── */
+.folio-editor.focus-mode .ProseMirror > *:not(.has-focus) {
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+.folio-editor.focus-mode .ProseMirror > .has-focus {
+  opacity: 1;
+}
+
+/* ── 타자기 모드 하단 여백 ── */
+.folio-editor.typewriter-mode .ProseMirror {
+  padding-bottom: 70vh;
+}
+
+/* ── 줄 번호 ── */
+.folio-editor.show-line-numbers .ProseMirror {
+  counter-reset: editor-line;
+  padding-left: 3.5rem;
+}
+.folio-editor.show-line-numbers .ProseMirror > * {
+  position: relative;
+  counter-increment: editor-line;
+}
+.folio-editor.show-line-numbers .ProseMirror > *::before {
+  content: counter(editor-line);
+  position: absolute;
+  left: -3rem;
+  width: 2.5rem;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── 문단 기호 ── */
+.folio-editor.show-paragraph-marks .ProseMirror p::after {
+  content: '¶';
+  color: var(--muted-foreground);
+  opacity: 0.3;
+  font-size: 0.8em;
+  margin-left: 4px;
+  user-select: none;
+}
+
+/* ── 찾기 / 바꾸기 하이라이트 ── */
+.folio-editor .find-match {
+  background: var(--editor-find-match);
+  border-radius: 2px;
+}
+.folio-editor .find-match-current {
+  background: var(--editor-find-match-current);
+  border-radius: 2px;
+}
+
+/* ── 검수 하이라이트 (Decoration.node → 단락 전체) ── */
+.folio-editor .review-issue-critical {
+  background: var(--editor-review-critical);
+}
+.folio-editor .review-issue-warning {
+  background: var(--editor-review-warning);
+}
+.folio-editor .review-issue-info {
+  background: var(--editor-review-info);
+}
+.folio-editor .review-issue-focused {
+  outline: 2px solid var(--editor-review-focused);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* ── 검수 번호 배지 ── */
+.folio-editor [data-review-badge] {
+  position: relative;
+  padding-left: 22px;
+}
+.folio-editor [data-review-badge]::before {
+  content: attr(data-review-badge);
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  font-size: 12px;
+  font-weight: 700;
+  user-select: none;
+  line-height: 1;
+}
+.folio-editor [data-review-severity='critical']::before {
+  color: var(--editor-review-badge-critical);
+}
+.folio-editor [data-review-severity='warning']::before {
+  color: var(--editor-review-badge-warning);
+}
+.folio-editor [data-review-severity='info']::before {
+  color: var(--editor-review-badge-info);
+}
+
+/* ── 노트 카드 미리보기 (서식 유지) ── */
+.note-preview p {
+  margin: 0 0 0.25em;
+}
+.note-preview h1,
+.note-preview h2,
+.note-preview h3 {
+  font-size: inherit;
+  font-weight: 600;
+  margin: 0 0 0.25em;
+}
+.note-preview ul,
+.note-preview ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.note-preview blockquote {
+  margin: 0;
+  padding-left: 0.5em;
+  border-left: 2px solid var(--border);
+}
+.note-preview mark {
+  background-color: var(--editor-mark);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── 인라인 위지윅 에디터 (플롯 / 세계관 통합 뷰 공통) ── */
+.plot-inline-editor .tiptap h1,
+.note-inline-editor .tiptap h1 {
+  font-size: 1.6em;
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+.plot-inline-editor .tiptap h2,
+.note-inline-editor .tiptap h2 {
+  font-size: 1.3em;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+  line-height: 1.35;
+}
+.plot-inline-editor .tiptap h3,
+.note-inline-editor .tiptap h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.4em 0 0.2em;
+  line-height: 1.4;
+}
+.plot-inline-editor .tiptap p,
+.note-inline-editor .tiptap p {
+  margin: 0 0 0.4em;
+}
+.plot-inline-editor .tiptap ul,
+.plot-inline-editor .tiptap ol,
+.note-inline-editor .tiptap ul,
+.note-inline-editor .tiptap ol {
+  margin: 0.25em 0;
+  padding-left: 1.4em;
+}
+.plot-inline-editor .tiptap ul,
+.note-inline-editor .tiptap ul {
+  list-style: disc;
+}
+.plot-inline-editor .tiptap ol,
+.note-inline-editor .tiptap ol {
+  list-style: decimal;
+}
+.plot-inline-editor .tiptap li,
+.note-inline-editor .tiptap li {
+  margin: 0.15em 0;
+}
+.plot-inline-editor .tiptap blockquote,
+.note-inline-editor .tiptap blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.7em;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+.plot-inline-editor .tiptap strong,
+.note-inline-editor .tiptap strong {
+  font-weight: 700;
+}
+.plot-inline-editor .tiptap em,
+.note-inline-editor .tiptap em {
+  font-style: italic;
+}
+.plot-inline-editor .tiptap mark,
+.note-inline-editor .tiptap mark {
+  background-color: var(--editor-mark);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.plot-inline-editor .tiptap hr,
+.note-inline-editor .tiptap hr {
+  margin: 0.8em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}

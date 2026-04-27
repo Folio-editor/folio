@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 
 interface PlanHeaderProps {
   /** plan_note 가 선택된 상태면 브레드크럼 + 문서 제목 표시 */
@@ -11,6 +13,7 @@ interface PlanHeaderProps {
     onTitleChange: (title: string) => void;
     onDelete: () => Promise<void>;
     onBack: () => void;
+    onSendToRight?: () => void;
   };
 }
 
@@ -26,30 +29,20 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
   return (
     <>
     <MainPanelHeader
-      leading={
-        currentNote ? (
-          <button
-            type="button"
-            onClick={currentNote.onBack}
-            aria-label="기획으로 돌아가기"
-            title="기획으로 돌아가기"
-            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            <ArrowLeft size={14} strokeWidth={2} />
-          </button>
-        ) : undefined
-      }
+      onClose={currentNote ? currentNote.onBack : undefined}
+      onSendToRight={currentNote?.onSendToRight}
       title={
         currentNote ? (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-sm text-muted-foreground">기획</span>
-            <span className="shrink-0 text-sm text-muted-foreground">/</span>
-            <NoteTitleInput
-              key={currentNote.id}
-              title={currentNote.title}
-              onTitleChange={currentNote.onTitleChange}
-            />
-          </div>
+          <BreadcrumbTitle
+            items={['기획']}
+            trailing={
+              <NoteTitleInput
+                key={currentNote.id}
+                title={currentNote.title}
+                onTitleChange={currentNote.onTitleChange}
+              />
+            }
+          />
         ) : (
           <span className="text-lg font-semibold text-foreground">기획</span>
         )
@@ -57,15 +50,20 @@ export function PlanHeader({ currentNote }: PlanHeaderProps) {
       subtitle={currentNote ? undefined : '작품의 방향성과 정체성을 정의합니다'}
       trailing={
         currentNote ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="문서 삭제"
-            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
-        ) : undefined
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="문서 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
+        ) : (
+          <EditorToolbarToggle />
+        )
       }
     />
     {confirmDelete && currentNote && (

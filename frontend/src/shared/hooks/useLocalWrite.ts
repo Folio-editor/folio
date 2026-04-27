@@ -110,13 +110,22 @@ export function useLocalWrite() {
     },
 
     // ── plan_note (work당 1:N 자유 문서) ────────────────────
-    createPlanNote: async (workId: string, title: string, sortOrder: number): Promise<string> => {
+    /**
+     * @param content - 신규 문서 본문(TipTap JSON 직렬화 string). 템플릿 미리채우기 용도.
+     *                  생략·null 시 빈 본문(NULL)으로 INSERT — 기존 동작 호환.
+     */
+    createPlanNote: async (
+      workId: string,
+      title: string,
+      sortOrder: number,
+      content: string | null = null,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, title, content, sortOrder, now, now],
       );
       return id;
     },
@@ -491,6 +500,364 @@ export function useLocalWrite() {
         'UPDATE world_note SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
         [newParentId, sortOrder, now, id],
       );
+    },
+
+    /** 플롯 전용 — parent_id 이동(막↔회차) + sort_order 변경 */
+    movePlot: async (
+      id: string,
+      newParentId: string | null,
+      sortOrder: number,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      await db.execute(
+        'UPDATE plot SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+        [newParentId, sortOrder, now, id],
+      );
+    },
+
+    /**
+     * world_note를 새 부모의 형제 사이 특정 위치에 배치.
+     * - parent_id 변경 + 새 부모의 모든 자식 sort_order를 0,1000,2000... 재부여
+     * - position: 'before'|'after' anchorId, 또는 'end'(anchorId 무시)
+     * 정렬 정확도 보장 — sort_order=Date.now() 패턴 대체.
+     */
+    placeWorldNote: async (
+      activeId: string,
+      newParentId: string | null,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const sql =
+        newParentId === null
+          ? `SELECT id FROM world_note
+             WHERE parent_id IS NULL AND id != ?
+             ORDER BY sort_order ASC, created_at ASC`
+          : `SELECT id FROM world_note
+             WHERE parent_id = ? AND id != ?
+             ORDER BY sort_order ASC, created_at ASC`;
+      const params =
+        newParentId === null ? [activeId] : [newParentId, activeId];
+      const r = await db.execute(sql, params);
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) {
+        insertIdx = ids.length;
+      } else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+
+      await db.execute(
+        'UPDATE world_note SET parent_id = ?, updated_at = ? WHERE id = ?',
+        [newParentId, now, activeId],
+      );
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE world_note SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** plot 전용 — placeWorldNote와 동일 패턴 */
+    placePlot: async (
+      activeId: string,
+      newParentId: string | null,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const sql =
+        newParentId === null
+          ? `SELECT id FROM plot
+             WHERE parent_id IS NULL AND id != ?
+             ORDER BY sort_order ASC, created_at ASC`
+          : `SELECT id FROM plot
+             WHERE parent_id = ? AND id != ?
+             ORDER BY sort_order ASC, created_at ASC`;
+      const params =
+        newParentId === null ? [activeId] : [newParentId, activeId];
+      const r = await db.execute(sql, params);
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) {
+        insertIdx = ids.length;
+      } else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+
+      await db.execute(
+        'UPDATE plot SET parent_id = ?, updated_at = ? WHERE id = ?',
+        [newParentId, now, activeId],
+      );
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE plot SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** plan_note 전용 — 평탄 리스트, work_id 그룹 안 sort_order reindex */
+    placePlanNote: async (
+      activeId: string,
+      workId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM plan_note WHERE work_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [workId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE plan_note SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** episode 전용 — 평탄 노출, work_id 그룹, parent_id 변경 안 함 */
+    placeEpisode: async (
+      activeId: string,
+      workId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM episode WHERE work_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [workId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE episode SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** foreshadow 전용 — 평탄, work_id */
+    placeForeshadow: async (
+      activeId: string,
+      workId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM foreshadow WHERE work_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [workId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE foreshadow SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** idea_archive 전용 — 평탄, work_id */
+    placeIdea: async (
+      activeId: string,
+      workId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM idea_archive WHERE work_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [workId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE idea_archive SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** work 전용 — writer_id 기준 평탄 */
+    placeWork: async (
+      activeId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM work WHERE writer_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [writerId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE work SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** character 전용 — work_id 기준 평탄 */
+    placeCharacter: async (
+      activeId: string,
+      workId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM character WHERE work_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [workId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE character SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
+    },
+
+    /** character_note 전용 — character_id 그룹 안 정렬 (cross-character 이동 X) */
+    placeCharacterNote: async (
+      activeId: string,
+      characterId: string,
+      anchorId: string | null,
+      position: 'before' | 'after' | 'end',
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const r = await db.execute(
+        `SELECT id FROM character_note WHERE character_id = ? AND id != ?
+         ORDER BY sort_order ASC, created_at ASC`,
+        [characterId, activeId],
+      );
+      const ids =
+        (r.rows?._array as { id: string }[] | undefined)?.map((x) => x.id) ?? [];
+      let insertIdx: number;
+      if (position === 'end' || !anchorId) insertIdx = ids.length;
+      else {
+        const anchorIdx = ids.findIndex((id) => id === anchorId);
+        insertIdx =
+          anchorIdx === -1
+            ? ids.length
+            : position === 'before'
+              ? anchorIdx
+              : anchorIdx + 1;
+      }
+      const newOrder = [...ids.slice(0, insertIdx), activeId, ...ids.slice(insertIdx)];
+      for (let i = 0; i < newOrder.length; i++) {
+        await db.execute(
+          'UPDATE character_note SET sort_order = ?, updated_at = ? WHERE id = ?',
+          [i * 1000, now, newOrder[i]],
+        );
+      }
     },
 
     /** 원고 sort_order 변경 */
