@@ -1,7 +1,7 @@
 // ============================================================
 // focusedEditorStore — 현재 포커스된 TipTap editor 인스턴스 추적 (memory only)
 // ============================================================
-// 다중 에디터 화면(WorldNote hierarchy / AuxDocViewer)에서 SharedEditorToolbar가
+// 다중 에디터 화면(WorldNote hierarchy / Character·Plot 통합뷰)에서 UnifiedEditorToolbar(mode='shared')가
 // 어느 에디터에 명령을 보낼지 결정하기 위한 레지스트리.
 //
 // - inline 에디터가 onFocus 시 focusEditor(self) 호출

@@ -9,7 +9,7 @@ import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
-import { SharedEditorToolbar } from '../../components/editor/SharedEditorToolbar';
+import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
 import {
@@ -274,7 +274,7 @@ export function WorldNoteHierarchyScreen({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SharedEditorToolbar />
+        <UnifiedEditorToolbar mode="shared" />
         <div className="mx-auto max-w-3xl px-10 pt-8 pb-12">
           <SortableContext
             items={[`recursive:${tree.id}`]}
