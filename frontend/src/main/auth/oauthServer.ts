@@ -38,12 +38,18 @@ export function startOAuthServer(): Promise<OAuthServer> {
         const error = url.searchParams.get('error');
 
         if (error) {
-          respondHtml(res, `로그인이 취소되었습니다: ${error}`);
+          respondFailureHtml(
+            res,
+            '로그인 실패',
+            error === 'access_denied'
+              ? '로그인이 취소되었습니다'
+              : '인증을 완료하지 못했습니다',
+          );
           rejectCode?.(new Error(error));
           return;
         }
         if (!code || !state) {
-          respondHtml(res, '필수 파라미터가 누락되었습니다.');
+          respondFailureHtml(res, '로그인 실패', '필수 인증 정보가 누락되었습니다');
           rejectCode?.(new Error('missing code or state'));
           return;
         }
@@ -100,24 +106,54 @@ export function startOAuthServer(): Promise<OAuthServer> {
 }
 
 function respondHtml(res: http.ServerResponse, message: string) {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(`
-    <!doctype html>
-    <html lang="ko">
-      <head><meta charset="utf-8"><title>Folio</title></head>
-      <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;">
-        <div style="text-align:center;">
-          <h2>${message}</h2>
-        </div>
-      </body>
-    </html>
-  `);
+  respondStatusHtml(res, {
+    title: '로그인 실패',
+    message,
+    mark: '!',
+    tone: 'failure',
+  });
 }
 
 function respondSuccessHtml(res: http.ServerResponse) {
+  respondStatusHtml(res, {
+    title: '로그인 성공',
+    message: '다시 작업 화면으로 돌아갑니다',
+    mark: '✓',
+    tone: 'success',
+  });
+}
+
+function respondFailureHtml(res: http.ServerResponse, title: string, message: string) {
+  respondStatusHtml(res, {
+    title,
+    message,
+    mark: '!',
+    tone: 'failure',
+  });
+}
+
+function respondStatusHtml(
+  res: http.ServerResponse,
+  status: {
+    title: string;
+    message: string;
+    mark: string;
+    tone: 'success' | 'failure';
+  },
+) {
   const logo = getLogoDataUri();
   const inkShadow = getInkShadowDataUri();
   const quillShadow = getQuillShadowDataUri();
+  const toneColor = status.tone === 'success' ? '#a01818' : '#8f6a48';
+  const markColor =
+    status.tone === 'success'
+      ? 'rgba(160, 24, 24, 0.58)'
+      : 'rgba(120, 89, 64, 0.68)';
+  const markBorder =
+    status.tone === 'success'
+      ? 'rgba(160, 24, 24, 0.24)'
+      : 'rgba(120, 89, 64, 0.28)';
+
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(`
     <!doctype html>
@@ -223,7 +259,7 @@ function respondSuccessHtml(res: http.ServerResponse) {
             width: 118px;
             height: 1px;
             margin: 10px 0 2px;
-            background: linear-gradient(90deg, transparent, #c98055 18%, #c98055 82%, transparent);
+            background: linear-gradient(90deg, transparent, ${toneColor} 18%, ${toneColor} 82%, transparent);
             opacity: 0.5;
           }
           .rule::after {
@@ -234,7 +270,7 @@ function respondSuccessHtml(res: http.ServerResponse) {
             width: 4px;
             height: 7px;
             border-radius: 999px;
-            background: #c98055;
+            background: ${toneColor};
             opacity: 0.8;
           }
           .success-mark {
@@ -243,9 +279,9 @@ function respondSuccessHtml(res: http.ServerResponse) {
             width: 38px;
             height: 38px;
             margin: 0 0 -2px;
-            border: 1px solid rgba(160, 24, 24, 0.24);
+            border: 1px solid ${markBorder};
             border-radius: 50%;
-            color: rgba(160, 24, 24, 0.58);
+            color: ${markColor};
             font-size: 22px;
             line-height: 1;
           }
@@ -306,9 +342,9 @@ function respondSuccessHtml(res: http.ServerResponse) {
               : '<div class="fallback-logo" aria-label="Folio">Folio</div>'
           }
           <div class="rule" aria-hidden="true"></div>
-          <div class="success-mark" aria-hidden="true">✓</div>
-          <h1 class="status">로그인 성공</h1>
-          <p class="message">다시 작업 화면으로 돌아갑니다</p>
+          <div class="success-mark" aria-hidden="true">${status.mark}</div>
+          <h1 class="status">${escapeHtml(status.title)}</h1>
+          <p class="message">${escapeHtml(status.message)}</p>
         </main>
       </body>
     </html>
@@ -377,4 +413,13 @@ function getResourceDataUri(filename: string): string | null {
   }
 
   return null;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
