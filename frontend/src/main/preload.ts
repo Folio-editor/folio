@@ -47,6 +47,10 @@ const api: FolioApi = {
     openBillingAuth: (params: FolioBillingAuthParams) =>
       ipcRenderer.invoke('payment:openBillingAuth', params) as Promise<FolioBillingAuthResult>,
   },
+  spellcheck: {
+    syncWords: (words: string[]) =>
+      ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
 };
 
 contextBridge.exposeInMainWorld('folio', api);

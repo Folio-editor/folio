@@ -221,5 +221,18 @@ export function createWebFolioApi(): FolioApi {
       onMaximizeChanged: () => () => {},
       platform: 'web',
     },
+    spellcheck: {
+      // 웹은 OS spellchecker 사전 동기화 불가 — no-op (브라우저 native spellcheck로 fallback)
+      syncWords: async () => {},
+    },
+    payment: {
+      // 웹은 결제 창을 main process로 띄울 수 없음 — 호출 시 명시적 reject
+      openOneTime: async () => {
+        throw new Error('웹 환경에서는 결제 기능을 사용할 수 없습니다.');
+      },
+      openBillingAuth: async () => {
+        throw new Error('웹 환경에서는 결제 기능을 사용할 수 없습니다.');
+      },
+    },
   };
 }
