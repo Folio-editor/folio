@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from app.api.v1 import extract_settings as extract_settings_module
 from app.config import settings
-from app.db.session import get_session
 from app.main import app
 from app.services.llm import FakeLLM
 
@@ -34,13 +33,16 @@ class FakeSession:
             )
         raise AssertionError(f"unexpected query: {query}")
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
 
 def test_extract_settings_endpoint_returns_expected_shape(monkeypatch):
-    async def override_get_session():
-        yield FakeSession()
-
     monkeypatch.setattr(extract_settings_module, "get_llm", lambda: FakeLLM())
-    app.dependency_overrides[get_session] = override_get_session
+    monkeypatch.setattr(extract_settings_module, "async_session", lambda: FakeSession())
 
     try:
         with TestClient(app) as client:
