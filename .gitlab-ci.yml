@@ -71,40 +71,72 @@ test-ai:
 
 build-electron-windows:
   stage: release
-  image: electronuserland/builder:wine
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-  cache:
-    key:
-      files:
-        - frontend/pnpm-lock.yaml
-    paths:
-      - frontend/node_modules/
-      - .cache/electron/
-      - .cache/electron-builder/
-  variables:
-    ELECTRON_CACHE: "$CI_PROJECT_DIR/.cache/electron"
-    ELECTRON_BUILDER_CACHE: "$CI_PROJECT_DIR/.cache/electron-builder"
   before_script:
-    - apt-get update && apt-get install -y openssh-client
+    # Runner는 shell executor (deploy-production과 동일). image: 디렉티브는 무시됨.
+    # ssh/scp는 EC2 runner host에 이미 설치되어 있다(deploy-production이 사용 중).
+    # Wine 빌드는 docker run으로 인라인 격리 — runner host에 Wine 설치 불필요.
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    # SSH_PRIVATE_KEY가 빈 값이면 GitLab CI Variables가 Protected라 tag에서 노출 안 됨.
+    # 명확한 에러로 즉시 fail — chmod 단계의 모호한 missing operand 회피.
+    - |
+      if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+        echo "[FATAL] SSH_PRIVATE_KEY 변수가 비어있습니다." >&2
+        echo "        GitLab → Settings → CI/CD → Variables 에서" >&2
+        echo "        SSH_PRIVATE_KEY/EC2_HOST/EC2_USER 의 'Protect variable' 체크 해제 또는" >&2
+        echo "        Settings → Repository → Protected tags 에 v* 추가가 필요합니다." >&2
+        exit 1
+      fi
     - chmod 400 $SSH_PRIVATE_KEY
-    - corepack enable && corepack prepare pnpm@10.33.0 --activate
+    # 워크스페이스 권한은 preflight-cleanup job(stage: .pre)에서 이미 회수됨.
   script:
     - |
       set -Eeuo pipefail
       VERSION="${CI_COMMIT_TAG#v}"
       echo "[release] tag=${CI_COMMIT_TAG} version=${VERSION}"
 
-      cd frontend
-      # package.json version 강제 sync — tag가 source of truth (commit-back 안 함)
-      sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
-      grep '"version"' package.json
+      # Wine + Mono + Node + pnpm이 사전 설치된 공식 이미지로 격리 빌드.
+      # Runner host에는 docker만 있으면 됨 (이미 deploy-production이 docker 사용 중).
+      # workspace를 마운트하고 frontend 디렉토리에서 빌드 실행.
+      #
+      # --user 호스트 UID:GID — 컨테이너 안에서 root로 실행되어 호스트에 root 소유
+      # 파일을 남기는 문제 차단. 다음 job이 워크스페이스 정리 시 Permission denied 회피.
+      # HOME=/tmp — non-root 사용자라 컨테이너 내부에 home dir 없을 수 있음, npm/pnpm
+      # cache 경로를 임시 디렉토리로.
+      # 컨테이너 환경 사전 검증된 사실:
+      #   - 이미지에 pnpm 9.4.0 + corepack 0.31.0 + Wine 사전 설치됨
+      #   - non-root(--user) 실행 시 /usr/local/bin 쓰기 거부됨 → corepack enable 실패
+      #   - COREPACK_HOME 을 user-writable 경로로 명시 → user-local 활성화 성공
+      #   - corepack prepare --activate 후에도 which pnpm은 여전히 9.4 system 경로 →
+      #     반드시 'corepack pnpm ...' 으로 호출해야 prepare된 10.33.0이 사용됨
+      RUNNER_UID=$(id -u)
+      RUNNER_GID=$(id -g)
+      docker run --rm \
+        --user "${RUNNER_UID}:${RUNNER_GID}" \
+        -v "$CI_PROJECT_DIR":/workspace \
+        -w /workspace/frontend \
+        -e HOME=/tmp \
+        -e COREPACK_HOME=/tmp/.corepack \
+        -e ELECTRON_CACHE=/workspace/.cache/electron \
+        -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
+        electronuserland/builder:wine \
+        bash -c "
+          set -Eeuo pipefail
+          # pnpm 10.33.0 user-local 활성화 (system path 안 건드림)
+          corepack prepare pnpm@10.33.0 --activate
 
-      pnpm install --frozen-lockfile
-      pnpm build:win   # electron-vite build && electron-builder --win nsis
+          # tag가 source of truth — package.json version 강제 sync (commit-back 안 함)
+          sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/' package.json
+          grep '\"version\"' package.json
+
+          # corepack 으로 호출해야 prepare된 pnpm 10.33.0이 사용됨
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm build:win
+        "
 
       # 산출물 검증 — 3개 파일 모두 존재해야 함
-      cd release
+      cd "$CI_PROJECT_DIR/frontend/release"
       EXE="Folio-${VERSION}-Setup.exe"
       BLOCKMAP="${EXE}.blockmap"
       YML="latest.yml"
