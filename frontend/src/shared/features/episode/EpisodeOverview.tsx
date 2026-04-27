@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 const previewExtensions = [
   StarterKit.configure({ code: false, codeBlock: false }),
@@ -39,10 +40,10 @@ interface LinkRow {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  '미작성': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-  '초고': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  '퇴고': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '완성': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  '미작성': 'bg-muted text-muted-foreground',
+  '초고': 'bg-warning-soft text-warning',
+  '퇴고': 'bg-info-soft text-info',
+  '완성': 'bg-success-soft text-success',
 };
 
 export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
@@ -168,7 +169,7 @@ function EpisodeCard({
         <span
           className={cn(
             'rounded-full px-2 py-0.5',
-            STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+            STATUS_COLOR[episode.status] ?? 'bg-muted',
           )}
         >
           {episode.status}
@@ -216,7 +217,7 @@ function EpisodeListItem({
           <span
             className={cn(
               'rounded-full px-2 py-0.5',
-              STATUS_COLOR[episode.status] ?? 'bg-gray-100 dark:bg-gray-800',
+              STATUS_COLOR[episode.status] ?? 'bg-muted',
             )}
           >
             {episode.status}
@@ -253,7 +254,9 @@ function EpisodeListItem({
 /* ── 유틸 ── */
 
 function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const d = parseServerDate(iso);
+  if (!d) return '';
+  const diff = Date.now() - d.getTime();
   const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return '방금 전';
   const minutes = Math.floor(seconds / 60);

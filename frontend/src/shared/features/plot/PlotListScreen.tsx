@@ -16,9 +16,9 @@ interface PlotRow {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  '예정': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  '작성중': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  '완료': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  '예정': 'bg-muted text-muted-foreground',
+  '작성중': 'bg-info-soft text-info',
+  '완료': 'bg-success-soft text-success',
 };
 
 export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {

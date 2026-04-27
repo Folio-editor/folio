@@ -5,6 +5,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface WorkspaceHomeOverviewProps {
   onSelectWork: (id: string) => void;
@@ -21,9 +22,9 @@ interface WorkRow {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  연재중: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  완결: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  휴재: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  연재중: 'bg-info-soft text-info',
+  완결: 'bg-success-soft text-success',
+  휴재: 'bg-warning-soft text-warning',
 };
 
 export function WorkspaceHomeOverview({ onSelectWork, onCreateWork }: WorkspaceHomeOverviewProps) {
@@ -196,9 +197,8 @@ function WorkWideCard({ work, onClick }: { work: WorkRow; onClick: () => void })
 /* ── 유틸 ── */
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso || '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

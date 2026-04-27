@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# StoryZip 개발 환경 완전 초기화 스크립트
+# Folio 개발 환경 완전 초기화 스크립트
 # ============================================================
 # 대상:
 #   - PostgreSQL (앱 데이터 + writer)
@@ -82,7 +82,7 @@ fi
 # ── 확인 프롬프트 ──────────────────────────────────────────
 if [[ "$YES" -ne 1 ]]; then
   echo ""
-  echo "⚠️  StoryZip 개발 환경을 초기화합니다."
+  echo "⚠️  Folio 개발 환경을 초기화합니다."
   echo "   모드:          $([[ $SOFT -eq 1 ]] && echo 'SOFT (TRUNCATE만)' || echo 'HARD (볼륨 삭제)')"
   echo "   PostgreSQL:    $([[ $SOFT -eq 1 ]] && echo 'TRUNCATE' || echo 'DROP VOLUME')"
   echo "   PowerSync:     $([[ $SOFT -eq 1 ]] && echo 'restart' || echo 'DROP VOLUME + restart')"
@@ -96,7 +96,7 @@ fi
 
 echo ""
 echo "==================================================="
-echo "StoryZip 개발 환경 초기화 시작"
+echo "Folio 개발 환경 초기화 시작"
 echo "==================================================="
 
 # ── 1. Electron 앱 userData 삭제 (OPFS 포함) ───────────────
@@ -157,7 +157,8 @@ else
 
   echo "[3/5] 인프라 재기동 (Doppler env 주입)"
   if command -v doppler >/dev/null; then
-    (cd "$SCRIPT_DIR" && doppler run -- docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
+    # --project / --config 명시 — 사용자 머신의 doppler setup 캐시(legacy 'storyzip' 등)와 무관하게 동작
+    (cd "$SCRIPT_DIR" && doppler run --project folio --config dev -- docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
   else
     (cd "$SCRIPT_DIR" && docker compose -f "$COMPOSE_FILE" up -d) >/dev/null
   fi

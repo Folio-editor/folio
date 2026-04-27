@@ -1,15 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronsLeft, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
+import { useWalletStore } from '../../stores/walletStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import {
   Activity,
-  ACTIVITY_LABELS,
   WorkspaceSection,
+  type ClickIntent,
+  type MainDoc,
 } from '../../types/workspace';
 import { Input } from '../ui/Input';
+import { TAG_LIST } from '../../features/idea-archive/ideaConstants';
+import {
+  SidebarFilterPicker,
+  type FilterOption,
+} from './sidebar-panels/SidebarFilterPicker';
+import type { SortPanelKey } from '../../stores/sortPreferenceStore';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
 import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
@@ -21,12 +30,74 @@ import { SettingsList, type SettingsItemId } from './sidebar-panels/SettingsList
 import { SyncStatusBar } from './SyncStatusBar';
 import { ResizeHandle } from './ResizeHandle';
 
+// activity별 필터 옵션 명세 — 검색창 옆 필터 아이콘이 자동 분기 렌더
+interface ActivityFilterSpec {
+  panelKey: SortPanelKey;
+  options: FilterOption[];
+  groupLabel: string;
+}
+
+/** activity 당 여러 spec 가능 (예: character는 gender + tag 두 그룹) */
+const ACTIVITY_FILTER_SPEC: Partial<Record<Activity, ActivityFilterSpec[]>> = {
+  episode: [
+    {
+      panelKey: 'episode',
+      groupLabel: '진행 상태',
+      options: [
+        { value: '미작성', label: '미작성' },
+        { value: '초고', label: '초고' },
+        { value: '퇴고', label: '퇴고' },
+        { value: '완성', label: '완성' },
+      ],
+    },
+  ],
+  plot: [
+    {
+      panelKey: 'plot',
+      groupLabel: '회차 상태',
+      options: [
+        { value: '예정', label: '예정' },
+        { value: '작성중', label: '작성중' },
+        { value: '완료', label: '완료' },
+      ],
+    },
+  ],
+  // character — tag(dynamic, world_note 목록)만 지원. gender 필터는 제거.
+  character: [
+    {
+      panelKey: 'character-tag',
+      groupLabel: '태그(세계관)',
+      options: [],
+    },
+  ],
+  foreshadow: [
+    {
+      panelKey: 'foreshadow',
+      groupLabel: '중요도',
+      options: [
+        { value: '상', label: '상' },
+        { value: '중', label: '중' },
+        { value: '하', label: '하' },
+      ],
+    },
+  ],
+  'idea-archive': [
+    {
+      panelKey: 'idea-archive',
+      groupLabel: '태그',
+      options: TAG_LIST.map((t) => ({ value: t, label: t })),
+    },
+  ],
+};
+
 interface SecondarySidebarProps {
   activity: Activity;
   selectedWorkId: string | null;
-  selectedItemId: string | null;
+  /** 메인 패널 문서 — 사이드바 항목 시각 하이라이트 결정 */
+  mainDoc: MainDoc | null;
   onWorkSelect: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  /** 사이드바 항목 클릭 디스패처 (단일/더블/모디파이어 의도 분리) */
+  onItemActivate: (section: WorkspaceSection, itemId: string, intent: ClickIntent) => void;
   onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
@@ -61,9 +132,9 @@ interface WorkTitleRow {
 export function SecondarySidebar({
   activity,
   selectedWorkId,
-  selectedItemId,
+  mainDoc,
   onWorkSelect,
-  onItemSelect,
+  onItemActivate,
   onNewWork,
   onNewWorldNote,
   onNewPlanNote,
@@ -74,12 +145,32 @@ export function SecondarySidebar({
   selectedSettingsItem,
   onSettingsItemSelect,
 }: SecondarySidebarProps) {
+  // 사이드바 항목 시각 하이라이트는 mainDoc 기반.
+  // - mainDoc.section이 현 activity의 섹션과 일치하면 itemId로 하이라이트
+  // - 그 외엔 null (다른 섹션 보고 있을 땐 사이드바 어떤 항목도 "현재 메인" 아님)
+  const selectedItemId =
+    mainDoc && (mainDoc.section as Activity) === activity ? mainDoc.itemId : null;
   const writerId = useWriterId();
   const isGuest = useIsGuest();
   const writer = useAuthStore((s) => s.writer);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
+
+  const wallet = useWalletStore((s) => s.wallet);
+  const refreshWallet = useWalletStore((s) => s.refresh);
+  const resetWallet = useWalletStore((s) => s.reset);
+  const openSettings = useNavigationStore((s) => s.openSettings);
+
+  // 로그인 상태 변화에 따라 잔액을 refresh / reset
+  useEffect(() => {
+    if (isAuthenticated) {
+      void refreshWallet();
+    } else {
+      resetWallet();
+    }
+  }, [isAuthenticated, refreshWallet, resetWallet]);
 
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -108,8 +199,6 @@ export function SecondarySidebar({
         ? workTitle
         : '작품 미선택';
 
-  const subHeader = settingsMode ? '설정' : ACTIVITY_LABELS[activity];
-
   const handleLoginClick = () => void login();
 
   const cycleTheme = () => {
@@ -122,14 +211,11 @@ export function SecondarySidebar({
       style={{ width }}
       className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
     >
-      {/* 헤더 — 메인 패널 h-12와 높이 일치 */}
-      <div className="flex h-12 shrink-0 items-center border-b border-sidebar-border px-4">
+      {/* 헤더 — 작품 제목 (h-10) */}
+      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
         <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-sidebar-foreground">{header}</div>
-            {subHeader && (
-              <div className="truncate text-[11px] text-muted-foreground">{subHeader}</div>
-            )}
+          <div className="min-w-0 flex-1 truncate text-sm font-semibold text-sidebar-foreground">
+            {header}
           </div>
           <button
             type="button"
@@ -143,20 +229,26 @@ export function SecondarySidebar({
         </div>
       </div>
 
-      {/* 검색 */}
+      {/* 검색 + 필터 — activity별 가능한 필터 옵션 자동 분기 */}
       <div className="shrink-0 border-b border-sidebar-border/50 px-3 py-2">
-        <div className="relative">
-          <Search
-            size={14}
-            strokeWidth={2}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.currentTarget.value)}
-            placeholder="검색"
-            className="pl-7 text-xs"
+        <div className="flex items-center gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={14}
+              strokeWidth={2}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.currentTarget.value)}
+              placeholder="검색"
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
+          <ActivityFilters
+            activity={activity}
+            workId={selectedWorkId}
           />
         </div>
       </div>
@@ -175,7 +267,7 @@ export function SecondarySidebar({
             selectedItemId,
             searchTerm,
             onWorkSelect,
-            onItemSelect,
+            onItemActivate,
             onNewWork,
             onNewWorldNote,
             onNewPlanNote,
@@ -184,7 +276,10 @@ export function SecondarySidebar({
       </div>
 
       {/* 프로필 풋터 */}
-      <div className="shrink-0 border-t border-sidebar-border p-3">
+      <div className="flex shrink-0 flex-col gap-2 border-t border-sidebar-border p-3">
+        {/* 동기화/네트워크 상태 — 게스트/인증 모두 상시 표시 */}
+        <SyncStatusBar />
+
         {isGuest ? (
           <div className="flex items-center gap-2">
             <button
@@ -204,6 +299,23 @@ export function SecondarySidebar({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
+            {/* 잔여 크레딧 — 프로필 위 강조 박스 (클릭 시 결제 화면) */}
+            <button
+              type="button"
+              onClick={() => openSettings('payment')}
+              title="결제 / 충전"
+              className="flex items-center justify-between gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
+            >
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Coins size={12} strokeWidth={1.75} />
+                잔여 크레딧
+              </span>
+              <span className="text-sm font-semibold text-foreground">
+                {wallet ? wallet.balance.toLocaleString() : '—'}
+              </span>
+            </button>
+
+            {/* 프로필 — 닉네임 + 테마 + 로그아웃 */}
             <div className="flex items-center gap-2 px-2 py-1.5">
               {writer?.profileImageUrl ? (
                 <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
@@ -212,7 +324,7 @@ export function SecondarySidebar({
                   ●
                 </span>
               )}
-              <span className="flex-1 truncate text-xs text-sidebar-foreground">
+              <span className="min-w-0 flex-1 truncate text-xs text-sidebar-foreground">
                 {writer?.nickname ?? writer?.email ?? ''}
               </span>
               <ThemeToggle theme={theme} onCycle={cycleTheme} />
@@ -226,8 +338,6 @@ export function SecondarySidebar({
                 <LogOut size={14} strokeWidth={2} />
               </button>
             </div>
-            {/* 동기화 큐 게이지 */}
-            <SyncStatusBar />
           </div>
         )}
       </div>
@@ -242,13 +352,65 @@ export function SecondarySidebar({
   );
 }
 
+/** activity별 필터 picker 렌더 — 다중 spec 지원 + character의 tag 옵션은 world_note 동적 fetch */
+function ActivityFilters({
+  activity,
+  workId,
+}: {
+  activity: Activity;
+  workId: string | null;
+}) {
+  const specs = ACTIVITY_FILTER_SPEC[activity];
+
+  // character 패널일 때만 — 작품 내 캐릭터 중 한 명에라도 태그로 등록된 world_note만 옵션
+  // (전체 world_note가 아니라 실제 사용 중인 태그만)
+  const isCharacter = activity === 'character';
+  const { data: worldNoteRows = [] } = useQuery<{ id: string; name: string }>(
+    isCharacter && workId
+      ? `SELECT DISTINCT wn.id, wn.name
+         FROM world_note wn
+         JOIN character_tag ct ON ct.world_note_id = wn.id
+         JOIN character c ON c.id = ct.character_id
+         WHERE c.work_id = ?
+         ORDER BY wn.sort_order ASC, wn.created_at ASC`
+      : `SELECT NULL AS id, NULL AS name WHERE 0`,
+    isCharacter && workId ? [workId] : [],
+  );
+  const tagOptions: FilterOption[] = isCharacter
+    ? worldNoteRows
+        .filter((r) => r.id)
+        .map((r) => ({ value: r.id, label: r.name?.trim() || '(이름 없음)' }))
+    : [];
+
+  if (!specs || specs.length === 0) return null;
+
+  return (
+    <>
+      {specs.map((spec) => {
+        // character-tag spec은 동적 옵션
+        const options =
+          spec.panelKey === 'character-tag' ? tagOptions : spec.options;
+        if (options.length === 0) return null;
+        return (
+          <SidebarFilterPicker
+            key={spec.panelKey}
+            panelKey={spec.panelKey}
+            options={options}
+            groupLabel={spec.groupLabel}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 function renderContent(args: {
   activity: Activity;
   selectedWorkId: string | null;
   selectedItemId: string | null;
   searchTerm: string;
   onWorkSelect: (id: string) => void;
-  onItemSelect: (id: string | null) => void;
+  onItemActivate: (section: WorkspaceSection, itemId: string, intent: ClickIntent) => void;
   onNewWork: (title: string) => void;
   onNewWorldNote: (parentId?: string | null) => void;
   onNewPlanNote: () => void;
@@ -259,11 +421,19 @@ function renderContent(args: {
     selectedItemId,
     searchTerm,
     onWorkSelect,
-    onItemSelect,
+    onItemActivate,
     onNewWork,
     onNewWorldNote,
     onNewPlanNote,
   } = args;
+
+  // 섹션별 panel용 onItemSelect 어댑터 — section을 미리 바인딩.
+  // null은 panel 내부 expand/collapse 신호로 무시 (Stage Manager 모델: mainDoc은 보존).
+  const makeItemHandler = (section: WorkspaceSection) =>
+    (id: string | null, intent: ClickIntent = 'default') => {
+      if (id === null) return;
+      onItemActivate(section, id, intent);
+    };
 
   if (activity === 'home') {
     return (
@@ -294,7 +464,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('plan')}
         onNewPlanNote={onNewPlanNote}
       />
     );
@@ -306,7 +476,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('world-note')}
         onNewWorldNote={onNewWorldNote}
       />
     );
@@ -319,7 +489,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('character')}
       />
     );
   }
@@ -331,7 +501,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('plot')}
       />
     );
   }
@@ -343,7 +513,7 @@ function renderContent(args: {
         workId={selectedWorkId}
         searchTerm={searchTerm}
         selectedItemId={selectedItemId}
-        onItemSelect={onItemSelect}
+        onItemSelect={makeItemHandler('episode')}
       />
     );
   }
@@ -356,7 +526,7 @@ function renderContent(args: {
       workId={selectedWorkId}
       searchTerm={searchTerm}
       selectedItemId={selectedItemId}
-      onItemSelect={onItemSelect}
+      onItemSelect={makeItemHandler(section)}
     />
   );
 }

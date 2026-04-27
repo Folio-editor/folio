@@ -58,6 +58,7 @@ class LLMProvider(ABC):
         system: str,
         user: str,
         model_override: str | None = None,
+        max_tokens: int = 4000,
     ) -> AsyncIterator[str]: ...
 
     @abstractmethod
@@ -106,6 +107,7 @@ class FakeLLM(LLMProvider):
         system: str,
         user: str,
         model_override: str | None = None,
+        max_tokens: int = 4000,
     ) -> AsyncIterator[str]:
         import asyncio
 
@@ -201,13 +203,14 @@ class AnthropicLLM(LLMProvider):
         system: str,
         user: str,
         model_override: str | None = None,
+        max_tokens: int = 4000,
     ) -> AsyncIterator[str]:
         model = model_override or self._sonnet_model
         final_message = None
 
         stream_kwargs: dict[str, Any] = {
             "model": model,
-            "max_tokens": 8000,
+            "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
         }
@@ -221,20 +224,37 @@ class AnthropicLLM(LLMProvider):
         usage_input = 0
         usage_output = 0
         async for event in response:
-            if event.type == "message_start" and hasattr(event, "message"):
+            etype = getattr(event, "type", "")
+            if etype == "message_start" and hasattr(event, "message"):
                 u = getattr(event.message, "usage", None)
                 if u:
-                    usage_input = getattr(u, "input_tokens", 0)
-            elif event.type == "content_block_delta":
+                    usage_input = int(getattr(u, "input_tokens", 0) or 0) or usage_input
+            elif etype == "content_block_delta":
                 delta = getattr(event, "delta", None)
                 if delta and getattr(delta, "type", "") == "text_delta":
                     text = getattr(delta, "text", "")
                     if text:
                         yield text
-            elif event.type == "message_delta":
+            elif etype == "message_delta":
+                # 일부 프록시(GMS 등)는 message_start 대신 message_delta에
+                # 누적 usage를 싣는다. output·input 둘 다 가능하면 가져온다.
                 u = getattr(event, "usage", None)
                 if u:
-                    usage_output = getattr(u, "output_tokens", 0)
+                    o = int(getattr(u, "output_tokens", 0) or 0)
+                    if o:
+                        usage_output = o
+                    i = int(getattr(u, "input_tokens", 0) or 0)
+                    if i and not usage_input:
+                        usage_input = i
+
+        # 스트림에서 input_tokens를 받지 못한 경우(GMS 프록시가 이벤트를 생략한 케이스)
+        # 로컬 토크나이저로 근사치를 계산해 0이 찍히는 것을 방지한다.
+        if usage_input == 0:
+            try:
+                from app.services.chunker import count_tokens
+                usage_input = count_tokens(system) + count_tokens(user)
+            except Exception:
+                pass
 
         self._last_usage = {"input_tokens": usage_input, "output_tokens": usage_output}
         logger.info(

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -10,6 +10,7 @@ import {
   Globe,
   KeyRound,
   Lightbulb,
+  Plus,
   Route,
   Trash2,
   Users,
@@ -18,9 +19,11 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Button } from '../../components/ui/Button';
+import { TagEditModal } from '../../components/ui/TagEditModal';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
+import { parseServerDate } from '../../lib/dateTime';
 
 interface WorkspaceHomeScreenProps {
   workId: string;
@@ -137,10 +140,34 @@ interface WorkspaceEditorProps {
 }
 
 function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: WorkspaceEditorProps) {
-  const { updateWork, deleteWork } = useLocalWrite();
+  const { updateWork, deleteWork, ensurePlan, updatePlan } = useLocalWrite();
   const { id } = work;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tagModal, setTagModal] = useState<TagField | null>(null);
+
+  // 작품 단위 태그(장르·분위기)는 plan 테이블에 그대로 둔다 (서비스 보류 결정).
+  // 작품 허브에서는 plan 행을 직접 읽고 쓰는 형태로 노출.
+  // plan 행이 없으면 태그 첫 편집 시점에 ensurePlan 으로 생성.
+  const [planId, setPlanId] = useState<string | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    void ensurePlan(id).then((pid) => {
+      if (mounted) setPlanId(pid);
+    });
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const { data: planRows = [] } = useQuery<{ id: string; genres: string | null; moods: string | null }>(
+    `SELECT id, genres, moods FROM plan WHERE work_id = ? LIMIT 1`,
+    [id],
+  );
+  const planRow = planRows[0];
+  const genres = parseTags(planRow?.genres ?? null);
+  const moods = parseTags(planRow?.moods ?? null);
 
   const title = useDeferredText(id, work.title, (v) => {
     const trimmed = v.trim();
@@ -168,6 +195,22 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleTagsApply = (field: TagField) => (next: string[]) => {
+    if (!planId) return;
+    void updatePlan(planId, {
+      [field]: next.length > 0 ? JSON.stringify(next) : null,
+    });
+  };
+
+  const removeTag = (field: TagField, idx: number) => {
+    if (!planId) return;
+    const current = field === 'genres' ? genres : moods;
+    const next = current.filter((_, i) => i !== idx);
+    void updatePlan(planId, {
+      [field]: next.length > 0 ? JSON.stringify(next) : null,
+    });
   };
 
   return (
@@ -235,6 +278,24 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
           </div>
         </div>
 
+        {/* 장르 + 분위기 태그 */}
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TagSection
+            label="장르"
+            tags={genres}
+            disabled={!planId}
+            onAddClick={() => setTagModal('genres')}
+            onRemove={(idx) => removeTag('genres', idx)}
+          />
+          <TagSection
+            label="분위기"
+            tags={moods}
+            disabled={!planId}
+            onAddClick={() => setTagModal('moods')}
+            onRemove={(idx) => removeTag('moods', idx)}
+          />
+        </div>
+
         {/* 작품 소개 — 테두리 없이 자연스럽게 */}
         <div className="mb-4">
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -290,6 +351,91 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
           onCancel={() => setConfirmOpen(false)}
         />
       )}
+
+      {/* 태그 편집 모달 */}
+      <TagEditModal
+        open={tagModal === 'genres'}
+        title="장르 편집"
+        value={genres}
+        onApply={handleTagsApply('genres')}
+        onClose={() => setTagModal(null)}
+        placeholder="판타지 입력 후 Enter"
+      />
+      <TagEditModal
+        open={tagModal === 'moods'}
+        title="분위기 편집"
+        value={moods}
+        onApply={handleTagsApply('moods')}
+        onClose={() => setTagModal(null)}
+        placeholder="다크 입력 후 Enter"
+      />
+    </div>
+  );
+}
+
+type TagField = 'genres' | 'moods';
+
+function parseTags(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter((v) => typeof v === 'string');
+  } catch {
+    /* 손상 데이터 */
+  }
+  return [];
+}
+
+function TagSection({
+  label,
+  tags,
+  disabled,
+  onAddClick,
+  onRemove,
+}: {
+  label: string;
+  tags: string[];
+  disabled: boolean;
+  onAddClick: () => void;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</label>
+      <div className="flex items-center gap-1.5">
+        <div className="flex min-h-7 flex-1 flex-wrap items-center gap-1.5">
+          {tags.length > 0 ? (
+            tags.map((tag, idx) => (
+              <span
+                key={`${label}-${idx}`}
+                className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => onRemove(idx)}
+                  className="rounded text-primary/70 hover:text-primary"
+                  aria-label={`${tag} 제거`}
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          ) : (
+            <span className="text-xs text-muted-foreground/50">미설정</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onAddClick}
+          disabled={disabled}
+          aria-label={`${label} 추가`}
+          title={`${label} 추가`}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        >
+          <Plus size={14} strokeWidth={2} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -409,9 +555,8 @@ function autoGrow(el: HTMLTextAreaElement) {
 }
 
 function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerDate(iso);
+  if (!d) return iso || '';
   return d.toLocaleString('ko-KR', {
     year: 'numeric',
     month: '2-digit',

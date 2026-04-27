@@ -19,11 +19,14 @@ import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
+import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
 import { cn } from '../../lib/cn';
 
 interface CharacterOverviewProps {
   characterId: string;
   onBack: () => void;
+  onSendToRight?: () => void;
   onNoteSelect: (noteId: string) => void;
 }
 
@@ -58,9 +61,9 @@ function nextSortOrder(rows: { sort_order: number | null }[]) {
 
 const GENDER_ICON_STYLE: Record<string, { color: string }> = {
   미설정: { color: 'text-muted-foreground' },
-  남: { color: 'text-blue-500' },
-  여: { color: 'text-pink-500' },
-  기타: { color: 'text-violet-500' },
+  남: { color: 'text-character-male' },
+  여: { color: 'text-character-female' },
+  기타: { color: 'text-character-other' },
 };
 
 const GENDER_ICON_MAP: Record<
@@ -142,6 +145,7 @@ function GenderPicker({
 export function CharacterOverview({
   characterId,
   onBack,
+  onSendToRight,
   onNoteSelect,
 }: CharacterOverviewProps) {
   const { ensureCharacterNotes } = useLocalWrite();
@@ -171,6 +175,7 @@ export function CharacterOverview({
     <CharacterOverviewInner
       character={character}
       onBack={onBack}
+      onSendToRight={onSendToRight}
       onNoteSelect={onNoteSelect}
     />
   );
@@ -179,10 +184,12 @@ export function CharacterOverview({
 function CharacterOverviewInner({
   character,
   onBack,
+  onSendToRight,
   onNoteSelect,
 }: {
   character: CharacterRow;
   onBack: () => void;
+  onSendToRight?: () => void;
   onNoteSelect: (id: string) => void;
 }) {
   const {
@@ -241,28 +248,6 @@ function CharacterOverviewInner({
     [notes],
   );
 
-  const [introDraft, setIntroDraft] = useState('');
-  const introSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setIntroDraft(extractPlainText(introNote?.content ?? null));
-  }, [introNote?.id, introNote?.content]);
-
-  useEffect(() => {
-    return () => {
-      if (introSaveRef.current) clearTimeout(introSaveRef.current);
-    };
-  }, []);
-
-  const handleIntroChange = (value: string) => {
-    setIntroDraft(value);
-    if (!introNote) return;
-    if (introSaveRef.current) clearTimeout(introSaveRef.current);
-    introSaveRef.current = setTimeout(() => {
-      void updateCharacterNoteContent(introNote.id, value);
-    }, 400);
-  };
-
   const { data: tags = [] } = useQuery<{ world_note_id: string; name: string }>(
     `SELECT ct.world_note_id, wn.name
      FROM character_tag ct
@@ -289,18 +274,20 @@ function CharacterOverviewInner({
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={
-          <IconButton onClick={onBack} title="목록으로">
-            ←
-          </IconButton>
-        }
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
-          <Input
-            value={name.value}
-            onChange={(e) => name.onChange(e.target.value)}
-            onBlur={name.onBlur}
-            placeholder="이름"
-            className="border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
+          <BreadcrumbTitle
+            items={['등장인물']}
+            trailing={
+              <Input
+                value={name.value}
+                onChange={(e) => name.onChange(e.target.value)}
+                onBlur={name.onBlur}
+                placeholder="이름"
+                className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
           />
         }
         trailing={
@@ -389,16 +376,6 @@ function CharacterOverviewInner({
               />
             </div>
 
-            <div className="max-w-xl">
-              <input
-                type="text"
-                value={introDraft}
-                onChange={(e) => handleIntroChange(e.target.value)}
-                placeholder="캐릭터 한 줄 소개"
-                className="w-full border-none bg-transparent px-0 text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/40"
-              />
-            </div>
-
             <div className="relative">
               <div className="mb-1.5 flex items-center gap-2">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -450,6 +427,19 @@ function CharacterOverviewInner({
             </div>
           </div>
         </div>
+
+        {/* 본문 — intro character_note의 content를 위지윅(TipTap)으로 직접 편집 */}
+        {introNote && (
+          <div className="mb-6">
+            <WorldNoteInlineEditor
+              noteId={introNote.id}
+              initialContent={introNote.content}
+              placeholder="캐릭터 소개와 핵심 설정을 자유롭게 작성하세요…"
+              onUpdate={(json) => void updateCharacterNoteContent(introNote.id, json)}
+              size="base"
+            />
+          </div>
+        )}
 
         <div className="mb-1.5 flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -608,19 +598,6 @@ function parseNoteContent(raw: string | null): object | string {
     return JSON.parse(raw) as object;
   } catch {
     return '';
-  }
-}
-
-function extractPlainText(raw: string | null): string {
-  if (!raw) return '';
-  try {
-    const parsed = JSON.parse(raw) as {
-      text?: string;
-      content?: unknown[];
-    };
-    return flattenTiptapText(parsed).trim();
-  } catch {
-    return raw.trim();
   }
 }
 

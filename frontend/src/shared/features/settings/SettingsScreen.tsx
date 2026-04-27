@@ -7,6 +7,8 @@ import { COLOR_THEMES } from '../../config/themes';
 import { cn } from '../../lib/cn';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
 import { AccountSettings } from './AccountSettings';
+import { PaymentSettings } from './PaymentSettings';
+import { AboutSettings } from './AboutSettings';
 
 const EDITOR_FONT_OPTIONS: {
   id: EditorSettings['fontFamily'];
@@ -44,6 +46,8 @@ export function SettingsScreen({ settingsItemId }: SettingsScreenProps) {
   if (settingsItemId === 'account') return <AccountSettings />;
   if (settingsItemId === 'theme') return <ThemeSettings />;
   if (settingsItemId === 'font') return <FontSettings />;
+  if (settingsItemId === 'payment') return <PaymentSettings />;
+  if (settingsItemId === 'about') return <AboutSettings />;
   return null;
 }
 

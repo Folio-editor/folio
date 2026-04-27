@@ -7,6 +7,7 @@ infra/prod/nginx/upstream-active.conf
 
 # Build output
 dist/
+dist-web/
 out/
 build/
 *.tsbuildinfo

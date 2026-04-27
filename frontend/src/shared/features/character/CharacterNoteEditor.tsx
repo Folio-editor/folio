@@ -6,13 +6,16 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 
 interface CharacterNoteEditorProps {
   noteId: string;
   onBack: () => void;
   onBackToCharacter?: (characterId: string) => void;
+  onSendToRight?: () => void;
 }
 
 interface CharacterNoteRow {
@@ -26,7 +29,7 @@ interface CharacterNameRow {
   name: string;
 }
 
-export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter }: CharacterNoteEditorProps) {
+export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter, onSendToRight }: CharacterNoteEditorProps) {
   const { updateCharacterNoteContent, updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
 
   const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
@@ -61,6 +64,7 @@ export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter }: Chara
       note={note}
       characterName={characterName}
       onBack={handleBack}
+      onSendToRight={onSendToRight}
       onTitleChange={(title) => void updateCharacterNoteTitle(noteId, title)}
       onContentChange={(content) => void updateCharacterNoteContent(noteId, content)}
       onDelete={() => deleteCharacterNote(noteId)}
@@ -72,6 +76,7 @@ function NoteEditorInner({
   note,
   characterName,
   onBack,
+  onSendToRight,
   onTitleChange,
   onContentChange,
   onDelete,
@@ -79,6 +84,7 @@ function NoteEditorInner({
   note: CharacterNoteRow;
   characterName: string;
   onBack: () => void;
+  onSendToRight?: () => void;
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
   onDelete: () => Promise<void> | void;
@@ -91,28 +97,33 @@ function NoteEditorInner({
     <div className="flex h-full flex-col">
       <MainPanelHeader
         leading={<IconButton onClick={onBack} title="인물로 돌아가기">←</IconButton>}
+        onSendToRight={onSendToRight}
         title={
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm text-muted-foreground">{characterName}</span>
-            <span className="text-sm text-muted-foreground">{'>'}</span>
-            <Input
-              value={title.value}
-              onChange={(e) => title.onChange(e.target.value)}
-              onBlur={title.onBlur}
-              placeholder="문서 제목"
-              className="min-w-0 flex-1 border-none px-0 text-base font-medium shadow-none focus-visible:ring-0"
-            />
-          </div>
+          <BreadcrumbTitle
+            items={['등장인물', characterName]}
+            trailing={
+              <Input
+                value={title.value}
+                onChange={(e) => title.onChange(e.target.value)}
+                onBlur={title.onBlur}
+                placeholder="문서 제목"
+                className="min-w-0 flex-1 border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+              />
+            }
+          />
         }
         trailing={
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            title="문서 삭제"
-            className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <EditorToolbarToggle />
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="문서 삭제"
+              className="rounded p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         }
       />
       <ContentEditor

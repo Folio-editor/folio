@@ -24,12 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> int:
-    embedder = get_embedder()
+    # 본문이 비었거나(작가가 전체 삭제) 청킹 결과가 0이면 기존 청크는 무조건
+    # 제거해야 한다. 그렇지 않으면 옛 본문 임베딩이 RAG에 계속 끌려온다.
     chunks = chunk_text(extract_plain_text(content))
-    if not chunks:
-        return 0
-
-    vectors = await embedder.embed_batch(chunks)
+    vectors = await get_embedder().embed_batch(chunks) if chunks else []
 
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
@@ -39,19 +37,19 @@ async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> i
                     delete(EpisodeChunk).where(EpisodeChunk.episode_id == uuid.UUID(episode_id))
                 )
 
-                rows = []
-                for i, (text, vec) in enumerate(zip(chunks, vectors, strict=True)):
-                    rows.append({
-                        "episode_id": uuid.UUID(episode_id),
-                        "work_id": uuid.UUID(work_id),
-                        "writer_id": uuid.UUID(writer_id),
-                        "chunk_index": i,
-                        "content": text,
-                        "embedding": vec,
-                        "token_count": count_tokens(text),
-                    })
-
-                if rows:
+                if chunks:
+                    rows = [
+                        {
+                            "episode_id": uuid.UUID(episode_id),
+                            "work_id": uuid.UUID(work_id),
+                            "writer_id": uuid.UUID(writer_id),
+                            "chunk_index": i,
+                            "content": text,
+                            "embedding": vec,
+                            "token_count": count_tokens(text),
+                        }
+                        for i, (text, vec) in enumerate(zip(chunks, vectors, strict=True))
+                    ]
                     await session.execute(pg_insert(EpisodeChunk).values(rows))
     finally:
         await engine.dispose()

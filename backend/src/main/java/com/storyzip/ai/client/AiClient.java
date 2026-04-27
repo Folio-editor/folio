@@ -127,11 +127,17 @@ public class AiClient {
     /**
      * SSE 스트리밍으로 초안 생성 — FastAPI /v1/drafts 프록시.
      * 별도 스레드에서 SseEmitter로 이벤트를 전달한다.
+     *
+     * <p>스트림 종료 시 마지막 {@code done} 이벤트의 {@code usage}를 추출해
+     * {@code onDone} 콜백으로 넘긴다 (크레딧 차감 트리거). usage가 없거나
+     * 파싱 실패 시 빈 Map으로 호출된다.
      */
-    public void streamDraft(DraftRequest request, SseEmitter emitter) {
+    public void streamDraft(DraftRequest request, SseEmitter emitter,
+                            java.util.function.Consumer<Map<String, Object>> onDone) {
         Thread.startVirtualThread(() -> {
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, Object> lastDoneUsage = new java.util.HashMap<>();
             try {
-                ObjectMapper mapper = new ObjectMapper();
                 String jsonBody = mapper.writeValueAsString(request);
 
                 HttpRequest httpReq = HttpRequest.newBuilder()
@@ -162,14 +168,43 @@ public class AiClient {
                     while ((line = reader.readLine()) != null) {
                         if (line.startsWith("data: ")) {
                             String data = line.substring(6);
-                            emitter.send(SseEmitter.event().data(data, org.springframework.http.MediaType.APPLICATION_JSON));
+                            // done 이벤트의 usage를 캡처. type이 done이 아니거나 파싱 실패면 무시.
+                            try {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> parsed = mapper.readValue(data, Map.class);
+                                if ("done".equals(parsed.get("type"))) {
+                                    Object usage = parsed.get("usage");
+                                    log.info("Draft done event received: usage={}", usage);
+                                    if (usage instanceof Map<?, ?> usageMap) {
+                                        lastDoneUsage.clear();
+                                        usageMap.forEach((k, v) -> lastDoneUsage.put(String.valueOf(k), v));
+                                    }
+                                }
+                            } catch (Exception ignored) {
+                                // chunk 이벤트 등은 그대로 전달만 함
+                            }
+                            try {
+                                emitter.send(SseEmitter.event().data(data, org.springframework.http.MediaType.APPLICATION_JSON));
+                            } catch (Exception sendErr) {
+                                // 다운스트림(프론트) 끊김 — 업스트림은 끝까지 읽어 usage 캡처를 보장한다.
+                                log.debug("Downstream emitter send failed (client likely disconnected); continuing to drain upstream");
+                            }
                         }
                     }
                 }
-                emitter.complete();
+                log.info("Draft stream upstream completed: lastDoneUsage={}", lastDoneUsage);
+                try { emitter.complete(); } catch (Exception ignored) { /* 이미 완료됨 */ }
             } catch (Exception e) {
                 log.warn("Draft streaming failed", e);
                 emitter.completeWithError(e);
+            } finally {
+                if (onDone != null) {
+                    try {
+                        onDone.accept(lastDoneUsage);
+                    } catch (Exception e) {
+                        log.warn("Draft onDone callback failed", e);
+                    }
+                }
             }
         });
     }

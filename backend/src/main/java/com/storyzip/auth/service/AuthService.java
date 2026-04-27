@@ -11,6 +11,7 @@ import com.storyzip.auth.oauth.GoogleUserInfo;
 import com.storyzip.auth.repository.WriterRepository;
 import com.storyzip.common.exception.AuthException;
 import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.payment.service.TokenWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class AuthService {
     private final WriterRepository writerRepository;
     private final RefreshTokenRedisService refreshTokenRedisService;
     private final JwtProvider jwtProvider;
+    private final TokenWalletService tokenWalletService;
 
     /**
      * Electron PKCE 로그인 — Google 인증 완료 후 code/code_verifier 수신 → JWT 발급.
@@ -45,29 +47,17 @@ public class AuthService {
     public LoginResponse loginWithGoogleDesktop(String code, String codeVerifier,
                                                 String redirectUri, String deviceId) {
         GoogleUserInfo userInfo = googleOAuthClient.exchangeDesktopCode(code, codeVerifier, redirectUri);
-        Optional<Writer> existing = writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, userInfo.sub());
+        return upsertWriterAndIssueTokens(userInfo, deviceId);
+    }
 
-        Writer writer;
-        boolean isNewUser;
-        if (existing.isPresent()) {
-            writer = existing.get();
-            writer.updateProfile(userInfo.name(), userInfo.picture());
-            isNewUser = false;
-        } else {
-            writer = writerRepository.save(
-                    Writer.builder()
-                            .email(userInfo.email())
-                            .nickname(userInfo.name())
-                            .profileImageUrl(userInfo.picture())
-                            .role(Role.USER)
-                            .oauthProvider(PROVIDER_GOOGLE)
-                            .oauthId(userInfo.sub())
-                            .build()
-            );
-            isNewUser = true;
-        }
-
-        return issueTokens(writer, deviceId, isNewUser);
+    /**
+     * Web OAuth 로그인 — 백엔드 redirect 콜백에서 받은 code를 client_secret으로 교환.
+     * deviceId는 백엔드에서 발급/재사용 (httpOnly 쿠키로 영속).
+     */
+    @Transactional
+    public LoginResponse loginWithGoogleWeb(String code, String redirectUri, String deviceId) {
+        GoogleUserInfo userInfo = googleOAuthClient.exchangeWebCode(code, redirectUri);
+        return upsertWriterAndIssueTokens(userInfo, deviceId);
     }
 
     /**
@@ -83,14 +73,24 @@ public class AuthService {
             refreshTokenRedisService.delete(writerId, deviceId);
             throw new AuthException(ErrorCode.INVALID_TOKEN);
         }
-        Writer writer = writerRepository.findById(writerId)
-                .orElseThrow(() -> new AuthException(ErrorCode.WRITER_NOT_FOUND));
+        return rotateAndIssue(writerId, deviceId);
+    }
 
-        String newAccess = jwtProvider.createAccessToken(writer.getId(), writer.getEmail(), writer.getRole().name());
-        String newRefresh = jwtProvider.createRefreshToken();
-        refreshTokenRedisService.save(writer.getId(), deviceId, newRefresh, jwtProvider.getRefreshExpirySeconds());
-
-        return new AccessTokenResponse(newAccess, newRefresh);
+    /**
+     * 웹 쿠키 기반 refresh — RT만으로 (writerId, deviceId)를 역조회하여 새 AT/RT 발급.
+     *
+     * <p>웹 클라이언트는 httpOnly 쿠키로만 RT를 보유하고 만료된 AT를 보내지 않으므로
+     * Authorization 헤더에서 writerId를 추출할 수 없다. 따라서 Redis의 역방향 인덱스를 사용한다.
+     *
+     * @return 새 AT + 새 RT (호출자가 RT 쿠키를 갱신해야 함)
+     */
+    @Transactional(readOnly = true)
+    public AccessTokenResponse refreshFromCookie(String refreshToken) {
+        RefreshTokenRedisService.Owner owner = refreshTokenRedisService.findOwner(refreshToken);
+        if (owner == null) {
+            throw new AuthException(ErrorCode.INVALID_TOKEN);
+        }
+        return rotateAndIssue(owner.writerId(), owner.deviceId());
     }
 
     /**
@@ -98,6 +98,17 @@ public class AuthService {
      */
     public void logout(UUID writerId, String deviceId) {
         refreshTokenRedisService.delete(writerId, deviceId);
+    }
+
+    /**
+     * 웹 쿠키 로그아웃 — RT만으로 소유자 역조회 후 삭제.
+     * 토큰이 이미 무효해도 조용히 통과 (idempotent).
+     */
+    public void logoutByRefreshToken(String refreshToken) {
+        RefreshTokenRedisService.Owner owner = refreshTokenRedisService.findOwner(refreshToken);
+        if (owner != null) {
+            refreshTokenRedisService.delete(owner.writerId(), owner.deviceId());
+        }
     }
 
     /**
@@ -119,5 +130,51 @@ public class AuthService {
         String refresh = jwtProvider.createRefreshToken();
         refreshTokenRedisService.save(writer.getId(), deviceId, refresh, jwtProvider.getRefreshExpirySeconds());
         return new LoginResponse(access, refresh, WriterDto.from(writer), isNewUser);
+    }
+
+    /**
+     * Google 사용자 정보를 받아 신규/기존 Writer를 결정하고 토큰을 발급한다.
+     * Desktop(PKCE)과 Web(client_secret) 두 흐름 모두 동일한 후처리를 거치도록 추출.
+     */
+    private LoginResponse upsertWriterAndIssueTokens(GoogleUserInfo userInfo, String deviceId) {
+        Optional<Writer> existing = writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, userInfo.sub());
+
+        Writer writer;
+        boolean isNewUser;
+        if (existing.isPresent()) {
+            writer = existing.get();
+            writer.updateProfile(userInfo.name(), userInfo.picture());
+            isNewUser = false;
+        } else {
+            writer = writerRepository.save(
+                    Writer.builder()
+                            .email(userInfo.email())
+                            .nickname(userInfo.name())
+                            .profileImageUrl(userInfo.picture())
+                            .role(Role.USER)
+                            .oauthProvider(PROVIDER_GOOGLE)
+                            .oauthId(userInfo.sub())
+                            .build()
+            );
+            tokenWalletService.grantSignupBonus(writer.getId());
+            isNewUser = true;
+        }
+
+        return issueTokens(writer, deviceId, isNewUser);
+    }
+
+    /**
+     * 검증된 (writerId, deviceId)에 대해 새 AT/RT를 발급하고 Redis에 저장(회전)한다.
+     * {@link #refresh}와 {@link #refreshFromCookie}의 공통 로직.
+     */
+    private AccessTokenResponse rotateAndIssue(UUID writerId, String deviceId) {
+        Writer writer = writerRepository.findById(writerId)
+                .orElseThrow(() -> new AuthException(ErrorCode.WRITER_NOT_FOUND));
+
+        String newAccess = jwtProvider.createAccessToken(writer.getId(), writer.getEmail(), writer.getRole().name());
+        String newRefresh = jwtProvider.createRefreshToken();
+        refreshTokenRedisService.save(writer.getId(), deviceId, newRefresh, jwtProvider.getRefreshExpirySeconds());
+
+        return new AccessTokenResponse(newAccess, newRefresh);
     }
 }

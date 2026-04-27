@@ -1,5 +1,5 @@
 -- ============================================================
--- StoryZip DDL (PostgreSQL)
+-- Folio DDL (PostgreSQL)
 -- ============================================================
 -- 동기화 대상: SQLite (로컬) + PostgreSQL (서버) via PowerSync
 -- 서버 전용: PostgreSQL only
@@ -76,22 +76,28 @@ CREATE TABLE payment_event (
     processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- 3버킷 구조: 구독/보너스/종량제 크레딧을 출처별로 분리 관리.
+-- 차감 우선순위: subscription → bonus → purchase (빨리 소멸하는 순).
 CREATE TABLE token_wallet (
-    writer_id       UUID PRIMARY KEY REFERENCES writer(id) ON DELETE CASCADE,
-    balance         INTEGER NOT NULL DEFAULT 0,
-    total_charged   INTEGER NOT NULL DEFAULT 0,
-    total_used      INTEGER NOT NULL DEFAULT 0,
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    writer_id             UUID PRIMARY KEY REFERENCES writer(id) ON DELETE CASCADE,
+    subscription_balance  INTEGER NOT NULL DEFAULT 0,   -- 구독 월 지급분, 다음 갱신 시 소멸
+    bonus_balance         INTEGER NOT NULL DEFAULT 0,   -- 신규 가입 보너스, 만료 시 소멸
+    bonus_expires_at      TIMESTAMP,                    -- NULL = 보너스 미지급 또는 이미 소멸
+    purchase_balance      INTEGER NOT NULL DEFAULT 0,   -- 종량제 구매분, 영구 유지
+    total_charged         INTEGER NOT NULL DEFAULT 0,
+    total_used            INTEGER NOT NULL DEFAULT 0,
+    updated_at            TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- 원장(append-only). 혼합 차감은 bucket별로 분리된 레코드로 기록된다.
 CREATE TABLE token_transaction (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    amount          INTEGER NOT NULL,
-    type            VARCHAR(20) NOT NULL,
+    bucket          VARCHAR(20) NOT NULL,   -- SUBSCRIPTION | BONUS | PURCHASE
+    amount          INTEGER NOT NULL,       -- 양수=충전, 음수=차감
+    type            VARCHAR(20) NOT NULL,   -- CHARGE | SUBSCRIPTION | BONUS_GRANT | USAGE | EXPIRE | REFUND
     reason          VARCHAR(100),
     reference_id    UUID,
-    expires_at      TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -433,8 +439,10 @@ CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
 CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);
 CREATE INDEX idx_notification_writer ON notification(writer_id);
 CREATE INDEX idx_notification_unread ON notification(writer_id, is_read) WHERE is_read = false;
-CREATE INDEX idx_token_transaction_writer ON token_transaction(writer_id);
-CREATE INDEX idx_token_transaction_expires ON token_transaction(writer_id, expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX idx_token_transaction_writer ON token_transaction(writer_id, created_at DESC);
+CREATE INDEX idx_token_transaction_bucket ON token_transaction(writer_id, bucket);
+CREATE INDEX idx_token_wallet_bonus_expires
+    ON token_wallet(bonus_expires_at) WHERE bonus_balance > 0;
 CREATE INDEX idx_ai_analysis_episode ON ai_analysis(episode_id);
 CREATE INDEX idx_export_writer ON export(writer_id);
 

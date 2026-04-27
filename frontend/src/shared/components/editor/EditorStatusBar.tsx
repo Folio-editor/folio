@@ -34,7 +34,7 @@ export default function EditorStatusBar({
         </span>
       )}
       {charCount > 50000 && (
-        <span className="text-amber-600 dark:text-amber-400">· 대용량 문서</span>
+        <span className="text-warning">· 대용량 문서</span>
       )}
 
       <div className="flex-1" />

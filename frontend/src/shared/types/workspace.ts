@@ -83,6 +83,32 @@ export const SECTION_TABLES: Record<WorkspaceSection, string> = {
   'idea-archive': 'idea_archive',
 };
 
+// ── 사이드바 클릭 의도 ─────────────────────────────────
+
+/**
+ * 사이드바 항목 클릭 시 의도. AuthenticatedApp의 디스패처가 분기 처리.
+ *
+ * Stage Manager 단순화 모델:
+ * - default (단일 클릭): 메인 스테이지에 올림. 현 메인은 즉시 교체됨.
+ * - pin (더블 클릭 / ⌘·Ctrl+Click / 드래그): 우측 서브 스테이지에 적층.
+ *
+ * 메인 보존이 필요하면 사용자가 메인 헤더의 ↗ (우측으로 보내기)를 먼저 누르고
+ * 다른 항목을 단일 클릭하면 됨 — 명시적 의도 표시.
+ */
+export type ClickIntent = 'default' | 'pin' | 'newTab';
+
+/** 메인 패널이 표시 중인 문서 */
+export interface MainDoc {
+  section: WorkspaceSection;
+  itemId: string;
+}
+
+/** 메인 다중 탭의 단일 탭 인스턴스. doc=null = 빈 탭(welcome) */
+export interface MainTab {
+  id: string;
+  doc: MainDoc | null;
+}
+
 // ── 우측 사이드바 탭 ───────────────────────────────────
 
 /** 우측 사이드바 탭 */
@@ -129,7 +155,7 @@ export function docTypeToRoute(
     case 'character_note': return { activity: 'character',  section: 'character',    itemId: 'cnote:' + docId };
     case 'character':      return { activity: 'character',  section: 'character',    itemId: 'char:' + docId };
     case 'foreshadow':     return { activity: 'foreshadow', section: 'foreshadow',   itemId: docId };
-    case 'plot':           return null; // PlotOverview 전체만 가능, 개별 편집 불가
+    case 'plot':           return { activity: 'plot',       section: 'plot',         itemId: docId };
   }
 }
 
@@ -144,6 +170,9 @@ export function currentDocToAuxItem(
     case 'world-note':   return { docType: 'world_note',     docId: itemId, title };
     case 'plan':         return { docType: 'plan_note',      docId: itemId, title };
     case 'foreshadow':   return { docType: 'foreshadow',     docId: itemId, title };
+    case 'plot':
+      // '__all__' (전체 통합 뷰)도 우측 패널 핀 가능 — list 형태로만 표시
+      return { docType: 'plot', docId: itemId, title };
     case 'character': {
       if (itemId.startsWith('cnote:'))
         return { docType: 'character_note', docId: itemId.slice(6), title };
