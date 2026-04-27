@@ -1,92 +1,84 @@
 @import 'tailwindcss';
+@import './tokens.css';
 @import './themes.css';
+@import './editor.css';
+
+/*
+  Tailwind v4 source detection:
+  - Electron renderer: vite root가 frontend라 src/ 전체 자동 스캔 → 정상
+  - Web build: vite.web.config.ts의 root='src/web'이라 src/shared가 자동 감지 안 됨
+  - 명시적 @source로 src/ 전체 포함 (양쪽 빌드 모두 안전)
+*/
+@source "../**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Tailwind 토큰 매핑
+   tokens.css 의 CSS 변수를 Tailwind 유틸리티 클래스로 노출.
+   예: --color-primary → bg-primary, text-primary, border-primary 등
+   ─────────────────────────────────────────────────────────────────────────── */
 @theme inline {
+  /* A. Surface */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-activity-bar: var(--activity-bar);
+  --color-activity-bar-foreground: var(--activity-bar-foreground);
+  --color-activity-bar-border: var(--activity-bar-border);
+  --color-activity-bar-accent: var(--activity-bar-accent);
+
+  /* B. Brand & Action */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* C. Semantic State */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-soft: var(--danger-soft);
+  /* shadcn 호환 */
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  /* D. Domain */
+  --color-character-male: var(--character-male);
+  --color-character-female: var(--character-female);
+  --color-character-other: var(--character-other);
+  --color-foreshadow-plant: var(--foreshadow-plant);
+  --color-foreshadow-resolve: var(--foreshadow-resolve);
+  --color-foreshadow-final: var(--foreshadow-final);
+
+  /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-}
-
-:root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0.004 285.82);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0.004 285.82);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0.004 285.82);
-  --primary: oklch(0.205 0.015 285.82);
-  --primary-foreground: oklch(0.985 0.001 285.82);
-  --secondary: oklch(0.97 0.001 285.82);
-  --secondary-foreground: oklch(0.205 0.015 285.82);
-  --muted: oklch(0.97 0.001 285.82);
-  --muted-foreground: oklch(0.556 0.015 285.82);
-  --accent: oklch(0.97 0.001 285.82);
-  --accent-foreground: oklch(0.205 0.015 285.82);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.985 0.001 285.82);
-  --border: oklch(0.922 0.004 285.82);
-  --input: oklch(0.922 0.004 285.82);
-  --ring: oklch(0.708 0.165 254.62);
-  --sidebar: oklch(0.985 0.001 285.82);
-  --sidebar-foreground: oklch(0.145 0.004 285.82);
-  --sidebar-border: oklch(0.922 0.004 285.82);
-  --sidebar-accent: oklch(0.97 0.001 285.82);
-  --sidebar-accent-foreground: oklch(0.205 0.015 285.82);
-}
-
-.dark {
-  --background: oklch(0.145 0.004 285.82);
-  --foreground: oklch(0.985 0.001 285.82);
-  --card: oklch(0.205 0.015 285.82);
-  --card-foreground: oklch(0.985 0.001 285.82);
-  --popover: oklch(0.205 0.015 285.82);
-  --popover-foreground: oklch(0.985 0.001 285.82);
-  --primary: oklch(0.985 0.001 285.82);
-  --primary-foreground: oklch(0.205 0.015 285.82);
-  --secondary: oklch(0.269 0.015 285.82);
-  --secondary-foreground: oklch(0.985 0.001 285.82);
-  --muted: oklch(0.269 0.015 285.82);
-  --muted-foreground: oklch(0.70 0.015 285.82);
-  --accent: oklch(0.269 0.015 285.82);
-  --accent-foreground: oklch(0.985 0.001 285.82);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.985 0.001 285.82);
-  --border: oklch(0.30 0.015 285.82);
-  --input: oklch(0.30 0.015 285.82);
-  --ring: oklch(0.708 0.165 254.62);
-  --sidebar: oklch(0.18 0.01 285.82);
-  --sidebar-foreground: oklch(0.985 0.001 285.82);
-  --sidebar-border: oklch(0.30 0.015 285.82);
-  --sidebar-accent: oklch(0.269 0.015 285.82);
-  --sidebar-accent-foreground: oklch(0.985 0.001 285.82);
 }
 
 body {
@@ -104,9 +96,11 @@ body {
     sans-serif;
 }
 
-/* ═══════════════════════════════════════
-   Custom Scrollbar (Chromium / Electron)
-   ═══════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Custom Scrollbar — overlay 스타일
+   평상시 thumb 투명, 호버된 요소에서만 thumb 표시.
+   영역(track)은 항상 reserve하여 layout shift 방지.
+   ═══════════════════════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -117,319 +111,36 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.75 0 0);
+  background: transparent;
   border-radius: 9999px;
+  transition: background-color 150ms ease-out;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.6 0 0);
+/* hover된 요소에서만 thumb 색상 노출 */
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--editor-scrollbar-thumb);
 }
-
-.dark ::-webkit-scrollbar-thumb {
-  background: oklch(0.35 0 0);
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.45 0 0);
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--editor-scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* ═══════════════════════════════════════
-   Folio Editor — TipTap styles
-   ═══════════════════════════════════════ */
-
-.ProseMirror {
-  color: var(--foreground);
-  caret-color: var(--ring);
+/* Firefox — scrollbar-color로 동일한 hover-only 효과 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--editor-scrollbar-thumb) transparent;
 }
 
-.ProseMirror:focus {
-  outline: none;
-}
-
-.ProseMirror p.is-editor-empty:first-child::before {
-  color: var(--muted-foreground);
-}
-
-/* ── 에디터 본문 레이아웃 ── */
-.folio-editor .ProseMirror {
-  max-width: none;
-  width: 100%;
-  margin: 0;
-  font-size: var(--editor-font-size, 1rem);
-  line-height: var(--editor-line-height, 1.8);
-  font-family: var(--editor-font-family, inherit);
-}
-
-/* ── 문단 들여쓰기 ── */
-.folio-editor.auto-indent .ProseMirror p {
-  text-indent: var(--editor-indent, 1em);
-  margin-bottom: 0.25em;
-}
-
-.folio-editor .ProseMirror h1,
-.folio-editor .ProseMirror h2,
-.folio-editor .ProseMirror h3,
-.folio-editor .ProseMirror ul,
-.folio-editor .ProseMirror ol,
-.folio-editor .ProseMirror blockquote {
-  text-indent: 0;
-}
-
-.folio-editor .ProseMirror h1 {
-  font-size: 1.5em;
-  font-weight: 700;
-  margin: 1em 0 0.4em;
-}
-.folio-editor .ProseMirror h2 {
-  font-size: 1.25em;
-  font-weight: 700;
-  margin: 0.8em 0 0.3em;
-}
-.folio-editor .ProseMirror h3 {
-  font-size: 1.1em;
-  font-weight: 600;
-  margin: 0.6em 0 0.25em;
-}
-
-/* ── 장면 구분선 ── */
-.folio-editor .scene-break {
-  text-align: center;
-  padding: 1.5em 0;
-  color: var(--muted-foreground);
-  font-size: 1.1em;
-  letter-spacing: 0.5em;
-  user-select: none;
-  pointer-events: none;
-}
-
-/* ── 대사/독백 색상 데코레이션 ── */
-.folio-editor .dialogue {
-  color: oklch(0.45 0.15 250);
-}
-.dark .folio-editor .dialogue {
-  color: oklch(0.72 0.15 250);
-}
-
-.folio-editor .inner-thought {
-  color: oklch(0.50 0.15 160);
-}
-.dark .folio-editor .inner-thought {
-  color: oklch(0.70 0.15 160);
-}
-
-/* ── 작가 메모 ── */
-.folio-editor .author-note {
-  background: oklch(0.95 0.1 90);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-size: 0.85em;
-  color: oklch(0.45 0.1 70);
-}
-.dark .folio-editor .author-note {
-  background: oklch(0.3 0.08 70);
-  color: oklch(0.8 0.08 90);
-}
-
-/* ── 이름 태그 ── */
-.folio-editor .name-tag {
-  background: var(--accent);
-  border-radius: 3px;
-  padding: 0 3px;
-  font-weight: 500;
-}
-.folio-editor .name-tag[data-kind="character"] {
-  border-bottom: 2px solid oklch(0.6 0.2 290);
-}
-.folio-editor .name-tag[data-kind="place"] {
-  border-bottom: 2px solid oklch(0.6 0.15 170);
-}
-
-/* ── 형광펜 ── */
-.folio-editor .ProseMirror mark {
-  background-color: oklch(0.9 0.15 90);
-  border-radius: 2px;
-  padding: 0 2px;
-}
-.dark .folio-editor .ProseMirror mark {
-  background-color: oklch(0.4 0.1 90);
-}
-
-/* ── 집중 모드 ── */
-.folio-editor.focus-mode .ProseMirror > *:not(.has-focus) {
-  opacity: 0.3;
-  transition: opacity 0.2s;
-}
-.folio-editor.focus-mode .ProseMirror > .has-focus {
-  opacity: 1;
-}
-
-/* ── 타자기 모드 하단 여백 ── */
-.folio-editor.typewriter-mode .ProseMirror {
-  padding-bottom: 70vh;
-}
-
-/* ── 줄 번호 ── */
-.folio-editor.show-line-numbers .ProseMirror {
-  counter-reset: editor-line;
-  padding-left: 3.5rem;
-}
-.folio-editor.show-line-numbers .ProseMirror > * {
-  position: relative;
-  counter-increment: editor-line;
-}
-.folio-editor.show-line-numbers .ProseMirror > *::before {
-  content: counter(editor-line);
-  position: absolute;
-  left: -3rem;
-  width: 2.5rem;
-  text-align: right;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  opacity: 0.5;
-  user-select: none;
-  pointer-events: none;
-}
-
-/* ── 문단 기호 ── */
-.folio-editor.show-paragraph-marks .ProseMirror p::after {
-  content: '¶';
-  color: var(--muted-foreground);
-  opacity: 0.3;
-  font-size: 0.8em;
-  margin-left: 4px;
-  user-select: none;
-}
-
-/* ── 찾기/바꾸기 하이라이트 ── */
-.folio-editor .find-match {
-  background: oklch(0.85 0.15 90);
-  border-radius: 2px;
-}
-.dark .folio-editor .find-match {
-  background: oklch(0.4 0.12 90);
-}
-.folio-editor .find-match-current {
-  background: oklch(0.75 0.2 50);
-  border-radius: 2px;
-}
-.dark .folio-editor .find-match-current {
-  background: oklch(0.5 0.18 50);
-}
-
-/* ── 검수 하이라이트 (Decoration.node → 단락 전체) ── */
-.folio-editor .review-issue-critical {
-  background: oklch(0.95 0.06 25);
-}
-.dark .folio-editor .review-issue-critical {
-  background: oklch(0.25 0.05 25);
-}
-.folio-editor .review-issue-warning {
-  background: oklch(0.95 0.06 85);
-}
-.dark .folio-editor .review-issue-warning {
-  background: oklch(0.25 0.05 85);
-}
-.folio-editor .review-issue-info {
-  background: oklch(0.95 0.05 250);
-}
-.dark .folio-editor .review-issue-info {
-  background: oklch(0.25 0.04 250);
-}
-.folio-editor .review-issue-focused {
-  outline: 2px solid oklch(0.65 0.2 270);
-  outline-offset: 1px;
-  border-radius: 2px;
-}
-/* 번호 배지 */
-.folio-editor [data-review-badge] {
-  position: relative;
-  padding-left: 22px;
-}
-.folio-editor [data-review-badge]::before {
-  content: attr(data-review-badge);
-  position: absolute;
-  left: 0;
-  top: 0.15em;
-  font-size: 12px;
-  font-weight: 700;
-  user-select: none;
-  line-height: 1;
-}
-.folio-editor [data-review-severity="critical"]::before { color: oklch(0.5 0.2 25); }
-.folio-editor [data-review-severity="warning"]::before { color: oklch(0.45 0.15 85); }
-.folio-editor [data-review-severity="info"]::before { color: oklch(0.45 0.12 250); }
-.dark .folio-editor [data-review-severity="critical"]::before { color: oklch(0.7 0.2 25); }
-.dark .folio-editor [data-review-severity="warning"]::before { color: oklch(0.7 0.15 85); }
-.dark .folio-editor [data-review-severity="info"]::before { color: oklch(0.7 0.12 250); }
-
-/* ── 노트 카드 미리보기 (서식 유지) ── */
-.note-preview p {
-  margin: 0 0 0.25em;
-}
-.note-preview h1,
-.note-preview h2,
-.note-preview h3 {
-  font-size: inherit;
-  font-weight: 600;
-  margin: 0 0 0.25em;
-}
-.note-preview ul,
-.note-preview ol {
-  margin: 0;
-  padding-left: 1.2em;
-}
-.note-preview blockquote {
-  margin: 0;
-  padding-left: 0.5em;
-  border-left: 2px solid var(--border);
-}
-.note-preview mark {
-  background-color: oklch(0.9 0.15 90);
-  border-radius: 2px;
-  padding: 0 1px;
-}
-.dark .note-preview mark {
-  background-color: oklch(0.4 0.1 90);
-}
-
-/* ── 플롯 인라인 에디터 ── */
-.plot-inline-editor .tiptap h1 {
-  font-size: 1.15em;
-  font-weight: 700;
-  margin: 0.5em 0 0.25em;
-}
-.plot-inline-editor .tiptap h2 {
-  font-size: 1em;
-  font-weight: 700;
-  margin: 0.5em 0 0.25em;
-}
-.plot-inline-editor .tiptap h3 {
-  font-size: 0.9em;
-  font-weight: 600;
-  margin: 0.4em 0 0.2em;
-}
-.plot-inline-editor .tiptap p {
-  margin: 0 0 0.25em;
-}
-.plot-inline-editor .tiptap ul,
-.plot-inline-editor .tiptap ol {
-  margin: 0;
-  padding-left: 1.2em;
-}
-.plot-inline-editor .tiptap blockquote {
-  margin: 0;
-  padding-left: 0.5em;
-  border-left: 2px solid var(--border);
-}
-.plot-inline-editor .tiptap mark {
-  background-color: oklch(0.9 0.15 90);
-  border-radius: 2px;
-  padding: 0 1px;
-}
-.dark .plot-inline-editor .tiptap mark {
-  background-color: oklch(0.4 0.1 90);
+/* 스크롤바 완전 숨김 — 가로 스크롤이 노이즈가 되는 좁은 컨테이너용 (예: 에디터 툴바) */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }

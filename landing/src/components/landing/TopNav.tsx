@@ -1,19 +1,11 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import type { MouseEvent } from 'react';
+import { buildLoginUrl } from '../../lib/loginUrl';
+import { useLandingAuth } from '../../lib/auth';
+import { UserProfileMenu } from './UserProfileMenu';
 
 export function TopNav() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const handleBrandClick = (e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    if (location.pathname === '/') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      navigate('/');
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    }
-  };
+  const { isAuthenticated, writer } = useLandingAuth();
+  // returnPath에 fromLanding=1 — 에디터가 auth_code 교환 후 랜딩으로 다시 bounce
+  const loginUrl = buildLoginUrl('/?fromLanding=1');
 
   return (
     <nav className="nav">
@@ -36,9 +28,13 @@ export function TopNav() {
           <a href="/#faq" className="nav-link">
             문답
           </a>
-          <a href="/#signup" className="nav-cta sans">
-            무료로 시작
-          </a>
+          {isAuthenticated && writer ? (
+            <UserProfileMenu writer={writer} />
+          ) : (
+            <a href={loginUrl} className="nav-cta sans">
+              로그인
+            </a>
+          )}
         </div>
       </div>
     </nav>

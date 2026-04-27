@@ -112,13 +112,13 @@ const GENDER_LABEL_MAP: Record<string, string> = {
 };
 
 const GENDER_TEXT_COLOR: Record<string, string> = {
-  male: 'text-[#5B7CFF]',
-  female: 'text-[#FF6B9A]',
-  other: 'text-[#8B6DFF]',
+  male: 'text-character-male',
+  female: 'text-character-female',
+  other: 'text-character-other',
   unknown: 'text-muted-foreground',
-  남: 'text-[#5B7CFF]',
-  여: 'text-[#FF6B9A]',
-  기타: 'text-[#8B6DFF]',
+  남: 'text-character-male',
+  여: 'text-character-female',
+  기타: 'text-character-other',
   미설정: 'text-muted-foreground',
 };
 

@@ -1311,3 +1311,326 @@ html {
     padding: 8vh 1.25rem 4vh;
   }
 }
+
+/* ============================================================
+   Download popover (메인 CTA "앱 다운로드")
+============================================================ */
+.folio-landing .cta-download-anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.folio-landing .cta-download-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  animation: cta-download-popover-fade 160ms ease-out;
+}
+
+@keyframes cta-download-popover-fade {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.folio-landing .cta-download-popover-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 6px;
+}
+
+.folio-landing .cta-download-popover-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.folio-landing .cta-download-popover-version {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.folio-landing .cta-download-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.folio-landing .cta-download-popover-row {
+  border-radius: 8px;
+  transition: background 120ms ease;
+}
+
+.folio-landing .cta-download-popover-row:hover:not([data-disabled='true']) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.folio-landing .cta-download-popover-row[data-disabled='true'] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.folio-landing .cta-download-popover-row-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.folio-landing .cta-download-popover-row-label {
+  flex: 1;
+  font-size: 13px;
+  color: #1a1a1a;
+}
+
+.folio-landing .cta-download-popover-row-format {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+
+.folio-landing .cta-download-popover-row-size {
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.folio-landing .cta-download-popover-row-pending {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* ============================================================
+   Secondary CTA "→ 웹에서 이용하기"
+============================================================ */
+.folio-landing .cta-secondary {
+  margin-top: 14px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+  transition: color 120ms ease;
+  padding: 4px 8px;
+}
+
+.folio-landing .cta-secondary:hover {
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* ============================================================
+   Login required modal
+============================================================ */
+.folio-landing .login-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: login-modal-fade 160ms ease-out;
+}
+
+@keyframes login-modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.folio-landing .login-modal-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+
+.folio-landing .login-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: #1a1a1a;
+}
+
+.folio-landing .login-modal-body {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.6);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.folio-landing .login-modal-google-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  background: #1a1a1a;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 120ms ease;
+}
+
+.folio-landing .login-modal-google-btn:hover {
+  background: #000;
+}
+
+.folio-landing .login-modal-cancel {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.55);
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.folio-landing .login-modal-cancel:hover {
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* ============================================================
+   User profile menu (TopNav 우측)
+============================================================ */
+.folio-landing .user-profile-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.folio-landing .user-profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: #1a1a1a;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.folio-landing .user-profile-trigger:hover {
+  border-color: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.folio-landing .user-profile-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #e5e7eb;
+}
+
+.folio-landing .user-profile-avatar-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.65);
+  background: #e5e7eb;
+}
+
+.folio-landing .user-profile-name {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.folio-landing .user-profile-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 180px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  animation: cta-download-popover-fade 140ms ease-out;
+}
+
+.folio-landing .user-profile-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: #1a1a1a;
+  text-align: left;
+  transition: background 120ms ease;
+}
+
+.folio-landing .user-profile-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.folio-landing .user-profile-item-danger {
+  color: #b91c1c;
+}
+
+.folio-landing .user-profile-item-danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.folio-landing .user-profile-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 4px 2px;
+}

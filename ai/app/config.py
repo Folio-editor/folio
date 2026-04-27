@@ -102,12 +102,20 @@ class Settings(BaseSettings):
                 f"postgresql+asyncpg://{self.db_username}:{self.db_password}"
                 f"@{self.db_host}:{self.db_port}/{self.db_name}"
             )
+        # prod에서 DB_* 변수가 누락되면 localhost로 폴백되어 조용히 실패 → fail-fast로 차단
+        if self.app_env in ("prod", "production"):
+            raise ValueError(
+                "DATABASE_URL 또는 DB_HOST/DB_NAME/DB_USERNAME/DB_PASSWORD 환경변수가 prod에서 필수입니다"
+            )
         return DEFAULT_DATABASE_URL
 
     def _build_redis_url(self, db_index: int, fallback: str) -> str:
         if self.redis_host:
             auth = f":{self.redis_password}@" if self.redis_password else ""
             return f"redis://{auth}{self.redis_host}:{self.redis_port}/{db_index}"
+        # prod에서 REDIS_HOST 누락 시 localhost 폴백 차단
+        if self.app_env in ("prod", "production"):
+            raise ValueError("REDIS_URL 또는 REDIS_HOST 환경변수가 prod에서 필수입니다")
         return fallback
 
 

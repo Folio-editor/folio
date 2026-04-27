@@ -84,7 +84,13 @@ export function commitLastKnownWriterId(writerId: string): void {
   saveLastWriterId(writerId);
 }
 
-export async function loginWithGoogle(): Promise<LoginResult> {
+interface LoginWithGoogleOptions {
+  onCodeReceived?: () => void;
+}
+
+export async function loginWithGoogle(
+  options: LoginWithGoogleOptions = {},
+): Promise<LoginResult> {
   console.log('[oauth] loginWithGoogle 시작');
   console.log('[oauth] API URL:', apiUrl());
   console.log('[oauth] Client ID:', googleClientId());
@@ -111,6 +117,7 @@ export async function loginWithGoogle(): Promise<LoginResult> {
     console.log('[oauth] 브라우저 열림, code 대기 중...');
 
     const code = await server.waitForCode(state);
+    options.onCodeReceived?.();
     console.log('[oauth] code 수신 완료, 백엔드 전송 중...');
     console.log('[oauth] fetch URL:', `${apiUrl()}/auth/login/google`);
 

@@ -1,20 +1,30 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  PanelRightClose,
+  PanelRightOpen,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
-import { IconButton } from '../../components/ui/IconButton';
+import { StatusPillDropdown, type StatusPillOption } from '../../components/ui/StatusPillDropdown';
+import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ContentEditor } from '../../components/editor/ContentEditor';
-import { TimelineGauge } from './TimelineGauge';
+import { ForeshadowLifecycleStepper } from './ForeshadowLifecycleStepper';
 import { cn } from '../../lib/cn';
 
 interface ForeshadowEditScreenProps {
   id: string;
   onBack: () => void;
+  onSendToRight?: () => void;
 }
 
 interface ForeshadowRow {
@@ -50,95 +60,60 @@ interface TargetOption {
   label: string;
 }
 
-interface RangeRow {
-  min_order: number | null;
-  max_order: number | null;
+const STATUS_OPTIONS: StatusPillOption[] = [
+  { value: '진행중', label: '진행중', tone: 'blue' },
+  { value: '완결', label: '완결', tone: 'emerald' },
+  { value: '폐기', label: '폐기', tone: 'slate' },
+];
+
+const IMPORTANCE_OPTIONS: StatusPillOption[] = [
+  { value: '상', label: '상', tone: 'rose' },
+  { value: '중', label: '중', tone: 'amber' },
+  { value: '하', label: '하', tone: 'sky' },
+];
+
+type StageKey = 'plant' | 'resolve' | 'final_resolve';
+
+interface StageMeta {
+  type: StageKey;
+  title: string;
+  description: string;
+  empty: string;
+  /** 다크모드 호환 dot bg 토큰 */
+  dotClass: string;
+  /** 다크모드 호환 line bg 토큰 */
+  lineClass: string;
 }
 
-const STATUS_OPTIONS = [
-  { value: '진행중', label: '진행중' },
-  { value: '완결', label: '완결' },
-  { value: '폐기', label: '폐기' },
-];
-
-const IMPORTANCE_OPTIONS = [
-  { value: '상', label: '중요도 : 상' },
-  { value: '중', label: '중요도 : 중' },
-  { value: '하', label: '중요도 : 하' },
-];
-
-const IMPORTANCE_STYLES: Record<string, { button: string; dot: string; item: string }> = {
-  상: {
-    button: 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100',
-    dot: 'bg-rose-500',
-    item: 'hover:bg-rose-50',
-  },
-  중: {
-    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
-    dot: 'bg-amber-500',
-    item: 'hover:bg-amber-50',
-  },
-  하: {
-    button: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100',
-    dot: 'bg-sky-500',
-    item: 'hover:bg-sky-50',
-  },
-};
-
-const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
-  진행중: {
-    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
-    dot: 'bg-blue-500',
-    item: 'hover:bg-blue-50',
-  },
-  완결: {
-    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-    dot: 'bg-emerald-500',
-    item: 'hover:bg-emerald-50',
-  },
-  폐기: {
-    button: 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
-    dot: 'bg-slate-400',
-    item: 'hover:bg-slate-50',
-  },
-};
-
-const LINK_TYPE_COLOR: Record<string, string> = {
-  plant: 'border-l-blue-500',
-  resolve: 'border-l-amber-500',
-  final_resolve: 'border-l-emerald-500',
-};
-
-const LINK_TYPE_BADGE: Record<string, string> = {
-  plant: 'border-blue-200 bg-blue-50 text-blue-700',
-  resolve: 'border-amber-200 bg-amber-50 text-amber-700',
-  final_resolve: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-};
-
-const LINK_FLOW_STAGES = [
+const LINK_FLOW_STAGES: StageMeta[] = [
   {
     type: 'plant',
     title: '심기',
     description: '독자에게 처음 보여주는 지점',
     empty: '아직 심는 지점이 없습니다.',
+    dotClass: 'bg-foreshadow-plant',
+    lineClass: 'bg-foreshadow-plant/30',
   },
   {
     type: 'resolve',
     title: '강화',
     description: '반복 노출하거나 의미를 키우는 지점',
     empty: '아직 강화 지점이 없습니다.',
+    dotClass: 'bg-foreshadow-resolve',
+    lineClass: 'bg-foreshadow-resolve/30',
   },
   {
     type: 'final_resolve',
     title: '회수',
     description: '정체를 밝히거나 결말로 이어지는 지점',
     empty: '아직 회수 지점이 없습니다.',
+    dotClass: 'bg-foreshadow-final',
+    lineClass: 'bg-foreshadow-final/30',
   },
 ];
 
-const LINK_PANEL_DEFAULT_HEIGHT = 300;
-const LINK_PANEL_MIN_HEIGHT = 140;
-const LINK_PANEL_MAX_HEIGHT = 520;
+/** 이 폭 미만이면 좌우 분할 대신 위/아래 세로 스택으로 fallback */
+const NARROW_BREAKPOINT_PX = 720;
 
 function formatLinkTarget(link: LinkRow) {
   const title = link.episode_title ?? link.plot_title ?? '(삭제된 항목)';
@@ -154,7 +129,7 @@ function formatTargetOption(target: TargetRow) {
   return target.parent_title ? `${target.parent_title} > ${target.title}` : target.title;
 }
 
-export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) {
+export function ForeshadowEditScreen({ id, onBack, onSendToRight }: ForeshadowEditScreenProps) {
   const { data: rows = [] } = useQuery<ForeshadowRow>(
     `SELECT id, work_id, title, status, importance, content FROM foreshadow WHERE id = ?`,
     [id],
@@ -165,24 +140,69 @@ export function ForeshadowEditScreen({ id, onBack }: ForeshadowEditScreenProps) 
     return <div className="p-8 text-sm text-muted-foreground">복선을 불러오는 중…</div>;
   }
 
-  return <ForeshadowEditor key={id} item={item} onBack={onBack} />;
+  return <ForeshadowEditor key={id} item={item} onBack={onBack} onSendToRight={onSendToRight} />;
 }
 
-function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () => void }) {
+function ForeshadowEditor({
+  item,
+  onBack,
+  onSendToRight,
+}: {
+  item: ForeshadowRow;
+  onBack: () => void;
+  onSendToRight?: () => void;
+}) {
   const { updateForeshadow, deleteForeshadow } = useLocalWrite();
-  const { id } = item;
+  const { id, work_id: workId } = item;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [linkPanelHeight, setLinkPanelHeight] = useState(LINK_PANEL_DEFAULT_HEIGHT);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setIsNarrow(entry.contentRect.width < NARROW_BREAKPOINT_PX);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const title = useDeferredText(id, item.title, (v) =>
     void updateForeshadow(id, { title: v }),
   );
 
+  const { data: linkRows = [] } = useQuery<LinkRow>(
+    `SELECT fl.id, fl.link_type, fl.episode_id, fl.plot_id, fl.context_memo,
+            e.title AS episode_title, e.sort_order AS episode_sort,
+            ep.title AS episode_parent_title,
+            p.title AS plot_title,
+            pp.title AS plot_parent_title
+     FROM foreshadow_link fl
+     LEFT JOIN episode e ON e.id = fl.episode_id
+     LEFT JOIN episode ep ON ep.id = e.parent_id
+     LEFT JOIN plot p ON p.id = fl.plot_id
+     LEFT JOIN plot pp ON pp.id = p.parent_id
+     WHERE fl.foreshadow_id = ?
+     ORDER BY fl.created_at ASC`,
+    [id],
+  );
+
+  const counts = useMemo(() => {
+    const c = { plant: 0, resolve: 0, final_resolve: 0 };
+    for (const l of linkRows) {
+      if (l.link_type in c) c[l.link_type as keyof typeof c]++;
+    }
+    return c;
+  }, [linkRows]);
+
   return (
     <div className="flex h-full flex-col">
       <MainPanelHeader
-        leading={<IconButton onClick={onBack} title="목록으로"><ArrowLeft className="h-4 w-4" /></IconButton>}
+        onClose={onBack}
+        onSendToRight={onSendToRight}
         title={
           <Input
             value={title.value}
@@ -194,32 +214,34 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
         }
         trailing={
           <div className="flex items-center gap-2">
-            <div className="flex gap-2">
-              <ForeshadowDropdown
+            <ForeshadowTrackingToggle
+              expanded={!collapsed}
+              onToggle={() => setCollapsed((v) => !v)}
+            />
+            <div className="flex gap-1.5">
+              <StatusPillDropdown
                 value={
                   IMPORTANCE_OPTIONS.some((o) => o.value === item.importance)
                     ? item.importance
                     : '중'
                 }
                 options={IMPORTANCE_OPTIONS}
-                styles={IMPORTANCE_STYLES}
-                fallback="중"
                 ariaLabel="복선 중요도"
+                prefix="중요도 "
                 onChange={(importance) => void updateForeshadow(id, { importance })}
               />
-              <ForeshadowDropdown
+              <StatusPillDropdown
                 value={
                   STATUS_OPTIONS.some((o) => o.value === item.status)
                     ? item.status
                     : '진행중'
                 }
                 options={STATUS_OPTIONS}
-                styles={STATUS_STYLES}
-                fallback="진행중"
                 ariaLabel="복선 상태"
                 onChange={(status) => void updateForeshadow(id, { status })}
               />
             </div>
+            <EditorToolbarToggle />
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
@@ -232,31 +254,54 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
         }
       />
 
-      {/* 에디터 영역 (flex-1의 절반) */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <ContentEditor
-          itemId={id}
-          initialContent={item.content}
-          placeholder="복선의 의도, 회수 시점, 관련 회차를 메모하세요…"
-          onUpdate={(content) => void updateForeshadow(id, { content })}
-          className="h-full"
-        />
-      </div>
+      {/* Split View 본체 */}
+      <div
+        ref={containerRef}
+        className={cn(
+          'flex min-h-0 flex-1',
+          isNarrow ? 'flex-col' : 'flex-row',
+        )}
+      >
+        {/* 좌측: 본문 */}
+        <div
+          className={cn(
+            'min-h-0 min-w-0 overflow-hidden',
+            isNarrow
+              ? collapsed
+                ? 'h-full'
+                : 'h-1/2'
+              : collapsed
+                ? 'flex-1'
+                : 'basis-3/5 flex-1',
+          )}
+        >
+          <ContentEditor
+            itemId={id}
+            initialContent={item.content}
+            placeholder="복선의 의도, 회수 시점, 관련 회차를 메모하세요…"
+            onUpdate={(content) => void updateForeshadow(id, { content })}
+            className="h-full"
+          />
+        </div>
 
-      {/* 복선 연결 관리 */}
-      <LinkManagementSection
-        foreshadowId={id}
-        workId={item.work_id}
-        panelHeight={linkPanelHeight}
-        onPanelResize={(delta) =>
-          setLinkPanelHeight((height) =>
-            Math.max(
-              LINK_PANEL_MIN_HEIGHT,
-              Math.min(LINK_PANEL_MAX_HEIGHT, height - delta),
-            ),
-          )
-        }
-      />
+        {/* 우측 (또는 하단): 추적 + 연결 패널 */}
+        {!collapsed && (
+          <div
+            className={cn(
+              'flex min-h-0 min-w-0 flex-col',
+              isNarrow ? 'h-1/2 border-t border-border' : 'basis-2/5 border-l border-border',
+            )}
+          >
+            <ForeshadowSidePanel
+              foreshadowId={id}
+              workId={workId}
+              linkRows={linkRows}
+              counts={counts}
+              status={item.status}
+            />
+          </div>
+        )}
+      </div>
 
       {confirmDelete && (
         <DeleteConfirmDialog
@@ -278,143 +323,54 @@ function ForeshadowEditor({ item, onBack }: { item: ForeshadowRow; onBack: () =>
   );
 }
 
-function ForeshadowDropdown({
-  value,
-  options,
-  styles,
-  fallback,
-  ariaLabel,
-  onChange,
+function ForeshadowTrackingToggle({
+  expanded,
+  onToggle,
 }: {
-  value: string;
-  options: { value: string; label: string }[];
-  styles: Record<string, { button: string; dot: string; item: string }>;
-  fallback: string;
-  ariaLabel: string;
-  onChange: (value: string) => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const currentStyle = styles[value] ?? styles[fallback];
-  const currentLabel = options.find((option) => option.value === value)?.label ?? value;
-
   return (
-    <div
-      className="relative"
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
-      }}
-    >
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'flex h-9 w-32 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
-          currentStyle.button,
-        )}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', currentStyle.dot)} />
-          <span className="truncate">{currentLabel}</span>
-        </span>
-        <ChevronDown
-          size={15}
-          strokeWidth={1.8}
-          className={cn('shrink-0 transition-transform', open && 'rotate-180')}
-        />
-      </button>
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label={ariaLabel}
-          className="absolute right-0 top-full z-30 mt-2 w-32 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
-        >
-          {options.map((option) => {
-            const selected = option.value === value;
-            const style = styles[option.value] ?? styles[fallback];
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
-                  style.item,
-                  selected && 'bg-muted font-medium',
-                )}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)} />
-                  <span className="truncate">{option.label}</span>
-                </span>
-                {selected && <Check size={14} strokeWidth={2} className="shrink-0 text-muted-foreground" />}
-              </button>
-            );
-          })}
-        </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      title={expanded ? '추적 패널 접기' : '추적 패널 펼치기'}
+      aria-pressed={expanded}
+      className={cn(
+        'flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
+        expanded
+          ? 'border-primary/30 bg-primary/5 text-foreground'
+          : 'border-border bg-background text-muted-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-foreground',
       )}
-    </div>
+    >
+      {expanded ? (
+        <PanelRightClose size={14} strokeWidth={1.75} />
+      ) : (
+        <PanelRightOpen size={14} strokeWidth={1.75} />
+      )}
+      <span>추적</span>
+    </button>
   );
 }
 
-/* ── 복선 연결 관리 섹션 ── */
+/* ── 우측 추적/연결 패널 ── */
 
-function LinkManagementSection({
+function ForeshadowSidePanel({
   foreshadowId,
   workId,
-  panelHeight,
-  onPanelResize,
+  linkRows,
+  counts,
+  status,
 }: {
   foreshadowId: string;
   workId: string;
-  panelHeight: number;
-  onPanelResize: (deltaPx: number) => void;
+  linkRows: LinkRow[];
+  counts: { plant: number; resolve: number; final_resolve: number };
+  status: string;
 }) {
-  const writerId = useWriterId();
   const { createForeshadowLink, updateForeshadowLink, deleteForeshadowLink } = useLocalWrite();
-  const [expanded, setExpanded] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-
-  const { data: linkRows = [] } = useQuery<LinkRow>(
-    `SELECT fl.id, fl.link_type, fl.episode_id, fl.plot_id, fl.context_memo,
-            e.title AS episode_title, e.sort_order AS episode_sort,
-            ep.title AS episode_parent_title,
-            p.title AS plot_title,
-            pp.title AS plot_parent_title
-     FROM foreshadow_link fl
-     LEFT JOIN episode e ON e.id = fl.episode_id
-     LEFT JOIN episode ep ON ep.id = e.parent_id
-     LEFT JOIN plot p ON p.id = fl.plot_id
-     LEFT JOIN plot pp ON pp.id = p.parent_id
-     WHERE fl.foreshadow_id = ?
-     ORDER BY fl.created_at ASC`,
-    [foreshadowId],
-  );
-
-  const { data: rangeRows = [] } = useQuery<RangeRow>(
-    `SELECT MIN(sort_order) AS min_order, MAX(sort_order) AS max_order
-     FROM episode WHERE work_id = ? AND writer_id = ? AND status != 'trashed'`,
-    [workId, writerId],
-  );
-
-  const range = {
-    min: rangeRows[0]?.min_order ?? 0,
-    max: rangeRows[0]?.max_order ?? 0,
-  };
-
-  const timelineLinks = linkRows.map((l) => ({
-    link_type: l.link_type,
-    episode_sort: l.episode_sort,
-    episode_title: l.episode_title,
-  }));
 
   const handleDelete = async (linkId: string) => {
     await deleteForeshadowLink(linkId);
@@ -447,228 +403,210 @@ function LinkManagementSection({
   };
 
   return (
-    <div
-      className="relative flex shrink-0 flex-col border-t border-border"
-      style={expanded ? { height: panelHeight } : undefined}
-    >
-      {expanded && <ForeshadowPanelResizeHandle onResize={onPanelResize} />}
-      <div className="flex items-center justify-between px-6 py-3 hover:bg-muted/30">
+    <>
+      {/* 패널 헤더 */}
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <span>추적</span>
+          <span className="text-xs text-muted-foreground">{linkRows.length}</span>
+        </div>
         <button
           type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 text-left text-sm font-medium text-foreground"
-        >
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span>복선 연결 ({linkRows.length})</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => { setAdding(true); setEditingLinkId(null); setExpanded(true); }}
+          onClick={() => {
+            setAdding(true);
+            setEditingLinkId(null);
+          }}
           className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
         >
           <Plus size={12} />
-          추가
+          연결 추가
         </button>
       </div>
 
-      {expanded && (
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-5">
-          {linkRows.length > 0 && (
-            <div className="mb-4 rounded-lg border border-border bg-background px-4 py-3">
-              <div className="mb-2 flex items-center justify-between text-xs">
-                <span className="font-medium text-foreground">원고 흐름</span>
-                <span className="text-muted-foreground">심기 · 강화 · 회수</span>
-              </div>
-              <TimelineGauge links={timelineLinks} range={range} />
-            </div>
-          )}
-
-          {linkRows.length === 0 && !adding && (
-            <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center">
-              <p className="text-sm font-medium text-foreground">아직 연결된 원고나 플롯이 없습니다.</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                복선을 심을 회차, 강화할 장면, 회수할 지점을 추가해보세요.
-              </p>
-            </div>
-          )}
-
-          {linkRows.length > 0 && (
-            <div className="grid gap-3 md:grid-cols-3">
-              {LINK_FLOW_STAGES.map((stage) => {
-                const stageLinks = linkRows.filter((link) => link.link_type === stage.type);
-                return (
-                  <div
-                    key={stage.type}
-                    className="min-h-32 rounded-lg border border-border bg-background p-3"
-                  >
-                    <div className="mb-3">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                          LINK_TYPE_BADGE[stage.type],
-                        )}
-                      >
-                        {stage.title}
-                      </span>
-                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                        {stage.description}
-                      </p>
-                    </div>
-
-                    {stageLinks.length === 0 ? (
-                      <p className="rounded-md bg-muted/30 px-3 py-3 text-[11px] text-muted-foreground">
-                        {stage.empty}
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {stageLinks.map((link) => (
-                          <div key={link.id} className="space-y-2">
-                            <ForeshadowLinkCard
-                              link={link}
-                              onEdit={(targetLink) => {
-                                setAdding(false);
-                                setEditingLinkId(targetLink.id);
-                              }}
-                              onDelete={handleDelete}
-                            />
-                            {editingLinkId === link.id && (
-                              <AddLinkForm
-                                workId={workId}
-                                initialLink={link}
-                                submitLabel="수정 완료"
-                                onConfirm={(linkType, episodeId, plotId, memo) =>
-                                  handleUpdate(link.id, linkType, episodeId, plotId, memo)
-                                }
-                                onCancel={() => setEditingLinkId(null)}
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {adding && (
-            <AddLinkForm
-              workId={workId}
-              submitLabel="추가"
-              onConfirm={handleAdd}
-              onCancel={() => setAdding(false)}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ForeshadowLinkCard({
-  link,
-  onEdit,
-  onDelete,
-}: {
-  link: LinkRow;
-  onEdit: (link: LinkRow) => void;
-  onDelete: (linkId: string) => Promise<void>;
-}) {
-  return (
-    <div
-      className={cn(
-        'rounded-md border-l-2 bg-muted/30 px-3 py-2',
-        LINK_TYPE_COLOR[link.link_type] ?? 'border-l-muted',
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-1.5">
-            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {getLinkTargetKind(link)}
-            </span>
-            {link.episode_sort != null && (
-              <span className="text-[10px] text-muted-foreground">
-                {link.episode_sort + 1}번째
-              </span>
-            )}
+      {/* 패널 본문 */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        {/* 라이프사이클 진행도 */}
+        <div className="mb-4 rounded-lg border border-border bg-background px-4 py-3">
+          <div className="mb-3 flex items-center justify-between text-xs">
+            <span className="font-medium text-foreground">진행도</span>
+            <span className="text-muted-foreground">심기 → 강화 → 회수</span>
           </div>
-          <p className="truncate text-xs font-medium text-foreground" title={formatLinkTarget(link)}>
-            {formatLinkTarget(link)}
-          </p>
-          {link.context_memo && (
-            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-              {link.context_memo}
+          <ForeshadowLifecycleStepper
+            plant={counts.plant}
+            resolve={counts.resolve}
+            final={counts.final_resolve}
+            status={status}
+          />
+        </div>
+
+        {linkRows.length === 0 && !adding && (
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center">
+            <p className="text-sm font-medium text-foreground">아직 연결된 원고나 플롯이 없습니다.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              복선을 심을 회차, 강화할 장면, 회수할 지점을 추가해보세요.
             </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onEdit(link)}
-            title="연결 수정"
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-          >
-            <Pencil size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={() => void onDelete(link.id)}
-            title="연결 삭제"
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
+          </div>
+        )}
+
+        {/* Vertical Connection Timeline */}
+        {linkRows.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {LINK_FLOW_STAGES.map((stage) => {
+              const stageLinks = linkRows.filter((link) => link.link_type === stage.type);
+              return (
+                <ForeshadowStageTimeline
+                  key={stage.type}
+                  stage={stage}
+                  links={stageLinks}
+                  workId={workId}
+                  editingLinkId={editingLinkId}
+                  onEdit={(linkId) => {
+                    setAdding(false);
+                    setEditingLinkId(linkId);
+                  }}
+                  onCancelEdit={() => setEditingLinkId(null)}
+                  onDelete={handleDelete}
+                  onUpdate={handleUpdate}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {adding && (
+          <AddLinkForm
+            workId={workId}
+            submitLabel="추가"
+            onConfirm={handleAdd}
+            onCancel={() => setAdding(false)}
+          />
+        )}
       </div>
-    </div>
+    </>
   );
 }
 
-function ForeshadowPanelResizeHandle({ onResize }: { onResize: (deltaPx: number) => void }) {
-  const lastYRef = useRef(0);
-
-  const beginDrag = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      lastYRef.current = e.clientY;
-      const el = e.currentTarget;
-      el.setPointerCapture(e.pointerId);
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'row-resize';
-
-      const updateDrag = (ev: PointerEvent) => {
-        const delta = ev.clientY - lastYRef.current;
-        lastYRef.current = ev.clientY;
-        onResize(delta);
-      };
-
-      const endDrag = () => {
-        el.removeEventListener('pointermove', updateDrag);
-        el.removeEventListener('pointerup', endDrag);
-        el.removeEventListener('pointercancel', endDrag);
-        document.body.style.userSelect = '';
-        document.body.style.cursor = '';
-      };
-
-      el.addEventListener('pointermove', updateDrag);
-      el.addEventListener('pointerup', endDrag);
-      el.addEventListener('pointercancel', endDrag);
-    },
-    [onResize],
-  );
+function ForeshadowStageTimeline({
+  stage,
+  links,
+  workId,
+  editingLinkId,
+  onEdit,
+  onCancelEdit,
+  onDelete,
+  onUpdate,
+}: {
+  stage: StageMeta;
+  links: LinkRow[];
+  workId: string;
+  editingLinkId: string | null;
+  onEdit: (linkId: string) => void;
+  onCancelEdit: () => void;
+  onDelete: (linkId: string) => Promise<void>;
+  onUpdate: (
+    linkId: string,
+    linkType: string,
+    episodeId: string | null,
+    plotId: string | null,
+    memo: string | null,
+  ) => Promise<void>;
+}) {
+  const isEmpty = links.length === 0;
 
   return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="복선 연결 패널 높이 조절"
-      onPointerDown={beginDrag}
-      className="group absolute -top-1 left-0 right-0 z-20 flex h-2 cursor-row-resize items-center justify-center"
-    >
-      <div className="h-0.5 w-10 rounded-full bg-transparent transition-colors group-hover:bg-primary/40 group-active:bg-primary/60" />
-    </div>
+    <section className="rounded-lg border border-border bg-background p-3">
+      {/* Stage 헤더 */}
+      <header className="mb-3 flex items-baseline gap-2">
+        <span className={cn('h-2 w-2 self-center rounded-full', stage.dotClass)} />
+        <h3 className="text-xs font-semibold text-foreground">{stage.title}</h3>
+        <span className="text-[10px] text-muted-foreground">({links.length})</span>
+        <p className="ml-auto text-[10px] text-muted-foreground">{stage.description}</p>
+      </header>
+
+      {isEmpty ? (
+        <p className="rounded-md bg-muted/30 px-3 py-2.5 text-[11px] text-muted-foreground">
+          {stage.empty}
+        </p>
+      ) : (
+        <ol className="relative">
+          {/* 좌측 vertical line — 첫 dot부터 마지막 dot까지 */}
+          <span
+            aria-hidden
+            className={cn('absolute left-1.75 top-2 bottom-2 w-px', stage.lineClass)}
+          />
+
+          {links.map((link) => {
+            const editing = editingLinkId === link.id;
+            return (
+              <li key={link.id} className="relative pl-6 pb-3 last:pb-0">
+                {/* dot */}
+                <span
+                  aria-hidden
+                  className={cn(
+                    'absolute left-0 top-2 h-3.5 w-3.5 rounded-full ring-2 ring-background',
+                    stage.dotClass,
+                  )}
+                />
+
+                {/* 카드 */}
+                <div className="rounded-md border border-border bg-card px-3 py-2 transition-colors hover:border-primary/30">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex items-center gap-1.5">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {getLinkTargetKind(link)}
+                        </span>
+                      </div>
+                      <p
+                        className="truncate text-xs font-medium text-foreground"
+                        title={formatLinkTarget(link)}
+                      >
+                        {formatLinkTarget(link)}
+                      </p>
+                      {link.context_memo && (
+                        <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+                          {link.context_memo}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onEdit(link.id)}
+                        title="연결 수정"
+                        className="rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void onDelete(link.id)}
+                        title="연결 삭제"
+                        className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {editing && (
+                  <AddLinkForm
+                    workId={workId}
+                    initialLink={link}
+                    submitLabel="수정 완료"
+                    onConfirm={(linkType, episodeId, plotId, memo) =>
+                      onUpdate(link.id, linkType, episodeId, plotId, memo)
+                    }
+                    onCancel={onCancelEdit}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }
 
@@ -807,7 +745,7 @@ function AddLinkForm({
       <div className="flex flex-col gap-3">
         <div>
           <p className="mb-2 text-xs font-medium text-foreground">복선 역할</p>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {LINK_FLOW_STAGES.map((stage) => {
               const selected = linkType === stage.type;
               return (
@@ -816,13 +754,16 @@ function AddLinkForm({
                   type="button"
                   onClick={() => setLinkType(stage.type)}
                   className={cn(
-                    'rounded-lg border px-3 py-2 text-left transition-colors',
+                    'flex flex-col rounded-md border px-3 py-2 text-left transition-colors',
                     selected
-                      ? `${LINK_TYPE_BADGE[stage.type]} shadow-sm`
-                      : 'border-border bg-muted/20 text-muted-foreground hover:bg-muted/40',
+                      ? 'border-primary/40 bg-primary/5 text-foreground shadow-sm'
+                      : 'border-border bg-muted/20 text-muted-foreground hover:border-primary/30 hover:bg-muted/40',
                   )}
                 >
-                  <span className="block text-xs font-medium">{stage.title}</span>
+                  <span className="flex items-center gap-1.5 text-xs font-medium">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', stage.dotClass)} />
+                    {stage.title}
+                  </span>
                   <span className="mt-0.5 block text-[10px] leading-relaxed opacity-80">
                     {stage.description}
                   </span>

@@ -22,6 +22,7 @@ variables:
 
 stages:
   - test
+  - release
   - deploy
 
 # ────────────────────────────────────────────────────────────
@@ -51,6 +52,127 @@ test-ai:
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_BRANCH =~ /^(develop|master)$/
+
+# ────────────────────────────────────────────────────────────
+# Release (Tag 기반 자동 배포 — Windows .exe + electron-updater 피드)
+#
+# 트리거: SemVer 패턴 tag push (예: v0.4.1) → master HEAD에 tag 권장
+# 산출물: Folio-${VERSION}-Setup.exe + .blockmap + latest.yml
+#         → EC2의 /opt/folio/releases/win/ 에 SCP
+#         → nginx가 정적 서빙 (electron-builder publish.url과 매칭)
+#
+# Wine Docker image 사용 — Linux Runner에서 Windows nsis 빌드.
+# 코드 사이닝 인증서 미보유라 publisher 검증 없이 빌드.
+#
+# 사전 1회 작업:
+#   1) EC2에서 sudo mkdir -p /opt/folio/releases/win && sudo chown -R $USER /opt/folio/releases
+#   2) GitLab Settings → Repository → Protected Tags 에 v* 추가 (master에만 tag 허용)
+# ────────────────────────────────────────────────────────────
+
+build-electron-windows:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  before_script:
+    # Runner는 shell executor (deploy-production과 동일). image: 디렉티브는 무시됨.
+    # ssh/scp는 EC2 runner host에 이미 설치되어 있다(deploy-production이 사용 중).
+    # Wine 빌드는 docker run으로 인라인 격리 — runner host에 Wine 설치 불필요.
+    - export PATH="/home/gitlab-runner/.local/bin:$PATH"
+    # SSH_PRIVATE_KEY가 빈 값이면 GitLab CI Variables가 Protected라 tag에서 노출 안 됨.
+    # 명확한 에러로 즉시 fail — chmod 단계의 모호한 missing operand 회피.
+    - |
+      if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+        echo "[FATAL] SSH_PRIVATE_KEY 변수가 비어있습니다." >&2
+        echo "        GitLab → Settings → CI/CD → Variables 에서" >&2
+        echo "        SSH_PRIVATE_KEY/EC2_HOST/EC2_USER 의 'Protect variable' 체크 해제 또는" >&2
+        echo "        Settings → Repository → Protected tags 에 v* 추가가 필요합니다." >&2
+        exit 1
+      fi
+    - chmod 400 $SSH_PRIVATE_KEY
+    # 워크스페이스 권한은 preflight-cleanup job(stage: .pre)에서 이미 회수됨.
+  script:
+    - |
+      set -Eeuo pipefail
+      VERSION="${CI_COMMIT_TAG#v}"
+      echo "[release] tag=${CI_COMMIT_TAG} version=${VERSION}"
+
+      # Wine + Mono + Node + pnpm이 사전 설치된 공식 이미지로 격리 빌드.
+      # Runner host에는 docker만 있으면 됨 (이미 deploy-production이 docker 사용 중).
+      # workspace를 마운트하고 frontend 디렉토리에서 빌드 실행.
+      #
+      # --user 호스트 UID:GID — 컨테이너 안에서 root로 실행되어 호스트에 root 소유
+      # 파일을 남기는 문제 차단. 다음 job이 워크스페이스 정리 시 Permission denied 회피.
+      # HOME=/tmp — non-root 사용자라 컨테이너 내부에 home dir 없을 수 있음, npm/pnpm
+      # cache 경로를 임시 디렉토리로.
+      # 컨테이너 환경 사전 검증된 사실:
+      #   - 이미지에 pnpm 9.4.0 + corepack 0.31.0 + Wine 사전 설치됨
+      #   - non-root(--user) 실행 시 /usr/local/bin 쓰기 거부됨 → corepack enable 실패
+      #   - COREPACK_HOME 을 user-writable 경로로 명시 → user-local 활성화 성공
+      #   - corepack prepare --activate 후에도 which pnpm은 여전히 9.4 system 경로 →
+      #     반드시 'corepack pnpm ...' 으로 호출해야 prepare된 10.33.0이 사용됨
+      #   - Wine은 보안상 world-writable($HOME=/tmp 같은 sticky-bit dir) 거부 →
+      #     WINEPREFIX를 user 소유 디렉토리(workspace 마운트는 호스트 gitlab-runner uid 소유)
+      #     로 명시. HOME=/tmp는 npm/pnpm/corepack에는 무해하므로 건드리지 않는다.
+      RUNNER_UID=$(id -u)
+      RUNNER_GID=$(id -g)
+      # Vite는 빌드 시점의 process.env.VITE_*를 코드에 정적으로 박는다.
+      # 누락되면 코드 default(localhost:8080)로 fallback → 데스크탑 앱이 본인 PC
+      # 로컬호스트로 호출 → 연결 실패 + 백엔드 로그 0건. deploy-production의
+      # web/landing 빌드와 동일한 prod URL을 컨테이너에 주입.
+      docker run --rm \
+        --user "${RUNNER_UID}:${RUNNER_GID}" \
+        -v "$CI_PROJECT_DIR":/workspace \
+        -w /workspace/frontend \
+        -e HOME=/tmp \
+        -e COREPACK_HOME=/tmp/.corepack \
+        -e WINEPREFIX=/workspace/.wine \
+        -e ELECTRON_CACHE=/workspace/.cache/electron \
+        -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
+        -e VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+        -e VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
+        -e VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
+        -e VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
+        electronuserland/builder:wine \
+        bash -c "
+          set -Eeuo pipefail
+          # pnpm 10.33.0 user-local 활성화 (system path 안 건드림)
+          corepack prepare pnpm@10.33.0 --activate
+
+          # tag가 source of truth — package.json version 강제 sync (commit-back 안 함)
+          sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/' package.json
+          grep '\"version\"' package.json
+
+          # corepack 으로 호출해야 prepare된 pnpm 10.33.0이 사용됨
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm build:win
+        "
+
+      # 산출물 검증 — 3개 파일 모두 존재해야 함
+      cd "$CI_PROJECT_DIR/frontend/release"
+      EXE="Folio-${VERSION}-Setup.exe"
+      BLOCKMAP="${EXE}.blockmap"
+      YML="latest.yml"
+      for f in "$EXE" "$BLOCKMAP" "$YML"; do
+        [ -f "$f" ] || { echo "[FATAL] $f missing in release/"; ls -la; exit 1; }
+      done
+      echo "[release] artifacts:"
+      ls -la "$EXE" "$BLOCKMAP" "$YML"
+
+      # EC2 디렉토리 보장 + 권한 (idempotent — 매번 안전)
+      ssh -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY $EC2_USER@$EC2_HOST \
+        "sudo mkdir -p /opt/folio/releases/win && sudo chown -R $EC2_USER:$EC2_USER /opt/folio/releases"
+
+      # 업로드 순서: .exe + .blockmap 먼저, latest.yml 마지막
+      # → electron-updater가 latest.yml을 본 시점에 .exe가 이미 존재해 sha512 검증 race 차단
+      scp -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY \
+        "$EXE" "$BLOCKMAP" \
+        $EC2_USER@$EC2_HOST:/opt/folio/releases/win/
+      scp -o StrictHostKeyChecking=no -i $SSH_PRIVATE_KEY \
+        "$YML" \
+        $EC2_USER@$EC2_HOST:/opt/folio/releases/win/
+
+      echo "[release] uploaded v${VERSION} to /opt/folio/releases/win/"
+      echo "[release] verify: https://folio-editor.co.kr/releases/win/latest.yml"
 
 # ────────────────────────────────────────────────────────────
 # Deploy (SSH로 EC2 접속 → 직접 빌드 + Blue/Green 배포)
@@ -97,13 +219,20 @@ deploy-production:
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
         docker build -f infra/dockerfiles/Dockerfile.celery-worker -t folio-celery-worker:$CI_COMMIT_SHORT_SHA -t folio-celery-worker:latest ./ai
+        # VITE_*는 모두 CI hardcode (도플러 미잔류 — 옵션 B). public OAuth Client ID는 빌드 결과물에 박혀도 무관.
         docker build -f infra/dockerfiles/Dockerfile.web \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
-          --build-arg VITE_GOOGLE_CLIENT_ID=\${VITE_GOOGLE_CLIENT_ID} \
-          --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=\${VITE_GOOGLE_DESKTOP_CLIENT_ID} \
+          --build-arg VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
+          --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
-        docker build -f infra/dockerfiles/Dockerfile.landing -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
+        # 랜딩 빌드: VITE_API_URL + VITE_EDITOR_URL 추가 (이전 누락 정정)
+        docker build -f infra/dockerfiles/Dockerfile.landing \
+          --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+          --build-arg VITE_EDITOR_URL=https://folio-editor.co.kr/editor \
+          --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
+          -t folio-landing:$CI_COMMIT_SHORT_SHA -t folio-landing:latest .
         cd /opt/folio/S14P31F203/infra/prod
 
         # 3.1 upstream-active.conf 초기화 (없으면 기본값 생성)

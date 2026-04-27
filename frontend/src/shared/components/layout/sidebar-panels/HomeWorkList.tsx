@@ -1,27 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { cn } from '../../../lib/cn';
+import { useDragZoneStore } from '../../../lib/dragZoneStore';
+import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
+import { SidebarSortPicker } from './SidebarSortPicker';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../../ui/context-menu';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 
 interface WorkRow {
   id: string;
   title: string;
+  sort_order?: number | null;
 }
 
 interface HomeWorkListProps {
@@ -43,10 +52,6 @@ export function HomeWorkList({
   onNewWork,
 }: HomeWorkListProps) {
   const writerId = useWriterId();
-  const { reorderItems } = useLocalWrite();
-  const sensors = useSensors(
-    useSensor(HandleOnlyPointerSensor),
-  );
   const [showInput, setShowInput] = useState(false);
   const [title, setTitle] = useState('');
 
@@ -68,64 +73,58 @@ export function HomeWorkList({
     if (e.key === 'Escape') handleCancel();
   };
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['home-work'] ?? 'manual');
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const trimmed = searchTerm.trim();
   const sql = trimmed
-    ? `SELECT id, title FROM work
+    ? `SELECT id, title, sort_order FROM work
        WHERE writer_id = ? AND status != 'trashed' AND title LIKE ? ESCAPE '\\'
-       ORDER BY sort_order ASC, created_at ASC`
-    : `SELECT id, title FROM work
+       ${orderBy}`
+    : `SELECT id, title, sort_order FROM work
        WHERE writer_id = ? AND status != 'trashed'
-       ORDER BY sort_order ASC, created_at ASC`;
+       ${orderBy}`;
   const params = trimmed ? [writerId, `%${escapeLike(trimmed)}%`] : [writerId];
-  const { data: works = [] } = useQuery<WorkRow>(sql, params);
+  const { data: rawWorks = [] } = useQuery<WorkRow>(sql, params);
+  // work는 writer_id 기준 평탄 — 모든 작품이 같은 그룹
+  const works = useOptimisticRows(rawWorks, {
+    docType: 'work',
+    matches: () => true,
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {showInput ? (
-          <input
-            autoFocus
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleCancel}
-            placeholder="작품 제목을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowInput(true)}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 작품</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {showInput ? (
+            <input
+              autoFocus
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={handleCancel}
+              placeholder="작품 제목을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowInput(true)}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 작품</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="home-work" />
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
-      {works.length === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : '작품이 없습니다.'}
-        </p>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(event: DragEndEvent) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = works.findIndex((w) => w.id === active.id);
-            const newIndex = works.findIndex((w) => w.id === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-            const reordered = arrayMove(works, oldIndex, newIndex);
-            void reorderItems(
-              'work',
-              reordered.map((w, i) => ({ id: w.id, sortOrder: i * 1000 })),
-            );
-          }}
-        >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
+        {works.length === 0 ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : '작품이 없습니다.'}
+          </p>
+        ) : (
           <SortableContext items={works.map((w) => w.id)} strategy={verticalListSortingStrategy}>
             {works.map((work) => (
               <SortableWorkItem
@@ -136,10 +135,24 @@ export function HomeWorkList({
               />
             ))}
           </SortableContext>
-        </DndContext>
-      )}
+        )}
+        <WorkRootEndDropZone lastItemId={works[works.length - 1]?.id ?? null} />
       </div>
     </div>
+  );
+}
+
+function WorkRootEndDropZone({ lastItemId }: { lastItemId: string | null }) {
+  const { setNodeRef } = useDroppable({
+    id: 'work-tree-root-end',
+    data: { type: 'tree-root-end', docType: 'work', lastItemId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="mt-1 min-h-15 flex-1"
+      aria-label="작품 목록 끝으로 이동"
+    />
   );
 }
 
@@ -152,37 +165,165 @@ function SortableWorkItem({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: work.id });
-  const style = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['home-work'] ?? 'manual') === 'manual';
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useSortable({
+      id: work.id,
+      disabled: !dragEnabled,
+      data: {
+        type: 'tree-node',
+        docType: 'work',
+        docId: work.id,
+        depth: 0,
+        parentId: null,
+        title: work.title,
+        sortOrder: work.sort_order ?? 0,
+        rowSnapshot: {
+          id: work.id,
+          title: work.title,
+          sort_order: work.sort_order ?? 0,
+        },
+      },
+    });
+  const style = { opacity: isDragging ? 0 : 1 };
+  const zoneInfo = useDragZoneStore((s) => (s.overId === work.id ? s.zone : null));
   return (
-    <div ref={setNodeRef} style={style} className="group flex items-center">
-      <span
-        {...listeners}
-        data-dnd-handle
-        className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        <GripVertical size={12} className="text-muted-foreground" />
-      </span>
-      <button
-        type="button"
-        onClick={onSelect}
-        className={cn(
-          'flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-          selected
-            ? 'bg-primary/5 font-medium text-primary'
-            : 'text-sidebar-foreground',
-        )}
-      >
-        {work.title}
-      </button>
+    <div ref={setNodeRef} style={style} className="relative">
+      {zoneInfo === 'before' && (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
+      )}
+      <WorkItem
+        work={work}
+        selected={selected}
+        onSelect={onSelect}
+        dragAttributes={attributes}
+        dragListeners={listeners}
+      />
+      {zoneInfo === 'after' && (
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary z-10" />
+      )}
     </div>
+  );
+}
+
+function WorkItem({
+  work,
+  selected,
+  onSelect,
+  dragAttributes,
+  dragListeners,
+}: {
+  work: WorkRow;
+  selected: boolean;
+  onSelect: () => void;
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: SyntheticListenerMap;
+}) {
+  const { updateWork, deleteWork } = useLocalWrite();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(work.title);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(work.title);
+  }, [editing, work.title]);
+
+  const commit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === work.title) {
+      setDraft(work.title);
+      return;
+    }
+    void updateWork(work.id, { title: next.slice(0, 200) });
+  };
+
+  const cancel = () => {
+    setDraft(work.title);
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteWork(work.id);
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value.replace(/\n/g, ''))}
+        onBlur={commit}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={handleKeyDown}
+        maxLength={200}
+        className="w-full rounded-md border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none ring-1 ring-ring"
+      />
+    );
+  }
+
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...dragAttributes}
+            {...dragListeners}
+            className="group flex items-center"
+          >
+            <button
+              type="button"
+              onClick={onSelect}
+              className={cn(
+                'flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                selected
+                  ? 'bg-secondary font-medium text-primary'
+                  : 'text-sidebar-foreground',
+              )}
+            >
+              {work.title}
+            </button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => setEditing(true)}>
+            <Pencil size={12} /> 이름 변경
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+            <Trash2 size={12} /> 휴지통으로 이동
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {deleteOpen && (
+        <DeleteConfirmDialog
+          title="작품 휴지통 이동"
+          message={`'${work.title}'을(를) 휴지통으로 이동하시겠습니까?`}
+          warning="30일 후 자동으로 영구 삭제됩니다. 휴지통에서 복원할 수 있습니다."
+          confirmLabel="휴지통으로 이동"
+          busyLabel="이동 중…"
+          busy={deleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
+    </>
   );
 }
 

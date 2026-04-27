@@ -3,19 +3,11 @@ import { useQuery } from '@powersync/react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Typography from '@tiptap/extension-typography';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import { useDroppable } from '@dnd-kit/core';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import {
   AlertTriangle,
@@ -27,7 +19,6 @@ import {
   ArrowUpRight,
   ClipboardCopy,
   Clock,
-  Eye,
   FileStack,
   GripVertical,
   History,
@@ -35,7 +26,6 @@ import {
   Lightbulb,
   Loader2,
   OctagonAlert,
-  Pencil,
   Search,
   Send,
   Sparkles,
@@ -45,6 +35,7 @@ import {
 } from 'lucide-react';
 import { ResizeHandle } from './ResizeHandle';
 import { AuxDocViewer } from './AuxDocViewer';
+import { BreadcrumbTitle } from './BreadcrumbTitle';
 import { ContentEditor } from '../editor/ContentEditor';
 import { Select } from '../ui/Select';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
@@ -93,7 +84,7 @@ function AiErrorBlock({ message }: { message: string }) {
 import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
 import { useWalletStore } from '../../stores/walletStore';
-import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection } from '../../types/workspace';
+import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection, MainDoc } from '../../types/workspace';
 import { AUX_DOC_LABELS, currentDocToAuxItem } from '../../types/workspace';
 import { TAG_LIST, TAG_COLOR, TAG_OPTIONS, TAG_DOT_COLOR } from '../../features/idea-archive/ideaConstants';
 import { extractText, textToTiptap, timeAgo } from '../../features/idea-archive/ideaUtils';
@@ -112,8 +103,8 @@ interface RightPanelsProps {
   activeTab: RightPanelTab;
   onTabChange: (tab: RightPanelTab) => void;
   selectedWorkId: string | null;
-  mainSection: import('../../types/workspace').WorkspaceSection | null;
-  mainItemId: string | null;
+  /** 메인 패널 문서 — lockedReadOnly 판정 + AI 탭 컨텍스트 */
+  mainDoc: MainDoc | null;
 }
 
 const TABS: { key: RightPanelTab; icon: typeof FileStack; label: string }[] = [
@@ -135,13 +126,15 @@ export function RightPanels({
   activeTab,
   onTabChange,
   selectedWorkId,
-  mainSection,
-  mainItemId,
+  mainDoc,
 }: RightPanelsProps) {
+  // mainDoc 객체에서 sub 필드 분리 — AI 탭 컨텍스트 + isSameAsMain 시각 표시 용도
+  const mainSection = mainDoc?.section ?? null;
+  const mainItemId = mainDoc?.itemId ?? null;
   return (
     <div
       style={{ width }}
-      className="relative flex shrink-0 flex-col overflow-hidden border-l border-border"
+      className="relative flex shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
     >
       <ResizeHandle
         side="left"
@@ -149,8 +142,15 @@ export function RightPanels({
         ariaLabel="우측 패널 너비 조절"
       />
 
-      {/* 탭 헤더 */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+      {/* 상단 헤더 — 활성 탭 라벨 (좌측 사이드바/메인 탭바와 동일한 h-10) */}
+      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
+        <span className="truncate text-sm font-semibold text-sidebar-foreground">
+          {TABS.find((t) => t.key === activeTab)?.label}
+        </span>
+      </div>
+
+      {/* 아이콘 탭 행 — 검색창 영역(h-12)과 동일 높이 */}
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
         {TABS.map(({ key, icon: Icon, label }) => (
           <button
             key={key}
@@ -162,15 +162,12 @@ export function RightPanels({
               'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
               activeTab === key
                 ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
             )}
           >
             <Icon size={15} strokeWidth={1.75} />
           </button>
         ))}
-        <span className="ml-1 truncate text-xs text-muted-foreground">
-          {TABS.find((t) => t.key === activeTab)?.label}
-        </span>
       </div>
 
       {/* 탭 콘텐츠 */}
@@ -186,6 +183,7 @@ export function RightPanels({
             isDraggingDoc={isDraggingDoc}
             mainSection={mainSection}
             mainItemId={mainItemId}
+            selectedWorkId={selectedWorkId}
           />
         )}
         {activeTab === 'idea' && (
@@ -204,7 +202,7 @@ export function RightPanels({
   );
 }
 
-/* ── Docs 탭 (기존 문서 뷰어) ── */
+/* ── Docs 탭 (서브 스테이지 — 핀 슬롯) ── */
 
 function DocsTabContent({
   panels,
@@ -216,6 +214,7 @@ function DocsTabContent({
   isDraggingDoc,
   mainSection,
   mainItemId,
+  selectedWorkId,
 }: {
   panels: AuxPanelItem[];
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
@@ -226,13 +225,22 @@ function DocsTabContent({
   isDraggingDoc: boolean;
   mainSection: import('../../types/workspace').WorkspaceSection | null;
   mainItemId: string | null;
+  selectedWorkId: string | null;
 }) {
+  void isDraggingDoc; // 부모 RightPanels에서 외부 dragOver 감지용
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+
+  // 잠금 정책 폐지 — WorldNoteInlineEditor가 외부 변경을 자동 동기화하므로
+  // 메인/우측 패널 어디든 같은 노드를 동시 표시 + 즉시 반영. 동시 타이핑 한계는 collaborative
+  // 도입 전까지 수용.
+
+  // dnd-kit cross-component drop — 트리 노드를 우측 사이드바로 끌어왔을 때
+  const { setNodeRef: setAuxDropRef, isOver: isAuxOver } = useDroppable({
+    id: 'aux-pinned-area',
+    data: { type: 'aux-area' },
+  });
 
   const calcDropIndex = (clientY: number): number => {
     if (!listRef.current) return panels.length;
@@ -275,18 +283,13 @@ function DocsTabContent({
     } catch { /* invalid payload */ }
   };
 
-  const handleSortEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = panels.findIndex((p) => p.id === active.id);
-    const newIdx = panels.findIndex((p) => p.id === over.id);
-    if (oldIdx === -1 || newIdx === -1) return;
-    onReorderPanels(arrayMove(panels, oldIdx, newIdx));
-  };
-
   return (
     <div
-      className={cn('flex min-h-0 flex-1 flex-col', isDragOver && 'bg-primary/5')}
+      ref={setAuxDropRef}
+      className={cn(
+        'flex min-h-0 flex-1 flex-col',
+        (isDragOver || isAuxOver) && 'bg-primary/5',
+      )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -295,44 +298,39 @@ function DocsTabContent({
         <div className="flex flex-1 items-center justify-center p-4">
           <div className={cn(
             'rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
-            isDragOver ? 'border-primary bg-primary/10' : 'border-primary/30',
+            (isDragOver || isAuxOver) ? 'border-primary bg-primary/10' : 'border-primary/30',
           )}>
             <p className="text-sm font-medium text-primary/70">여기에 문서를 놓으세요</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              사이드바에서 드래그하여 문서를 핀할 수 있습니다
+              더블 클릭 또는 드래그로 우측 핀 추가
             </p>
           </div>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-2">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleSortEnd}
+          <SortableContext
+            items={panels.map((p) => p.id)}
+            strategy={verticalListSortingStrategy}
           >
-            <SortableContext
-              items={panels.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div ref={listRef} className="flex flex-col gap-1.5">
-                {panels.map((panel, i) => (
-                  <div key={panel.id}>
-                    {isDragOver && dropIndex === i && <DropIndicatorLine />}
-                    <SortableAuxPanel
-                      panel={panel}
-                      onRemove={() => onRemovePanel(panel.id)}
-                      onToggleCollapse={() => onToggleCollapse(panel.id)}
-                      onOpenInMain={() => onOpenInMain(panel)}
-                      onAddPanel={onAddPanel}
-                      mainSection={mainSection}
-                      mainItemId={mainItemId}
-                    />
-                  </div>
-                ))}
-                {isDragOver && dropIndex === panels.length && <DropIndicatorLine />}
-              </div>
-            </SortableContext>
-          </DndContext>
+            <div ref={listRef} className="flex flex-col gap-1.5">
+              {panels.map((panel, i) => (
+                <div key={panel.id}>
+                  {isDragOver && dropIndex === i && <DropIndicatorLine />}
+                  <SortableAuxPanel
+                    panel={panel}
+                    onRemove={() => onRemovePanel(panel.id)}
+                    onToggleCollapse={() => onToggleCollapse(panel.id)}
+                    onOpenInMain={() => onOpenInMain(panel)}
+                    onAddPanel={onAddPanel}
+                    mainSection={mainSection}
+                    mainItemId={mainItemId}
+                    selectedWorkId={selectedWorkId}
+                  />
+                </div>
+              ))}
+              {isDragOver && dropIndex === panels.length && <DropIndicatorLine />}
+            </div>
+          </SortableContext>
         </div>
       )}
     </div>
@@ -741,9 +739,6 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
 
   const handleStop = () => stopGeneration();
 
-  const history = useAiSessionStore((s) => s.history);
-  const viewHistory = useAiSessionStore((s) => s.viewHistory);
-  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
   const startReview = useAiSessionStore((s) => s.startReview);
   const finishReview = useAiSessionStore((s) => s.finishReview);
   const failReview = useAiSessionStore((s) => s.failReview);
@@ -785,7 +780,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         targetEpisode={targetEpisode}
         isHistoryView
         onStop={handleStop}
-        onBack={() => setScreen('menu')}
+        onBack={() => setScreen('draft-input')}
       />
     );
   }
@@ -854,12 +849,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   // 메뉴 화면
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-      <p className="text-xs font-medium text-muted-foreground">AI 도구</p>
-
       <button
         type="button"
         onClick={() => setScreen('draft-input')}
-        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <Sparkles size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -873,7 +866,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('review-input')}
-        className="flex items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <Search size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -883,54 +876,6 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           </p>
         </div>
       </button>
-
-      {/* 히스토리 목록 */}
-      {history.length > 0 && (
-        <div className="mt-2">
-          <div className="flex items-center gap-1.5 px-1 pb-1.5">
-            <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
-            <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
-            <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            {history.map((entry) => (
-              <div
-                key={entry.id}
-                className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
-              >
-                <button
-                  type="button"
-                  onClick={() => viewHistory(entry.id)}
-                  className="flex min-w-0 flex-1 flex-col text-left"
-                >
-                  <span className="truncate text-xs font-medium text-foreground">
-                    {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
-                  </span>
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
-                  </span>
-                  <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
-                    <span className="flex items-center gap-0.5">
-                      <Clock size={9} />
-                      {formatHistoryTime(entry.createdAt)}
-                    </span>
-                    <span>{entry.result.length.toLocaleString()}자</span>
-                    <span className="uppercase">{entry.model}</span>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteHistory(entry.id)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                  title="삭제"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -962,6 +907,10 @@ function DraftInputScreen({
   onGenerate: () => void;
   onBack: () => void;
 }) {
+  const history = useAiSessionStore((s) => s.history);
+  const viewHistory = useAiSessionStore((s) => s.viewHistory);
+  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
+
   const canGenerate = isEpisode && episode != null && storyline.trim().length > 0 && !isStreaming;
 
   return (
@@ -1046,9 +995,57 @@ function DraftInputScreen({
         </div>
 
         {isStreaming && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
+          <p className="text-xs text-warning">
             현재 초안이 생성 중입니다. 중단 후 새로운 생성을 시작할 수 있습니다.
           </p>
+        )}
+
+        {/* 히스토리 목록 */}
+        {history.length > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5">
+              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+              <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
+              <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {history.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+                >
+                  <button
+                    type="button"
+                    onClick={() => viewHistory(entry.id)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
+                    </span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {formatHistoryTime(entry.createdAt)}
+                      </span>
+                      <span>{entry.result.length.toLocaleString()}자</span>
+                      <span className="uppercase">{entry.model}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteHistory(entry.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    title="삭제"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -1292,7 +1289,7 @@ function ReviewInputScreen({
                       </span>
                       <span className={cn(
                         'font-medium',
-                        entry.result.score >= 80 ? 'text-emerald-600' : entry.result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                        entry.result.score >= 80 ? 'text-success' : entry.result.score >= 50 ? 'text-warning' : 'text-danger',
                       )}>
                         {entry.result.score}점
                       </span>
@@ -1326,9 +1323,9 @@ function circledNumber(n: number): string {
 }
 
 const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
-  critical: { bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800', icon: OctagonAlert, label: '심각' },
-  warning: { bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800', icon: AlertTriangle, label: '주의' },
-  info: { bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800', icon: Info, label: '참고' },
+  critical: { bg: 'bg-danger-soft border-danger/30', icon: OctagonAlert, label: '심각' },
+  warning: { bg: 'bg-warning-soft border-warning/30', icon: AlertTriangle, label: '주의' },
+  info: { bg: 'bg-info-soft border-info/30', icon: Info, label: '참고' },
 };
 
 function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
@@ -1407,7 +1404,7 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
                 <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
                 <span className={cn(
                   'text-lg font-bold',
-                  result.score >= 80 ? 'text-emerald-600' : result.score >= 50 ? 'text-amber-600' : 'text-red-600',
+                  result.score >= 80 ? 'text-success' : result.score >= 50 ? 'text-warning' : 'text-danger',
                 )}>
                   {result.score}
                   <span className="text-xs font-normal text-muted-foreground">/100</span>
@@ -1417,7 +1414,7 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
             </div>
 
             {result.issues.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-3 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+              <div className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-3 text-sm text-success">
                 <Check size={16} strokeWidth={2} />
                 검수에서 발견된 문제가 없습니다.
               </div>
@@ -1445,9 +1442,9 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
                       <div className="mb-1.5 flex items-center gap-1.5">
                         <span className={cn(
                           'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-                          issue.severity === 'critical' && 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200',
-                          issue.severity === 'warning' && 'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200',
-                          issue.severity === 'info' && 'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200',
+                          issue.severity === 'critical' && 'bg-danger text-danger-foreground',
+                          issue.severity === 'warning' && 'bg-warning text-warning-foreground',
+                          issue.severity === 'info' && 'bg-info text-info-foreground',
                         )}>
                           {circledNumber(i + 1)}
                         </span>
@@ -1534,6 +1531,7 @@ function SortableAuxPanel({
   onAddPanel,
   mainSection,
   mainItemId,
+  selectedWorkId,
 }: {
   panel: AuxPanelItem;
   onRemove: () => void;
@@ -1542,9 +1540,10 @@ function SortableAuxPanel({
   onAddPanel: (item: Omit<AuxPanelItem, 'id' | 'collapsed'>, index?: number) => void;
   mainSection: WorkspaceSection | null;
   mainItemId: string | null;
+  selectedWorkId: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: panel.id });
+    useSortable({ id: panel.id, data: { type: 'panel' } });
   const style = {
     transform: transform
       ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
@@ -1554,22 +1553,13 @@ function SortableAuxPanel({
   };
 
   const [contentHeight, setContentHeight] = useState(PANEL_DEFAULT_H);
-  const [editMode, setEditMode] = useState(false);
-  const lockedReadOnly = isSameAsMain(panel, mainSection, mainItemId);
-  const showEditor = editMode && !lockedReadOnly;
 
-  // 패널 접기 시 편집 모드 해제
-  const handleToggleCollapse = () => {
-    if (!panel.collapsed) setEditMode(false);
-    onToggleCollapse();
-  };
+  // 메인과 동일 문서면 시각 표시 (badge) 용도로만 — 편집은 InlineEditor가 외부 sync로 처리
+  const sameAsMain = isSameAsMain(panel, mainSection, mainItemId);
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} data-panel-id={panel.id}>
-      <div className={cn(
-        'rounded-md border bg-background',
-        showEditor ? 'border-primary/30' : 'border-border',
-      )}>
+      <div className="rounded-md border border-border bg-background">
         <div className="flex items-center gap-1 border-b border-border/50 px-2 py-1.5">
           <span
             {...listeners}
@@ -1579,46 +1569,39 @@ function SortableAuxPanel({
           </span>
           <button
             type="button"
-            onClick={handleToggleCollapse}
+            onClick={onToggleCollapse}
             className="text-muted-foreground hover:text-foreground"
           >
             {panel.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
           </button>
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-            {panel.title || '(제목 없음)'}
-          </span>
+          <BreadcrumbTitle
+            className="min-w-0 flex-1 text-xs"
+            items={
+              panel.title
+                ? panel.title.split(' / ').map((s) => s.trim())
+                : ['(제목 없음)']
+            }
+          />
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {AUX_DOC_LABELS[panel.docType]}
           </span>
-          {lockedReadOnly ? (
-            <span className="shrink-0 text-[9px] text-amber-500">읽기 전용</span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditMode((v) => !v)}
-              title={editMode ? '보기 모드' : '편집 모드'}
-              className={cn(
-                'shrink-0 rounded p-0.5 transition-colors',
-                editMode
-                  ? 'text-primary hover:bg-primary/10'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-              aria-label={editMode ? '보기 모드로 전환' : '편집 모드로 전환'}
+          {sameAsMain && (
+            <span
+              className="shrink-0 text-[9px] text-muted-foreground"
+              title="메인에서도 편집 중 — 양쪽 즉시 동기화"
             >
-              {editMode ? <Eye size={12} /> : <Pencil size={12} />}
-            </button>
+              메인에서 편집 중
+            </span>
           )}
-          {panel.docType !== 'plot' && (
-            <button
-              type="button"
-              onClick={onOpenInMain}
-              title="본문으로 열기"
-              className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-              aria-label="본문으로 열기"
-            >
-              <ArrowUpRight size={12} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onOpenInMain}
+            title="본문으로 열기"
+            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            aria-label="본문으로 열기"
+          >
+            <ArrowUpRight size={12} />
+          </button>
           <button
             type="button"
             onClick={onRemove}
@@ -1633,20 +1616,15 @@ function SortableAuxPanel({
           <>
             <div
               style={{ height: contentHeight }}
-              className={showEditor ? 'flex flex-col' : 'overflow-y-auto'}
+              className="overflow-y-auto"
             >
-              {showEditor ? (
-                <AuxDocEditable
-                  docType={panel.docType}
-                  docId={panel.docId}
-                />
-              ) : (
-                <AuxDocViewer
-                  docType={panel.docType}
-                  docId={panel.docId}
-                  onAddPanel={onAddPanel}
-                />
-              )}
+              <AuxDocViewer
+                docType={panel.docType}
+                docId={panel.docId}
+                workId={selectedWorkId ?? undefined}
+                editable={true}
+                onAddPanel={onAddPanel}
+              />
             </div>
             <VerticalResizeHandle
               onResize={(delta) =>
@@ -1661,65 +1639,6 @@ function SortableAuxPanel({
     </div>
   );
 }
-
-/* ── 편집 가능 패널 본문 ── */
-
-function AuxDocEditable({ docType, docId }: { docType: AuxDocType; docId: string }) {
-  const { data: rows = [] } = useQuery<{ content: string | null }>(
-    DOC_CONTENT_QUERIES[docType],
-    [docId],
-  );
-  const {
-    updateEpisode, updateWorldNoteContent, updatePlanNoteContent,
-    updateCharacterNoteContent, updatePlot, updateForeshadow,
-  } = useLocalWrite();
-
-  const loaded = rows.length > 0;
-  const content = rows[0]?.content ?? null;
-
-  const handleUpdate = (json: string) => {
-    switch (docType) {
-      case 'episode':        return void updateEpisode(docId, { content: json });
-      case 'world_note':     return void updateWorldNoteContent(docId, json);
-      case 'plan_note':      return void updatePlanNoteContent(docId, json);
-      case 'character_note': return void updateCharacterNoteContent(docId, json);
-      case 'plot':           return void updatePlot(docId, { content: json });
-      case 'foreshadow':     return void updateForeshadow(docId, { content: json });
-    }
-  };
-
-  // useQuery 로딩 완료 후에만 ContentEditor를 마운트 (initialContent가 확정된 상태)
-  if (!loaded) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
-        불러오는 중…
-      </div>
-    );
-  }
-
-  return (
-    <ContentEditor
-      key={docId}
-      itemId={docId}
-      initialContent={content}
-      placeholder="내용을 입력하세요…"
-      onUpdate={handleUpdate}
-      debounceMs={1500}
-      showStatusBar={false}
-      compact
-    />
-  );
-}
-
-const DOC_CONTENT_QUERIES: Record<AuxDocType, string> = {
-  episode: 'SELECT content FROM episode WHERE id = ?',
-  world_note: 'SELECT content FROM world_note WHERE id = ?',
-  plan_note: 'SELECT content FROM plan_note WHERE id = ?',
-  character_note: 'SELECT content FROM character_note WHERE id = ?',
-  plot: 'SELECT content FROM plot WHERE id = ?',
-  character: 'SELECT content FROM character WHERE id = ?',
-  foreshadow: 'SELECT content FROM foreshadow WHERE id = ?',
-};
 
 /* ── 수직 리사이즈 핸들 (패널 하단) ── */
 

@@ -1,48 +1,64 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
-import { GripVertical, Plus } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import { HandleOnlyPointerSensor } from '../../../lib/HandleOnlyPointerSensor';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
+import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
-import { setupDragTransfer } from '../../../lib/dragTransfer';
+import { useDragZoneStore } from '../../../lib/dragZoneStore';
+import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import {
+  buildOrderBy,
+  useSortPreferenceStore,
+} from '../../../stores/sortPreferenceStore';
+import {
+  buildInClause,
+  useFilterPreferenceStore,
+  EMPTY_FILTER,
+} from '../../../stores/filterPreferenceStore';
+import type { ClickIntent } from '../../../types/workspace';
+import { SidebarSortPicker } from './SidebarSortPicker';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../../ui/context-menu';
+import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 
 interface EpisodeRow {
   id: string;
   title: string;
   status: string | null;
   word_count: number;
+  work_id?: string;
+  sort_order?: number | null;
 }
 
 interface EpisodeTreeListProps {
   workId: string;
   searchTerm: string;
   selectedItemId: string | null;
-  onItemSelect: (id: string | null) => void;
+  onItemSelect: (id: string | null, intent?: ClickIntent) => void;
 }
 
 const STATUS_DOT: Record<string, string> = {
-  '미작성': 'bg-gray-400',
-  '초고': 'bg-yellow-500',
-  '퇴고': 'bg-blue-500',
-  '완성': 'bg-green-500',
+  '미작성': 'bg-muted-foreground/40',
+  '초고': 'bg-warning',
+  '퇴고': 'bg-info',
+  '완성': 'bg-success',
 };
 
 /**
- * 원고 플랫 리스트.
+ * 원고 평탄 리스트.
  *
  * ├─ 1화: 주인공 각성  ●
  * ├─ 2화: 동료 합류    ●
@@ -56,22 +72,33 @@ export function EpisodeTreeList({
   onItemSelect,
 }: EpisodeTreeListProps) {
   const writerId = useWriterId();
-  const { createEpisode, updateEpisode, reorderItems } = useLocalWrite();
-  const sensors = useSensors(
-    useSensor(HandleOnlyPointerSensor),
-  );
+  const { createEpisode } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
 
+  const sortMode = useSortPreferenceStore((s) => s.byPanel['episode'] ?? 'manual');
+  const statusFilter = useFilterPreferenceStore(
+    (s) => s.byPanel['episode'] ?? (EMPTY_FILTER as string[]),
+  );
   const trimmed = searchTerm.trim();
   const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const sql = `SELECT id, title, status, word_count FROM episode
-     WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch}
-     ORDER BY sort_order ASC, created_at ASC`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
-  const { data: episodes = [] } = useQuery<EpisodeRow>(sql, params);
+  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
+  const filterClause = buildInClause('status', statusFilter);
+  const sql = `SELECT id, title, status, word_count, work_id, sort_order FROM episode
+     WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch} ${filterClause.sql}
+     ${orderBy}`;
+  const baseParams = [workId, writerId];
+  const params = [
+    ...baseParams,
+    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
+    ...filterClause.params,
+  ];
+  const { data: rawEpisodes = [] } = useQuery<EpisodeRow>(sql, params);
+  const episodes = useOptimisticRows(rawEpisodes, {
+    docType: 'episode',
+    workId,
+    matches: (row) => row.work_id === workId,
+  });
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
@@ -80,7 +107,7 @@ export function EpisodeTreeList({
     if (!trimmedTitle) return;
     void (async () => {
       const id = await createEpisode(workId, trimmedTitle, episodes.length);
-      onItemSelect(id);
+      onItemSelect(id, 'default');
     })();
   };
 
@@ -98,88 +125,126 @@ export function EpisodeTreeList({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-2 pb-1">
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            value={createTitle}
-            onChange={(e) => setCreateTitle(e.target.value)}
-            onKeyDown={handleCreateKeyDown}
-            onBlur={handleCreateCancel}
-            placeholder="원고 제목을 입력 후 Enter"
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-          >
-            <Plus size={14} strokeWidth={2} />
-            <span>새 원고</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {creating ? (
+            <input
+              autoFocus
+              type="text"
+              value={createTitle}
+              onChange={(e) => setCreateTitle(e.target.value)}
+              onKeyDown={handleCreateKeyDown}
+              onBlur={handleCreateCancel}
+              placeholder="원고 제목을 입력 후 Enter"
+              className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Plus size={14} strokeWidth={2} />
+              <span>새 원고</span>
+            </button>
+          )}
+          <SidebarSortPicker panelKey="episode" />
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
-      {episodes.length === 0 && !creating ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : '원고가 없습니다.'}
-        </p>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={(event: DragEndEvent) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = episodes.findIndex((ep) => ep.id === active.id);
-            const newIndex = episodes.findIndex((ep) => ep.id === over.id);
-            if (oldIndex === -1 || newIndex === -1) return;
-            const reordered = arrayMove(episodes, oldIndex, newIndex);
-            void reorderItems(
-              'episode',
-              reordered.map((ep, i) => ({ id: ep.id, sortOrder: i * 1000 })),
-            );
-          }}
-        >
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
+        {episodes.length === 0 && !creating ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : '원고가 없습니다.'}
+          </p>
+        ) : (
           <SortableContext items={episodes.map((ep) => ep.id)} strategy={verticalListSortingStrategy}>
             {episodes.map((ep) => (
               <SortableEpisodeItem
                 key={ep.id}
                 episode={ep}
+                workId={workId}
                 selected={selectedItemId === ep.id}
-                onSelect={() => onItemSelect(ep.id)}
-                onRename={(title) => void updateEpisode(ep.id, { title })}
+                onSelect={(intent) => onItemSelect(ep.id, intent)}
+                onAfterDelete={() => {
+                  if (selectedItemId === ep.id) onItemSelect(null);
+                }}
               />
             ))}
           </SortableContext>
-        </DndContext>
-      )}
+        )}
+        <TreeRootEndDropZone lastItemId={episodes[episodes.length - 1]?.id ?? null} />
       </div>
     </div>
   );
 }
 
-/* ── 회차 아이템 ── */
-
-function SortableEpisodeItem(props: {
-  episode: EpisodeRow;
-  selected: boolean;
-  onSelect: () => void;
-  onRename: (title: string) => void;
-}) {
-  const { listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.episode.id });
-  const style = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+function TreeRootEndDropZone({ lastItemId }: { lastItemId: string | null }) {
+  const { setNodeRef } = useDroppable({
+    id: 'episode-tree-root-end',
+    data: { type: 'tree-root-end', docType: 'episode', lastItemId },
+  });
   return (
-    <div ref={setNodeRef} style={style}>
-      <EpisodeItem {...props} dragListeners={listeners} />
+    <div
+      ref={setNodeRef}
+      className="mt-1 min-h-15 flex-1"
+      aria-label="목록 끝으로 이동"
+    />
+  );
+}
+
+interface SortableEpisodeItemProps {
+  episode: EpisodeRow;
+  workId: string;
+  selected: boolean;
+  onSelect: (intent: ClickIntent) => void;
+  onAfterDelete: () => void;
+}
+
+function SortableEpisodeItem(props: SortableEpisodeItemProps) {
+  const dragEnabled =
+    useSortPreferenceStore((s) => s.byPanel['episode'] ?? 'manual') === 'manual';
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useSortable({
+      id: props.episode.id,
+      disabled: !dragEnabled,
+      data: {
+        type: 'tree-node',
+        docType: 'episode',
+        docId: props.episode.id,
+        depth: 0,
+        parentId: null,
+        workId: props.workId,
+        title: props.episode.title,
+        sortOrder: props.episode.sort_order ?? 0,
+        rowSnapshot: {
+          id: props.episode.id,
+          title: props.episode.title,
+          status: props.episode.status,
+          word_count: props.episode.word_count,
+          work_id: props.workId,
+          sort_order: props.episode.sort_order ?? 0,
+        },
+      },
+    });
+  const style = { opacity: isDragging ? 0 : 1 };
+  const zoneInfo = useDragZoneStore((s) =>
+    s.overId === props.episode.id ? s.zone : null,
+  );
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      {zoneInfo === 'before' && (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
+      )}
+      <EpisodeItem
+        episode={props.episode}
+        selected={props.selected}
+        onSelect={props.onSelect}
+        onAfterDelete={props.onAfterDelete}
+        dragAttributes={attributes}
+        dragListeners={listeners}
+      />
+      {zoneInfo === 'after' && (
+        <div className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary z-10" />
+      )}
     </div>
   );
 }
@@ -188,17 +253,23 @@ function EpisodeItem({
   episode,
   selected,
   onSelect,
-  onRename,
+  onAfterDelete,
+  dragAttributes,
   dragListeners,
 }: {
   episode: EpisodeRow;
   selected: boolean;
-  onSelect: () => void;
-  onRename: (title: string) => void;
-  dragListeners?: Record<string, unknown>;
+  onSelect: (intent: ClickIntent) => void;
+  onAfterDelete: () => void;
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: SyntheticListenerMap;
 }) {
+  const { updateEpisode, trashEpisode } = useLocalWrite();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(episode.title);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const clickHandlers = useSidebarClickHandler(onSelect);
 
   useEffect(() => {
     if (!editing) setDraft(episode.title);
@@ -211,7 +282,7 @@ function EpisodeItem({
       setDraft(episode.title);
       return;
     }
-    onRename(next.slice(0, 200));
+    void updateEpisode(episode.id, { title: next.slice(0, 200) });
   };
 
   const cancel = () => {
@@ -223,6 +294,17 @@ function EpisodeItem({
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await trashEpisode(episode.id);
+      onAfterDelete();
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (editing) {
@@ -242,46 +324,62 @@ function EpisodeItem({
   }
 
   return (
-    <div
-      className="group flex items-center"
-      draggable="true"
-      onDragStart={(e) => setupDragTransfer(e, 'episode', episode.id, episode.title)}
-    >
-      {dragListeners && (
-        <span
-          {...dragListeners}
-          data-dnd-handle
-          className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          <GripVertical size={12} className="text-muted-foreground" />
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onSelect}
-        onDoubleClick={() => setEditing(true)}
-        title="더블클릭으로 이름 변경"
-        className={cn(
-          'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-          selected
-            ? 'bg-primary/5 font-medium text-primary'
-            : 'text-sidebar-foreground',
-        )}
-      >
-        <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {episode.status && (
-            <span
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            {...dragAttributes}
+            {...dragListeners}
+            className="group flex items-center"
+          >
+            <button
+              type="button"
+              {...clickHandlers}
+              title="클릭=메인 / 더블·⌘+클릭=핀"
               className={cn(
-                'h-2 w-2 shrink-0 rounded-full',
-                STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
+                'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                selected
+                  ? 'bg-secondary font-medium text-primary'
+                  : 'text-sidebar-foreground',
               )}
-              title={episode.status}
-            />
-          )}
-        </span>
-      </button>
-    </div>
+            >
+              <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
+              {episode.status && (
+                <span
+                  className={cn(
+                    'ml-auto h-2 w-2 shrink-0 rounded-full',
+                    STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
+                  )}
+                  title={episode.status}
+                />
+              )}
+            </button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => setEditing(true)}>
+            <Pencil size={12} /> 이름 변경
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
+            <Trash2 size={12} /> 휴지통으로 이동
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {deleteOpen && (
+        <DeleteConfirmDialog
+          title="원고 휴지통 이동"
+          message={`'${episode.title?.trim() || '(제목 없음)'}'을(를) 휴지통으로 이동하시겠습니까?`}
+          warning="휴지통에서 복원하거나 영구 삭제할 수 있습니다."
+          confirmLabel="휴지통으로 이동"
+          busyLabel="이동 중…"
+          busy={deleting}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
+    </>
   );
 }
 

@@ -1,36 +1,74 @@
-/* ═══════════════════════════════════════
-   Folio Color Themes
-   Each theme overrides the CSS custom properties
-   defined in global.css (:root / .dark).
-   ═══════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Folio Color Themes — 사용자가 직접 색을 조정하는 파일
+   ───────────────────────────────────────────────────────────────────────────
+   각 테마는 tokens.css 의 :root / .dark 토큰을 오버라이드한다.
+   여기서는 의도적으로 두 계층만 다룬다:
 
-/* ── Sepia (세피아) ── */
+     A. Surface         — background / foreground / card / popover / muted /
+                          sidebar / sidebar-foreground / sidebar-accent (+fg)
+     B. Brand & Action  — primary / secondary / accent (+ foreground)
+                          border / sidebar-border / input / ring
+
+   다음 토큰은 여기서 만지지 않는다:
+     - C. Semantic State (success/warning/info/danger) → tokens.css
+       (단, 테마 톤에 맞춰 *-soft 만 미세 조정하고 싶다면 아래 예시 참고)
+     - D. Domain (character-*, foreshadow-*) → tokens.css 만 수정
+     - E. Editor (editor-*) → tokens.css 만 수정
+
+   oklch(L C H) 빠른 가이드:
+     L (lightness)  0~1   숫자 작을수록 어둡다. 라이트 surface는 0.92~0.98 권장,
+                          다크 surface는 0.16~0.22 권장.
+     C (chroma)     0~~   채도. 0이면 무채색. 1.0+ 도 가능하나 surface는 0.005~0.03,
+                          brand/accent는 0.10~0.20 권장.
+     H (hue)        0~360 색상. 0=빨강, 60=노랑, 120=초록, 180=청록,
+                          240=파랑, 280=보라, 320=마젠타, 360=빨강.
+
+   새 테마 추가 절차:
+     1) 이 파일 맨 아래에 .theme-XXX 와 .theme-XXX.dark 블록 추가
+     2) frontend/src/shared/config/themes.ts 의 COLOR_THEMES 배열에
+        { id: 'XXX', label: '...', previewLight: '...', previewDark: '...' } 추가
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Sepia (세피아) — 따뜻한 종이 톤. 장시간 집필 시 눈의 피로를 줄인다.
+   추천 hue 범위: 55~85 (옐로~앰버 계열).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .theme-sepia {
-  --background: oklch(0.96 0.02 80);
+  /* ── A. Surface ── */
+  --background: oklch(96.863% 0.00504 67.273);
   --foreground: oklch(0.25 0.02 60);
-  --card: oklch(0.97 0.015 80);
+  --card: oklch(99.502% 0.0033 67.012 / 0.89);
   --card-foreground: oklch(0.25 0.02 60);
   --popover: oklch(0.97 0.015 80);
   --popover-foreground: oklch(0.25 0.02 60);
-  --primary: oklch(0.45 0.1 55);
-  --primary-foreground: oklch(0.98 0.005 80);
-  --secondary: oklch(0.92 0.015 75);
-  --secondary-foreground: oklch(0.25 0.02 60);
   --muted: oklch(0.93 0.015 75);
   --muted-foreground: oklch(0.55 0.03 60);
+  --sidebar: oklch(86.363% 0.03109 76.904 / 0.339);
+  --sidebar-foreground: oklch(26.037% 0.02675 58.779 / 0.88);
+  --sidebar-accent: oklch(69.913% 0.06559 75.914 / 0.312);
+  --sidebar-accent-foreground: oklch(24.89% 0.02012 56.577 / 0.562);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(86.363% 0.03109 76.904 / 0.651);
+  --activity-bar-foreground: oklch(0.25 0.02 60);
+  --activity-bar-border: oklch(0.82 0.03 60);
+  --activity-bar-accent: oklch(0.85 0.04 60);
+
+  /* ── B. Brand & Action ── */
+  --primary: oklch(44.767% 0.08663 57.592 / 0.774);
+  --primary-foreground: oklch(96.634% 0.01347 78.166 / 0.983);
+  --secondary: oklch(87.355% 0.02376 69.487 / 0.699);
+  --secondary-foreground: oklch(0.25 0.02 60);
   --accent: oklch(0.93 0.02 75);
   --accent-foreground: oklch(0.25 0.02 60);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 80);
-  --border: oklch(0.88 0.02 75);
-  --input: oklch(0.88 0.02 75);
-  --ring: oklch(0.55 0.1 55);
-  --sidebar: oklch(0.94 0.02 78);
-  --sidebar-foreground: oklch(0.25 0.02 60);
+  --border: oklch(73.547% 0.02101 77.221 / 0.209);
   --sidebar-border: oklch(0.88 0.02 75);
-  --sidebar-accent: oklch(0.91 0.02 75);
-  --sidebar-accent-foreground: oklch(0.25 0.02 60);
+  --input: oklch(87.972% 0.02011 77.242 / 0.147);
+  --ring: oklch(0.55 0.10 55);
+
+  /* (선택) Semantic 미세조정 — 주석 해제 시 활성화
+     --warning-soft: oklch(0.93 0.05 75); */
 }
 
 .theme-sepia.dark {
@@ -40,53 +78,67 @@
   --card-foreground: oklch(0.92 0.015 75);
   --popover: oklch(0.22 0.015 60);
   --popover-foreground: oklch(0.92 0.015 75);
+  --muted: oklch(0.26 0.015 60);
+  --muted-foreground: oklch(0.65 0.025 65);
+  --sidebar: oklch(0.20 0.012 60);
+  --sidebar-foreground: oklch(0.92 0.015 75);
+  --sidebar-accent: oklch(0.26 0.015 60);
+  --sidebar-accent-foreground: oklch(0.92 0.015 75);
+
+  --activity-bar: oklch(0.14 0.018 60);
+  --activity-bar-foreground: oklch(0.92 0.015 75);
+  --activity-bar-border: oklch(0.26 0.018 60);
+  --activity-bar-accent: oklch(0.20 0.018 60);
+
   --primary: oklch(0.78 0.08 55);
   --primary-foreground: oklch(0.18 0.015 60);
   --secondary: oklch(0.26 0.015 60);
   --secondary-foreground: oklch(0.92 0.015 75);
-  --muted: oklch(0.26 0.015 60);
-  --muted-foreground: oklch(0.65 0.025 65);
   --accent: oklch(0.26 0.02 60);
   --accent-foreground: oklch(0.92 0.015 75);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 80);
   --border: oklch(0.32 0.015 60);
-  --input: oklch(0.32 0.015 60);
-  --ring: oklch(0.65 0.1 55);
-  --sidebar: oklch(0.20 0.012 60);
-  --sidebar-foreground: oklch(0.92 0.015 75);
   --sidebar-border: oklch(0.32 0.015 60);
-  --sidebar-accent: oklch(0.26 0.015 60);
-  --sidebar-accent-foreground: oklch(0.92 0.015 75);
+  --input: oklch(0.32 0.015 60);
+  --ring: oklch(0.65 0.10 55);
 }
 
-/* ── Forest (포레스트) ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Forest (포레스트) — 차분한 숲 톤. 자연 친화 분위기.
+   추천 hue 범위: 145~160 (그린 계열).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .theme-forest {
+  /* ── A. Surface ── */
   --background: oklch(0.97 0.01 150);
   --foreground: oklch(0.20 0.03 155);
   --card: oklch(0.98 0.008 150);
   --card-foreground: oklch(0.20 0.03 155);
   --popover: oklch(0.98 0.008 150);
   --popover-foreground: oklch(0.20 0.03 155);
-  --primary: oklch(0.42 0.1 155);
+  --muted: oklch(0.94 0.012 148);
+  --muted-foreground: oklch(0.50 0.03 155);
+  --sidebar: oklch(0.95 0.012 148);
+  --sidebar-foreground: oklch(0.20 0.03 155);
+  --sidebar-accent: oklch(0.91 0.015 150);
+  --sidebar-accent-foreground: oklch(0.20 0.03 155);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.91 0.025 152);
+  --activity-bar-foreground: oklch(0.20 0.03 155);
+  --activity-bar-border: oklch(0.85 0.025 150);
+  --activity-bar-accent: oklch(0.88 0.030 150);
+
+  /* ── B. Brand & Action ── */
+  --primary: oklch(0.42 0.10 155);
   --primary-foreground: oklch(0.98 0.005 150);
   --secondary: oklch(0.93 0.015 150);
   --secondary-foreground: oklch(0.20 0.03 155);
-  --muted: oklch(0.94 0.012 148);
-  --muted-foreground: oklch(0.50 0.03 155);
   --accent: oklch(0.93 0.015 150);
   --accent-foreground: oklch(0.20 0.03 155);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 150);
   --border: oklch(0.89 0.015 148);
-  --input: oklch(0.89 0.015 148);
-  --ring: oklch(0.50 0.1 155);
-  --sidebar: oklch(0.95 0.012 148);
-  --sidebar-foreground: oklch(0.20 0.03 155);
   --sidebar-border: oklch(0.89 0.015 148);
-  --sidebar-accent: oklch(0.91 0.015 150);
-  --sidebar-accent-foreground: oklch(0.20 0.03 155);
+  --input: oklch(0.89 0.015 148);
+  --ring: oklch(0.50 0.10 155);
 }
 
 .theme-forest.dark {
@@ -96,53 +148,67 @@
   --card-foreground: oklch(0.92 0.012 150);
   --popover: oklch(0.20 0.018 155);
   --popover-foreground: oklch(0.92 0.012 150);
-  --primary: oklch(0.72 0.1 155);
+  --muted: oklch(0.24 0.018 155);
+  --muted-foreground: oklch(0.62 0.025 150);
+  --sidebar: oklch(0.18 0.015 155);
+  --sidebar-foreground: oklch(0.92 0.012 150);
+  --sidebar-accent: oklch(0.24 0.018 155);
+  --sidebar-accent-foreground: oklch(0.92 0.012 150);
+
+  --activity-bar: oklch(0.13 0.020 155);
+  --activity-bar-foreground: oklch(0.92 0.012 150);
+  --activity-bar-border: oklch(0.24 0.020 155);
+  --activity-bar-accent: oklch(0.18 0.022 155);
+
+  --primary: oklch(0.72 0.10 155);
   --primary-foreground: oklch(0.16 0.015 155);
   --secondary: oklch(0.24 0.018 155);
   --secondary-foreground: oklch(0.92 0.012 150);
-  --muted: oklch(0.24 0.018 155);
-  --muted-foreground: oklch(0.62 0.025 150);
   --accent: oklch(0.24 0.02 155);
   --accent-foreground: oklch(0.92 0.012 150);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 150);
   --border: oklch(0.30 0.018 155);
-  --input: oklch(0.30 0.018 155);
-  --ring: oklch(0.60 0.1 155);
-  --sidebar: oklch(0.18 0.015 155);
-  --sidebar-foreground: oklch(0.92 0.012 150);
   --sidebar-border: oklch(0.30 0.018 155);
-  --sidebar-accent: oklch(0.24 0.018 155);
-  --sidebar-accent-foreground: oklch(0.92 0.012 150);
+  --input: oklch(0.30 0.018 155);
+  --ring: oklch(0.60 0.10 155);
 }
 
-/* ── Ocean (오션) ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Ocean (오션) — 시원한 바다 톤. 집중 모드에 적합.
+   추천 hue 범위: 230~250 (블루 계열).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .theme-ocean {
+  /* ── A. Surface ── */
   --background: oklch(0.97 0.01 240);
   --foreground: oklch(0.20 0.025 240);
   --card: oklch(0.98 0.008 240);
   --card-foreground: oklch(0.20 0.025 240);
   --popover: oklch(0.98 0.008 240);
   --popover-foreground: oklch(0.20 0.025 240);
+  --muted: oklch(0.94 0.01 238);
+  --muted-foreground: oklch(0.50 0.03 240);
+  --sidebar: oklch(0.95 0.012 238);
+  --sidebar-foreground: oklch(0.20 0.025 240);
+  --sidebar-accent: oklch(0.91 0.015 238);
+  --sidebar-accent-foreground: oklch(0.20 0.025 240);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.91 0.025 240);
+  --activity-bar-foreground: oklch(0.20 0.025 240);
+  --activity-bar-border: oklch(0.85 0.022 238);
+  --activity-bar-accent: oklch(0.88 0.025 240);
+
+  /* ── B. Brand & Action ── */
   --primary: oklch(0.45 0.14 245);
   --primary-foreground: oklch(0.98 0.005 240);
   --secondary: oklch(0.93 0.012 238);
   --secondary-foreground: oklch(0.20 0.025 240);
-  --muted: oklch(0.94 0.01 238);
-  --muted-foreground: oklch(0.50 0.03 240);
   --accent: oklch(0.93 0.015 238);
   --accent-foreground: oklch(0.20 0.025 240);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 240);
   --border: oklch(0.89 0.012 238);
+  --sidebar-border: oklch(0.89 0.012 238);
   --input: oklch(0.89 0.012 238);
   --ring: oklch(0.55 0.14 245);
-  --sidebar: oklch(0.95 0.012 238);
-  --sidebar-foreground: oklch(0.20 0.025 240);
-  --sidebar-border: oklch(0.89 0.012 238);
-  --sidebar-accent: oklch(0.91 0.015 238);
-  --sidebar-accent-foreground: oklch(0.20 0.025 240);
 }
 
 .theme-ocean.dark {
@@ -152,53 +218,67 @@
   --card-foreground: oklch(0.92 0.01 238);
   --popover: oklch(0.20 0.022 240);
   --popover-foreground: oklch(0.92 0.01 238);
+  --muted: oklch(0.24 0.02 240);
+  --muted-foreground: oklch(0.62 0.02 238);
+  --sidebar: oklch(0.18 0.02 240);
+  --sidebar-foreground: oklch(0.92 0.01 238);
+  --sidebar-accent: oklch(0.24 0.02 240);
+  --sidebar-accent-foreground: oklch(0.92 0.01 238);
+
+  --activity-bar: oklch(0.13 0.025 240);
+  --activity-bar-foreground: oklch(0.92 0.01 238);
+  --activity-bar-border: oklch(0.24 0.025 240);
+  --activity-bar-accent: oklch(0.18 0.025 240);
+
   --primary: oklch(0.72 0.12 245);
   --primary-foreground: oklch(0.16 0.02 240);
   --secondary: oklch(0.24 0.02 240);
   --secondary-foreground: oklch(0.92 0.01 238);
-  --muted: oklch(0.24 0.02 240);
-  --muted-foreground: oklch(0.62 0.02 238);
   --accent: oklch(0.24 0.025 240);
   --accent-foreground: oklch(0.92 0.01 238);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 240);
   --border: oklch(0.30 0.02 240);
+  --sidebar-border: oklch(0.30 0.02 240);
   --input: oklch(0.30 0.02 240);
   --ring: oklch(0.65 0.12 245);
-  --sidebar: oklch(0.18 0.02 240);
-  --sidebar-foreground: oklch(0.92 0.01 238);
-  --sidebar-border: oklch(0.30 0.02 240);
-  --sidebar-accent: oklch(0.24 0.02 240);
-  --sidebar-accent-foreground: oklch(0.92 0.01 238);
 }
 
-/* ── Rose (로즈) ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Rose (로즈) — 따뜻한 로맨스 톤.
+   추천 hue 범위: 350~10 (로즈/핑크 계열).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .theme-rose {
+  /* ── A. Surface ── */
   --background: oklch(0.97 0.015 10);
   --foreground: oklch(0.22 0.02 355);
   --card: oklch(0.98 0.01 10);
   --card-foreground: oklch(0.22 0.02 355);
   --popover: oklch(0.98 0.01 10);
   --popover-foreground: oklch(0.22 0.02 355);
+  --muted: oklch(0.94 0.012 5);
+  --muted-foreground: oklch(0.52 0.03 355);
+  --sidebar: oklch(0.95 0.015 8);
+  --sidebar-foreground: oklch(0.22 0.02 355);
+  --sidebar-accent: oklch(0.91 0.018 5);
+  --sidebar-accent-foreground: oklch(0.22 0.02 355);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.92 0.030 8);
+  --activity-bar-foreground: oklch(0.22 0.02 355);
+  --activity-bar-border: oklch(0.86 0.025 8);
+  --activity-bar-accent: oklch(0.89 0.030 8);
+
+  /* ── B. Brand & Action ── */
   --primary: oklch(0.55 0.15 355);
   --primary-foreground: oklch(0.98 0.005 10);
   --secondary: oklch(0.93 0.015 5);
   --secondary-foreground: oklch(0.22 0.02 355);
-  --muted: oklch(0.94 0.012 5);
-  --muted-foreground: oklch(0.52 0.03 355);
   --accent: oklch(0.93 0.018 5);
   --accent-foreground: oklch(0.22 0.02 355);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 10);
   --border: oklch(0.89 0.015 5);
+  --sidebar-border: oklch(0.89 0.015 5);
   --input: oklch(0.89 0.015 5);
   --ring: oklch(0.60 0.15 355);
-  --sidebar: oklch(0.95 0.015 8);
-  --sidebar-foreground: oklch(0.22 0.02 355);
-  --sidebar-border: oklch(0.89 0.015 5);
-  --sidebar-accent: oklch(0.91 0.018 5);
-  --sidebar-accent-foreground: oklch(0.22 0.02 355);
 }
 
 .theme-rose.dark {
@@ -208,53 +288,67 @@
   --card-foreground: oklch(0.92 0.012 5);
   --popover: oklch(0.21 0.022 350);
   --popover-foreground: oklch(0.92 0.012 5);
+  --muted: oklch(0.25 0.02 350);
+  --muted-foreground: oklch(0.63 0.025 355);
+  --sidebar: oklch(0.19 0.02 350);
+  --sidebar-foreground: oklch(0.92 0.012 5);
+  --sidebar-accent: oklch(0.25 0.02 350);
+  --sidebar-accent-foreground: oklch(0.92 0.012 5);
+
+  --activity-bar: oklch(0.14 0.025 350);
+  --activity-bar-foreground: oklch(0.92 0.012 5);
+  --activity-bar-border: oklch(0.25 0.025 350);
+  --activity-bar-accent: oklch(0.19 0.025 350);
+
   --primary: oklch(0.75 0.12 355);
   --primary-foreground: oklch(0.17 0.02 350);
   --secondary: oklch(0.25 0.02 350);
   --secondary-foreground: oklch(0.92 0.012 5);
-  --muted: oklch(0.25 0.02 350);
-  --muted-foreground: oklch(0.63 0.025 355);
   --accent: oklch(0.25 0.025 350);
   --accent-foreground: oklch(0.92 0.012 5);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 5);
   --border: oklch(0.31 0.02 350);
+  --sidebar-border: oklch(0.31 0.02 350);
   --input: oklch(0.31 0.02 350);
   --ring: oklch(0.65 0.12 355);
-  --sidebar: oklch(0.19 0.02 350);
-  --sidebar-foreground: oklch(0.92 0.012 5);
-  --sidebar-border: oklch(0.31 0.02 350);
-  --sidebar-accent: oklch(0.25 0.02 350);
-  --sidebar-accent-foreground: oklch(0.92 0.012 5);
 }
 
-/* ── Lavender (라벤더) ── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Lavender (라벤더) — 차분한 보라 톤. 신비/판타지 분위기.
+   추천 hue 범위: 285~305 (퍼플 계열).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .theme-lavender {
+  /* ── A. Surface ── */
   --background: oklch(0.97 0.015 295);
   --foreground: oklch(0.22 0.02 290);
   --card: oklch(0.98 0.012 295);
   --card-foreground: oklch(0.22 0.02 290);
   --popover: oklch(0.98 0.012 295);
   --popover-foreground: oklch(0.22 0.02 290);
+  --muted: oklch(0.94 0.012 293);
+  --muted-foreground: oklch(0.52 0.03 290);
+  --sidebar: oklch(0.95 0.015 294);
+  --sidebar-foreground: oklch(0.22 0.02 290);
+  --sidebar-accent: oklch(0.91 0.018 293);
+  --sidebar-accent-foreground: oklch(0.22 0.02 290);
+
+  /* ── A-2. ActivityBar ── */
+  --activity-bar: oklch(0.92 0.025 295);
+  --activity-bar-foreground: oklch(0.22 0.02 290);
+  --activity-bar-border: oklch(0.86 0.022 295);
+  --activity-bar-accent: oklch(0.89 0.025 295);
+
+  /* ── B. Brand & Action ── */
   --primary: oklch(0.50 0.14 300);
   --primary-foreground: oklch(0.98 0.005 295);
   --secondary: oklch(0.93 0.015 293);
   --secondary-foreground: oklch(0.22 0.02 290);
-  --muted: oklch(0.94 0.012 293);
-  --muted-foreground: oklch(0.52 0.03 290);
   --accent: oklch(0.93 0.018 293);
   --accent-foreground: oklch(0.22 0.02 290);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 295);
   --border: oklch(0.89 0.015 293);
+  --sidebar-border: oklch(0.89 0.015 293);
   --input: oklch(0.89 0.015 293);
   --ring: oklch(0.58 0.14 300);
-  --sidebar: oklch(0.95 0.015 294);
-  --sidebar-foreground: oklch(0.22 0.02 290);
-  --sidebar-border: oklch(0.89 0.015 293);
-  --sidebar-accent: oklch(0.91 0.018 293);
-  --sidebar-accent-foreground: oklch(0.22 0.02 290);
 }
 
 .theme-lavender.dark {
@@ -264,22 +358,26 @@
   --card-foreground: oklch(0.92 0.012 293);
   --popover: oklch(0.21 0.022 295);
   --popover-foreground: oklch(0.92 0.012 293);
+  --muted: oklch(0.25 0.02 295);
+  --muted-foreground: oklch(0.63 0.025 293);
+  --sidebar: oklch(0.19 0.02 295);
+  --sidebar-foreground: oklch(0.92 0.012 293);
+  --sidebar-accent: oklch(0.25 0.02 295);
+  --sidebar-accent-foreground: oklch(0.92 0.012 293);
+
+  --activity-bar: oklch(0.14 0.025 295);
+  --activity-bar-foreground: oklch(0.92 0.012 293);
+  --activity-bar-border: oklch(0.25 0.025 295);
+  --activity-bar-accent: oklch(0.19 0.025 295);
+
   --primary: oklch(0.75 0.12 300);
   --primary-foreground: oklch(0.17 0.02 295);
   --secondary: oklch(0.25 0.02 295);
   --secondary-foreground: oklch(0.92 0.012 293);
-  --muted: oklch(0.25 0.02 295);
-  --muted-foreground: oklch(0.63 0.025 293);
   --accent: oklch(0.25 0.025 295);
   --accent-foreground: oklch(0.92 0.012 293);
-  --destructive: oklch(0.577 0.245 27.33);
-  --destructive-foreground: oklch(0.98 0.005 295);
   --border: oklch(0.31 0.02 295);
+  --sidebar-border: oklch(0.31 0.02 295);
   --input: oklch(0.31 0.02 295);
   --ring: oklch(0.65 0.12 300);
-  --sidebar: oklch(0.19 0.02 295);
-  --sidebar-foreground: oklch(0.92 0.012 293);
-  --sidebar-border: oklch(0.31 0.02 295);
-  --sidebar-accent: oklch(0.25 0.02 295);
-  --sidebar-accent-foreground: oklch(0.92 0.012 293);
 }
