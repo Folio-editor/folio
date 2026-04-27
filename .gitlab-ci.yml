@@ -115,6 +115,10 @@ build-electron-windows:
       #     로 명시. HOME=/tmp는 npm/pnpm/corepack에는 무해하므로 건드리지 않는다.
       RUNNER_UID=$(id -u)
       RUNNER_GID=$(id -g)
+      # Vite는 빌드 시점의 process.env.VITE_*를 코드에 정적으로 박는다.
+      # 누락되면 코드 default(localhost:8080)로 fallback → 데스크탑 앱이 본인 PC
+      # 로컬호스트로 호출 → 연결 실패 + 백엔드 로그 0건. deploy-production의
+      # web/landing 빌드와 동일한 prod URL을 컨테이너에 주입.
       docker run --rm \
         --user "${RUNNER_UID}:${RUNNER_GID}" \
         -v "$CI_PROJECT_DIR":/workspace \
@@ -124,6 +128,10 @@ build-electron-windows:
         -e WINEPREFIX=/workspace/.wine \
         -e ELECTRON_CACHE=/workspace/.cache/electron \
         -e ELECTRON_BUILDER_CACHE=/workspace/.cache/electron-builder \
+        -e VITE_API_URL=https://folio-editor.co.kr/api/v1 \
+        -e VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
+        -e VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
+        -e VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
         electronuserland/builder:wine \
         bash -c "
           set -Eeuo pipefail
