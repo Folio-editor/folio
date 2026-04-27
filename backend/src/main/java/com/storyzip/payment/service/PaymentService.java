@@ -6,6 +6,7 @@ import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
 import com.storyzip.payment.client.TossConfirmResponse;
 import com.storyzip.payment.client.TossPaymentsClient;
+import com.storyzip.payment.config.TossPaymentsProperties;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
@@ -42,6 +43,7 @@ public class PaymentService {
     private final WriterRepository writerRepository;
     private final TossPaymentsClient tossPaymentsClient;
     private final TokenWalletService tokenWalletService;
+    private final TossPaymentsProperties tossProperties;
 
     @Transactional
     public CreatePaymentResponse createPayment(UUID writerId, CreatePaymentRequest request) {
@@ -65,7 +67,8 @@ public class PaymentService {
                 payment.getOrderId(),
                 "Folio 토큰 " + pkg.getTokenQty(),
                 payment.getAmount(),
-                payment.getTokenQty()
+                payment.getTokenQty(),
+                tossProperties.clientKey()
         );
     }
 

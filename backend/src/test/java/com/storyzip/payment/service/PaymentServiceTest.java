@@ -6,6 +6,7 @@ import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
 import com.storyzip.payment.client.TossConfirmResponse;
 import com.storyzip.payment.client.TossPaymentsClient;
+import com.storyzip.payment.config.TossPaymentsProperties;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.domain.PaymentStatus;
@@ -49,6 +50,8 @@ class PaymentServiceTest {
     TossPaymentsClient tossPaymentsClient;
     @Mock
     TokenWalletService tokenWalletService;
+    @Mock
+    TossPaymentsProperties tossProperties;
 
     @InjectMocks
     PaymentService paymentService;
@@ -70,6 +73,7 @@ class PaymentServiceTest {
     void createPayment_savesReadyOrderWithServerSidePricing() {
         given(writerRepository.findById(writerId)).willReturn(Optional.of(writer));
         given(paymentRepository.save(any(Payment.class))).willAnswer(inv -> inv.getArgument(0));
+        given(tossProperties.clientKey()).willReturn("test_ck_xxx");
 
         CreatePaymentResponse response = paymentService.createPayment(
                 writerId, new CreatePaymentRequest("TOKEN_550"));
@@ -78,6 +82,7 @@ class PaymentServiceTest {
         assertThat(response.tokenQty()).isEqualTo(550);
         assertThat(response.orderId()).startsWith("SZ-");
         assertThat(response.orderName()).contains("550");
+        assertThat(response.clientKey()).isEqualTo("test_ck_xxx");
 
         ArgumentCaptor<Payment> captor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).save(captor.capture());
