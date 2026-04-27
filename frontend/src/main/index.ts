@@ -101,6 +101,7 @@ const createWindow = () => {
 
 // Spellchecker dictionary 동기화 — 렌더러 신호로 유저 사전 단어 set을 OS spellchecker에 반영
 const syncedSpellcheckWords = new Set<string>();
+const LOGIN_RETURN_DELAY_MS = 1000;
 
 function normalizeSpellcheckWords(words: unknown): string[] {
   if (!Array.isArray(words)) return [];
@@ -123,29 +124,27 @@ function bringWindowToFront(win: BrowserWindow | null) {
     win.show();
   }
 
-  win.focus();
-  win.setAlwaysOnTop(true, 'screen-saver');
   win.show();
   win.focus();
-
-  setTimeout(() => {
-    if (win.isDestroyed()) return;
-    win.setAlwaysOnTop(false);
-    win.focus();
-  }, 250);
 }
 
 function bringWindowToFrontAfter(win: BrowserWindow | null, delayMs: number) {
   setTimeout(() => bringWindowToFront(win), delayMs);
 }
 
+function minimizeWindowForOAuth(win: BrowserWindow | null) {
+  if (!win || win.isDestroyed() || win.isMinimized()) return;
+  win.minimize();
+}
+
 function registerAuthHandlers() {
   ipcMain.handle('auth:login', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
+    minimizeWindowForOAuth(win);
     const result = await loginWithGoogle({
-      onCodeReceived: () => bringWindowToFrontAfter(win, 500),
+      onCodeReceived: () => bringWindowToFrontAfter(win, LOGIN_RETURN_DELAY_MS),
     });
-    bringWindowToFront(win);
+    bringWindowToFrontAfter(win, LOGIN_RETURN_DELAY_MS);
     return result;
   });
   ipcMain.handle('auth:logout', async () => logout());

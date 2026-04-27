@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@powersync/react';
-import { FileText } from 'lucide-react';
+import { FileText, Plus } from 'lucide-react';
 import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
@@ -233,10 +233,16 @@ interface CharacterAuxNoteRow {
   kind: string;
   title: string;
   content: string | null;
+  sort_order: number | null;
+}
+
+function nextSortOrder(rows: { sort_order: number | null }[]) {
+  if (rows.length === 0) return 0;
+  return Math.max(...rows.map((row) => row.sort_order ?? 0)) + 1000;
 }
 
 function CharacterAuxView({ docId, editable }: { docId: string; editable: boolean }) {
-  const { updateCharacterNoteContent } = useLocalWrite();
+  const { createCharacterNote, updateCharacterNoteContent } = useLocalWrite();
 
   const { data: metaRows = [] } = useQuery<CharacterMetaRow>(
     `SELECT id, name, gender, age FROM character WHERE id = ? LIMIT 1`,
@@ -245,7 +251,7 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
   const meta = metaRows[0];
 
   const { data: notes = [] } = useQuery<CharacterAuxNoteRow>(
-    `SELECT id, kind, title, content FROM character_note
+    `SELECT id, kind, title, content, sort_order FROM character_note
      WHERE character_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
     [docId],
@@ -298,11 +304,25 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
       )}
 
       {/* 하위 문서 카드 — breadcrumb: 캐릭터 > 노트제목 */}
-      {visibleNotes.length > 0 && (
-        <div className="border-t border-border/50 pt-2">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="border-t border-border/50 pt-2">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             하위 문서
           </p>
+          {editable && (
+            <button
+              type="button"
+              onClick={() =>
+                void createCharacterNote(docId, '새 문서', nextSortOrder(notes))
+              }
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <Plus size={10} strokeWidth={1.75} />
+              추가
+            </button>
+          )}
+        </div>
+        {visibleNotes.length > 0 ? (
           <div className="flex flex-col divide-y divide-border">
             {visibleNotes.map((note) => (
               <div key={note.id} className="py-2">
@@ -322,8 +342,12 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="py-3 text-center text-xs text-muted-foreground">
+            문서가 없습니다.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

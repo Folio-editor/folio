@@ -29,10 +29,15 @@ export function FAQSection() {
         </div>
 
         <div className="faq-contact">
-          <p className="faq-contact-label sans">문의사항이 있나요?</p>
+          <p className="faq-contact-label sans">문의사항이 있으신가요?</p>
           <p className="faq-contact-body">
-            <a href="mailto:yuwolxx@gmail.com" className="sans">
-              yuwolxx@gmail.com
+            <a
+              href="https://open.kakao.com/o/s5cjeQri"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sans"
+            >
+              카카오톡 오픈채팅
             </a>
             으로 편하게 문의 주세요.
           </p>

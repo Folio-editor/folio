@@ -183,27 +183,41 @@ export const PRICING: PricingCard[] = [
     ctaVariant: 'ghost',
     featured: false,
     features: [
-      '오프라인 + 클라우드 동기화',
+      '작품 5개까지 작성',
+      '저장 용량 100MB',
       '집필 친화 에디터 (카테고리·서식·맞춤법)',
       '설정집 · 아이디어 노트',
-      '토큰 500/월 (AI 맛보기)',
+      '오프라인 + 클라우드 동기화',
     ],
   },
   {
     name: '프로',
     price: '9,900원',
     period: '/월',
-    sub: '매월 토큰 25,000 자동 충전',
+    sub: '매달 1,300 크레딧 자동 충전',
     cta: '구독 시작',
     ctaVariant: 'primary',
     featured: true,
     features: [
-      '무료 플랜 전체 포함',
-      '토큰 25,000/월',
-      '초안 15회 + 검수 80회',
-      'AI 우선 처리',
+      '무료 플랜 모든 기능 포함',
+      '작품 무제한 작성',
+      '매달 1,300 크레딧 자동 충전',
+      '└ AI 검수 약 44회 (매일 사용 가능)',
+      '└ AI 초안 생성 약 8회 (주 2회)',
     ],
   },
+];
+
+export type CreditPack = {
+  price: string;
+  credit: string;
+  bonus: string;
+};
+
+export const CREDIT_PACKS: CreditPack[] = [
+  { price: '3,000원', credit: '300 CR', bonus: '검수 10회' },
+  { price: '5,000원', credit: '550 CR', bonus: '검수 18회' },
+  { price: '10,000원', credit: '1,200 CR', bonus: '검수 41회' },
 ];
 
 export type FAQItem = {
