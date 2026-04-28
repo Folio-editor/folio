@@ -11,6 +11,7 @@ import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.common.exception.AiException;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.observability.ExternalCallLogger;
+import com.storyzip.common.observability.RequestContextFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -144,12 +145,9 @@ public class AiClient {
      */
     public void streamDraft(DraftRequest request, SseEmitter emitter,
                             java.util.function.Consumer<Map<String, Object>> onDone) {
-        // 가상 스레드는 부모의 MDC를 자동 상속하지 않는다 — 캡처 후 자식에서 복원.
-        Map<String, String> mdcSnapshot = org.slf4j.MDC.getCopyOfContextMap();
-        Thread.startVirtualThread(() -> {
-            if (mdcSnapshot != null) {
-                org.slf4j.MDC.setContextMap(mdcSnapshot);
-            }
+        // 가상 스레드는 부모 MDC를 자동 상속하지 않으므로 wrapMdc로 전체 컨텍스트
+        // (traceId/userId/role/httpMethod/httpPath …)를 캡처해 자식에서 복원·정리한다.
+        Thread.startVirtualThread(RequestContextFilter.wrapMdc(() -> {
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> lastDoneUsage = new java.util.HashMap<>();
             long startNanos = System.nanoTime();
@@ -235,66 +233,59 @@ public class AiClient {
                         log.warn("Draft onDone callback failed", e);
                     }
                 }
-                org.slf4j.MDC.clear();
+                // MDC 정리는 wrapMdc 헬퍼 finally에서 처리됨
             }
-        });
+        }));
     }
 
     /** 원고 검수 — FastAPI /v1/reviews 프록시 (동기 JSON). */
     @SuppressWarnings("unchecked")
     public Map<String, Object> requestReview(ReviewRequest request) {
-        long startNanos = System.nanoTime();
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            String jsonBody = mapper.writeValueAsString(request);
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestReview", AI_REVIEW_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
 
-            HttpRequest httpReq = HttpRequest.newBuilder()
-                    .uri(URI.create(properties.getBaseUrl() + "/v1/reviews"))
-                    .header("Content-Type", "application/json")
-                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
-                    .timeout(Duration.ofMinutes(3))
-                    .build();
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/reviews"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(3))
+                        .build();
 
-            HttpClient reviewClient = HttpClient.newBuilder()
-                    .version(HttpClient.Version.HTTP_1_1)
-                    .connectTimeout(properties.getConnectTimeout())
-                    .build();
+                HttpClient reviewClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
 
-            HttpResponse<String> response = reviewClient.send(
-                    httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
-            );
+                HttpResponse<String> response = reviewClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
 
-            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
-            if (response.statusCode() != 200) {
-                String body = response.body();
-                int bodyLen = body == null ? 0 : body.length();
-                String bodyPreview = bodyLen == 0 ? "" : body.substring(0, Math.min(bodyLen, 200));
-                log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} status={} bodyLen={} preview={}",
-                        elapsed, response.statusCode(), bodyLen, bodyPreview);
-                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
-            }
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    String bodyPreview = bodyLen == 0 ? "" : body.substring(0, Math.min(bodyLen, 200));
+                    // 200이 아닌 응답 본문은 measureChecked가 잡지 못하는 영역이라 별도로 한 줄 남김.
+                    log.warn("AI review non-200: status={} bodyLen={} preview={}",
+                            response.statusCode(), bodyLen, bodyPreview);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
 
-            if (elapsed >= AI_REVIEW_SLA_MS) {
-                log.warn("[EXT_SLOW] system=ai op=requestReview elapsedMs={} sla={} status=ok",
-                        elapsed, AI_REVIEW_SLA_MS);
-            } else {
-                log.info("[EXT_OK] system=ai op=requestReview elapsedMs={} status=ok", elapsed);
-            }
-            return mapper.readValue(response.body(), Map.class);
+                return mapper.readValue(response.body(), Map.class);
+            });
         } catch (AiException e) {
             throw e;
         } catch (java.io.IOException e) {
-            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
-            log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} errType=IO errMsg={}",
-                    elapsed, e.getMessage(), e);
             throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
-            log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} errType=Interrupted",
-                    elapsed);
             throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
+            // measureChecked의 시그니처가 throws Exception이라 강제로 잡힘 — AiException으로 통일
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
         }
     }
 

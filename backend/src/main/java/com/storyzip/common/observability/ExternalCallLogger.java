@@ -63,4 +63,40 @@ public final class ExternalCallLogger {
     public static void measure(String system, String op, long slaMs, Runnable action) {
         measure(system, op, slaMs, () -> { action.run(); return null; });
     }
+
+    /**
+     * checked exception을 던지는 호출용 오버로드.
+     * 람다 내부의 throw는 호출자가 처리 가능한 형태로 감싸 다시 던져야 한다.
+     */
+    @FunctionalInterface
+    public interface ThrowingSupplier<T> {
+        T get() throws Exception;
+    }
+
+    /**
+     * checked exception을 허용하는 measure. 실패 시 원 예외를 그대로 다시 던진다.
+     * 호출자는 try/catch로 IOException/InterruptedException 등을 명시적으로 처리해야 한다.
+     */
+    public static <T> T measureChecked(String system, String op, long slaMs, ThrowingSupplier<T> action)
+            throws Exception {
+        Logger logger = LoggerFactory.getLogger("external." + system);
+        long startNanos = System.nanoTime();
+        try {
+            T result = action.get();
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+            if (elapsedMs >= slaMs) {
+                logger.warn("[EXT_SLOW] system={} op={} elapsedMs={} sla={} status=ok",
+                        system, op, elapsedMs, slaMs);
+            } else if (logger.isDebugEnabled()) {
+                logger.debug("[EXT_OK] system={} op={} elapsedMs={} status=ok",
+                        system, op, elapsedMs);
+            }
+            return result;
+        } catch (Exception e) {
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+            logger.warn("[EXT_FAIL] system={} op={} elapsedMs={} errType={} errMsg={}",
+                    system, op, elapsedMs, e.getClass().getSimpleName(), e.getMessage());
+            throw e;
+        }
+    }
 }
