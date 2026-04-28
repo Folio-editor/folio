@@ -60,8 +60,8 @@ public class PaymentService {
                 .tokenQty(pkg.getTokenQty())
                 .build());
 
-        log.info("Payment created: writerId={}, orderId={}, amount={}",
-                writerId, payment.getOrderId(), payment.getAmount());
+        log.info("[PAYMENT_CREATED] writerId={} orderId={} amount={} tokenQty={} package={}",
+                writerId, payment.getOrderId(), payment.getAmount(), payment.getTokenQty(), pkg.name());
 
         return new CreatePaymentResponse(
                 payment.getOrderId(),
@@ -77,8 +77,12 @@ public class PaymentService {
         // 멱등성: 동일 paymentKey로 이미 완료된 결제가 있으면 그 결과를 반환
         Optional<Payment> alreadyConfirmed = paymentRepository.findByPaymentKey(request.paymentKey());
         if (alreadyConfirmed.isPresent() && alreadyConfirmed.get().isDone()) {
-            log.info("Idempotent confirm hit: paymentKey={}", request.paymentKey());
-            return PaymentResponse.from(alreadyConfirmed.get());
+            Payment existing = alreadyConfirmed.get();
+            log.info("[PAYMENT_IDEMPOTENT] writerId={} orderId={} paymentKey={} amount={} tokenQty={} method={} approvedAt={}",
+                    writerId, existing.getOrderId(), request.paymentKey(),
+                    existing.getAmount(), existing.getTokenQty(),
+                    existing.getMethod(), existing.getApprovedAt());
+            return PaymentResponse.from(existing);
         }
 
         Payment payment = paymentRepository.findByOrderId(request.orderId())
@@ -115,7 +119,9 @@ public class PaymentService {
                 payment.getId()
         );
 
-        log.info("Payment confirmed: orderId={}, paymentKey={}", payment.getOrderId(), payment.getPaymentKey());
+        log.info("[PAYMENT_CONFIRMED] writerId={} orderId={} paymentKey={} amount={} tokenQty={} method={}",
+                writerId, payment.getOrderId(), payment.getPaymentKey(),
+                payment.getAmount(), payment.getTokenQty(), method);
         return PaymentResponse.from(payment);
     }
 
