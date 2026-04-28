@@ -2,6 +2,7 @@ import { generateHTML } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
+import DOMPurify from 'dompurify';
 
 /** generateHTML용 최소 확장 세트 — 편집/저장 무관, 표시용 */
 export const previewExtensions = [
@@ -10,12 +11,19 @@ export const previewExtensions = [
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
 ];
 
-/** TipTap JSON 문자열을 HTML로 변환. null/잘못된 JSON은 빈 문자열. */
+/**
+ * TipTap JSON 문자열을 HTML로 변환.
+ *
+ * <p>저장된 JSON이 손상되거나 변조된 경우 generateHTML 결과에 악성 태그가 섞일 수 있다.
+ * dangerouslySetInnerHTML로 렌더링하기 전에 DOMPurify로 sanitize해 XSS를 차단한다.
+ *
+ * <p>null/잘못된 JSON은 빈 문자열을 반환한다.
+ */
 export function contentToHtml(raw: string | null | undefined): string {
   if (!raw) return '';
   try {
     const json = JSON.parse(raw) as object;
-    return generateHTML(json, previewExtensions);
+    return DOMPurify.sanitize(generateHTML(json, previewExtensions));
   } catch {
     return '';
   }
