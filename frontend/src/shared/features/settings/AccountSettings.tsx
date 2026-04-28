@@ -3,6 +3,7 @@ import { Cloud, CloudOff, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-
 import { useQuery, useStatus } from '@powersync/react';
 import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
@@ -83,7 +84,7 @@ function GuestView() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">계정</h2>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">
@@ -153,12 +154,13 @@ function AuthenticatedView() {
   const { localBytes, pendingCount } = useLocalStorageStats();
   const psStatus = useStatus();
   const isOnline = useNetworkStatus();
+  const openSettings = useNavigationStore((s) => s.openSettings);
 
   // 1) 캐시도 없고 로딩 중 — 첫 진입
   if (loading && !data) {
     return (
       <div className="flex h-full flex-col bg-background">
-        <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+        <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
           <h2 className="text-sm font-semibold text-foreground">계정</h2>
         </div>
         <div className="flex flex-1 items-center justify-center">
@@ -185,7 +187,7 @@ function AuthenticatedView() {
   if (!data) {
     return (
       <div className="flex h-full flex-col bg-background">
-        <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+        <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
           <h2 className="text-sm font-semibold text-foreground">계정</h2>
         </div>
         <div className="flex flex-1 items-center justify-center">
@@ -201,7 +203,7 @@ function AuthenticatedView() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">계정</h2>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">
@@ -249,6 +251,7 @@ function AuthenticatedView() {
                 <button
                   type="button"
                   disabled={!isOnline}
+                  onClick={() => openSettings('payment')}
                   title={!isOnline ? '오프라인 상태에서는 사용할 수 없습니다' : undefined}
                   className="rounded-lg bg-ring px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-ring/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -562,7 +565,7 @@ function OfflineNoCacheView({
 }) {
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">계정</h2>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">

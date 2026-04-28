@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
@@ -26,6 +27,7 @@ import {
   EMPTY_FILTER,
 } from '../../../stores/filterPreferenceStore';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -98,12 +100,13 @@ export function SectionItemList({
     ...filterClause.params,
   ];
 
-  const { data: rawRows = [] } = useQuery<Row>(sql, params);
+  const { data: rawRows = [], isFetching } = useQuery<Row>(sql, params);
   const rows = useOptimisticRows(rawRows, {
     docType,
     workId,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(rows.length === 0 && !creating && !isFetching);
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
@@ -162,7 +165,9 @@ export function SectionItemList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1">
-        {rows.length === 0 && !creating ? (
+        {isFetching && rows.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {trimmed ? '검색 결과가 없습니다.' : EMPTY_LABELS[section]}
           </p>
@@ -428,7 +433,7 @@ const LABEL_FIELDS: Record<Section, string> = {
 /** 섹션별 필터 SQL 컬럼 매핑 — null이면 필터링 없음 */
 const FILTER_COLUMNS: Record<Section, string | null> = {
   character: 'gender',
-  foreshadow: 'status',  // 중요도(상/중/하)는 status 컬럼
+  foreshadow: 'importance',
   'idea-archive': 'tag',
 };
 

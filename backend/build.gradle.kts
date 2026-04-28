@@ -40,8 +40,9 @@ dependencies {
     implementation("com.google.api-client:google-api-client:2.7.0")
     implementation("com.google.http-client:google-http-client-jackson2:1.45.0")
 
-    // Actuator
+    // Actuator + Prometheus 메트릭 (Micrometer)
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.micrometer:micrometer-registry-prometheus")
 
     // 구조화 JSON 로깅 (Promtail/Loki 수집용) — prod 프로필에서만 JSON 포맷 활성화
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")

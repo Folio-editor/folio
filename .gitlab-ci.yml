@@ -208,10 +208,11 @@ deploy-production:
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
         set -a; source .env; set +a
 
-        # 2.5. PLG 데이터 디렉토리 보장 (Loki/Grafana 첫 기동 시 필요)
-        sudo mkdir -p /opt/folio/data/loki /opt/folio/data/grafana /opt/folio/data/promtail-positions
+        # 2.5. PLG + Metrics 데이터 디렉토리 보장 (Loki/Grafana/Prometheus 첫 기동 시 필요)
+        sudo mkdir -p /opt/folio/data/loki /opt/folio/data/grafana /opt/folio/data/promtail-positions /opt/folio/data/prometheus
         sudo chown -R 10001:10001 /opt/folio/data/loki
         sudo chown -R 472:472 /opt/folio/data/grafana
+        sudo chown -R 65534:65534 /opt/folio/data/prometheus  # Prometheus 컨테이너 user (nobody)
 
         # 3. Docker 이미지 빌드
         cd /opt/folio/S14P31F203
@@ -259,7 +260,7 @@ deploy-production:
         echo "Waiting for health checks..."
         HEALTH_OK=true
 
-        # Backend (Spring Boot)
+        # Backend (Spring Boot) — 부팅 ~14초, 30회 × 2초 = 60초 여유 충분
         for i in \$(seq 1 30); do
           if curl -sf http://localhost:\${BACKEND_PORT}/actuator/health > /dev/null 2>&1; then
             echo "Backend healthy (attempt \$i)"
@@ -319,6 +320,16 @@ deploy-production:
 
         # 헬스체크 실패 시 새 컨테이너 정리 후 종료
         if [ "\$HEALTH_OK" = false ]; then
+          echo "[rollback] Capturing failure logs before cleanup..."
+          # 진단을 위한 로그 출력 (backend/ai 200줄, web/landing 50줄)
+          for svc in backend ai celery-worker; do
+            echo "=== folio-\${svc}-\${NEXT} logs (tail 200) ==="
+            docker logs --tail 200 folio-\${svc}-\${NEXT} 2>&1 || echo "(container not found)"
+          done
+          for svc in web landing; do
+            echo "=== folio-\${svc}-\${NEXT} logs (tail 50) ==="
+            docker logs --tail 50 folio-\${svc}-\${NEXT} 2>&1 || echo "(container not found)"
+          done
           echo "[rollback] Stopping failed \$NEXT containers..."
           docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env \
             rm -sf spring-boot-\${NEXT} fastapi-\${NEXT} celery-worker-\${NEXT} react-web-\${NEXT} landing-\${NEXT} \

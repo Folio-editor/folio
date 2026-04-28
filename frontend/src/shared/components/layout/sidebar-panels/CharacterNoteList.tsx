@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@powersync/react';
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useQuery, usePowerSync } from '@powersync/react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  PanelRight,
+  Pencil,
+  Plus,
+  SquareArrowOutUpRight,
+  Trash2,
+} from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -10,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -24,6 +35,7 @@ import {
 } from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -111,6 +123,7 @@ export function CharacterNoteList({
   const tagFilter = useFilterPreferenceStore(
     (s) => s.byPanel['character-tag'] ?? (EMPTY_FILTER as string[]),
   );
+  const clearFilter = useFilterPreferenceStore((s) => s.clear);
   const trimmed = searchTerm.trim();
   const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
   const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
@@ -131,12 +144,13 @@ export function CharacterNoteList({
     ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
     ...tagFilter,
   ];
-  const { data: rawCharacters = [] } = useQuery<CharacterRow>(sql, params);
+  const { data: rawCharacters = [], isFetching } = useQuery<CharacterRow>(sql, params);
   const characters = useOptimisticRows(rawCharacters, {
     docType: 'character',
     workId,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(characters.length === 0 && !creating && !isFetching);
 
   const handleCreateChar = () => {
     const trimmedTitle = createTitle.trim();
@@ -144,6 +158,7 @@ export function CharacterNoteList({
     setCreateTitle('');
     if (!trimmedTitle) return;
     void (async () => {
+      if (tagFilter.length > 0) clearFilter('character-tag');
       const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
       await ensureCharacterNotes(id);
       setExpandedCharId(id);
@@ -191,7 +206,9 @@ export function CharacterNoteList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-        {characters.length === 0 && !creating ? (
+        {isFetching && characters.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {trimmed ? '검색 결과가 없습니다.' : '등장인물이 없습니다.'}
           </p>
@@ -306,6 +323,7 @@ function SortableCharacterItem(props: CharacterTreeItemProps) {
 
 function CharacterTreeItem({
   character,
+  workId,
   isExpanded,
   selectedNoteId,
   isCharSelected,
@@ -321,7 +339,13 @@ function CharacterTreeItem({
   dragListeners?: SyntheticListenerMap;
 }) {
   const writerId = useWriterId();
-  const { createCharacterNote, deleteCharacter } = useLocalWrite();
+  const db = usePowerSync();
+  const {
+    createCharacter,
+    createCharacterNote,
+    deleteCharacter,
+    placeCharacter,
+  } = useLocalWrite();
   const [creatingNote, setCreatingNote] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -364,6 +388,49 @@ function CharacterTreeItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  /**
+   * 인물 복제 — character row 자체만 복제 (사본 외형/성격 노트는 ensureCharacterNotes 가 자동 생성).
+   * 커스텀 노트(kind='custom')는 사본하지 않음. 명시 한계.
+   */
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ gender: string | null; age: string | null }>(
+      'SELECT gender, age FROM "character" WHERE id = ? LIMIT 1',
+      [character.id],
+    );
+    const gender = rows[0]?.gender ?? '';
+    const age = rows[0]?.age ?? '';
+    const newId = await createCharacter(
+      workId,
+      `${character.name?.trim() || '(이름 없음)'} (사본)`,
+      gender,
+      age,
+      Date.now(),
+    );
+    await placeCharacter(newId, workId, character.id, 'after');
+  };
+
+  const fetchSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM "character"
+       WHERE work_id = ? AND writer_id = ?
+       ORDER BY sort_order ASC, created_at ASC`,
+      [workId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(character.id);
+    if (idx <= 0) return;
+    await placeCharacter(character.id, workId, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(character.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placeCharacter(character.id, workId, ids[idx + 1], 'after');
   };
 
   return (
@@ -415,8 +482,25 @@ function CharacterTreeItem({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onCharacterActivate('newTab')}>
+            <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCharacterActivate('pin')}>
+            <PanelRight size={12} /> 스테이지에 추가
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => handleQuickAddNote()}>
             <Plus size={12} /> 하위 추가
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleDuplicate()}>
+            <Copy size={12} /> 복제
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleMoveUp()}>
+            <ChevronUp size={12} /> 위로 이동
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleMoveDown()}>
+            <ChevronDown size={12} /> 아래로 이동
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem destructive onSelect={() => setDeleteOpen(true)}>
@@ -519,6 +603,7 @@ function SortableNoteItem(props: SortableNoteItemProps) {
 
 function NoteItem({
   note,
+  characterId,
   selected,
   onSelect,
   onAfterDelete,
@@ -528,7 +613,14 @@ function NoteItem({
   dragAttributes?: DraggableAttributes;
   dragListeners?: SyntheticListenerMap;
 }) {
-  const { updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
+  const writerId = useWriterId();
+  const db = usePowerSync();
+  const {
+    updateCharacterNoteTitle,
+    deleteCharacterNote,
+    createCharacterNote,
+    placeCharacterNote,
+  } = useLocalWrite();
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);
@@ -570,6 +662,43 @@ function NoteItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM character_note WHERE id = ? LIMIT 1',
+      [note.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const newId = await createCharacterNote(
+      characterId,
+      `${note.title?.trim() || '(제목 없음)'} (사본)`,
+      Date.now(),
+      content,
+    );
+    await placeCharacterNote(newId, characterId, note.id, 'after');
+  };
+
+  const fetchSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM character_note
+       WHERE character_id = ? AND writer_id = ? AND kind != 'intro'
+       ORDER BY sort_order ASC, created_at ASC`,
+      [characterId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx <= 0) return;
+    await placeCharacterNote(note.id, characterId, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placeCharacterNote(note.id, characterId, ids[idx + 1], 'after');
   };
 
   if (editing) {
@@ -620,6 +749,24 @@ function NoteItem({
       <ContextMenu>
         <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onSelect('newTab')}>
+            <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelect('pin')}>
+            <PanelRight size={12} /> 스테이지에 추가
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleDuplicate()}>
+            <Copy size={12} /> 복제
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleMoveUp()}>
+            <ChevronUp size={12} /> 위로 이동
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleMoveDown()}>
+            <ChevronDown size={12} /> 아래로 이동
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setEditing(true)}>
             <Pencil size={12} /> 이름 변경
           </ContextMenuItem>

@@ -1,21 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { generateHTML } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Highlight from '@tiptap/extension-highlight';
-import TextAlign from '@tiptap/extension-text-align';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useWriterId } from '../../hooks/useWriterId';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-
-const previewExtensions = [
-  StarterKit.configure({ code: false, codeBlock: false }),
-  Highlight.configure({ multicolor: false }),
-  TextAlign.configure({ types: ['heading', 'paragraph'] }),
-];
+import { contentToHtml } from '../../lib/tiptapPreview';
 
 interface WorldNoteOverviewProps {
   workId: string;
@@ -244,12 +235,3 @@ function ListItem({ note, children, expanded, onClick, onToggle, onChildClick }:
   );
 }
 
-function contentToHtml(raw: string | null): string {
-  if (!raw) return '';
-  try {
-    const json = JSON.parse(raw);
-    return generateHTML(json, previewExtensions);
-  } catch {
-    return '';
-  }
-}

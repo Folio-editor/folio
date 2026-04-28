@@ -33,6 +33,8 @@ export interface CreatePaymentResponse {
   orderName: string;
   amount: number;
   tokenQty: number;
+  /** Toss SDK 초기화에 사용. 백엔드가 prepare 응답에 함께 내려준다. */
+  clientKey: string;
 }
 
 export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELLED' | 'REFUNDED';

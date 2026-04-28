@@ -6,15 +6,16 @@ import {
   Italic,
   Underline,
   Strikethrough,
-  Highlighter,
+  MessageSquareText,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { HighlightColorPalette } from './HighlightColorPalette';
 
 interface EditorBubbleMenuProps {
   editor: Editor;
 }
 
-const iconSize = 14;
+const ICON = 14;
 
 function BubbleButton({
   active,
@@ -46,48 +47,51 @@ export default function EditorBubbleMenu({ editor }: EditorBubbleMenuProps) {
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     editor.on('transaction', forceUpdate);
-    return () => { editor.off('transaction', forceUpdate); };
+    return () => {
+      editor.off('transaction', forceUpdate);
+    };
   }, [editor, forceUpdate]);
 
   return (
     <BubbleMenu
       editor={editor}
-      className="rounded-lg shadow-lg border border-border bg-popover p-1 flex gap-0.5"
+      className="rounded-lg shadow-lg border border-border bg-popover p-1 flex items-center gap-0.5"
     >
       <BubbleButton
         active={editor.isActive('bold')}
         onClick={() => editor.chain().focus().toggleBold().run()}
         title="굵게"
       >
-        <Bold size={iconSize} />
+        <Bold size={ICON} />
       </BubbleButton>
       <BubbleButton
         active={editor.isActive('italic')}
         onClick={() => editor.chain().focus().toggleItalic().run()}
         title="기울임"
       >
-        <Italic size={iconSize} />
+        <Italic size={ICON} />
       </BubbleButton>
       <BubbleButton
         active={editor.isActive('underline')}
         onClick={() => editor.chain().focus().toggleUnderline().run()}
         title="밑줄"
       >
-        <Underline size={iconSize} />
+        <Underline size={ICON} />
       </BubbleButton>
       <BubbleButton
         active={editor.isActive('strike')}
         onClick={() => editor.chain().focus().toggleStrike().run()}
         title="취소선"
       >
-        <Strikethrough size={iconSize} />
+        <Strikethrough size={ICON} />
       </BubbleButton>
+      <HighlightColorPalette editor={editor} iconSize={ICON} triggerClassName="h-6 w-6" />
       <BubbleButton
-        active={editor.isActive('highlight')}
-        onClick={() => (editor.chain().focus() as any).toggleHighlight().run()}
-        title="형광펜"
+        active={editor.isActive('authorNote')}
+        onClick={() => (editor.chain().focus() as any).toggleAuthorNote().run()}
+        title="주석 (Ctrl+Shift+M)"
       >
-        <Highlighter size={iconSize} />
+        <MessageSquareText size={ICON} />
       </BubbleButton>
     </BubbleMenu>
   );

@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useQuery } from '@powersync/react';
-import { FileText } from 'lucide-react';
+import { FileText, Plus } from 'lucide-react';
 import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useWriterId } from '../../hooks/useWriterId';
 import { WorldNoteInlineEditor } from '../../features/world-note/WorldNoteInlineEditor';
+import { GenderIcon } from '../../features/character/CharacterOverview';
 
 interface AuxDocViewerProps {
   docType: AuxDocType;
@@ -219,13 +220,22 @@ function WorldNoteAuxSection({
   );
 }
 
-/* ── 캐릭터 보조 통합 뷰 — 메인 CharacterOverview의 컴팩트 버전 ── */
+/* ── 캐릭터 보조 통합 뷰 — 메인 CharacterOverview의 컴팩트 버전 ──
+ * 메인 통합뷰와 동일한 구성:
+ *   1) Hero — 프로필 이미지 + 이름/성별/나이 (모두 readonly 표시)
+ *   2) 태그 칩 (readonly)
+ *   3) intro 본문 (편집 가능)
+ *   4) 하위 문서 카드 리스트 (편집 가능 + 추가 버튼)
+ *
+ * "로직상 문제 가능한 부분(이미지/이름/성별/나이/태그)은 readonly로" 사용자 결정.
+ */
 
 interface CharacterMetaRow {
   id: string;
   name: string;
   gender: string | null;
   age: string | null;
+  profile_image_url: string | null;
 }
 
 interface CharacterAuxNoteRow {
@@ -233,21 +243,41 @@ interface CharacterAuxNoteRow {
   kind: string;
   title: string;
   content: string | null;
+  sort_order: number | null;
+}
+
+interface CharacterAuxTagRow {
+  world_note_id: string;
+  name: string;
+}
+
+function nextSortOrder(rows: { sort_order: number | null }[]) {
+  if (rows.length === 0) return 0;
+  return Math.max(...rows.map((row) => row.sort_order ?? 0)) + 1000;
 }
 
 function CharacterAuxView({ docId, editable }: { docId: string; editable: boolean }) {
-  const { updateCharacterNoteContent } = useLocalWrite();
+  const { createCharacterNote, updateCharacterNoteContent } = useLocalWrite();
 
   const { data: metaRows = [] } = useQuery<CharacterMetaRow>(
-    `SELECT id, name, gender, age FROM character WHERE id = ? LIMIT 1`,
+    `SELECT id, name, gender, age, profile_image_url FROM character WHERE id = ? LIMIT 1`,
     [docId],
   );
   const meta = metaRows[0];
 
   const { data: notes = [] } = useQuery<CharacterAuxNoteRow>(
-    `SELECT id, kind, title, content FROM character_note
+    `SELECT id, kind, title, content, sort_order FROM character_note
      WHERE character_id = ?
      ORDER BY sort_order ASC, created_at ASC`,
+    [docId],
+  );
+
+  const { data: tags = [] } = useQuery<CharacterAuxTagRow>(
+    `SELECT ct.world_note_id, wn.name
+     FROM character_tag ct
+     JOIN world_note wn ON ct.world_note_id = wn.id
+     WHERE ct.character_id = ?
+     ORDER BY wn.name ASC`,
     [docId],
   );
 
@@ -268,22 +298,67 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
     );
   }
 
+  const gender = meta.gender ?? '미설정';
+
   return (
     <div className="flex flex-col px-3 py-2">
-      {/* 메타 — 이름 / 성별 / 나이 */}
-      <div className="mb-2 flex items-baseline gap-1.5">
-        <span className="text-sm font-bold text-foreground">
-          {meta.name?.trim() || '(이름 없음)'}
-        </span>
-        {meta.gender && (
-          <span className="text-[10px] text-muted-foreground">{meta.gender}</span>
-        )}
-        {meta.age && (
-          <span className="text-[10px] text-muted-foreground">/ {meta.age}</span>
-        )}
+      {/* Hero — 프로필 이미지 + 이름/성별/나이 (readonly) */}
+      <div className="mb-3 flex gap-3">
+        <div
+          className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted"
+          aria-label="프로필 이미지"
+        >
+          {meta.profile_image_url ? (
+            <img
+              src={meta.profile_image_url}
+              alt={meta.name || ''}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span className="text-2xl font-bold text-muted-foreground/30">
+              {(meta.name || '?').charAt(0)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <span
+              title={`성별: ${gender}`}
+              className="flex h-5 w-5 shrink-0 items-center justify-center"
+            >
+              <GenderIcon gender={gender} size={14} />
+            </span>
+            <span className="truncate text-sm font-bold text-foreground">
+              {meta.name?.trim() || '(이름 없음)'}
+            </span>
+            {meta.age && (
+              <>
+                <span className="select-none text-[10px] text-muted-foreground/40">/</span>
+                <span className="text-[11px] text-muted-foreground">{meta.age}</span>
+              </>
+            )}
+          </div>
+
+          {/* 태그 — readonly 칩 */}
+          <div className="flex flex-wrap gap-1">
+            {tags.length === 0 ? (
+              <span className="text-[10px] text-muted-foreground/40">태그 없음</span>
+            ) : (
+              tags.map((tag) => (
+                <span
+                  key={tag.world_note_id}
+                  className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                >
+                  {tag.name}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* 본문 — intro character_note의 content */}
+      {/* 본문 — intro character_note */}
       {introNote && (
         <div className="mb-2">
           <WorldNoteInlineEditor
@@ -297,12 +372,26 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
         </div>
       )}
 
-      {/* 하위 문서 카드 — breadcrumb: 캐릭터 > 노트제목 */}
-      {visibleNotes.length > 0 && (
-        <div className="border-t border-border/50 pt-2">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {/* 하위 문서 카드 */}
+      <div className="border-t border-border/50 pt-2">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             하위 문서
           </p>
+          {editable && (
+            <button
+              type="button"
+              onClick={() =>
+                void createCharacterNote(docId, '새 문서', nextSortOrder(notes))
+              }
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <Plus size={10} strokeWidth={1.75} />
+              추가
+            </button>
+          )}
+        </div>
+        {visibleNotes.length > 0 ? (
           <div className="flex flex-col divide-y divide-border">
             {visibleNotes.map((note) => (
               <div key={note.id} className="py-2">
@@ -322,8 +411,12 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="py-3 text-center text-xs text-muted-foreground">
+            문서가 없습니다.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

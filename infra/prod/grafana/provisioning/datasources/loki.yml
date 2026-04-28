@@ -6,6 +6,10 @@ apiVersion: 1
 
 datasources:
   - name: Loki
+    # uid 명시 — 대시보드(folio-operations-health.json 등) 가 datasource.uid="loki" 참조.
+    # 현재 자동 부여된 uid(P8E80F9AEF21F6940) 는 type fallback 으로 우연히 동작 중인 불안정 상태이므로
+    # 명시적 uid 부여로 안정화한다. 사용자 정의 대시보드가 있다면 datasource 재연결 필요.
+    uid: loki
     type: loki
     access: proxy
     url: http://loki:3100

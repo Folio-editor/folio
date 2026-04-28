@@ -1,0 +1,123 @@
+# ============================================================
+# Prometheus — 단일 인스턴스 (15일 retention, filesystem TSDB)
+#
+# 목적: Folio 운영 인프라(EC2 + Blue/Green) 의 메트릭 수집·저장.
+#
+# 라벨 정합성:
+#   Promtail 의 service/color 라벨 추출 정규식과 동일 규칙을 적용해
+#   Loki 와 Prometheus 의 라벨이 일치하도록 한다 → Grafana 변수
+#   ($service, $color) 로 두 데이터소스 동시 필터 가능.
+#
+# 외부 노출:
+#   nginx 라우팅 없음. folio-net 내부 전용. Grafana 가 데이터소스로 proxy.
+# ============================================================
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    environment: production
+    project: folio
+
+scrape_configs:
+  # ─── Self ───────────────────────────────────────────────────
+  - job_name: prometheus
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ─── Host (EC2) ─────────────────────────────────────────────
+  - job_name: node-exporter
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # ─── Container (cAdvisor) ───────────────────────────────────
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # ─── Spring Boot (Blue/Green) — Docker SD 자동 감지 ─────────
+  - job_name: spring-boot
+    metrics_path: /actuator/prometheus
+    scrape_interval: 15s
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 30s
+        filters:
+          - name: network
+            values: ['folio-net']
+    relabel_configs:
+      # backend 컨테이너만 대상
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-backend-(blue|green)'
+        action: keep
+      # service 라벨 (Promtail 과 동일 키)
+      - target_label: service
+        replacement: backend
+      # color 라벨 (Blue/Green)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-.*-(blue|green)'
+        target_label: color
+      # container 라벨 (Promtail 과 동일 키)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      # docker SD 가 emit 하는 주소가 internal IP — port 8080 강제
+      - source_labels: ['__address__']
+        regex: '(.*?)(:\d+)?'
+        replacement: '${1}:8080'
+        target_label: __address__
+
+  # ─── FastAPI (Blue/Green) ───────────────────────────────────
+  - job_name: fastapi
+    metrics_path: /metrics
+    scrape_interval: 15s
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 30s
+        filters:
+          - name: network
+            values: ['folio-net']
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-ai-(blue|green)'
+        action: keep
+      - target_label: service
+        replacement: ai
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/folio-.*-(blue|green)'
+        target_label: color
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__address__']
+        regex: '(.*?)(:\d+)?'
+        replacement: '${1}:8000'
+        target_label: __address__
+
+  # ─── PostgreSQL ─────────────────────────────────────────────
+  - job_name: postgres
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: postgresql
+
+  # ─── Redis ──────────────────────────────────────────────────
+  - job_name: redis
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: redis
+
+  # ─── MongoDB (PowerSync 동기화 가시화) ──────────────────────
+  - job_name: mongodb
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
+        labels:
+          service: mongo

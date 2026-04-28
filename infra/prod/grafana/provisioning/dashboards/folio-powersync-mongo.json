@@ -1,0 +1,112 @@
+{
+  "title": "Folio · PowerSync / MongoDB",
+  "uid": "folio-powersync-mongo",
+  "tags": ["folio", "mongodb", "powersync"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "MongoDB 데이터 용량 (DB별 storageSize)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "mongodb_dbstats_storageSize",
+          "legendFormat": "{{database}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 2,
+      "title": "Oplog Window (보관 가능 시간)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "mongodb_oplog_stats_window_seconds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3600 },
+              { "color": "green", "value": 21600 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "활성 연결 수 (PowerSync ↔ Mongo)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "mongodb_ss_connections{conn_type=\"current\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Op Counters (insert/update/query/delete) — req/s",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(mongodb_ss_opcounters[5m])",
+          "legendFormat": "{{legacy_op_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Global Lock 대기 큐",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "mongodb_ss_globalLock_currentQueue{count_type!=\"total\"}",
+          "legendFormat": "{{count_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "PowerSync 컨테이너 — CPU / 메모리",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=\"folio-powersync-prod\"}[5m]) * 100",
+          "legendFormat": "CPU %",
+          "refId": "A"
+        },
+        {
+          "expr": "container_memory_usage_bytes{name=\"folio-powersync-prod\"}",
+          "legendFormat": "Memory bytes",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

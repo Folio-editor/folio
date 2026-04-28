@@ -1,11 +1,13 @@
 package com.storyzip.common.exception;
 
+import com.storyzip.common.observability.TraceContextFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -250,7 +252,16 @@ public class GlobalExceptionHandler {
                 .build();
     }
 
+    /**
+     * TraceContextFilter가 요청 시작 시 MDC에 주입한 traceId를 우선 사용한다.
+     * 필터 체인 밖(예: 비동기 콜백, 부팅 시점 예외)에서 호출되는 경우에만 새로 생성.
+     * 이렇게 하면 응답 헤더 X-Trace-Id, 모든 로그 라인, 에러 응답 body의 traceId가 일치한다.
+     */
     private String newTraceId() {
+        String existing = MDC.get(TraceContextFilter.MDC_TRACE_ID);
+        if (existing != null && !existing.isBlank()) {
+            return existing;
+        }
         return UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 }

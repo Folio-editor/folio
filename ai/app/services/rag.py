@@ -19,10 +19,10 @@ import re
 import uuid
 from typing import Any
 
-from sqlalchemy import select, text as sa_text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy import text as sa_text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.db.session import async_session
 from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
 from app.services.settings_loader import load_settings
@@ -97,44 +97,41 @@ async def assemble_context(
     recent_raw_limit = RECENT_RAW_LIMIT.get(mode, RECENT_RAW_LIMIT["draft"])
     vector_search_limit = VECTOR_SEARCH_LIMIT.get(mode, VECTOR_SEARCH_LIMIT["draft"])
     include_foreshadows = mode in FORESHADOWS_MODES
-    engine = create_async_engine(settings.database_url, pool_size=1)
-    try:
-        async with AsyncSession(engine) as session:
-            sections = {}
-            settings_bundle = await load_settings(session, work_id)
 
-            sections["work_meta"] = await _fetch_work_meta(session, work_id)
-            if settings_bundle["mode"] == "full":
-                sections["characters"] = await _fetch_characters(session, work_id)
-                sections["world_notes"] = await _fetch_world_notes(session, work_id)
-            else:
-                sections["characters"] = settings_bundle["characters_text"]
-                sections["world_notes"] = settings_bundle["world_notes_text"]
-            if include_foreshadows:
-                sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
-            if mode in TIMELINE_MODES:
-                sections["timeline"] = await build_timeline(
-                    session, work_id, current_episode_num
-                )
-            sections["storyline"] = await _fetch_storyline(session, work_id)
-            recent_raw_text, recent_raw_orders = await _fetch_recent_raw(
-                session, work_id, current_episode_num, limit=recent_raw_limit
-            )
-            sections["recent_raw"] = recent_raw_text
-            sections["vector_search"] = await _fetch_vector_similar(
-                session,
-                work_id,
-                writer_id,
-                storyline,
-                current_episode_num=current_episode_num,
-                excluded_sort_orders=recent_raw_orders,
-                limit=vector_search_limit,
-            )
+    async with async_session() as session:
+        sections = {}
+        settings_bundle = await load_settings(session, work_id)
 
-        protected = PROTECTED_KEYS_BY_MODE.get(mode, set())
-        return _trim_to_budget(sections, protected_keys=protected)
-    finally:
-        await engine.dispose()
+        sections["work_meta"] = await _fetch_work_meta(session, work_id)
+        if settings_bundle["mode"] == "full":
+            sections["characters"] = await _fetch_characters(session, work_id)
+            sections["world_notes"] = await _fetch_world_notes(session, work_id)
+        else:
+            sections["characters"] = settings_bundle["characters_text"]
+            sections["world_notes"] = settings_bundle["world_notes_text"]
+        if include_foreshadows:
+            sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
+        if mode in TIMELINE_MODES:
+            sections["timeline"] = await build_timeline(
+                session, work_id, current_episode_num
+            )
+        sections["storyline"] = await _fetch_storyline(session, work_id)
+        recent_raw_text, recent_raw_orders = await _fetch_recent_raw(
+            session, work_id, current_episode_num, limit=recent_raw_limit
+        )
+        sections["recent_raw"] = recent_raw_text
+        sections["vector_search"] = await _fetch_vector_similar(
+            session,
+            work_id,
+            writer_id,
+            storyline,
+            current_episode_num=current_episode_num,
+            excluded_sort_orders=recent_raw_orders,
+            limit=vector_search_limit,
+        )
+
+    protected = PROTECTED_KEYS_BY_MODE.get(mode, set())
+    return _trim_to_budget(sections, protected_keys=protected)
 
 
 async def _fetch_work_meta(session: AsyncSession, work_id: str) -> str:

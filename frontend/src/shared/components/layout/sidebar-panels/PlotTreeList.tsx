@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@powersync/react';
-import { ChevronRight, LayoutList, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useQuery, usePowerSync } from '@powersync/react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  LayoutList,
+  PanelRight,
+  Pencil,
+  Plus,
+  SquareArrowOutUpRight,
+  Trash2,
+} from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -10,6 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -25,6 +37,7 @@ import {
 } from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -89,12 +102,13 @@ export function PlotTreeList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawActs = [] } = useQuery<PlotRow>(sql, params);
+  const { data: rawActs = [], isFetching } = useQuery<PlotRow>(sql, params);
   const acts = useOptimisticRows(rawActs, {
     docType: 'plot',
     parentId: null,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(acts.length === 0 && !creating && !isFetching);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -176,7 +190,9 @@ export function PlotTreeList({
         selected={selectedItemId === '__all__'}
         onSelect={(intent) => onItemSelect('__all__', intent)}
       />
-      {acts.length === 0 && !creating ? (
+      {isFetching && acts.length === 0 && !creating ? (
+        <SidebarListSkeleton />
+      ) : showEmpty ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '플롯이 없습니다.'}
         </p>
@@ -293,7 +309,8 @@ function ActTreeItem({
   isMergeOver?: boolean;
 }) {
   const writerId = useWriterId();
-  const { createPlot, updatePlot, deletePlot } = useLocalWrite();
+  const db = usePowerSync();
+  const { createPlot, updatePlot, deletePlot, placePlot } = useLocalWrite();
   const isExpanded = expandedIds.has(act.id);
   const isSelected = selectedItemId === act.id;
   const [editing, setEditing] = useState(false);
@@ -348,6 +365,45 @@ function ActTreeItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  /** 막 복제 — 같은 root 레벨에 사본 생성 (자식 회차들은 사본하지 않음) */
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM plot WHERE id = ? LIMIT 1',
+      [act.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const newId = await createPlot(
+      workId,
+      `${act.title?.trim() || '(제목 없음)'} (사본)`,
+      Date.now(),
+      null,
+      content,
+    );
+    await placePlot(newId, null, act.id, 'after');
+  };
+
+  const fetchActSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM plot
+       WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL
+       ORDER BY sort_order ASC, created_at ASC`,
+      [workId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchActSiblings();
+    const idx = ids.indexOf(act.id);
+    if (idx <= 0) return;
+    await placePlot(act.id, null, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchActSiblings();
+    const idx = ids.indexOf(act.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placePlot(act.id, null, ids[idx + 1], 'after');
   };
 
   const actClickHandlers = useSidebarClickHandler((intent) => onSelect(act.id, intent));
@@ -438,8 +494,25 @@ function ActTreeItem({
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
+            <ContextMenuItem onSelect={() => onSelect(act.id, 'newTab')}>
+              <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onSelect(act.id, 'pin')}>
+              <PanelRight size={12} /> 스테이지에 추가
+            </ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => handleQuickAddChild()}>
               <Plus size={12} /> 새 회차 추가
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void handleDuplicate()}>
+              <Copy size={12} /> 복제
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => void handleMoveUp()}>
+              <ChevronUp size={12} /> 위로 이동
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void handleMoveDown()}>
+              <ChevronDown size={12} /> 아래로 이동
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => setEditing(true)}>
@@ -471,6 +544,7 @@ function ActTreeItem({
               {episodes.map((ep) => (
                 <SortableEpisodeItem
                   key={ep.id}
+                  workId={workId}
                   episode={ep}
                   parentActId={act.id}
                   selected={selectedItemId === ep.id}
@@ -501,6 +575,7 @@ function ActTreeItem({
 /* ── 회차 아이템 ── */
 
 function SortableEpisodeItem(props: {
+  workId: string;
   episode: PlotRow;
   parentActId: string;
   selected: boolean;
@@ -549,7 +624,9 @@ function SortableEpisodeItem(props: {
 }
 
 function EpisodeItem({
+  workId,
   episode,
+  parentActId,
   selected,
   onSelect,
   onRename,
@@ -557,6 +634,7 @@ function EpisodeItem({
   dragAttributes,
   dragListeners,
 }: {
+  workId: string;
   episode: PlotRow;
   parentActId: string;
   selected: boolean;
@@ -566,6 +644,9 @@ function EpisodeItem({
   dragAttributes?: DraggableAttributes;
   dragListeners?: SyntheticListenerMap;
 }) {
+  const writerId = useWriterId();
+  const db = usePowerSync();
+  const { createPlot, placePlot } = useLocalWrite();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(episode.title);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -580,6 +661,44 @@ function EpisodeItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM plot WHERE id = ? LIMIT 1',
+      [episode.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const newId = await createPlot(
+      workId,
+      `${episode.title?.trim() || '(제목 없음)'} (사본)`,
+      Date.now(),
+      parentActId,
+      content,
+    );
+    await placePlot(newId, parentActId, episode.id, 'after');
+  };
+
+  const fetchSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM plot
+       WHERE parent_id = ? AND writer_id = ?
+       ORDER BY sort_order ASC, created_at ASC`,
+      [parentActId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(episode.id);
+    if (idx <= 0) return;
+    await placePlot(episode.id, parentActId, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(episode.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placePlot(episode.id, parentActId, ids[idx + 1], 'after');
   };
 
   useEffect(() => {
@@ -657,6 +776,24 @@ function EpisodeItem({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onSelect('newTab')}>
+            <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelect('pin')}>
+            <PanelRight size={12} /> 스테이지에 추가
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleDuplicate()}>
+            <Copy size={12} /> 복제
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleMoveUp()}>
+            <ChevronUp size={12} /> 위로 이동
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleMoveDown()}>
+            <ChevronDown size={12} /> 아래로 이동
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setEditing(true)}>
             <Pencil size={12} /> 이름 변경
           </ContextMenuItem>

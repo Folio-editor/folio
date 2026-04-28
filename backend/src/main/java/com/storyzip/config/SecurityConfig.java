@@ -1,6 +1,7 @@
 package com.storyzip.config;
 
 import com.storyzip.auth.jwt.JwtAuthenticationFilter;
+import com.storyzip.common.observability.TraceContextFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +20,9 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health",
             "/actuator/info",
+            // Prometheus scrape 용 — 외부에는 nginx 가 /actuator/ 를 라우팅하지 않으므로
+            // folio-net 내부 컨테이너(folio-prometheus)에서만 접근 가능
+            "/actuator/prometheus",
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/v3/api-docs/**",
@@ -40,6 +44,7 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final TraceContextFilter requestContextFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -55,7 +60,9 @@ public class SecurityConfig {
                 // 인증 실패(토큰 없음/만료) 시 403이 아닌 401 반환 → 프론트 apiClient 자동 refresh 트리거
                 .exceptionHandling(e -> e.authenticationEntryPoint((req, res, ex) ->
                         res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                // TraceContextFilter는 인증 실패 로그에도 traceId가 찍히도록 가장 먼저 실행
+                .addFilterBefore(requestContextFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(jwtAuthenticationFilter, TraceContextFilter.class);
 
         return http.build();
     }

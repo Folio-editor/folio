@@ -8,7 +8,7 @@ import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
-import { SharedEditorToolbar } from '../../components/editor/SharedEditorToolbar';
+import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
@@ -167,7 +167,7 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SharedEditorToolbar />
+        <UnifiedEditorToolbar mode="shared" />
         <div className="mx-auto max-w-3xl px-8 py-6">
           {/* 막 본문 */}
           <WorldNoteInlineEditor

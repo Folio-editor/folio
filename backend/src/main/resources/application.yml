@@ -21,10 +21,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        # prometheus 추가 — /actuator/prometheus 가 Micrometer Prometheus registry 메트릭 노출
+        # (JVM, Tomcat HTTP, HikariCP, GC, Logback 등 자동)
+        include: health, info, prometheus
   endpoint:
     health:
       show-details: when_authorized
+  metrics:
+    tags:
+      application: folio-backend
 
 # JWT (HS256)
 jwt:

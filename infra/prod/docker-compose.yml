@@ -205,6 +205,132 @@ services:
     networks:
       - folio-net
 
+  # ─── Metrics Stack (Prometheus + exporters) ────────────────
+  # 모두 folio-net 내부 전용. 외부 포트 노출 없음. Grafana 가 데이터소스로 proxy.
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: folio-prometheus
+    user: "65534:65534"  # nobody — /opt/folio/data/prometheus 소유자와 일치
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/folio/data/prometheus:/prometheus
+      # docker_sd_configs 가 컨테이너 SD 위해 필요 (read-only)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    # exporters started 후 기동 — healthy 까진 기다리지 않음 (Prometheus 자체는 target down 도 graceful 처리)
+    depends_on:
+      - node-exporter
+      - cadvisor
+      - postgres-exporter
+      - redis-exporter
+      - mongodb-exporter
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: folio-node-exporter
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)'
+      - '--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$'
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: folio-cadvisor
+    privileged: true
+    # cAdvisor 가 Docker 컨테이너를 인식하도록 옵션 명시
+    #   --docker_only=true            : systemd cgroup 노이즈 제거, Docker 컨테이너만 노출
+    #   --store_container_labels=false: 모든 라벨을 메트릭에 자동 부착하지 않음 (cardinality 폭발 방어)
+    #   --whitelisted_container_labels: color/service 등 우리 라벨만 컨테이너 메트릭에 부착
+    command:
+      - "--docker_only=true"
+      - "--store_container_labels=false"
+      - "--whitelisted_container_labels=color,service,environment"
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+      # Docker 메타데이터 (컨테이너 이름, 라벨) 직접 접근 — name=folio-* 필터를 위해 필수
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
+  # ─── DB/Redis/MongoDB Exporters ─────────────────────────────
+  # 각 exporter 는 대상 서비스가 healthy 된 후 기동 (초기 메트릭 수집 실패 방지).
+  postgres-exporter:
+    # PostgreSQL 17 호환을 위해 v0.17.1 사용. v0.15.0 은 PG17 에서
+    # pg_stat_bgwriter 가 pg_stat_checkpointer 로 분리된 BREAKING CHANGE 를
+    # 인식 못해 30초마다 "column checkpoints_timed does not exist" 에러 누적.
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: folio-postgres-exporter
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      # 분리 환경변수 사용 — DB_PASSWORD 의 특수문자(@,:,/) URL 인코딩 회피
+      DATA_SOURCE_URI: "postgresql:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_USER: ${DB_USERNAME}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: folio-redis-exporter
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.41.2
+    container_name: folio-mongodb-exporter
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # 인증 미사용 (mongo 컨테이너는 --auth 미설정, MONGO_INITDB_ROOT_* 없음)
+    command:
+      - '--mongodb.uri=mongodb://mongo:27017/?replicaSet=rs0&directConnection=true'
+      - '--collect-all'
+      - '--compatible-mode'
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
   grafana:
     image: grafana/grafana:11.6.0
     container_name: folio-grafana
@@ -223,6 +349,8 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       loki:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
     healthcheck:
       # SERVE_FROM_SUB_PATH=true 이므로 내부 경로에도 /grafana/ 프리픽스 필수

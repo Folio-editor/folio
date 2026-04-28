@@ -55,7 +55,7 @@ export function WorldNoteInlineEditor({
       extensions: [
         StarterKit.configure({ code: false, codeBlock: false }),
         Placeholder.configure({ placeholder }),
-        Highlight.configure({ multicolor: false }),
+        Highlight.configure({ multicolor: true }),
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Typography,
       ],

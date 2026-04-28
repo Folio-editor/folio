@@ -1,6 +1,27 @@
 import { create } from 'zustand';
 
 export type AiScreen = 'menu' | 'draft-input' | 'draft-view' | 'review-input' | 'review-result' | 'history-view' | 'review-history-view';
+
+/**
+ * AiScreen → 사용자에게 노출되는 도구명. 우측 패널 공통 헤더가
+ * `AI 도구 > <도구명>` breadcrumb 으로 통합 표시할 때 사용.
+ * `menu` 는 null — sub-screen이 아니므로 breadcrumb 없음.
+ */
+export function getAiToolName(screen: AiScreen): string | null {
+  switch (screen) {
+    case 'draft-input':
+    case 'draft-view':
+    case 'history-view':
+      return '초안 생성';
+    case 'review-input':
+    case 'review-result':
+    case 'review-history-view':
+      return '원고 검수';
+    case 'menu':
+    default:
+      return null;
+  }
+}
 export type DraftState = 'idle' | 'streaming' | 'done' | 'error';
 export type ReviewState = 'idle' | 'loading' | 'done' | 'error';
 

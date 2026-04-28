@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1 import _dev_ping, drafts, extract_settings, health, pipelines, reviews
 from app.config import settings
@@ -7,6 +8,13 @@ from app.core.logging import configure_logging
 configure_logging()
 
 app = FastAPI(title="Folio AI", version="0.1.0")
+
+# Prometheus 메트릭 — /metrics 엔드포인트 자동 노출
+# (요청 수, 응답시간 분포 p50/p95/p99, 엔드포인트별 카운트 등 자동 수집)
+# router 등록 전에 instrument 해야 모든 라우트가 메트릭에 포함됨.
+Instrumentator(
+    excluded_handlers=["/metrics", "/v1/health"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 # 공개 라우터
 app.include_router(health.router, prefix="/v1")

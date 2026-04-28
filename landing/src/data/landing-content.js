@@ -172,6 +172,11 @@ export const CREDIT_PACKS = [
     { price: '5,000원', credit: '550 CR', bonus: '검수 18회' },
     { price: '10,000원', credit: '1,200 CR', bonus: '검수 41회' },
 ];
+export const CREDIT_PACKS = [
+    { price: '3,000원', credit: '300 CR', bonus: '검수 10회' },
+    { price: '5,000원', credit: '550 CR', bonus: '검수 18회' },
+    { price: '10,000원', credit: '1,200 CR', bonus: '검수 41회' },
+];
 export const FAQ = [
     {
         q: '150화 이상 작품도 임포트 가능?',

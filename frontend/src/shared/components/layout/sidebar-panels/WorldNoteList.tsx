@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@powersync/react';
-import { ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useQuery, usePowerSync } from '@powersync/react';
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  PanelRight,
+  Pencil,
+  Plus,
+  SquareArrowOutUpRight,
+  Trash2,
+} from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -10,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -20,6 +31,7 @@ import {
 } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -71,12 +83,13 @@ export function WorldNoteList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
   const notes = useOptimisticRows(rawNotes, {
     docType: 'world_note',
     parentId: null,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(notes.length === 0 && !creating && !isFetching);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -152,28 +165,30 @@ export function WorldNoteList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-      {notes.length === 0 && !creating ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
-        </p>
-      ) : (
-        <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-          {notes.map((note) => (
-            <SortableWorldNoteItem
-              key={note.id}
-              workId={workId}
-              note={note}
-              depth={0}
-              parentId={null}
-              selectedItemId={selectedItemId}
-              expandedIds={expandedIds}
-              onSelect={handleSelect}
-              onToggleExpand={toggleExpand}
-              onItemSelect={onItemSelect}
-            />
-          ))}
-        </SortableContext>
-      )}
+        {isFetching && notes.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
+          </p>
+        ) : (
+          <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+            {notes.map((note) => (
+              <SortableWorldNoteItem
+                key={note.id}
+                workId={workId}
+                note={note}
+                depth={0}
+                parentId={null}
+                selectedItemId={selectedItemId}
+                expandedIds={expandedIds}
+                onSelect={handleSelect}
+                onToggleExpand={toggleExpand}
+                onItemSelect={onItemSelect}
+              />
+            ))}
+          </SortableContext>
+        )}
       {/* 트리 끝 빈 영역 — 자식 노드를 root level로 빼낼 때 drop 타깃 (시각은 마지막 노드 after 밑줄로) */}
       <TreeRootEndDropZone
         docType="world_note"
@@ -285,8 +300,13 @@ function WorldNoteTreeItem({
 }) {
   void _parentId;
   const writerId = useWriterId();
-  const { updateWorldNoteName, createWorldNote, deleteWorldNote } =
-    useLocalWrite();
+  const db = usePowerSync();
+  const {
+    updateWorldNoteName,
+    createWorldNote,
+    deleteWorldNote,
+    placeWorldNote,
+  } = useLocalWrite();
   const isExpanded = expandedIds.has(note.id);
   const isSelected = selectedItemId === note.id;
 
@@ -342,6 +362,52 @@ function WorldNoteTreeItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  /** 같은 부모 아래 사본 생성 — 본문 보존 + 원본 바로 다음 위치 */
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM world_note WHERE id = ? LIMIT 1',
+      [note.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const parentId = note.parent_id ?? null;
+    const newId = await createWorldNote(
+      workId,
+      `${note.name?.trim() || '(이름 없음)'} (사본)`,
+      Date.now(),
+      parentId,
+      content,
+    );
+    await placeWorldNote(newId, parentId, note.id, 'after');
+  };
+
+  /** 같은 부모 안에서 위/아래 형제와 sort_order swap */
+  const fetchSiblings = async (): Promise<string[]> => {
+    const parentId = note.parent_id ?? null;
+    const sql =
+      parentId === null
+        ? `SELECT id FROM world_note
+           WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL
+           ORDER BY sort_order ASC, created_at ASC`
+        : `SELECT id FROM world_note
+           WHERE parent_id = ? AND writer_id = ?
+           ORDER BY sort_order ASC, created_at ASC`;
+    const params = parentId === null ? [workId, writerId] : [parentId, writerId];
+    const rows = await db.getAll<{ id: string }>(sql, params);
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx <= 0) return;
+    await placeWorldNote(note.id, note.parent_id ?? null, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placeWorldNote(note.id, note.parent_id ?? null, ids[idx + 1], 'after');
   };
 
   const clickHandlers = useSidebarClickHandler((intent) => onSelect(note.id, intent));
@@ -430,8 +496,25 @@ function WorldNoteTreeItem({
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
+            <ContextMenuItem onSelect={() => onSelect(note.id, 'newTab')}>
+              <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => onSelect(note.id, 'pin')}>
+              <PanelRight size={12} /> 스테이지에 추가
+            </ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => handleQuickAddChild()}>
               <Plus size={12} /> 하위 추가
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void handleDuplicate()}>
+              <Copy size={12} /> 복제
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => void handleMoveUp()}>
+              <ChevronUp size={12} /> 위로 이동
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => void handleMoveDown()}>
+              <ChevronDown size={12} /> 아래로 이동
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={() => setEditing(true)}>

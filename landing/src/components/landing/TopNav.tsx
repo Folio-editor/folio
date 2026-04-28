@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { buildLoginUrl } from '../../lib/loginUrl';
 import { useLandingAuth } from '../../lib/auth';
 import { UserProfileMenu } from './UserProfileMenu';
@@ -10,12 +11,7 @@ export function TopNav() {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <Link
-          to="/"
-          className="nav-brand"
-          aria-label="Folio 홈으로"
-          onClick={handleBrandClick}
-        >
+        <Link to="/" className="nav-brand" aria-label="Folio 홈으로">
           <img src="/nav-logo.png" alt="Folio" className="nav-logo" />
         </Link>
         <div className="nav-links">

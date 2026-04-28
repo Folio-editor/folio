@@ -1,6 +1,15 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@powersync/react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useQuery, usePowerSync } from '@powersync/react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  PanelRight,
+  Pencil,
+  Plus,
+  SquareArrowOutUpRight,
+  Trash2,
+} from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -10,6 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -20,6 +30,7 @@ import {
 } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -59,6 +70,7 @@ export function PlanNoteList({
   const [createTitle, setCreateTitle] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PlanTemplate | null>(null);
+  const selectedTemplateRef = useRef<PlanTemplate | null>(null);
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['plan'] ?? 'manual');
   const trimmed = searchTerm.trim();
@@ -70,28 +82,32 @@ export function PlanNoteList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
   const notes = useOptimisticRows(rawNotes, {
     docType: 'plan_note',
     workId,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(notes.length === 0 && !creating && !isFetching);
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
+    const template = selectedTemplateRef.current ?? selectedTemplate;
     setCreating(false);
     setCreateTitle('');
     if (!trimmedTitle) {
       setSelectedTemplate(null);
+      selectedTemplateRef.current = null;
       return;
     }
-    void createWithName(trimmedTitle);
+    void createWithName(trimmedTitle, template);
   };
 
   const handleCreateCancel = () => {
     setCreating(false);
     setCreateTitle('');
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
   };
 
   const handleCreateKeyDown = (e: React.KeyboardEvent) => {
@@ -100,16 +116,18 @@ export function PlanNoteList({
     if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
-  const createWithName = async (name: string) => {
-    const content = selectedTemplate ? serializeTemplateContent(selectedTemplate) : null;
+  const createWithName = async (name: string, template: PlanTemplate | null) => {
+    const content = template ? serializeTemplateContent(template) : null;
     const id = await createPlanNote(workId, name, Date.now(), content);
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
     onItemSelect(id, 'default');
   };
 
   const handleStartCreate = () => setPickerOpen(true);
 
   const handleTemplateSelect = (template: PlanTemplate) => {
+    selectedTemplateRef.current = template;
     setSelectedTemplate(template);
     setPickerOpen(false);
     setCreating(true);
@@ -118,6 +136,7 @@ export function PlanNoteList({
   const handlePickerClose = () => {
     setPickerOpen(false);
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
   };
 
   return (
@@ -149,7 +168,9 @@ export function PlanNoteList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-        {notes.length === 0 && !creating ? (
+        {isFetching && notes.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {trimmed ? '검색 결과가 없습니다.' : '기획 문서가 없습니다.'}
           </p>
@@ -237,6 +258,7 @@ function SortableNoteItem(props: SortableNoteItemProps) {
         <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
       )}
       <NoteItem
+        workId={props.workId}
         note={props.note}
         selected={props.selected}
         onSelect={props.onSelect}
@@ -252,6 +274,7 @@ function SortableNoteItem(props: SortableNoteItemProps) {
 }
 
 function NoteItem({
+  workId,
   note,
   selected,
   onSelect,
@@ -259,6 +282,7 @@ function NoteItem({
   dragAttributes,
   dragListeners,
 }: {
+  workId: string;
   note: NoteRow;
   selected: boolean;
   onSelect: (intent: ClickIntent) => void;
@@ -266,7 +290,14 @@ function NoteItem({
   dragAttributes?: DraggableAttributes;
   dragListeners?: SyntheticListenerMap;
 }) {
-  const { updatePlanNoteTitle, deletePlanNote } = useLocalWrite();
+  const writerId = useWriterId();
+  const db = usePowerSync();
+  const {
+    updatePlanNoteTitle,
+    deletePlanNote,
+    createPlanNote,
+    placePlanNote,
+  } = useLocalWrite();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -307,6 +338,43 @@ function NoteItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM plan_note WHERE id = ? LIMIT 1',
+      [note.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const newId = await createPlanNote(
+      workId,
+      `${note.title?.trim() || '(제목 없음)'} (사본)`,
+      Date.now(),
+      content,
+    );
+    await placePlanNote(newId, workId, note.id, 'after');
+  };
+
+  const fetchSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM plan_note
+       WHERE work_id = ? AND writer_id = ?
+       ORDER BY sort_order ASC, created_at ASC`,
+      [workId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx <= 0) return;
+    await placePlanNote(note.id, workId, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(note.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placePlanNote(note.id, workId, ids[idx + 1], 'after');
   };
 
   if (editing) {
@@ -350,6 +418,24 @@ function NoteItem({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onSelect('newTab')}>
+            <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelect('pin')}>
+            <PanelRight size={12} /> 스테이지에 추가
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleDuplicate()}>
+            <Copy size={12} /> 복제
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleMoveUp()}>
+            <ChevronUp size={12} /> 위로 이동
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleMoveDown()}>
+            <ChevronDown size={12} /> 아래로 이동
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setEditing(true)}>
             <Pencil size={12} /> 이름 변경
           </ContextMenuItem>
