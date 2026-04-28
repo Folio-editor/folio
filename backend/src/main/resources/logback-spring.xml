@@ -10,12 +10,15 @@
     <springProfile name="!prod">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+                <!-- traceId/userId가 있으면 메시지 앞에 표시 (없으면 빈 문자열) -->
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} [trace=%X{traceId:-} user=%X{userId:-}] - %msg%n</pattern>
             </encoder>
         </appender>
         <root level="DEBUG">
             <appender-ref ref="CONSOLE" />
         </root>
+        <!-- 외부 호출 정상 응답은 dev에서만 DEBUG로 가시화 -->
+        <logger name="external" level="DEBUG" />
     </springProfile>
 
     <springProfile name="prod">
@@ -23,6 +26,9 @@
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">
                 <includeMdcKeyName>traceId</includeMdcKeyName>
                 <includeMdcKeyName>userId</includeMdcKeyName>
+                <includeMdcKeyName>role</includeMdcKeyName>
+                <includeMdcKeyName>httpMethod</includeMdcKeyName>
+                <includeMdcKeyName>httpPath</includeMdcKeyName>
                 <fieldNames>
                     <timestamp>timestamp</timestamp>
                     <level>level</level>
@@ -43,6 +49,8 @@
             <appender-ref ref="JSON" />
         </root>
         <logger name="com.storyzip" level="INFO" />
+        <!-- 외부 호출 INFO 이상만 (정상 호출은 silent, SLA 초과/실패만 WARN) -->
+        <logger name="external" level="INFO" />
         <logger name="org.hibernate.SQL" level="WARN" />
         <logger name="org.springframework.security" level="WARN" />
     </springProfile>
