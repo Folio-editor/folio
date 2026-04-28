@@ -1081,6 +1081,12 @@ export function AuthenticatedApp() {
             workSelected={selectedWorkId !== null}
             settingsMode={settingsMode}
             onSettingsClick={handleSettingsClick}
+            rightPanelVisible={rightPanelVisible}
+            activeRightTab={rightPanelTab}
+            onRightPanelQuickJump={(tab) => {
+              if (!rightPanelVisible) setRightPanelVisible(true);
+              setRightPanelTab(tab);
+            }}
           />
         }
         sidebar={

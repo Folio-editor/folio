@@ -18,7 +18,12 @@ export type WorkspaceSection =
  */
 export type Activity = 'home' | 'trash' | WorkspaceSection;
 
-/** 상단 메인 아이콘 순서 */
+/** 상단 메인 아이콘 순서.
+ *
+ * `idea-archive` 는 좌측 ActivityBar 메인 영역에서 제외 — 우측 패널 idea 탭이
+ * 1차 진입 동선이고, ActivityBar에서는 별도 "퀵 점프" 버튼(우측 패널 토글)으로 표현된다.
+ * 메인 패널이 idea-archive 노트를 띄우는 흐름(mainDoc.section === 'idea-archive')은 그대로.
+ */
 export const ACTIVITY_ORDER_MAIN: Activity[] = [
   'home',
   'plan',
@@ -27,7 +32,6 @@ export const ACTIVITY_ORDER_MAIN: Activity[] = [
   'plot',
   'episode',
   'foreshadow',
-  'idea-archive',
 ];
 
 /** 하단 유틸 아이콘 순서 */

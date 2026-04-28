@@ -164,18 +164,23 @@ export function useLocalWrite() {
         );
       }
     },
+    /**
+     * @param content 사전 채움 본문 (TipTap JSON 문자열). 미지정/null 시 빈 본문(NULL).
+     *                복제(Duplicate) 시 원본 콘텐츠 보존 용도.
+     */
     createWorldNote: async (
       workId: string,
       name: string,
       sortOrder: number,
       parentId?: string | null,
+      content: string | null = null,
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, parentId ?? null, name, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, parentId ?? null, name, content, sortOrder, now, now],
       );
       return id;
     },
@@ -255,13 +260,24 @@ export function useLocalWrite() {
         [crypto.randomUUID(), characterId, writerId, now, now, characterId],
       );
     },
-    createCharacterNote: async (characterId: string, title: string, sortOrder: number): Promise<string> => {
+    /**
+     * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
+     *                복제 시 원본 콘텐츠 보존 용도. kind는 항상 'custom' — default kind
+     *                ('intro'/'appearance'/'personality')는 ensureCharacterNotes 가 한 번만 만들고
+     *                UNIQUE 보장하므로 사본은 자유 노트로 처리.
+     */
+    createCharacterNote: async (
+      characterId: string,
+      title: string,
+      sortOrder: number,
+      content: string | null = null,
+    ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, 'custom', ?, NULL, ?, ?, ?)`,
-        [id, characterId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, ?)`,
+        [id, characterId, writerId, title, content, sortOrder, now, now],
       );
       return id;
     },
@@ -297,19 +313,24 @@ export function useLocalWrite() {
     },
 
     // ── plot ────────────────────────────────────────────────
+    /**
+     * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
+     *                복제 시 원본 콘텐츠 보존 용도. status는 그대로 자동 결정(parentId 유무 기반).
+     */
     createPlot: async (
       workId: string,
       title: string,
       sortOrder: number,
       parentId: string | null = null,
+      content: string | null = null,
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const status = parentId ? '예정' : null;
       await db.execute(
         `INSERT INTO plot (id, work_id, writer_id, parent_id, title, status, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, parentId, title, status, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, parentId, title, status, content, sortOrder, now, now],
       );
       return id;
     },
@@ -329,17 +350,23 @@ export function useLocalWrite() {
     },
 
     // ── episode ─────────────────────────────────────────────
+    /**
+     * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
+     *                복제 시 원본 콘텐츠 보존 용도. status는 항상 '미작성'으로 reset
+     *                (사본은 신규 작성 의미라 출고 상태 초기화).
+     */
     createEpisode: async (
       workId: string,
       title: string,
       sortOrder: number,
+      content: string | null = null,
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.execute(
         `INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, '미작성', NULL, 0, ?, ?, ?)`,
-        [id, workId, writerId, title, sortOrder, now, now],
+         VALUES (?, ?, ?, NULL, ?, '미작성', ?, 0, ?, ?, ?)`,
+        [id, workId, writerId, title, content, sortOrder, now, now],
       );
       return id;
     },

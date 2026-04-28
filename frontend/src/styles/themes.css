@@ -1,9 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Folio Color Themes — 사용자가 직접 색을 조정하는 파일
    ───────────────────────────────────────────────────────────────────────────
-   각 테마는 tokens.css 의 :root / .dark 토큰을 오버라이드한다.
-   여기서는 의도적으로 두 계층만 다룬다:
+   라이트 모드: 각 테마가 자신만의 surface + brand 톤을 가진다 (몰입감 강조).
+   다크 모드: 모든 테마가 동일한 다크 surface(tokens.css의 .dark) 를 공유하고,
+              primary/ring 같은 액센트 색만 테마별로 다르다.
 
+   ⚠ Selector 주의 — `.theme-XXX` 와 `.dark` 는 동일 specificity (0,1,0).
+     같은 토큰을 두 selector 에서 정의하면 *나중에 선언된 쪽*이 이긴다.
+     themes.css 가 tokens.css 다음에 import 되므로, `.theme-XXX` 가 `.dark` 를
+     덮어쓰면 다크가 풀린 것처럼 보인다. 이를 막기 위해 라이트 블록은
+     `.theme-XXX:not(.dark)` 로 한정 — `.dark` 가 같이 붙은 element 엔 적용 안 됨.
+     다크 블록(`.theme-XXX.dark`) 은 specificity (0,2,0) 이라 surface 변경 없이
+     primary/ring 만 정의해도 안전.
+
+   라이트 .theme-XXX 블록에서 다루는 계층:
      A. Surface         — background / foreground / card / popover / muted /
                           sidebar / sidebar-foreground / sidebar-accent (+fg)
      B. Brand & Action  — primary / secondary / accent (+ foreground)
@@ -24,7 +34,8 @@
                           240=파랑, 280=보라, 320=마젠타, 360=빨강.
 
    새 테마 추가 절차:
-     1) 이 파일 맨 아래에 .theme-XXX 와 .theme-XXX.dark 블록 추가
+     1) 이 파일 맨 아래에 .theme-XXX (라이트 풀세트) + .theme-XXX.dark
+        (primary/ring만) 블록 추가
      2) frontend/src/shared/config/themes.ts 의 COLOR_THEMES 배열에
         { id: 'XXX', label: '...', previewLight: '...', previewDark: '...' } 추가
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -34,7 +45,7 @@
    추천 hue 범위: 55~85 (옐로~앰버 계열).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.theme-sepia {
+.theme-sepia:not(.dark) {
   /* ── A. Surface ── */
   --background: oklch(96.863% 0.00504 67.273);
   --foreground: oklch(0.25 0.02 60);
@@ -72,33 +83,10 @@
 }
 
 .theme-sepia.dark {
-  --background: oklch(0.18 0.015 60);
-  --foreground: oklch(0.92 0.015 75);
-  --card: oklch(0.22 0.015 60);
-  --card-foreground: oklch(0.92 0.015 75);
-  --popover: oklch(0.22 0.015 60);
-  --popover-foreground: oklch(0.92 0.015 75);
-  --muted: oklch(0.26 0.015 60);
-  --muted-foreground: oklch(0.65 0.025 65);
-  --sidebar: oklch(0.20 0.012 60);
-  --sidebar-foreground: oklch(0.92 0.015 75);
-  --sidebar-accent: oklch(0.26 0.015 60);
-  --sidebar-accent-foreground: oklch(0.92 0.015 75);
-
-  --activity-bar: oklch(0.14 0.018 60);
-  --activity-bar-foreground: oklch(0.92 0.015 75);
-  --activity-bar-border: oklch(0.26 0.018 60);
-  --activity-bar-accent: oklch(0.20 0.018 60);
-
+  /* 다크 모드는 모든 테마가 동일한 surface 를 공유 — tokens.css의 .dark 기본값을
+     그대로 inherit (CSS 캐스케이드: surface 토큰을 정의하지 않으면 specificity가
+     낮은 .dark 의 값이 적용됨). 여기서는 이 테마의 정체성인 primary/ring만 차별화. */
   --primary: oklch(0.78 0.08 55);
-  --primary-foreground: oklch(0.18 0.015 60);
-  --secondary: oklch(0.26 0.015 60);
-  --secondary-foreground: oklch(0.92 0.015 75);
-  --accent: oklch(0.26 0.02 60);
-  --accent-foreground: oklch(0.92 0.015 75);
-  --border: oklch(0.32 0.015 60);
-  --sidebar-border: oklch(0.32 0.015 60);
-  --input: oklch(0.32 0.015 60);
   --ring: oklch(0.65 0.10 55);
 }
 
@@ -107,7 +95,7 @@
    추천 hue 범위: 145~160 (그린 계열).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.theme-forest {
+.theme-forest:not(.dark) {
   /* ── A. Surface ── */
   --background: oklch(0.97 0.01 150);
   --foreground: oklch(0.20 0.03 155);
@@ -142,33 +130,8 @@
 }
 
 .theme-forest.dark {
-  --background: oklch(0.16 0.015 155);
-  --foreground: oklch(0.92 0.012 150);
-  --card: oklch(0.20 0.018 155);
-  --card-foreground: oklch(0.92 0.012 150);
-  --popover: oklch(0.20 0.018 155);
-  --popover-foreground: oklch(0.92 0.012 150);
-  --muted: oklch(0.24 0.018 155);
-  --muted-foreground: oklch(0.62 0.025 150);
-  --sidebar: oklch(0.18 0.015 155);
-  --sidebar-foreground: oklch(0.92 0.012 150);
-  --sidebar-accent: oklch(0.24 0.018 155);
-  --sidebar-accent-foreground: oklch(0.92 0.012 150);
-
-  --activity-bar: oklch(0.13 0.020 155);
-  --activity-bar-foreground: oklch(0.92 0.012 150);
-  --activity-bar-border: oklch(0.24 0.020 155);
-  --activity-bar-accent: oklch(0.18 0.022 155);
-
+  /* surface는 .dark 기본값 공유 — primary/ring 만 테마 hue 적용 */
   --primary: oklch(0.72 0.10 155);
-  --primary-foreground: oklch(0.16 0.015 155);
-  --secondary: oklch(0.24 0.018 155);
-  --secondary-foreground: oklch(0.92 0.012 150);
-  --accent: oklch(0.24 0.02 155);
-  --accent-foreground: oklch(0.92 0.012 150);
-  --border: oklch(0.30 0.018 155);
-  --sidebar-border: oklch(0.30 0.018 155);
-  --input: oklch(0.30 0.018 155);
   --ring: oklch(0.60 0.10 155);
 }
 
@@ -177,7 +140,7 @@
    추천 hue 범위: 230~250 (블루 계열).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.theme-ocean {
+.theme-ocean:not(.dark) {
   /* ── A. Surface ── */
   --background: oklch(0.97 0.01 240);
   --foreground: oklch(0.20 0.025 240);
@@ -212,33 +175,8 @@
 }
 
 .theme-ocean.dark {
-  --background: oklch(0.16 0.02 240);
-  --foreground: oklch(0.92 0.01 238);
-  --card: oklch(0.20 0.022 240);
-  --card-foreground: oklch(0.92 0.01 238);
-  --popover: oklch(0.20 0.022 240);
-  --popover-foreground: oklch(0.92 0.01 238);
-  --muted: oklch(0.24 0.02 240);
-  --muted-foreground: oklch(0.62 0.02 238);
-  --sidebar: oklch(0.18 0.02 240);
-  --sidebar-foreground: oklch(0.92 0.01 238);
-  --sidebar-accent: oklch(0.24 0.02 240);
-  --sidebar-accent-foreground: oklch(0.92 0.01 238);
-
-  --activity-bar: oklch(0.13 0.025 240);
-  --activity-bar-foreground: oklch(0.92 0.01 238);
-  --activity-bar-border: oklch(0.24 0.025 240);
-  --activity-bar-accent: oklch(0.18 0.025 240);
-
+  /* surface는 .dark 기본값 공유 — primary/ring 만 테마 hue 적용 */
   --primary: oklch(0.72 0.12 245);
-  --primary-foreground: oklch(0.16 0.02 240);
-  --secondary: oklch(0.24 0.02 240);
-  --secondary-foreground: oklch(0.92 0.01 238);
-  --accent: oklch(0.24 0.025 240);
-  --accent-foreground: oklch(0.92 0.01 238);
-  --border: oklch(0.30 0.02 240);
-  --sidebar-border: oklch(0.30 0.02 240);
-  --input: oklch(0.30 0.02 240);
   --ring: oklch(0.65 0.12 245);
 }
 
@@ -247,7 +185,7 @@
    추천 hue 범위: 350~10 (로즈/핑크 계열).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.theme-rose {
+.theme-rose:not(.dark) {
   /* ── A. Surface ── */
   --background: oklch(0.97 0.015 10);
   --foreground: oklch(0.22 0.02 355);
@@ -282,33 +220,8 @@
 }
 
 .theme-rose.dark {
-  --background: oklch(0.17 0.02 350);
-  --foreground: oklch(0.92 0.012 5);
-  --card: oklch(0.21 0.022 350);
-  --card-foreground: oklch(0.92 0.012 5);
-  --popover: oklch(0.21 0.022 350);
-  --popover-foreground: oklch(0.92 0.012 5);
-  --muted: oklch(0.25 0.02 350);
-  --muted-foreground: oklch(0.63 0.025 355);
-  --sidebar: oklch(0.19 0.02 350);
-  --sidebar-foreground: oklch(0.92 0.012 5);
-  --sidebar-accent: oklch(0.25 0.02 350);
-  --sidebar-accent-foreground: oklch(0.92 0.012 5);
-
-  --activity-bar: oklch(0.14 0.025 350);
-  --activity-bar-foreground: oklch(0.92 0.012 5);
-  --activity-bar-border: oklch(0.25 0.025 350);
-  --activity-bar-accent: oklch(0.19 0.025 350);
-
+  /* surface는 .dark 기본값 공유 — primary/ring 만 테마 hue 적용 */
   --primary: oklch(0.75 0.12 355);
-  --primary-foreground: oklch(0.17 0.02 350);
-  --secondary: oklch(0.25 0.02 350);
-  --secondary-foreground: oklch(0.92 0.012 5);
-  --accent: oklch(0.25 0.025 350);
-  --accent-foreground: oklch(0.92 0.012 5);
-  --border: oklch(0.31 0.02 350);
-  --sidebar-border: oklch(0.31 0.02 350);
-  --input: oklch(0.31 0.02 350);
   --ring: oklch(0.65 0.12 355);
 }
 
@@ -317,7 +230,7 @@
    추천 hue 범위: 285~305 (퍼플 계열).
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.theme-lavender {
+.theme-lavender:not(.dark) {
   /* ── A. Surface ── */
   --background: oklch(0.97 0.015 295);
   --foreground: oklch(0.22 0.02 290);
@@ -352,32 +265,7 @@
 }
 
 .theme-lavender.dark {
-  --background: oklch(0.17 0.02 295);
-  --foreground: oklch(0.92 0.012 293);
-  --card: oklch(0.21 0.022 295);
-  --card-foreground: oklch(0.92 0.012 293);
-  --popover: oklch(0.21 0.022 295);
-  --popover-foreground: oklch(0.92 0.012 293);
-  --muted: oklch(0.25 0.02 295);
-  --muted-foreground: oklch(0.63 0.025 293);
-  --sidebar: oklch(0.19 0.02 295);
-  --sidebar-foreground: oklch(0.92 0.012 293);
-  --sidebar-accent: oklch(0.25 0.02 295);
-  --sidebar-accent-foreground: oklch(0.92 0.012 293);
-
-  --activity-bar: oklch(0.14 0.025 295);
-  --activity-bar-foreground: oklch(0.92 0.012 293);
-  --activity-bar-border: oklch(0.25 0.025 295);
-  --activity-bar-accent: oklch(0.19 0.025 295);
-
+  /* surface는 .dark 기본값 공유 — primary/ring 만 테마 hue 적용 */
   --primary: oklch(0.75 0.12 300);
-  --primary-foreground: oklch(0.17 0.02 295);
-  --secondary: oklch(0.25 0.02 295);
-  --secondary-foreground: oklch(0.92 0.012 293);
-  --accent: oklch(0.25 0.025 295);
-  --accent-foreground: oklch(0.92 0.012 293);
-  --border: oklch(0.31 0.02 295);
-  --sidebar-border: oklch(0.31 0.02 295);
-  --input: oklch(0.31 0.02 295);
   --ring: oklch(0.65 0.12 300);
 }

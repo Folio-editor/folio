@@ -1,6 +1,15 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
-import { useQuery } from '@powersync/react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { useQuery, usePowerSync } from '@powersync/react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  PanelRight,
+  Pencil,
+  Plus,
+  SquareArrowOutUpRight,
+  Trash2,
+} from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import {
@@ -240,6 +249,7 @@ function SortableEpisodeItem(props: SortableEpisodeItemProps) {
         <div className="pointer-events-none absolute inset-x-0 -top-px h-0.5 bg-primary z-10" />
       )}
       <EpisodeItem
+        workId={props.workId}
         episode={props.episode}
         selected={props.selected}
         onSelect={props.onSelect}
@@ -255,6 +265,7 @@ function SortableEpisodeItem(props: SortableEpisodeItemProps) {
 }
 
 function EpisodeItem({
+  workId,
   episode,
   selected,
   onSelect,
@@ -262,6 +273,7 @@ function EpisodeItem({
   dragAttributes,
   dragListeners,
 }: {
+  workId: string;
   episode: EpisodeRow;
   selected: boolean;
   onSelect: (intent: ClickIntent) => void;
@@ -269,7 +281,10 @@ function EpisodeItem({
   dragAttributes?: DraggableAttributes;
   dragListeners?: SyntheticListenerMap;
 }) {
-  const { updateEpisode, trashEpisode } = useLocalWrite();
+  const writerId = useWriterId();
+  const db = usePowerSync();
+  const { updateEpisode, trashEpisode, createEpisode, placeEpisode } =
+    useLocalWrite();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(episode.title);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -310,6 +325,43 @@ function EpisodeItem({
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleDuplicate = async () => {
+    const rows = await db.getAll<{ content: string | null }>(
+      'SELECT content FROM episode WHERE id = ? LIMIT 1',
+      [episode.id],
+    );
+    const content = rows[0]?.content ?? null;
+    const newId = await createEpisode(
+      workId,
+      `${episode.title?.trim() || '(제목 없음)'} (사본)`,
+      Date.now(),
+      content,
+    );
+    await placeEpisode(newId, workId, episode.id, 'after');
+  };
+
+  const fetchSiblings = async (): Promise<string[]> => {
+    const rows = await db.getAll<{ id: string }>(
+      `SELECT id FROM episode
+       WHERE work_id = ? AND writer_id = ? AND status != 'trashed'
+       ORDER BY sort_order ASC, created_at ASC`,
+      [workId, writerId],
+    );
+    return rows.map((r) => r.id);
+  };
+  const handleMoveUp = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(episode.id);
+    if (idx <= 0) return;
+    await placeEpisode(episode.id, workId, ids[idx - 1], 'before');
+  };
+  const handleMoveDown = async () => {
+    const ids = await fetchSiblings();
+    const idx = ids.indexOf(episode.id);
+    if (idx < 0 || idx >= ids.length - 1) return;
+    await placeEpisode(episode.id, workId, ids[idx + 1], 'after');
   };
 
   if (editing) {
@@ -362,6 +414,24 @@ function EpisodeItem({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onSelect('newTab')}>
+            <SquareArrowOutUpRight size={12} /> 새 탭에서 열기
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelect('pin')}>
+            <PanelRight size={12} /> 스테이지에 추가
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleDuplicate()}>
+            <Copy size={12} /> 복제
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => void handleMoveUp()}>
+            <ChevronUp size={12} /> 위로 이동
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void handleMoveDown()}>
+            <ChevronDown size={12} /> 아래로 이동
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setEditing(true)}>
             <Pencil size={12} /> 이름 변경
           </ContextMenuItem>
