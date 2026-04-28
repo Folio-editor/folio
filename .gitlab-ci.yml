@@ -208,10 +208,11 @@ deploy-production:
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
         set -a; source .env; set +a
 
-        # 2.5. PLG 데이터 디렉토리 보장 (Loki/Grafana 첫 기동 시 필요)
-        sudo mkdir -p /opt/folio/data/loki /opt/folio/data/grafana /opt/folio/data/promtail-positions
+        # 2.5. PLG + Metrics 데이터 디렉토리 보장 (Loki/Grafana/Prometheus 첫 기동 시 필요)
+        sudo mkdir -p /opt/folio/data/loki /opt/folio/data/grafana /opt/folio/data/promtail-positions /opt/folio/data/prometheus
         sudo chown -R 10001:10001 /opt/folio/data/loki
         sudo chown -R 472:472 /opt/folio/data/grafana
+        sudo chown -R 65534:65534 /opt/folio/data/prometheus  # Prometheus 컨테이너 user (nobody)
 
         # 3. Docker 이미지 빌드
         cd /opt/folio/S14P31F203
