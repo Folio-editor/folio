@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -20,6 +21,7 @@ import {
 } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -70,12 +72,13 @@ export function PlanNoteList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
   const notes = useOptimisticRows(rawNotes, {
     docType: 'plan_note',
     workId,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(notes.length === 0 && !creating && !isFetching);
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
@@ -149,7 +152,9 @@ export function PlanNoteList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-        {notes.length === 0 && !creating ? (
+        {isFetching && notes.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {trimmed ? '검색 결과가 없습니다.' : '기획 문서가 없습니다.'}
           </p>

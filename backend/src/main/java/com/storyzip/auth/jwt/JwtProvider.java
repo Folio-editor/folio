@@ -5,6 +5,7 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -30,9 +31,31 @@ public class JwtProvider {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_ROLE = "role";
 
+    /** HS256 최소 키 길이 (RFC 7518 §3.2: HMAC SHA-256 키는 해시 출력보다 작으면 안 됨). */
+    private static final int HS256_MIN_KEY_BYTES = 32;
+
     private final JwtProperties properties;
 
     private SecretKey signingKey;
+
+    /**
+     * 애플리케이션 시작 시점에 secret이 누락/약한 경우 즉시 fail-fast.
+     * 런타임에 `key()`가 처음 호출될 때까지 기다리지 않고, 환경변수 누락을 startup 단계에서 드러낸다.
+     */
+    @PostConstruct
+    void validateSecret() {
+        String secret = properties.getSecret();
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT_SECRET이 설정되지 않았습니다. 환경변수 또는 Doppler에 jwt.secret을 설정하세요.");
+        }
+        int keyBytes = secret.getBytes(StandardCharsets.UTF_8).length;
+        if (keyBytes < HS256_MIN_KEY_BYTES) {
+            throw new IllegalStateException(
+                    "JWT_SECRET 길이가 부족합니다(현재 " + keyBytes + "바이트). HS256은 최소 "
+                            + HS256_MIN_KEY_BYTES + "바이트 이상이어야 합니다.");
+        }
+    }
 
     private SecretKey key() {
         if (signingKey == null) {
