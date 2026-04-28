@@ -99,8 +99,8 @@ public class RefundService {
                     "REFUND_" + orderId, payment.getId());
         }
 
-        log.info("Refund processed: orderId={}, type={}, refundAmount={}, tokenDeduct={}",
-                orderId, refundType, refundAmount, tokenDeduct);
+        log.info("[REFUND_PROCESSED] writerId={} orderId={} type={} originalAmount={} refundAmount={} tokenDeduct={} hoursElapsed={}",
+                writerId, orderId, refundType, payment.getAmount(), refundAmount, tokenDeduct, hoursElapsed);
 
         return new RefundResponse(
                 payment.getId(), orderId,
