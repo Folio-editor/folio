@@ -3,6 +3,7 @@ import { Cloud, CloudOff, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-
 import { useQuery, useStatus } from '@powersync/react';
 import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
@@ -153,6 +154,7 @@ function AuthenticatedView() {
   const { localBytes, pendingCount } = useLocalStorageStats();
   const psStatus = useStatus();
   const isOnline = useNetworkStatus();
+  const openSettings = useNavigationStore((s) => s.openSettings);
 
   // 1) 캐시도 없고 로딩 중 — 첫 진입
   if (loading && !data) {
@@ -249,6 +251,7 @@ function AuthenticatedView() {
                 <button
                   type="button"
                   disabled={!isOnline}
+                  onClick={() => openSettings('payment')}
                   title={!isOnline ? '오프라인 상태에서는 사용할 수 없습니다' : undefined}
                   className="rounded-lg bg-ring px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-ring/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >

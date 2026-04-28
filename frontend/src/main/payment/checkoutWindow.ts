@@ -46,6 +46,24 @@ export type CheckoutFailure = {
   message: string | null;
 };
 
+/**
+ * 토스 SDK가 던지는 영문 에러를 사용자 친화 한글로 치환.
+ * data: URL로 SDK를 로드하면 origin이 'null'이라 postMessage가 실패하면서
+ * `Failed to execute 'postMessage' on 'DOMWindow' ...` 같은 raw 영문 메시지가 노출됨.
+ */
+const FRIENDLY_ERROR_SHIM = `
+function toFriendlyMessage(e) {
+  const raw = (e && (e.message || e.toString())) || '';
+  if (/postMessage/i.test(raw) || /target origin/i.test(raw) || /origin\\s*\\(?\\s*['"\`]?null/i.test(raw)) {
+    return '결제창을 여는 중 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  }
+  if (/INVALID_TARGET_ORIGIN/i.test(e && e.code || '')) {
+    return '결제창을 여는 중 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  }
+  return raw || '결제 처리 중 오류가 발생했습니다.';
+}
+`;
+
 function buildOneTimeHtml(p: OneTimePaymentParams): string {
   const payload = JSON.stringify(p);
   return `<!DOCTYPE html>
@@ -61,6 +79,7 @@ function buildOneTimeHtml(p: OneTimePaymentParams): string {
 <body>
 <div id="status">결제창을 여는 중…</div>
 <script>
+  ${FRIENDLY_ERROR_SHIM}
   const P = ${payload};
   try {
     const toss = TossPayments(P.clientKey);
@@ -73,13 +92,23 @@ function buildOneTimeHtml(p: OneTimePaymentParams): string {
       successUrl: ${JSON.stringify(CHECKOUT_SUCCESS_URL)},
       failUrl: ${JSON.stringify(CHECKOUT_FAIL_URL)},
     }).catch((e) => {
-      const qs = new URLSearchParams({ code: e.code || '', message: e.message || String(e) });
+      const qs = new URLSearchParams({ code: e.code || '', message: toFriendlyMessage(e) });
       location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
     });
   } catch (e) {
-    const qs = new URLSearchParams({ code: 'SDK_INIT', message: String(e) });
+    const qs = new URLSearchParams({ code: 'SDK_INIT', message: toFriendlyMessage(e) });
     location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
   }
+  window.addEventListener('error', (ev) => {
+    const msg = (ev.error && ev.error.message) || ev.message || '';
+    if (/postMessage/i.test(msg) || /target origin/i.test(msg)) {
+      const qs = new URLSearchParams({
+        code: 'POSTMESSAGE_FAIL',
+        message: '결제창을 여는 중 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      });
+      location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+    }
+  });
 </script>
 </body>
 </html>`;
@@ -100,6 +129,7 @@ function buildBillingAuthHtml(p: BillingAuthParams): string {
 <body>
 <div id="status">카드 등록창을 여는 중…</div>
 <script>
+  ${FRIENDLY_ERROR_SHIM}
   const P = ${payload};
   try {
     const toss = TossPayments(P.clientKey);
@@ -108,13 +138,23 @@ function buildBillingAuthHtml(p: BillingAuthParams): string {
       successUrl: ${JSON.stringify(CHECKOUT_SUCCESS_URL)},
       failUrl: ${JSON.stringify(CHECKOUT_FAIL_URL)},
     }).catch((e) => {
-      const qs = new URLSearchParams({ code: e.code || '', message: e.message || String(e) });
+      const qs = new URLSearchParams({ code: e.code || '', message: toFriendlyMessage(e) });
       location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
     });
   } catch (e) {
-    const qs = new URLSearchParams({ code: 'SDK_INIT', message: String(e) });
+    const qs = new URLSearchParams({ code: 'SDK_INIT', message: toFriendlyMessage(e) });
     location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
   }
+  window.addEventListener('error', (ev) => {
+    const msg = (ev.error && ev.error.message) || ev.message || '';
+    if (/postMessage/i.test(msg) || /target origin/i.test(msg)) {
+      const qs = new URLSearchParams({
+        code: 'POSTMESSAGE_FAIL',
+        message: '카드 등록창을 여는 중 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      });
+      location.href = ${JSON.stringify(CHECKOUT_FAIL_URL)} + '?' + qs.toString();
+    }
+  });
 </script>
 </body>
 </html>`;
