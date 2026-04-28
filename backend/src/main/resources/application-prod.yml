@@ -47,6 +47,19 @@ springdoc:
 # 로깅 설정은 logback-spring.xml 에서 관리 (prod 프로필은 JSON 포맷)
 
 # ────────────────────────────────────────────────────────────
+# 메트릭 — Prometheus 히스토그램 활성화 (운영 한정)
+# Spring Boot 기본은 _count/_sum/_max 만 노출하고 _bucket 미노출 →
+# histogram_quantile() 로 p50/p95/p99 계산 불가.
+# percentiles-histogram=true 로 Prometheus native bucket 자동 생성.
+# (uri × method × le bucket 으로 시리즈 ~10× 증가하나 prod 트래픽 수준에선 무시 가능)
+# ────────────────────────────────────────────────────────────
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+
+# ────────────────────────────────────────────────────────────
 # 운영 도메인 hardcode (도플러 슬림화 — 옵션 B)
 # 운영은 https://folio-editor.co.kr 단일 도메인 + path 라우팅 (nginx.conf 검증)
 #   /          → 랜딩
