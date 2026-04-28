@@ -4,6 +4,11 @@
 # - DB: ddl-auto=create-drop (테스트 격리)
 # - Swagger: 비활성화
 # ============================================================
+# JWT_SECRET 환경변수 미주입 시 unit/통합 테스트가 startup에서 실패하지 않도록
+# 32바이트 이상 더미 시크릿을 fallback으로 둔다 (실제 prod에서는 Doppler 값으로 덮어씀).
+jwt:
+  secret: ${JWT_SECRET:test-secret-only-for-unit-and-integration-tests-32chars}
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:storyzip_test}

@@ -31,6 +31,7 @@ import java.util.Base64;
  *
  * <p>서명 검증: 토스가 보내는 {@code Toss-Signature} 헤더를
  * HMAC-SHA256(webhookSecret, requestBody)과 비교해 위변조를 차단한다.
+ * webhookSecret이 비어있으면 위조 webhook이 통과될 수 있어 즉시 거절한다.
  *
  * <p>멱등성 전략: event_id에 UNIQUE 제약이 걸린 {@code payment_event}에 먼저 INSERT.
  * 중복이면 UNIQUE 위반 예외가 발생하고, 이미 처리한 이벤트로 간주해 200만 반환한다.
@@ -96,8 +97,10 @@ public class TossWebhookController {
     private void verifySignature(String signature, String payload) {
         String secret = properties.webhookSecret();
         if (secret == null || secret.isBlank()) {
-            log.warn("Webhook secret not configured — skipping signature verification");
-            return;
+            // secret이 비어있으면 검증을 우회하지 않고 거절한다 — 위조 webhook 차단.
+            // prod에서 Doppler에 TOSS_WEBHOOK_SECRET 설정 누락 시 즉시 드러난다.
+            log.error("[WEBHOOK_SECRET_MISSING] Toss webhook secret is not configured — rejecting request");
+            throw new PaymentException(ErrorCode.WEBHOOK_SIGNATURE_INVALID, "Webhook secret not configured");
         }
         if (signature == null || signature.isBlank()) {
             throw new PaymentException(ErrorCode.WEBHOOK_SIGNATURE_INVALID, "Missing Toss-Signature header");
