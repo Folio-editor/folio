@@ -53,7 +53,7 @@ public class TokenWalletService {
         wallet.chargePurchase(amount);
         recordTx(writerId, TokenBucket.PURCHASE, amount,
                 TokenTransactionType.CHARGE, reason, referenceId);
-        log.info("[CHARGE_SUCCESS] writerId={} amount={} bucket=PURCHASE balanceAfter={} reason={} referenceId={}",
+        log.info("[TOKEN_PURCHASE_CHARGED] writerId={} amount={} balanceAfter={} reason={} referenceId={}",
                 writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
@@ -74,7 +74,7 @@ public class TokenWalletService {
         }
         recordTx(writerId, TokenBucket.SUBSCRIPTION, amount,
                 TokenTransactionType.SUBSCRIPTION, reason, referenceId);
-        log.info("[CHARGE_SUCCESS] writerId={} amount={} bucket=SUBSCRIPTION balanceAfter={} reason={} referenceId={}",
+        log.info("[TOKEN_SUBSCRIPTION_CHARGED] writerId={} amount={} balanceAfter={} reason={} referenceId={}",
                 writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
@@ -87,7 +87,7 @@ public class TokenWalletService {
         wallet.grantBonus(SIGNUP_BONUS_AMOUNT, expiresAt);
         recordTx(writerId, TokenBucket.BONUS, SIGNUP_BONUS_AMOUNT,
                 TokenTransactionType.BONUS_GRANT, "SIGNUP_BONUS", null);
-        log.info("[CHARGE_SUCCESS] writerId={} amount={} bucket=BONUS balanceAfter={} reason=SIGNUP_BONUS expiresAt={}",
+        log.info("[TOKEN_BONUS_GRANTED] writerId={} amount={} balanceAfter={} reason=SIGNUP_BONUS expiresAt={}",
                 writerId, SIGNUP_BONUS_AMOUNT, wallet.totalBalance(now), expiresAt);
     }
 

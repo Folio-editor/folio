@@ -150,8 +150,15 @@ public class SubscriptionService {
         } catch (PaymentException e) {
             // 정기 결제 실패는 Subscription 상태 업데이트(retryCount++ 또는 PAYMENT_FAILED)만 유지하고
             // 트랜잭션은 커밋되도록 예외를 삼킨다. 결제 Payment는 FAILED로 기록되어 감사에 남는다.
-            log.info("[SUBSCRIPTION_BILLING_SWALLOWED] subscriptionId={} writerId={} errCode={}",
-                    subscriptionId, subscription.getWriter().getId(), e.getErrorCode().getCode());
+            // 누적 실패가 임계치를 넘어 PAYMENT_FAILED로 종결되었는지, 다음 주기에 재시도가 남았는지에 따라 별도 prefix.
+            boolean terminated = subscription.getStatus() == SubscriptionStatus.PAYMENT_FAILED;
+            String prefix = terminated
+                    ? "[SUBSCRIPTION_BILLING_TERMINATED]"
+                    : "[SUBSCRIPTION_BILLING_RETRY_PENDING]";
+            log.info("{} writerId={} subscriptionId={} retryCount={} status={} errCode={}",
+                    prefix, subscription.getWriter().getId(), subscriptionId,
+                    subscription.getRetryCount(), subscription.getStatus(),
+                    e.getErrorCode().getCode());
         }
     }
 

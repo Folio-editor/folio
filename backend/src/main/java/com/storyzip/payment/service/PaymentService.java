@@ -77,9 +77,12 @@ public class PaymentService {
         // 멱등성: 동일 paymentKey로 이미 완료된 결제가 있으면 그 결과를 반환
         Optional<Payment> alreadyConfirmed = paymentRepository.findByPaymentKey(request.paymentKey());
         if (alreadyConfirmed.isPresent() && alreadyConfirmed.get().isDone()) {
-            log.info("[PAYMENT_IDEMPOTENT] writerId={} orderId={} paymentKey={}",
-                    writerId, alreadyConfirmed.get().getOrderId(), request.paymentKey());
-            return PaymentResponse.from(alreadyConfirmed.get());
+            Payment existing = alreadyConfirmed.get();
+            log.info("[PAYMENT_IDEMPOTENT] writerId={} orderId={} paymentKey={} amount={} tokenQty={} method={} approvedAt={}",
+                    writerId, existing.getOrderId(), request.paymentKey(),
+                    existing.getAmount(), existing.getTokenQty(),
+                    existing.getMethod(), existing.getApprovedAt());
+            return PaymentResponse.from(existing);
         }
 
         Payment payment = paymentRepository.findByOrderId(request.orderId())
