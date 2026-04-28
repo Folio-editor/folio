@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -25,6 +26,7 @@ import {
 } from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -89,12 +91,13 @@ export function PlotTreeList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawActs = [] } = useQuery<PlotRow>(sql, params);
+  const { data: rawActs = [], isFetching } = useQuery<PlotRow>(sql, params);
   const acts = useOptimisticRows(rawActs, {
     docType: 'plot',
     parentId: null,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(acts.length === 0 && !creating && !isFetching);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -176,7 +179,9 @@ export function PlotTreeList({
         selected={selectedItemId === '__all__'}
         onSelect={(intent) => onItemSelect('__all__', intent)}
       />
-      {acts.length === 0 && !creating ? (
+      {isFetching && acts.length === 0 && !creating ? (
+        <SidebarListSkeleton />
+      ) : showEmpty ? (
         <p className="px-2 py-6 text-center text-xs text-muted-foreground">
           {trimmed ? '검색 결과가 없습니다.' : '플롯이 없습니다.'}
         </p>

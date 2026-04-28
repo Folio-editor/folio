@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -20,6 +21,7 @@ import {
 } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -71,12 +73,13 @@ export function WorldNoteList({
   const params = trimmed
     ? [workId, writerId, `%${escapeLike(trimmed)}%`]
     : [workId, writerId];
-  const { data: rawNotes = [] } = useQuery<NoteRow>(sql, params);
+  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
   const notes = useOptimisticRows(rawNotes, {
     docType: 'world_note',
     parentId: null,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(notes.length === 0 && !creating && !isFetching);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -152,28 +155,30 @@ export function WorldNoteList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-      {notes.length === 0 && !creating ? (
-        <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-          {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
-        </p>
-      ) : (
-        <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-          {notes.map((note) => (
-            <SortableWorldNoteItem
-              key={note.id}
-              workId={workId}
-              note={note}
-              depth={0}
-              parentId={null}
-              selectedItemId={selectedItemId}
-              expandedIds={expandedIds}
-              onSelect={handleSelect}
-              onToggleExpand={toggleExpand}
-              onItemSelect={onItemSelect}
-            />
-          ))}
-        </SortableContext>
-      )}
+        {isFetching && notes.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
+          <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+            {trimmed ? '검색 결과가 없습니다.' : '세계관 문서가 없습니다.'}
+          </p>
+        ) : (
+          <SortableContext items={notes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+            {notes.map((note) => (
+              <SortableWorldNoteItem
+                key={note.id}
+                workId={workId}
+                note={note}
+                depth={0}
+                parentId={null}
+                selectedItemId={selectedItemId}
+                expandedIds={expandedIds}
+                onSelect={handleSelect}
+                onToggleExpand={toggleExpand}
+                onItemSelect={onItemSelect}
+              />
+            ))}
+          </SortableContext>
+        )}
       {/* 트리 끝 빈 영역 — 자식 노드를 root level로 빼낼 때 drop 타깃 (시각은 마지막 노드 after 밑줄로) */}
       <TreeRootEndDropZone
         docType="world_note"
