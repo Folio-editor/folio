@@ -19,6 +19,7 @@ import {
   type FilterOption,
 } from './sidebar-panels/SidebarFilterPicker';
 import type { SortPanelKey } from '../../stores/sortPreferenceStore';
+import { useFilterPreferenceStore } from '../../stores/filterPreferenceStore';
 import { HomeWorkList } from './sidebar-panels/HomeWorkList';
 import { PlanNoteList } from './sidebar-panels/PlanNoteList';
 import { WorldNoteList } from './sidebar-panels/WorldNoteList';
@@ -361,6 +362,9 @@ function ActivityFilters({
   workId: string | null;
 }) {
   const specs = ACTIVITY_FILTER_SPEC[activity];
+  const selectedByPanel = useFilterPreferenceStore((s) => s.byPanel);
+  const setFilter = useFilterPreferenceStore((s) => s.set);
+  const clearFilter = useFilterPreferenceStore((s) => s.clear);
 
   // character 패널일 때만 — 작품 내 캐릭터 중 한 명에라도 태그로 등록된 world_note만 옵션
   // (전체 world_note가 아니라 실제 사용 중인 태그만)
@@ -382,6 +386,19 @@ function ActivityFilters({
         .map((r) => ({ value: r.id, label: r.name?.trim() || '(이름 없음)' }))
     : [];
 
+  useEffect(() => {
+    if (!isCharacter) return;
+    const selected = selectedByPanel['character-tag'] ?? [];
+    if (selected.length === 0) return;
+
+    const validValues = new Set(tagOptions.map((option) => option.value));
+    const next = selected.filter((value) => validValues.has(value));
+
+    if (next.length === selected.length) return;
+    if (next.length === 0) clearFilter('character-tag');
+    else setFilter('character-tag', next);
+  }, [clearFilter, isCharacter, selectedByPanel, setFilter, tagOptions]);
+
   if (!specs || specs.length === 0) return null;
 
   return (
@@ -390,13 +407,17 @@ function ActivityFilters({
         // character-tag spec은 동적 옵션
         const options =
           spec.panelKey === 'character-tag' ? tagOptions : spec.options;
-        if (options.length === 0) return null;
         return (
           <SidebarFilterPicker
             key={spec.panelKey}
             panelKey={spec.panelKey}
             options={options}
             groupLabel={spec.groupLabel}
+            emptyMessage={
+              spec.panelKey === 'character-tag'
+                ? '태그가 설정된 등장인물이 없습니다.'
+                : undefined
+            }
           />
         );
       })}
