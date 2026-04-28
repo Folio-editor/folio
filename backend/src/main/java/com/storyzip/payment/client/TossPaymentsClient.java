@@ -3,6 +3,7 @@ package com.storyzip.payment.client;
 import com.storyzip.common.circuitbreaker.CircuitBreaker;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
+import com.storyzip.common.observability.ExternalCallLogger;
 import com.storyzip.payment.config.TossPaymentsProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -29,6 +30,8 @@ public class TossPaymentsClient {
 
     private static final int FAILURE_THRESHOLD = 5;
     private static final long OPEN_DURATION_MILLIS = 30_000;
+    /** 토스 API SLA — 결제 승인은 사용자 대기시간이라 5초가 한계. */
+    private static final long TOSS_SLA_MS = 5_000L;
 
     private final RestClient tossPaymentsRestClient;
     private final TossPaymentsProperties properties;
@@ -37,13 +40,14 @@ public class TossPaymentsClient {
     public TossPaymentsClient(RestClient tossPaymentsRestClient, TossPaymentsProperties properties) {
         this.tossPaymentsRestClient = tossPaymentsRestClient;
         this.properties = properties;
-        this.circuitBreaker = new CircuitBreaker(FAILURE_THRESHOLD, OPEN_DURATION_MILLIS);
+        this.circuitBreaker = new CircuitBreaker(FAILURE_THRESHOLD, OPEN_DURATION_MILLIS, "toss-payments");
     }
 
     /** 결제 승인 — paymentKey, orderId, amount 검증 후 DONE 상태로 전환. */
     public TossConfirmResponse confirmPayment(String paymentKey, String orderId, int amount) {
         return circuitBreaker.execute(
-                () -> doConfirmPayment(paymentKey, orderId, amount),
+                () -> ExternalCallLogger.measure(ExternalCallLogger.SYSTEM_TOSS, "confirmPayment", TOSS_SLA_MS,
+                        () -> doConfirmPayment(paymentKey, orderId, amount)),
                 () -> { throw new PaymentException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                         "결제 게이트웨이 일시 장애 (서킷브레이커 OPEN)"); }
         );
@@ -77,7 +81,8 @@ public class TossPaymentsClient {
      */
     public TossBillingAuthResponse issueBillingKey(String authKey, String customerKey) {
         return circuitBreaker.execute(
-                () -> doIssueBillingKey(authKey, customerKey),
+                () -> ExternalCallLogger.measure(ExternalCallLogger.SYSTEM_TOSS, "issueBillingKey", TOSS_SLA_MS,
+                        () -> doIssueBillingKey(authKey, customerKey)),
                 () -> { throw new PaymentException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                         "결제 게이트웨이 일시 장애 (서킷브레이커 OPEN)"); }
         );
@@ -112,7 +117,8 @@ public class TossPaymentsClient {
                                              String orderId, String orderName,
                                              int amount, String customerEmail) {
         return circuitBreaker.execute(
-                () -> doChargeBilling(billingKey, customerKey, orderId, orderName, amount, customerEmail),
+                () -> ExternalCallLogger.measure(ExternalCallLogger.SYSTEM_TOSS, "chargeBilling", TOSS_SLA_MS,
+                        () -> doChargeBilling(billingKey, customerKey, orderId, orderName, amount, customerEmail)),
                 () -> { throw new PaymentException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                         "결제 게이트웨이 일시 장애 (서킷브레이커 OPEN)"); }
         );
@@ -151,7 +157,8 @@ public class TossPaymentsClient {
      */
     public TossConfirmResponse cancelPayment(String paymentKey, String cancelReason, Integer cancelAmount) {
         return circuitBreaker.execute(
-                () -> doCancelPayment(paymentKey, cancelReason, cancelAmount),
+                () -> ExternalCallLogger.measure(ExternalCallLogger.SYSTEM_TOSS, "cancelPayment", TOSS_SLA_MS,
+                        () -> doCancelPayment(paymentKey, cancelReason, cancelAmount)),
                 () -> { throw new PaymentException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                         "결제 게이트웨이 일시 장애 (서킷브레이커 OPEN)"); }
         );
