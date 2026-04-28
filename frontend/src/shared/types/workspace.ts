@@ -107,6 +107,13 @@ export interface MainDoc {
 export interface MainTab {
   id: string;
   doc: MainDoc | null;
+  /**
+   * 이 탭이 속한 작품 컨텍스트.
+   * 작품별로 탭 세트를 분리 보존하기 위해 사용 — 다른 작품의 탭은 tabs 배열에
+   * 그대로 남되 화면에는 currentWorkId === workId 인 탭만 노출된다.
+   * null = 작품 컨텍스트 미지정 (현재 사용처 없음, 안전 기본값).
+   */
+  workId: string | null;
 }
 
 // ── 우측 사이드바 탭 ───────────────────────────────────
