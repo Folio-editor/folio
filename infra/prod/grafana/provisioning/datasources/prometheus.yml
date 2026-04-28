@@ -6,6 +6,9 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    # uid 명시 — 대시보드 JSON (folio-*.json) 5종이 datasource.uid="prometheus" 로 하드코딩 참조하므로
+    # 명시 없으면 Grafana 가 임의 UUID 자동 부여 → 대시보드 패널이 "Datasource not found" 표시.
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
