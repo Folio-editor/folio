@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -11,7 +11,9 @@ import {
 } from '@dnd-kit/sortable';
 import {
   AlertTriangle,
+  ArrowDownAZ,
   ArrowLeft,
+  ArrowUpDown,
   BotMessageSquare,
   Check,
   ChevronDown,
@@ -39,6 +41,7 @@ import { AuxDocViewer } from './AuxDocViewer';
 import { BreadcrumbTitle } from './BreadcrumbTitle';
 import { ContentEditor } from '../editor/ContentEditor';
 import { Select } from '../ui/Select';
+import { Popover } from '../ui/Popover';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
 import { Skeleton } from '../ui/Skeleton';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
@@ -92,7 +95,7 @@ function AiErrorBlock({ message }: { message: string }) {
     </div>
   );
 }
-import { useAiSessionStore } from '../../stores/aiSessionStore';
+import { useAiSessionStore, getAiToolName } from '../../stores/aiSessionStore';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
 import { useWalletStore } from '../../stores/walletStore';
 import type { AuxPanelItem, AuxDocType, RightPanelTab, WorkspaceSection, MainDoc } from '../../types/workspace';
@@ -153,15 +156,11 @@ export function RightPanels({
         ariaLabel="우측 패널 너비 조절"
       />
 
-      {/* 상단 헤더 — 활성 탭 라벨 (좌측 사이드바/메인 탭바와 동일한 h-10) */}
-      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
-        <span className="truncate text-sm font-semibold text-sidebar-foreground">
-          {TABS.find((t) => t.key === activeTab)?.label}
-        </span>
-      </div>
+      {/* 상단 헤더 — 활성 탭 라벨 + AI sub-screen breadcrumb. 도구 sub-screen 자체 헤더는 제거됨. */}
+      <RightPanelHeader activeTab={activeTab} />
 
-      {/* 아이콘 탭 행 — 검색창 영역(h-12)과 동일 높이 */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
+      {/* 아이콘 탭 행 — 메인 헤더(h-10)와 좌측 검색창 영역과 동일 높이 */}
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
         {TABS.map(({ key, icon: Icon, label }) => (
           <button
             key={key}
@@ -209,6 +208,70 @@ export function RightPanels({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── 우측 패널 공통 헤더 ── */
+
+/**
+ * 우측 패널 상단 공통 헤더.
+ * - 활성 탭 라벨 표시
+ * - AI 탭 + sub-screen 진입 시 `AI 도구 > <도구명>` breadcrumb + 뒤로가기 버튼 통합
+ *   (sub-screen 자체 헤더는 제거되어 공간 낭비/이중 라인 해소)
+ * - DraftView 스트리밍 중에는 뒤로가기 차단 — 사용자는 액션바의 "중단" 버튼으로 명시 abort 후 이동
+ * - Review 결과 화면에서 뒤로 갈 때는 메인 에디터 하이라이트도 함께 정리
+ */
+function RightPanelHeader({ activeTab }: { activeTab: RightPanelTab }) {
+  const aiScreen = useAiSessionStore((s) => s.screen);
+  const aiIsStreaming = useAiSessionStore((s) => s.isStreaming);
+  const setScreen = useAiSessionStore((s) => s.setScreen);
+  const tabLabel = TABS.find((t) => t.key === activeTab)?.label ?? '';
+
+  // AI 탭 + sub-screen인 경우만 breadcrumb 노출
+  const subToolName = activeTab === 'ai' ? getAiToolName(aiScreen) : null;
+  // DraftViewScreen 스트리밍 중에는 뒤로가기 차단
+  const allowBack = !(activeTab === 'ai' && aiScreen === 'draft-view' && aiIsStreaming);
+
+  const handleBack = () => {
+    // Review 화면에서 메뉴로 돌아갈 때 메인 에디터 하이라이트 정리
+    if (
+      activeTab === 'ai' &&
+      (aiScreen === 'review-result' || aiScreen === 'review-history-view')
+    ) {
+      useReviewHighlightStore.getState().clearIssues();
+    }
+    setScreen('menu');
+  };
+
+  return (
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
+      {subToolName && allowBack && (
+        <button
+          type="button"
+          onClick={handleBack}
+          aria-label="AI 도구 메뉴로 돌아가기"
+          title="AI 도구 메뉴로 돌아가기"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <ArrowLeft size={14} strokeWidth={1.75} />
+        </button>
+      )}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-semibold text-sidebar-foreground">
+        <span className={subToolName ? 'shrink-0 text-muted-foreground' : ''}>
+          {tabLabel}
+        </span>
+        {subToolName && (
+          <>
+            <ChevronRight
+              size={12}
+              strokeWidth={1.75}
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="truncate">{subToolName}</span>
+          </>
+        )}
+      </span>
     </div>
   );
 }
@@ -398,8 +461,19 @@ interface IdeaRow {
   id: string;
   content: string;
   tag: string | null;
+  created_at: string;
   updated_at: string;
 }
+
+/** 아이디어 카드 정렬 키 */
+type IdeaSortKey = 'default' | 'alpha' | 'created' | 'updated';
+
+const SORT_LABEL: Record<IdeaSortKey, string> = {
+  default: '기본',
+  alpha: '가나다',
+  created: '생성순',
+  updated: '최근 변경순',
+};
 
 function IdeaPanelList({
   workId,
@@ -416,15 +490,42 @@ function IdeaPanelList({
   const { createIdea } = useLocalWrite();
   const [inputText, setInputText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [searchText, setSearchText] = useState('');
+  const [sortKey, setSortKey] = useState<IdeaSortKey>('default');
 
   const { data: ideas = [] } = useQuery<IdeaRow>(
-    `SELECT id, content, tag, updated_at FROM idea_archive
+    `SELECT id, content, tag, created_at, updated_at FROM idea_archive
      WHERE work_id = ? AND writer_id = ?
      ORDER BY sort_order ASC, created_at DESC`,
     [workId, writerId],
   );
 
-  const filteredIdeas = activeTag ? ideas.filter((i) => i.tag === activeTag) : ideas;
+  const filteredIdeas = useMemo(() => {
+    let result = activeTag ? ideas.filter((i) => i.tag === activeTag) : ideas;
+    const query = searchText.trim().toLowerCase();
+    if (query) {
+      result = result.filter((i) =>
+        extractText(i.content).toLowerCase().includes(query),
+      );
+    }
+    if (sortKey === 'alpha') {
+      result = [...result].sort((a, b) =>
+        extractText(a.content).localeCompare(extractText(b.content), 'ko'),
+      );
+    } else if (sortKey === 'created') {
+      // 최근 생성이 위로 — created_at DESC
+      result = [...result].sort((a, b) =>
+        (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+      );
+    } else if (sortKey === 'updated') {
+      // 최근 변경이 위로 — updated_at DESC
+      result = [...result].sort((a, b) =>
+        (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+      );
+    }
+    // 'default' 는 SQL 기본 (sort_order ASC, created_at DESC) 그대로
+    return result;
+  }, [ideas, activeTag, searchText, sortKey]);
 
   const handleSubmit = async () => {
     const trimmed = inputText.trim();
@@ -476,6 +577,69 @@ function IdeaPanelList({
         </div>
       </div>
 
+      {/* 리스트 검색 + 정렬 — 입력창 위에 위치 (필터 컨트롤이 작성 도구보다 먼저 노출) */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            size={12}
+            strokeWidth={2}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+          <input
+            type="search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.currentTarget.value)}
+            placeholder="아이디어 검색"
+            className="h-7 w-full rounded-md border border-border bg-background pl-6 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+        <Popover
+          align="end"
+          width={150}
+          trigger={
+            <button
+              type="button"
+              title={`정렬: ${SORT_LABEL[sortKey]}`}
+              aria-label="아이디어 정렬"
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-accent hover:text-foreground',
+                sortKey === 'default'
+                  ? 'text-muted-foreground'
+                  : 'text-primary',
+              )}
+            >
+              {sortKey === 'alpha' ? (
+                <ArrowDownAZ size={13} strokeWidth={1.75} />
+              ) : (
+                <ArrowUpDown size={13} strokeWidth={1.75} />
+              )}
+            </button>
+          }
+        >
+          {(close) => (
+            <div className="flex flex-col">
+              {(Object.keys(SORT_LABEL) as IdeaSortKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setSortKey(key);
+                    close();
+                  }}
+                  className={cn(
+                    'flex items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground',
+                    sortKey === key && 'text-primary',
+                  )}
+                >
+                  <span>{SORT_LABEL[key]}</span>
+                  {sortKey === key && <Check size={12} strokeWidth={2} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
+      </div>
+
       {/* 인라인 생성 입력 */}
       <div className="shrink-0 border-b border-border px-2 py-2">
         <div className="relative">
@@ -489,8 +653,8 @@ function IdeaPanelList({
                 ? `"${activeTag}" 아이디어… (Enter)`
                 : '아이디어 메모… (Enter)'
             }
-            rows={2}
-            className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 pr-8 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+            rows={3}
+            className="min-h-20 w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 pr-8 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <button
             type="button"
@@ -940,18 +1104,7 @@ function DraftInputScreen({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더 */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <Sparkles size={14} className="text-primary" />
-        <span className="text-xs font-semibold text-foreground">초안 생성</span>
-      </div>
+      {/* 헤더는 RightPanelHeader가 통합 처리 (← + AI 도구 > 초안 생성) */}
 
       {/* 폼 */}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
@@ -1143,34 +1296,28 @@ function DraftViewScreen({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더 */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="flex items-center gap-2">
-          {state !== 'streaming' && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ArrowLeft size={15} />
-            </button>
+      {/* 액션바 — 헤더(← + AI 도구 > 초안 생성)는 RightPanelHeader가 담당.
+          이 영역엔 상태 라벨 + 우측 액션(중단/복사) 만 노출. */}
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-3">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          {state === 'streaming' && (
+            <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
           )}
-          <div className="flex items-center gap-1.5 overflow-hidden">
-            {state === 'streaming' && (
-              <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
-            )}
-            <span className="truncate text-xs font-semibold text-foreground">
-              {isHistoryView ? '생성 기록' : state === 'streaming' ? 'AI 생성 중...' : state === 'done' ? '생성 완료' : state === 'error' ? '생성 오류' : 'AI 초안'}
-              {targetEpisode && (
-                <span className="ml-1 font-normal text-muted-foreground">
-                  {targetEpisode.sortOrder + 1}화
-                </span>
-              )}
-            </span>
-          </div>
+          <span className="truncate text-[11px] text-muted-foreground">
+            {isHistoryView
+              ? '생성 기록'
+              : state === 'streaming'
+                ? 'AI 생성 중…'
+                : state === 'done'
+                  ? '생성 완료'
+                  : state === 'error'
+                    ? '생성 오류'
+                    : '대기'}
+            {targetEpisode && ` · ${targetEpisode.sortOrder + 1}화`}
+          </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {state === 'streaming' && (
             <button
               type="button"
@@ -1241,17 +1388,7 @@ function ReviewInputScreen({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <Search size={14} className="text-primary" />
-        <span className="text-xs font-semibold text-foreground">원고 검수</span>
-      </div>
+      {/* 헤더는 RightPanelHeader가 통합 처리 (← + AI 도구 > 원고 검수) */}
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
         {!isEpisode || !episode ? (
@@ -1378,26 +1515,9 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
     return () => useReviewHighlightStore.getState().clearIssues();
   }, [reviewState, result]);
 
-  const handleBack = () => {
-    useReviewHighlightStore.getState().clearIssues();
-    onBack();
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <Search size={14} className="text-primary" />
-        <span className="text-xs font-semibold text-foreground">
-          {isHistoryView ? '검수 기록' : '원고 검수'}
-        </span>
-      </div>
+      {/* 헤더는 RightPanelHeader가 통합 처리 — clearIssues는 RightPanelHeader.handleBack에서 호출 */}
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
         {/* 대상 에피소드 */}

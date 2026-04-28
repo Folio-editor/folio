@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { usePowerSync } from '@powersync/react';
 import {
   DndContext,
@@ -93,16 +93,33 @@ export function AuthenticatedApp() {
   const db = usePowerSync();
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
-  // 메인 다중 탭 store — 활성 탭 doc이 mainDoc 역할 (단일 슬롯 호환)
-  const tabs = useMainTabsStore((s) => s.tabs);
-  const activeTabId = useMainTabsStore((s) => s.activeTabId);
+  // 메인 다중 탭 store — 작품별 탭 세트 분리 보존 모델.
+  // 모든 작품의 탭이 평면 배열에 누적되고, 현재 작품(currentWorkId) 컨텍스트의
+  // 탭만 화면에 노출 + active 처리. AuthenticatedApp은 selectedWorkId 변경 시
+  // setCurrentWorkId로 store 컨텍스트를 동기화한다.
+  const allTabs = useMainTabsStore((s) => s.tabs);
+  const activeTabIdByWork = useMainTabsStore((s) => s.activeTabIdByWork);
   const replaceActive = useMainTabsStore((s) => s.replaceActive);
   const openTab = useMainTabsStore((s) => s.openTab);
-  const closeAllTabs = useMainTabsStore((s) => s.closeAll);
+  const closeWorkTabs = useMainTabsStore((s) => s.closeWorkTabs);
+  const clearActive = useMainTabsStore((s) => s.clearActive);
+  const setCurrentWorkId = useMainTabsStore((s) => s.setCurrentWorkId);
   const closeActiveTab = useMainTabsStore((s) => s.closeTab);
   const hydrateLegacyMainDoc = useMainTabsStore((s) => s.hydrateLegacyMainDoc);
+  // 현재 작품 컨텍스트의 탭만 노출 — useMemo로 파생 (allTabs/selectedWorkId 변경 시만 재계산)
+  const tabs = useMemo(
+    () => (selectedWorkId ? allTabs.filter((t) => t.workId === selectedWorkId) : []),
+    [allTabs, selectedWorkId],
+  );
+  const activeTabId: string | null =
+    selectedWorkId ? activeTabIdByWork[selectedWorkId] ?? null : null;
   const mainDoc: MainDoc | null =
     tabs.find((t) => t.id === activeTabId)?.doc ?? null;
+  // selectedWorkId ↔ store.currentWorkId 동기화. store 내부 action들이 currentWorkId
+  // 컨텍스트로 동작하므로 마운트 + 작품 전환마다 즉시 반영.
+  useEffect(() => {
+    setCurrentWorkId(selectedWorkId);
+  }, [selectedWorkId, setCurrentWorkId]);
   /** 활성 탭 doc 교체 (없으면 새 탭). null 전달 시 활성 탭 닫기 — 기존 setMainDoc(null) 호환 */
   const setMainDoc = useCallback(
     (next: MainDoc | null) => {
@@ -497,8 +514,9 @@ export function AuthenticatedApp() {
       // Ctrl+W — 활성 탭 닫기 (edit field 안에서도 동작 — 입력 방해 X)
       if (mod && !e.shiftKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
         e.preventDefault();
-        const { activeTabId, closeTab } = useMainTabsStore.getState();
-        if (activeTabId) closeTab(activeTabId);
+        const state = useMainTabsStore.getState();
+        const activeId = state.getCurrentActiveTabId();
+        if (activeId) state.closeTab(activeId);
         return;
       }
       // Ctrl+T — 새 빈 탭
@@ -507,36 +525,43 @@ export function AuthenticatedApp() {
         useMainTabsStore.getState().openBlankTab();
         return;
       }
-      // Ctrl+Tab / Ctrl+Shift+Tab — 다음/이전 탭
+      // Ctrl+Tab / Ctrl+Shift+Tab — 현재 작품 탭 사이에서 다음/이전 순환
       if (mod && e.key === 'Tab') {
         e.preventDefault();
         const state = useMainTabsStore.getState();
-        if (state.tabs.length === 0) return;
-        const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
+        const inWork = state.getCurrentTabs();
+        if (inWork.length === 0) return;
+        const activeId = state.getCurrentActiveTabId();
+        const idx = inWork.findIndex((t) => t.id === activeId);
         const dir = e.shiftKey ? -1 : 1;
-        const next = (idx + dir + state.tabs.length) % state.tabs.length;
-        state.setActiveTab(state.tabs[next].id);
+        // 활성 탭이 없으면 첫(또는 마지막) 탭으로
+        const base = idx < 0 ? (dir === 1 ? -1 : inWork.length) : idx;
+        const next = (base + dir + inWork.length) % inWork.length;
+        state.setActiveTab(inWork[next].id);
         return;
       }
-      // Ctrl+PageDown / Ctrl+PageUp — fallback (일부 환경에서 Ctrl+Tab 캡쳐 시)
+      // Ctrl+PageDown / Ctrl+PageUp — fallback
       if (mod && (e.key === 'PageDown' || e.key === 'PageUp')) {
         e.preventDefault();
         const state = useMainTabsStore.getState();
-        if (state.tabs.length === 0) return;
-        const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
+        const inWork = state.getCurrentTabs();
+        if (inWork.length === 0) return;
+        const activeId = state.getCurrentActiveTabId();
+        const idx = inWork.findIndex((t) => t.id === activeId);
         const dir = e.key === 'PageDown' ? 1 : -1;
-        const next = (idx + dir + state.tabs.length) % state.tabs.length;
-        state.setActiveTab(state.tabs[next].id);
+        const base = idx < 0 ? (dir === 1 ? -1 : inWork.length) : idx;
+        const next = (base + dir + inWork.length) % inWork.length;
+        state.setActiveTab(inWork[next].id);
         return;
       }
-      // Ctrl+1..9 — 인덱스 탭 (Numpad 포함 e.code 기반)
+      // Ctrl+1..9 — 현재 작품 탭의 N번째로 점프
       if (mod && !e.shiftKey && !e.altKey) {
         const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
         if (m) {
           e.preventDefault();
           const targetIdx = Number(m[1]) - 1;
           const state = useMainTabsStore.getState();
-          const tab = state.tabs[targetIdx];
+          const tab = state.getCurrentTabs()[targetIdx];
           if (tab) state.setActiveTab(tab.id);
           return;
         }
@@ -595,7 +620,9 @@ export function AuthenticatedApp() {
     setRightPanelsWidth((w) => clamp(w + delta, RIGHT_PANEL_MIN, rightPanelMaxAllowed()));
 
   // ── 액티비티 / 작품 / 섹션 핸들러 ──
-  // 핵심 변경: handleActivityChange는 mainDoc을 건드리지 않는다 (Stage Manager 모델)
+  // 액티비티 전환은 사이드바 뷰만 갱신 (탭 자체는 보존).
+  // 단 'home' 진입 시는 활성 탭을 deselect하여 메인 패널이 WorkspaceHomeScreen 으로
+  // 전환되도록 한다 — 탭바엔 기존 탭이 그대로 남아 다시 클릭하면 즉시 복귀 (VSCode 식).
   const handleActivityChange = (next: Activity) => {
     // 같은 액티비티 + 사이드바 열림 + 설정 모드 아님 → 사이드바 닫기 토글
     if (!sidebarCollapsed && activity === next && !settingsMode) {
@@ -606,7 +633,10 @@ export function AuthenticatedApp() {
     setSettingsMode(false);
     setSelectedSettingsItem(null);
     setActivity(next);
-    // mainDoc은 보존 — 사이드바 뷰만 갱신
+    if (next === 'home') {
+      // 활성 탭만 해제 — tabs 배열은 그대로 유지
+      clearActive();
+    }
   };
 
   const handleSettingsClick = () => {
@@ -622,8 +652,8 @@ export function AuthenticatedApp() {
 
   const handleWorkSelect = (id: string) => {
     setSelectedWorkId(id);
-    // 작품 전환 = 작업 컨텍스트 전환 → 모든 탭 닫기
-    closeAllTabs();
+    // 작품 전환 = 컨텍스트만 전환. 그 작품의 이전 탭 세트는 store가 자동 복원
+    // (선택 작품의 activeTabIdByWork[id] 가 mainDoc 결정).
   };
 
   // WorkspaceHomeScreen에서 섹션 카드 클릭 — 사이드바 뷰만 전환 (메인 보존)
@@ -634,7 +664,7 @@ export function AuthenticatedApp() {
   const handleNewWork = async (title: string) => {
     const id = await createWork(title);
     setSelectedWorkId(id);
-    closeAllTabs();
+    // 새 작품은 자체 탭이 없으므로 기존 탭 청소 불필요. 다른 작품 탭은 보존.
     setSidebarCollapsed(false);
     setActivity('home');
   };
@@ -657,15 +687,16 @@ export function AuthenticatedApp() {
   };
 
   const handleNewWorkReset = () => {
+    // 작품 미선택 상태로 — 다른 작품 탭은 보존 (다시 그 작품 들어가면 복원).
     setSelectedWorkId(null);
-    closeAllTabs();
     setSidebarCollapsed(false);
     setActivity('home');
   };
 
   const handleWorkDeleted = () => {
+    // 삭제된 작품의 탭만 정리 — 다른 작품 탭은 보존.
+    if (selectedWorkId) closeWorkTabs(selectedWorkId);
     setSelectedWorkId(null);
-    closeAllTabs();
     setAuxPinned([]);
     setSidebarCollapsed(false);
     setActivity('home');
@@ -1050,6 +1081,12 @@ export function AuthenticatedApp() {
             workSelected={selectedWorkId !== null}
             settingsMode={settingsMode}
             onSettingsClick={handleSettingsClick}
+            rightPanelVisible={rightPanelVisible}
+            activeRightTab={rightPanelTab}
+            onRightPanelQuickJump={(tab) => {
+              if (!rightPanelVisible) setRightPanelVisible(true);
+              setRightPanelTab(tab);
+            }}
           />
         }
         sidebar={

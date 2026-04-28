@@ -230,9 +230,9 @@ export function SecondarySidebar({
         </div>
       </div>
 
-      {/* 검색 + 필터 — activity별 가능한 필터 옵션 자동 분기 */}
-      <div className="shrink-0 border-b border-sidebar-border/50 px-3 py-2">
-        <div className="flex items-center gap-1.5">
+      {/* 검색 + 필터 — 메인 헤더(h-10)와 가로선 정렬 위해 동일 높이 */}
+      <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border/50 px-3">
+        <div className="flex w-full items-center gap-1.5">
           <div className="relative min-w-0 flex-1">
             <Search
               size={14}
@@ -244,7 +244,7 @@ export function SecondarySidebar({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.currentTarget.value)}
               placeholder="검색"
-              className="h-8 pl-7 text-xs"
+              className="h-7 pl-7 text-xs"
             />
           </div>
           <ActivityFilters

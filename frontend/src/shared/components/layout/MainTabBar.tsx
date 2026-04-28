@@ -124,8 +124,17 @@ interface MainTabBarProps {
 }
 
 export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
-  const tabs = useMainTabsStore((s) => s.tabs);
-  const activeTabId = useMainTabsStore((s) => s.activeTabId);
+  // 작품별 탭 분리 모델 — 화면엔 현재 작품(currentWorkId)의 탭만 노출.
+  const allTabs = useMainTabsStore((s) => s.tabs);
+  const currentWorkId = useMainTabsStore((s) => s.currentWorkId);
+  const activeTabIdByWork = useMainTabsStore((s) => s.activeTabIdByWork);
+  const tabs = useMemo(
+    () => (currentWorkId ? allTabs.filter((t) => t.workId === currentWorkId) : []),
+    [allTabs, currentWorkId],
+  );
+  const activeTabId: string | null = currentWorkId
+    ? activeTabIdByWork[currentWorkId] ?? null
+    : null;
   const setActiveTab = useMainTabsStore((s) => s.setActiveTab);
   const closeTab = useMainTabsStore((s) => s.closeTab);
   const closeOthers = useMainTabsStore((s) => s.closeOthers);
