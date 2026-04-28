@@ -227,9 +227,13 @@ export function ContentEditor({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const incoming = initialContent ?? '';
-    // mount 직후 lastEmittedRaw가 null이면 초기 sync — 초기값과 동일하면 skip, 아니면 emit echo로 간주
+    // mount 직후 lastEmittedRaw가 null이면 초기 sync.
+    // 빈 값으로 먼저 렌더된 뒤 DB content가 늦게 도착하는 경우도 반영한다.
     if (lastEmittedRawRef.current === null) {
       lastEmittedRawRef.current = incoming;
+      if (incoming) {
+        editor.commands.setContent(parseContent(incoming), { emitUpdate: false });
+      }
       return;
     }
     if (incoming === lastEmittedRawRef.current) return;
