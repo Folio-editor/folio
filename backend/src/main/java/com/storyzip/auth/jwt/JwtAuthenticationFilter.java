@@ -1,6 +1,6 @@
 package com.storyzip.auth.jwt;
 
-import com.storyzip.common.observability.RequestContextFilter;
+import com.storyzip.common.observability.TraceContextFilter;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -49,9 +49,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
                 SecurityContextHolder.getContext().setAuthentication(auth);
                 // 이후 모든 로그(애플리케이션/예외/외부호출)에 사용자 컨텍스트 자동 포함
-                MDC.put(RequestContextFilter.MDC_USER_ID, claims.getSubject());
+                MDC.put(TraceContextFilter.MDC_USER_ID, claims.getSubject());
                 if (role != null) {
-                    MDC.put(RequestContextFilter.MDC_ROLE, role);
+                    MDC.put(TraceContextFilter.MDC_ROLE, role);
                 }
             } catch (JwtException e) {
                 log.debug("JWT validation failed: {}", e.getMessage());

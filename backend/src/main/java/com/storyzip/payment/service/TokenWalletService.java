@@ -53,6 +53,8 @@ public class TokenWalletService {
         wallet.chargePurchase(amount);
         recordTx(writerId, TokenBucket.PURCHASE, amount,
                 TokenTransactionType.CHARGE, reason, referenceId);
+        log.info("[TOKEN_PURCHASE_CHARGED] writerId={} amount={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
     /**
@@ -67,21 +69,26 @@ public class TokenWalletService {
             recordTx(writerId, TokenBucket.SUBSCRIPTION, -expired,
                     TokenTransactionType.EXPIRE,
                     "SUBSCRIPTION_ROLLOVER_EXPIRE", referenceId);
+            log.info("[TOKEN_EXPIRE] writerId={} amount={} type=SUBSCRIPTION_ROLLOVER referenceId={}",
+                    writerId, expired, referenceId);
         }
         recordTx(writerId, TokenBucket.SUBSCRIPTION, amount,
                 TokenTransactionType.SUBSCRIPTION, reason, referenceId);
+        log.info("[TOKEN_SUBSCRIPTION_CHARGED] writerId={} amount={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
     /** 신규 가입 시 보너스 300 크레딧 지급 (90일 만료). */
     @Transactional
     public void grantSignupBonus(UUID writerId) {
         TokenWallet wallet = lockOrCreate(writerId);
-        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusDays(BONUS_VALIDITY_DAYS);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime expiresAt = now.plusDays(BONUS_VALIDITY_DAYS);
         wallet.grantBonus(SIGNUP_BONUS_AMOUNT, expiresAt);
         recordTx(writerId, TokenBucket.BONUS, SIGNUP_BONUS_AMOUNT,
                 TokenTransactionType.BONUS_GRANT, "SIGNUP_BONUS", null);
-        log.info("Signup bonus granted: writerId={}, amount={}, expiresAt={}",
-                writerId, SIGNUP_BONUS_AMOUNT, expiresAt);
+        log.info("[TOKEN_BONUS_GRANTED] writerId={} amount={} balanceAfter={} reason=SIGNUP_BONUS expiresAt={}",
+                writerId, SIGNUP_BONUS_AMOUNT, wallet.totalBalance(now), expiresAt);
     }
 
     // ─────────────── 차감 ───────────────
@@ -108,6 +115,9 @@ public class TokenWalletService {
             recordTx(writerId, TokenBucket.PURCHASE, -result.fromPurchase(),
                     TokenTransactionType.USAGE, reason, referenceId);
         }
+        log.info("[TOKEN_USAGE] writerId={} amount={} fromSubscription={} fromBonus={} fromPurchase={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, result.fromSubscription(), result.fromBonus(), result.fromPurchase(),
+                wallet.totalBalance(now), reason, referenceId);
     }
 
     /**
@@ -122,6 +132,8 @@ public class TokenWalletService {
             recordTx(writerId, TokenBucket.PURCHASE, -actual,
                     TokenTransactionType.REFUND, reason, referenceId);
         }
+        log.info("[REFUND_DEDUCT] writerId={} requested={} actual={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, actual, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
     // ─────────────── 만료 ───────────────
@@ -135,6 +147,8 @@ public class TokenWalletService {
             recordTx(writerId, TokenBucket.SUBSCRIPTION, -expired,
                     TokenTransactionType.EXPIRE,
                     "SUBSCRIPTION_CANCEL_EXPIRE", subscriptionId);
+            log.info("[TOKEN_EXPIRE] writerId={} amount={} type=SUBSCRIPTION_CANCEL balanceAfter={} subscriptionId={}",
+                    writerId, expired, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), subscriptionId);
         }
     }
 
@@ -146,7 +160,8 @@ public class TokenWalletService {
         if (expired > 0) {
             recordTx(writerId, TokenBucket.BONUS, -expired,
                     TokenTransactionType.EXPIRE, "BONUS_TTL_EXPIRE", null);
-            log.info("Bonus expired: writerId={}, amount={}", writerId, expired);
+            log.info("[TOKEN_EXPIRE] writerId={} amount={} type=BONUS_TTL balanceAfter={}",
+                    writerId, expired, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)));
         }
     }
 

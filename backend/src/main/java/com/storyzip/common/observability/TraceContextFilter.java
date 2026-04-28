@@ -27,7 +27,7 @@ import java.util.UUID;
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
-public class RequestContextFilter extends OncePerRequestFilter {
+public class TraceContextFilter extends OncePerRequestFilter {
 
     public static final String MDC_TRACE_ID = "traceId";
     public static final String MDC_USER_ID = "userId";
@@ -76,7 +76,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
      * <p>현재 MDC 전체 스냅샷(traceId/userId/role/httpMethod/httpPath …)을 캡처해
      * 자식 작업 진입 시 복원하고, 종료 시 정리하는 Runnable로 감싼다.
      *
-     * <p>사용 예: {@code Thread.startVirtualThread(RequestContextFilter.wrapMdc(() -> ...));}
+     * <p>사용 예: {@code Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> ...));}
      */
     public static Runnable wrapMdc(Runnable task) {
         java.util.Map<String, String> snapshot = org.slf4j.MDC.getCopyOfContextMap();
