@@ -146,4 +146,20 @@ class TossWebhookControllerTest {
         assertThatThrownBy(() -> controller.receive("invalid-signature", body))
                 .isInstanceOf(PaymentException.class);
     }
+
+    @Test
+    @DisplayName("webhookSecret 미설정 시 서명 검증을 우회하지 않고 거절한다")
+    void missingSecret_rejectsRequest() throws Exception {
+        TossPaymentsProperties propsWithoutSecret = new TossPaymentsProperties(
+                "test_ck", "test_sk", "https://api.tosspayments.com", "");
+        TossWebhookController controllerWithoutSecret =
+                new TossWebhookController(paymentEventRepository, objectMapper, propsWithoutSecret);
+
+        String body = """
+                {"eventId":"evt_001","eventType":"PAYMENT.DONE","data":{}}""";
+
+        assertThatThrownBy(() -> controllerWithoutSecret.receive(sign(body), body))
+                .isInstanceOf(PaymentException.class);
+        verify(paymentEventRepository, never()).save(any());
+    }
 }

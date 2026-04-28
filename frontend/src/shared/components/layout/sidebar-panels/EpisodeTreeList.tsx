@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
@@ -25,6 +26,7 @@ import {
 } from '../../../stores/filterPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
+import { SidebarListSkeleton } from './SidebarListSkeleton';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -93,12 +95,13 @@ export function EpisodeTreeList({
     ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
     ...filterClause.params,
   ];
-  const { data: rawEpisodes = [] } = useQuery<EpisodeRow>(sql, params);
+  const { data: rawEpisodes = [], isFetching } = useQuery<EpisodeRow>(sql, params);
   const episodes = useOptimisticRows(rawEpisodes, {
     docType: 'episode',
     workId,
     matches: (row) => row.work_id === workId,
   });
+  const showEmpty = useDelayedEmptyState(episodes.length === 0 && !creating && !isFetching);
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
@@ -151,7 +154,9 @@ export function EpisodeTreeList({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-1">
-        {episodes.length === 0 && !creating ? (
+        {isFetching && episodes.length === 0 && !creating ? (
+          <SidebarListSkeleton />
+        ) : showEmpty ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {trimmed ? '검색 결과가 없습니다.' : '원고가 없습니다.'}
           </p>
