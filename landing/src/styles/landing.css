@@ -46,10 +46,10 @@ html {
   border-bottom: 1px solid var(--ink-border);
 }
 .folio-landing .nav-inner {
-  max-width: 1100px;
+  width: 100%;
   height: 100%;
-  margin: 0 auto;
-  padding: 0 2rem;
+  margin: 0;
+  padding: 0 5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,7 +70,7 @@ html {
 .folio-landing .nav-links {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 2.25rem;
   font-family: var(--sans);
   font-size: 14px;
 }
@@ -85,7 +85,8 @@ html {
 .folio-landing .nav-cta {
   color: var(--ink);
   background: transparent;
-  padding: 8px 14px;
+  padding: 9px 18px;
+  margin-left: 0.75rem;
   border: 1.5px solid var(--ink);
   text-decoration: none;
   font-weight: 500;
@@ -842,6 +843,10 @@ html {
   line-height: 1.95;
   color: #333;
 }
+.folio-landing .price-list li {
+  padding-left: 1.6rem;
+  text-indent: -1.6rem;
+}
 .folio-landing .price-list li::before {
   content: '—';
   color: var(--ink-mid);
@@ -1167,7 +1172,7 @@ html {
     padding: 0 1.25rem;
   }
   .folio-landing .nav-links {
-    gap: 0.85rem;
+    gap: 1.25rem;
   }
   .folio-landing .nav-link {
     display: none;
