@@ -10,6 +10,7 @@ import com.storyzip.ai.client.dto.PingResultResponse;
 import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.common.exception.AiException;
 import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.common.observability.ExternalCallLogger;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -41,6 +42,13 @@ public class AiClient {
 
     private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
 
+    /** AI 호출 SLA — health/ping은 짧고, pipeline 트리거(큐에 적재만)도 짧다. */
+    private static final long AI_QUICK_SLA_MS = 2_000L;
+    /** 리뷰는 LLM 한 번 호출이라 길다. 30초 넘으면 사용자 경험 망가지므로 WARN. */
+    private static final long AI_REVIEW_SLA_MS = 30_000L;
+    /** 초안 SSE 스트림 전체 — 5분이 한계 (timeout 설정과 동일). */
+    private static final long AI_DRAFT_STREAM_SLA_MS = 60_000L;
+
     private final AiClientProperties properties;
     private final RestClient restClient;
 
@@ -60,68 +68,70 @@ public class AiClient {
 
     /** 공개 엔드포인트 — FastAPI 연결성 확인. */
     public HealthResponse health() {
-        try {
-            HealthResponse body = restClient.get()
-                    .uri("/v1/health")
-                    .retrieve()
-                    .body(HealthResponse.class);
-            if (body == null) {
-                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+        return ExternalCallLogger.measure(ExternalCallLogger.SYSTEM_AI, "health", AI_QUICK_SLA_MS, () -> {
+            try {
+                HealthResponse body = restClient.get()
+                        .uri("/v1/health")
+                        .retrieve()
+                        .body(HealthResponse.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
             }
-            return body;
-        } catch (ResourceAccessException e) {
-            log.warn("AI health request failed (connection)", e);
-            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
-        } catch (RestClientResponseException e) {
-            log.warn("AI health request failed (http {})", e.getStatusCode(), e);
-            throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
-        }
+        });
     }
 
     /** 회차 인덱싱 파이프라인 트리거 (청킹 + 임베딩 + 요약 + 추출). */
     public EpisodePipelineResponse triggerEpisodePipeline(EpisodePipelineRequest request) {
-        try {
-            EpisodePipelineResponse body = restClient.post()
-                    .uri("/v1/pipelines/episode")
-                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(request)
-                    .retrieve()
-                    .body(EpisodePipelineResponse.class);
-            if (body == null || body.taskId() == null) {
-                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "triggerEpisodePipeline", AI_QUICK_SLA_MS, () -> {
+            try {
+                EpisodePipelineResponse body = restClient.post()
+                        .uri("/v1/pipelines/episode")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(EpisodePipelineResponse.class);
+                if (body == null || body.taskId() == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
             }
-            return body;
-        } catch (ResourceAccessException e) {
-            log.warn("AI pipeline trigger failed (connection)", e);
-            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
-        } catch (RestClientResponseException e) {
-            log.warn("AI pipeline trigger failed (http {})", e.getStatusCode(), e);
-            throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
-        }
+        });
     }
 
     /** Celery 태스크 적재 — dev 스모크 전용. */
     public PingEnqueuedResponse enqueuePing(String msg) {
-        try {
-            PingEnqueuedResponse body = restClient.post()
-                    .uri("/v1/_dev/ping")
-                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("msg", msg))
-                    .retrieve()
-                    .body(PingEnqueuedResponse.class);
-            if (body == null || body.taskId() == null) {
-                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "enqueuePing", AI_QUICK_SLA_MS, () -> {
+            try {
+                PingEnqueuedResponse body = restClient.post()
+                        .uri("/v1/_dev/ping")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("msg", msg))
+                        .retrieve()
+                        .body(PingEnqueuedResponse.class);
+                if (body == null || body.taskId() == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
             }
-            return body;
-        } catch (ResourceAccessException e) {
-            log.warn("AI ping enqueue failed (connection)", e);
-            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
-        } catch (RestClientResponseException e) {
-            log.warn("AI ping enqueue failed (http {})", e.getStatusCode(), e);
-            throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
-        }
+        });
     }
 
     /**
@@ -134,9 +144,15 @@ public class AiClient {
      */
     public void streamDraft(DraftRequest request, SseEmitter emitter,
                             java.util.function.Consumer<Map<String, Object>> onDone) {
+        // 가상 스레드는 부모의 MDC를 자동 상속하지 않는다 — 캡처 후 자식에서 복원.
+        Map<String, String> mdcSnapshot = org.slf4j.MDC.getCopyOfContextMap();
         Thread.startVirtualThread(() -> {
+            if (mdcSnapshot != null) {
+                org.slf4j.MDC.setContextMap(mdcSnapshot);
+            }
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> lastDoneUsage = new java.util.HashMap<>();
+            long startNanos = System.nanoTime();
             try {
                 String jsonBody = mapper.writeValueAsString(request);
 
@@ -153,11 +169,16 @@ public class AiClient {
                         .connectTimeout(properties.getConnectTimeout())
                         .build();
 
+                log.info("[EXT_START] system=ai op=streamDraft");
+
                 HttpResponse<java.io.InputStream> response = sseClient.send(
                         httpReq, HttpResponse.BodyHandlers.ofInputStream()
                 );
 
                 if (response.statusCode() != 200) {
+                    long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
+                    log.warn("[EXT_FAIL] system=ai op=streamDraft elapsedMs={} status={}",
+                            elapsed, response.statusCode());
                     emitter.completeWithError(new AiException(ErrorCode.AI_RESPONSE_INVALID));
                     return;
                 }
@@ -192,10 +213,19 @@ public class AiClient {
                         }
                     }
                 }
-                log.info("Draft stream upstream completed: lastDoneUsage={}", lastDoneUsage);
+                long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
+                if (elapsed >= AI_DRAFT_STREAM_SLA_MS) {
+                    log.warn("[EXT_SLOW] system=ai op=streamDraft elapsedMs={} sla={} status=ok",
+                            elapsed, AI_DRAFT_STREAM_SLA_MS);
+                } else {
+                    log.info("[EXT_OK] system=ai op=streamDraft elapsedMs={} status=ok lastDoneUsage={}",
+                            elapsed, lastDoneUsage);
+                }
                 try { emitter.complete(); } catch (Exception ignored) { /* 이미 완료됨 */ }
             } catch (Exception e) {
-                log.warn("Draft streaming failed", e);
+                long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
+                log.warn("[EXT_FAIL] system=ai op=streamDraft elapsedMs={} errType={} errMsg={}",
+                        elapsed, e.getClass().getSimpleName(), e.getMessage(), e);
                 emitter.completeWithError(e);
             } finally {
                 if (onDone != null) {
@@ -205,6 +235,7 @@ public class AiClient {
                         log.warn("Draft onDone callback failed", e);
                     }
                 }
+                org.slf4j.MDC.clear();
             }
         });
     }
@@ -212,6 +243,7 @@ public class AiClient {
     /** 원고 검수 — FastAPI /v1/reviews 프록시 (동기 JSON). */
     @SuppressWarnings("unchecked")
     public Map<String, Object> requestReview(ReviewRequest request) {
+        long startNanos = System.nanoTime();
         try {
             ObjectMapper mapper = new ObjectMapper();
             String jsonBody = mapper.writeValueAsString(request);
@@ -233,45 +265,58 @@ public class AiClient {
                     httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             );
 
+            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
             if (response.statusCode() != 200) {
                 String body = response.body();
                 int bodyLen = body == null ? 0 : body.length();
                 String bodyPreview = bodyLen == 0 ? "" : body.substring(0, Math.min(bodyLen, 200));
-                log.warn("AI review failed (http {}): bodyLen={} preview={}",
-                        response.statusCode(), bodyLen, bodyPreview);
+                log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} status={} bodyLen={} preview={}",
+                        elapsed, response.statusCode(), bodyLen, bodyPreview);
                 throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
             }
 
+            if (elapsed >= AI_REVIEW_SLA_MS) {
+                log.warn("[EXT_SLOW] system=ai op=requestReview elapsedMs={} sla={} status=ok",
+                        elapsed, AI_REVIEW_SLA_MS);
+            } else {
+                log.info("[EXT_OK] system=ai op=requestReview elapsedMs={} status=ok", elapsed);
+            }
             return mapper.readValue(response.body(), Map.class);
         } catch (AiException e) {
             throw e;
         } catch (java.io.IOException e) {
-            log.warn("AI review request failed (IO)", e);
+            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
+            log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} errType=IO errMsg={}",
+                    elapsed, e.getMessage(), e);
             throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            long elapsed = (System.nanoTime() - startNanos) / 1_000_000L;
+            log.warn("[EXT_FAIL] system=ai op=requestReview elapsedMs={} errType=Interrupted",
+                    elapsed);
             throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
         }
     }
 
     /** Celery 태스크 결과 조회. */
     public PingResultResponse getPingResult(String taskId) {
-        try {
-            PingResultResponse body = restClient.get()
-                    .uri("/v1/_dev/ping/{taskId}", taskId)
-                    .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
-                    .retrieve()
-                    .body(PingResultResponse.class);
-            if (body == null) {
-                throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "getPingResult", AI_QUICK_SLA_MS, () -> {
+            try {
+                PingResultResponse body = restClient.get()
+                        .uri("/v1/_dev/ping/{taskId}", taskId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(PingResultResponse.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
             }
-            return body;
-        } catch (ResourceAccessException e) {
-            log.warn("AI ping result failed (connection)", e);
-            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
-        } catch (RestClientResponseException e) {
-            log.warn("AI ping result failed (http {})", e.getStatusCode(), e);
-            throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
-        }
+        });
     }
 }

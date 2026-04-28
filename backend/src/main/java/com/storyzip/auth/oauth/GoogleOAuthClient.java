@@ -7,6 +7,7 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.storyzip.common.exception.AuthException;
 import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.common.observability.ExternalCallLogger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -35,6 +36,10 @@ import java.util.List;
 public class GoogleOAuthClient {
 
     private static final String GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+    /** Google 토큰 엔드포인트 SLA — 사용자 로그인 대기시간이라 3초가 한계. */
+    private static final long GOOGLE_TOKEN_SLA_MS = 3_000L;
+    /** id_token 검증은 RSA 키 캐시 적중 시 1초 미만, 첫 호출 시 키 fetch 포함. */
+    private static final long GOOGLE_VERIFY_SLA_MS = 2_000L;
 
     private final GoogleOAuthProperties properties;
     private final RestClient restClient = RestClient.create();
@@ -77,45 +82,53 @@ public class GoogleOAuthClient {
     }
 
     private TokenResponse callTokenEndpoint(MultiValueMap<String, String> form) {
-        try {
-            TokenResponse response = restClient.post()
-                    .uri(GOOGLE_TOKEN_ENDPOINT)
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .body(form)
-                    .retrieve()
-                    .body(TokenResponse.class);
-            if (response == null || response.idToken() == null) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_GOOGLE_OAUTH, "tokenExchange", GOOGLE_TOKEN_SLA_MS, () -> {
+            try {
+                TokenResponse response = restClient.post()
+                        .uri(GOOGLE_TOKEN_ENDPOINT)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .body(form)
+                        .retrieve()
+                        .body(TokenResponse.class);
+                if (response == null || response.idToken() == null) {
+                    throw new AuthException(ErrorCode.OAUTH_PROVIDER_ERROR);
+                }
+                return response;
+            } catch (AuthException e) {
+                throw e;
+            } catch (Exception e) {
                 throw new AuthException(ErrorCode.OAUTH_PROVIDER_ERROR);
             }
-            return response;
-        } catch (Exception e) {
-            log.warn("Google token exchange failed", e);
-            throw new AuthException(ErrorCode.OAUTH_PROVIDER_ERROR);
-        }
+        });
     }
 
     private GoogleUserInfo verifyIdToken(String idTokenString, String audience) {
-        try {
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
-                    new NetHttpTransport(), GsonFactory.getDefaultInstance())
-                    .setAudience(List.of(audience))
-                    .build();
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_GOOGLE_OAUTH, "verifyIdToken", GOOGLE_VERIFY_SLA_MS, () -> {
+            try {
+                GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                        new NetHttpTransport(), GsonFactory.getDefaultInstance())
+                        .setAudience(List.of(audience))
+                        .build();
 
-            GoogleIdToken idToken = verifier.verify(idTokenString);
-            if (idToken == null) {
+                GoogleIdToken idToken = verifier.verify(idTokenString);
+                if (idToken == null) {
+                    throw new AuthException(ErrorCode.INVALID_TOKEN);
+                }
+                GoogleIdToken.Payload payload = idToken.getPayload();
+                return new GoogleUserInfo(
+                        payload.getSubject(),
+                        payload.getEmail(),
+                        (String) payload.get("name"),
+                        (String) payload.get("picture")
+                );
+            } catch (AuthException e) {
+                throw e;
+            } catch (GeneralSecurityException | java.io.IOException e) {
                 throw new AuthException(ErrorCode.INVALID_TOKEN);
             }
-            GoogleIdToken.Payload payload = idToken.getPayload();
-            return new GoogleUserInfo(
-                    payload.getSubject(),
-                    payload.getEmail(),
-                    (String) payload.get("name"),
-                    (String) payload.get("picture")
-            );
-        } catch (GeneralSecurityException | java.io.IOException e) {
-            log.warn("Google id_token verify failed", e);
-            throw new AuthException(ErrorCode.INVALID_TOKEN);
-        }
+        });
     }
 
     private record TokenResponse(

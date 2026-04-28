@@ -1,5 +1,6 @@
 package com.storyzip.auth.jwt;
 
+import com.storyzip.common.observability.RequestContextFilter;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -8,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -46,6 +48,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         claims.getSubject(), null, authorities
                 );
                 SecurityContextHolder.getContext().setAuthentication(auth);
+                // 이후 모든 로그(애플리케이션/예외/외부호출)에 사용자 컨텍스트 자동 포함
+                MDC.put(RequestContextFilter.MDC_USER_ID, claims.getSubject());
+                if (role != null) {
+                    MDC.put(RequestContextFilter.MDC_ROLE, role);
+                }
             } catch (JwtException e) {
                 log.debug("JWT validation failed: {}", e.getMessage());
             }
