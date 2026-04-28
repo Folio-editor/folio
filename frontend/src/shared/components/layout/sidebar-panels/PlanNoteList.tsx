@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
@@ -61,6 +61,7 @@ export function PlanNoteList({
   const [createTitle, setCreateTitle] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PlanTemplate | null>(null);
+  const selectedTemplateRef = useRef<PlanTemplate | null>(null);
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['plan'] ?? 'manual');
   const trimmed = searchTerm.trim();
@@ -82,19 +83,22 @@ export function PlanNoteList({
 
   const handleCreate = () => {
     const trimmedTitle = createTitle.trim();
+    const template = selectedTemplateRef.current ?? selectedTemplate;
     setCreating(false);
     setCreateTitle('');
     if (!trimmedTitle) {
       setSelectedTemplate(null);
+      selectedTemplateRef.current = null;
       return;
     }
-    void createWithName(trimmedTitle);
+    void createWithName(trimmedTitle, template);
   };
 
   const handleCreateCancel = () => {
     setCreating(false);
     setCreateTitle('');
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
   };
 
   const handleCreateKeyDown = (e: React.KeyboardEvent) => {
@@ -103,16 +107,18 @@ export function PlanNoteList({
     if (e.key === 'Escape') { e.preventDefault(); handleCreateCancel(); }
   };
 
-  const createWithName = async (name: string) => {
-    const content = selectedTemplate ? serializeTemplateContent(selectedTemplate) : null;
+  const createWithName = async (name: string, template: PlanTemplate | null) => {
+    const content = template ? serializeTemplateContent(template) : null;
     const id = await createPlanNote(workId, name, Date.now(), content);
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
     onItemSelect(id, 'default');
   };
 
   const handleStartCreate = () => setPickerOpen(true);
 
   const handleTemplateSelect = (template: PlanTemplate) => {
+    selectedTemplateRef.current = template;
     setSelectedTemplate(template);
     setPickerOpen(false);
     setCreating(true);
@@ -121,6 +127,7 @@ export function PlanNoteList({
   const handlePickerClose = () => {
     setPickerOpen(false);
     setSelectedTemplate(null);
+    selectedTemplateRef.current = null;
   };
 
   return (
