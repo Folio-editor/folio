@@ -23,9 +23,15 @@ interface Props {
   options: FilterOption[];
   /** 사용자에게 보여줄 필터 그룹 이름 (예: "상태", "태그") */
   groupLabel?: string;
+  emptyMessage?: string;
 }
 
-export function SidebarFilterPicker({ panelKey, options, groupLabel }: Props) {
+export function SidebarFilterPicker({
+  panelKey,
+  options,
+  groupLabel,
+  emptyMessage = '선택할 필터가 없습니다.',
+}: Props) {
   const selected = useFilterPreferenceStore(
     (s) => s.byPanel[panelKey] ?? (EMPTY_FILTER as string[]),
   );
@@ -78,6 +84,11 @@ export function SidebarFilterPicker({ panelKey, options, groupLabel }: Props) {
           {groupLabel && (
             <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {groupLabel}
+            </div>
+          )}
+          {options.length === 0 && (
+            <div className="px-2 py-2 text-xs text-muted-foreground">
+              {emptyMessage}
             </div>
           )}
           {options.map((opt) => {

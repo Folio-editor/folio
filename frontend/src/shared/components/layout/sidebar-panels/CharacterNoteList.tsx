@@ -111,6 +111,7 @@ export function CharacterNoteList({
   const tagFilter = useFilterPreferenceStore(
     (s) => s.byPanel['character-tag'] ?? (EMPTY_FILTER as string[]),
   );
+  const clearFilter = useFilterPreferenceStore((s) => s.clear);
   const trimmed = searchTerm.trim();
   const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
   const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
@@ -144,6 +145,7 @@ export function CharacterNoteList({
     setCreateTitle('');
     if (!trimmedTitle) return;
     void (async () => {
+      if (tagFilter.length > 0) clearFilter('character-tag');
       const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
       await ensureCharacterNotes(id);
       setExpandedCharId(id);
