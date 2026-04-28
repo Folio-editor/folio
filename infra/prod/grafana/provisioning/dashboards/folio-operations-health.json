@@ -79,7 +79,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
       "targets": [
-        { "expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/host\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/host\",fstype!~\"tmpfs|overlay\"})) * 100", "refId": "A" }
+        { "expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"})) * 100", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -102,7 +102,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
       "targets": [
-        { "expr": "count(container_last_seen{name=~\"folio-.*\"})", "refId": "A" }
+        { "expr": "count(count by (name) (container_last_seen{name=~\"folio-.*\"}))", "refId": "A" }
       ]
     },
     {
