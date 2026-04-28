@@ -257,6 +257,14 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: folio-cadvisor
     privileged: true
+    # cAdvisor 가 Docker 컨테이너를 인식하도록 옵션 명시
+    #   --docker_only=true            : systemd cgroup 노이즈 제거, Docker 컨테이너만 노출
+    #   --store_container_labels=false: 모든 라벨을 메트릭에 자동 부착하지 않음 (cardinality 폭발 방어)
+    #   --whitelisted_container_labels: color/service 등 우리 라벨만 컨테이너 메트릭에 부착
+    command:
+      - "--docker_only=true"
+      - "--store_container_labels=false"
+      - "--whitelisted_container_labels=color,service,environment"
     devices:
       - /dev/kmsg
     volumes:
@@ -265,6 +273,8 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
+      # Docker 메타데이터 (컨테이너 이름, 라벨) 직접 접근 — name=folio-* 필터를 위해 필수
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: always
     logging: *default-logging
     networks:
@@ -273,7 +283,10 @@ services:
   # ─── DB/Redis/MongoDB Exporters ─────────────────────────────
   # 각 exporter 는 대상 서비스가 healthy 된 후 기동 (초기 메트릭 수집 실패 방지).
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.15.0
+    # PostgreSQL 17 호환을 위해 v0.17.1 사용. v0.15.0 은 PG17 에서
+    # pg_stat_bgwriter 가 pg_stat_checkpointer 로 분리된 BREAKING CHANGE 를
+    # 인식 못해 30초마다 "column checkpoints_timed does not exist" 에러 누적.
+    image: prometheuscommunity/postgres-exporter:v0.17.1
     container_name: folio-postgres-exporter
     depends_on:
       postgresql:
