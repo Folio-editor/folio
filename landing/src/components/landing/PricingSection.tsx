@@ -29,7 +29,11 @@ export function PricingSection() {
                 {p.features.map((f) => {
                   const isSub = f.startsWith('└');
                   return (
-                    <li key={f} className={isSub ? 'price-list-sub' : ''}>
+                    <li
+                      key={f}
+                      className={isSub ? 'price-list-sub' : ''}
+                      style={{ whiteSpace: 'pre-line' }}
+                    >
                       {isSub ? f.replace(/^└\s*/, '') : f}
                     </li>
                   );

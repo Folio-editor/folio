@@ -39,9 +39,7 @@ export function FinFooter() {
       <nav className="fin-policy sans" aria-label="정책 안내">
         <Link to="/terms">이용약관</Link>
         <span className="fin-sep">|</span>
-        <Link to="/privacy">
-          <strong>개인정보처리방침</strong>
-        </Link>
+        <Link to="/privacy">개인정보처리방침</Link>
         <span className="fin-sep">|</span>
         <Link to="/refund">결제·환불정책</Link>
       </nav>
