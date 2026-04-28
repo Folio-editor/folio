@@ -428,7 +428,7 @@ const LABEL_FIELDS: Record<Section, string> = {
 /** 섹션별 필터 SQL 컬럼 매핑 — null이면 필터링 없음 */
 const FILTER_COLUMNS: Record<Section, string | null> = {
   character: 'gender',
-  foreshadow: 'status',  // 중요도(상/중/하)는 status 컬럼
+  foreshadow: 'importance',
   'idea-archive': 'tag',
 };
 
