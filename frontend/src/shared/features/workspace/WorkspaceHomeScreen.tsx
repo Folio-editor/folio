@@ -4,8 +4,6 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft,
   BookOpenText,
-  Check,
-  ChevronDown,
   ClipboardList,
   Globe,
   KeyRound,
@@ -20,6 +18,10 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Button } from '../../components/ui/Button';
 import { TagEditModal } from '../../components/ui/TagEditModal';
+import {
+  StatusPillDropdown,
+  type StatusPillOption,
+} from '../../components/ui/StatusPillDropdown';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
@@ -42,6 +44,8 @@ interface WorkRow {
   updated_at: string;
 }
 
+// 아이디어는 좌측 사이드바 영역을 갖지 않고 우측 패널 전용이므로
+// 작품 허브 카드 그리드에서 제외 — 'idea-archive' 진입은 ActivityBar 퀵 점프로 처리.
 const SECTIONS: WorkspaceSection[] = [
   'plan',
   'world-note',
@@ -49,7 +53,6 @@ const SECTIONS: WorkspaceSection[] = [
   'plot',
   'episode',
   'foreshadow',
-  'idea-archive',
 ];
 
 const SECTION_DESCRIPTIONS: Record<WorkspaceSection, string> = {
@@ -62,29 +65,11 @@ const SECTION_DESCRIPTIONS: Record<WorkspaceSection, string> = {
   'idea-archive': '영감과 좋은 문장 모음',
 };
 
-const STATUS_OPTIONS = [
-  { value: '연재중', label: '연재중' },
-  { value: '완결', label: '완결' },
-  { value: '휴재', label: '휴재' },
+const STATUS_OPTIONS: StatusPillOption[] = [
+  { value: '연재중', label: '연재중', tone: 'blue' },
+  { value: '완결', label: '완결', tone: 'emerald' },
+  { value: '휴재', label: '휴재', tone: 'amber' },
 ];
-
-const STATUS_STYLES: Record<string, { button: string; dot: string; item: string }> = {
-  연재중: {
-    button: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
-    dot: 'bg-blue-500',
-    item: 'hover:bg-blue-50',
-  },
-  완결: {
-    button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-    dot: 'bg-emerald-500',
-    item: 'hover:bg-emerald-50',
-  },
-  휴재: {
-    button: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
-    dot: 'bg-amber-500',
-    item: 'hover:bg-amber-50',
-  },
-};
 
 const SECTION_ICON: Record<WorkspaceSection, LucideIcon> = {
   plan: ClipboardList,
@@ -100,7 +85,7 @@ const SECTION_ICON: Record<WorkspaceSection, LucideIcon> = {
  * 작품 허브 — ERD work 테이블 전 필드를 즉시 편집 가능한 에디터 형태로 제공.
  * - title / author_name / description: useDeferredText + onBlur commit
  * - status: select 즉시 commit
- * - 하단: 7개 섹션 카드 (기존 네비게이션 유지)
+ * - 하단: 6개 섹션 카드 (아이디어는 우측 패널 전용이라 제외)
  * - 우측 상단: 삭제 버튼 (confirm 다이얼로그)
  */
 export function WorkspaceHomeScreen({
@@ -257,9 +242,12 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <div className="flex items-center gap-2">
-              <StatusDropdown
+              <StatusPillDropdown
                 value={STATUS_OPTIONS.some((o) => o.value === work.status) ? work.status : '연재중'}
+                options={STATUS_OPTIONS}
                 onChange={handleStatusChange}
+                ariaLabel="연재 상태"
+                width={112}
               />
               <button
                 type="button"
@@ -468,83 +456,6 @@ function DeleteConfirmDialog({ title, busy, onConfirm, onCancel }: DeleteConfirm
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatusDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const currentStyle = STATUS_STYLES[value] ?? STATUS_STYLES.연재중;
-
-  return (
-    <div
-      className="relative"
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
-      }}
-    >
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'flex h-9 w-28 items-center justify-between rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors',
-          currentStyle.button,
-        )}
-      >
-        <span className="flex items-center gap-2">
-          <span className={cn('h-1.5 w-1.5 rounded-full', currentStyle.dot)} />
-          {value}
-        </span>
-        <ChevronDown
-          size={15}
-          strokeWidth={1.8}
-          className={cn('transition-transform', open && 'rotate-180')}
-        />
-      </button>
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label="연재 상태"
-          className="absolute right-0 top-full z-30 mt-2 w-28 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-lg"
-        >
-          {STATUS_OPTIONS.map((option) => {
-            const selected = option.value === value;
-            const style = STATUS_STYLES[option.value] ?? STATUS_STYLES.연재중;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors',
-                  style.item,
-                  selected && 'bg-muted font-medium',
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
-                  {option.label}
-                </span>
-                {selected && <Check size={14} strokeWidth={2} className="text-muted-foreground" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -187,7 +187,7 @@ export function PaymentSettings() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-6">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">결제 / 구독</h2>
         <span className="text-[10px] text-muted-foreground">
           토스 테스트 결제 (실제 결제 아님)

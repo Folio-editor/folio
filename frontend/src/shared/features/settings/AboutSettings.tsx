@@ -35,7 +35,7 @@ export function AboutSettings() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center border-b border-border px-6">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">앱 정보 / 업데이트</h2>
       </div>
       <div className="flex-1 overflow-y-auto px-6 py-6">
