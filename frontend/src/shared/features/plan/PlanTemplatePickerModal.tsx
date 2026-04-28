@@ -1,20 +1,13 @@
 import { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { BookOpen, FileText, Globe2, Sparkles, X } from 'lucide-react';
 import { PLAN_TEMPLATES, type PlanTemplate } from './planTemplates';
 
 interface PlanTemplatePickerModalProps {
   open: boolean;
-  /** 사용자가 템플릿 카드 선택 시 호출. 부모는 선택한 템플릿으로 후속 흐름(제목 입력 등)을 진행 */
   onSelect: (template: PlanTemplate) => void;
-  /** ESC, 배경 클릭, 우상단 ✕ 모두 동일 */
   onClose: () => void;
 }
 
-/**
- * 기획 문서 신규 생성 흐름 1단계: 템플릿 선택 모달.
- * 현재는 "빈 서식" 한 가지만 노출되지만, planTemplates 배열에 항목 추가만으로 자동 확장.
- * 카드 그리드는 항목 수에 따라 1~3 컬럼 자동 (sm: 2, md: 3).
- */
 export function PlanTemplatePickerModal({
   open,
   onSelect,
@@ -36,45 +29,72 @@ export function PlanTemplatePickerModal({
       role="dialog"
       aria-modal="true"
       aria-label="기획 문서 템플릿 선택"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl rounded-lg bg-background p-5 shadow-lg">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground">템플릿 선택</h3>
+      <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+        <div className="flex items-start justify-between border-b border-border px-6 py-5">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              Folio Templates
+            </p>
+            <h3 className="mt-1 text-xl font-semibold text-foreground">기획 템플릿 선택</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              작품의 성격에 맞는 시작점을 고르면, 문서 안에 기획서 구조가 자동으로 채워집니다.
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
-            <X size={16} strokeWidth={2} />
+            <X size={17} strokeWidth={2} />
           </button>
         </div>
 
-        <p className="mb-4 text-xs text-muted-foreground">
-          새 기획 문서의 시작 형태를 선택하세요. 선택 후 제목을 입력하면 문서가 생성됩니다.
-        </p>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
           {PLAN_TEMPLATES.map((template) => (
             <button
               key={template.id}
               type="button"
               onClick={() => onSelect(template)}
-              className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-ring hover:bg-primary/5 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+              className="group relative flex min-h-40 flex-col items-start overflow-hidden rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring hover:shadow-md focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             >
-              <span aria-hidden className="text-2xl leading-none">
-                {template.icon}
+              <span
+                aria-hidden
+                className="absolute inset-x-0 top-0 h-1 bg-primary/70 opacity-0 transition-opacity group-hover:opacity-100"
+              />
+              <span className="mb-4 grid size-10 place-items-center rounded-md border border-border bg-muted text-foreground transition-colors group-hover:border-primary/30 group-hover:bg-primary/10 group-hover:text-primary">
+                <TemplateIcon iconKey={template.iconKey} />
               </span>
-              <span className="text-sm font-medium text-foreground">{template.label}</span>
-              <span className="text-xs text-muted-foreground">{template.description}</span>
+              <span className="text-sm font-semibold text-foreground">{template.label}</span>
+              <span className="mt-2 text-xs leading-5 text-muted-foreground">
+                {template.description}
+              </span>
+              <span className="mt-auto pt-4 text-[11px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                이 템플릿으로 시작
+              </span>
             </button>
           ))}
         </div>
       </div>
     </div>
   );
+}
+
+function TemplateIcon({ iconKey }: { iconKey: PlanTemplate['iconKey'] }) {
+  const props = { size: 19, strokeWidth: 1.9 } as const;
+  switch (iconKey) {
+    case 'file':
+      return <FileText {...props} />;
+    case 'sparkles':
+      return <Sparkles {...props} />;
+    case 'bookOpen':
+      return <BookOpen {...props} />;
+    case 'globe':
+      return <Globe2 {...props} />;
+  }
 }
