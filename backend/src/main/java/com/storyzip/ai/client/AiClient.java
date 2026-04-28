@@ -11,7 +11,7 @@ import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.common.exception.AiException;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.observability.ExternalCallLogger;
-import com.storyzip.common.observability.RequestContextFilter;
+import com.storyzip.common.observability.TraceContextFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -147,7 +147,7 @@ public class AiClient {
                             java.util.function.Consumer<Map<String, Object>> onDone) {
         // 가상 스레드는 부모 MDC를 자동 상속하지 않으므로 wrapMdc로 전체 컨텍스트
         // (traceId/userId/role/httpMethod/httpPath …)를 캡처해 자식에서 복원·정리한다.
-        Thread.startVirtualThread(RequestContextFilter.wrapMdc(() -> {
+        Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> lastDoneUsage = new java.util.HashMap<>();
             long startNanos = System.nanoTime();
