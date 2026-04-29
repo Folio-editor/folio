@@ -124,10 +124,6 @@ export function Privacy() {
       </ol>
 
       <h2>제5조 (개인정보 처리 위탁)</h2>
-      <p>
-        회사는 원활한 서비스 제공을 위해 다음과 같이 개인정보 처리 업무를
-        위탁하고 있습니다.
-      </p>
       <table className="legal-table">
         <thead>
           <tr>
@@ -139,21 +135,21 @@ export function Privacy() {
         <tbody>
           <tr>
             <td>Anthropic, PBC</td>
-            <td>AI 검수 및 초안 생성 (Claude API)</td>
+            <td>AI 검수 및 초안 생성</td>
             <td>원고 텍스트, 설정 정보</td>
           </tr>
           <tr>
             <td>OpenAI</td>
-            <td>텍스트 임베딩 (벡터 검색)</td>
+            <td>텍스트 임베딩</td>
             <td>원고 텍스트</td>
           </tr>
           <tr>
-            <td>포트원(아임포트)</td>
+            <td>(주)코리아포트원</td>
             <td>결제 처리 대행</td>
             <td>결제 정보</td>
           </tr>
           <tr>
-            <td>카카오페이</td>
+            <td>(주)카카오페이</td>
             <td>결제 수행</td>
             <td>결제 정보, 이름, 연락처</td>
           </tr>
@@ -164,6 +160,12 @@ export function Privacy() {
           </tr>
         </tbody>
       </table>
+      <ul>
+        <li>
+          수탁업체는 회사의 운영 방침에 따라 변경될 수 있으며, 변경 시 본
+          처리방침을 통해 사전 공지합니다.
+        </li>
+      </ul>
 
       <h3>AI 서비스 제공자에 대한 특별 고지</h3>
       <ol>
