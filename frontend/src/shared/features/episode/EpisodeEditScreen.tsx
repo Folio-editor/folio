@@ -40,6 +40,7 @@ interface LinkRow {
 interface UnlinkedPlotRow {
   id: string;
   title: string;
+  act_title: string | null;
 }
 
 const STATUS_OPTIONS: StatusPillOption[] = [
@@ -276,19 +277,25 @@ function PlotLinkModal({
   const writerId = useWriterId();
   const [search, setSearch] = useState('');
 
-  // 아직 연결되지 않은 플롯 회차 목록
+  // 아직 연결되지 않은 플롯 회차 목록 — 같은 회차명이 있을 때 식별 가능하도록 막(parent) 제목까지 조회
   const { data: plots = [] } = useQuery<UnlinkedPlotRow>(
-    `SELECT p.id, p.title FROM plot p
+    `SELECT p.id, p.title, parent.title AS act_title
+     FROM plot p
+     LEFT JOIN plot parent ON parent.id = p.parent_id
      WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NOT NULL
        AND p.id NOT IN (SELECT plot_id FROM plot_episode_link)
-     ORDER BY p.sort_order ASC, p.created_at ASC`,
+     ORDER BY parent.sort_order ASC, p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
   );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return plots;
-    return plots.filter((p) => p.title.toLowerCase().includes(term));
+    return plots.filter(
+      (p) =>
+        p.title.toLowerCase().includes(term) ||
+        (p.act_title?.toLowerCase().includes(term) ?? false),
+    );
   }, [plots, search]);
 
   return (
@@ -320,16 +327,26 @@ function PlotLinkModal({
             </p>
           ) : (
             <div className="flex flex-col gap-0.5">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => void onSelect(p.id)}
-                  className="truncate rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-primary/10"
-                >
-                  {p.title}
-                </button>
-              ))}
+              {filtered.map((p) => {
+                const actLabel = p.act_title?.trim() || '소속 막 없음';
+                const epLabel = p.title?.trim() || '(제목 없음)';
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => void onSelect(p.id)}
+                    title={`${actLabel} > ${epLabel}`}
+                    className="flex flex-col rounded-md px-2 py-1.5 text-left transition-colors hover:bg-primary/10"
+                  >
+                    <span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {actLabel}
+                    </span>
+                    <span className="truncate text-sm text-foreground">
+                      {epLabel}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

@@ -1084,6 +1084,11 @@ export function AuthenticatedApp() {
             rightPanelVisible={rightPanelVisible}
             activeRightTab={rightPanelTab}
             onRightPanelQuickJump={(tab) => {
+              // 동일 탭이 이미 열려있으면 토글로 닫기. 다른 탭이거나 닫힌 상태면 해당 탭으로 열기.
+              if (rightPanelVisible && rightPanelTab === tab) {
+                setRightPanelVisible(false);
+                return;
+              }
               if (!rightPanelVisible) setRightPanelVisible(true);
               setRightPanelTab(tab);
             }}

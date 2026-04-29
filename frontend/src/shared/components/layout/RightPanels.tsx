@@ -837,15 +837,34 @@ function formatHistoryTime(ts: number): string {
 function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
   const isEpisode = mainSection === 'episode' && mainItemId != null;
 
+  // 전역 AI 세션 스토어 — pinned episode 우선
+  const pinnedEpisodeId = useAiSessionStore((s) => s.pinnedEpisodeId);
+  const unpinnedFromEpisodeId = useAiSessionStore((s) => s.unpinnedFromEpisodeId);
+  const setPinnedEpisodeId = useAiSessionStore((s) => s.setPinnedEpisodeId);
+  const clearPinnedEpisodeId = useAiSessionStore((s) => s.clearPinnedEpisodeId);
+
+  // 자동 등록: pin이 비어있고 메인 탭이 episode이며 같은 원고를 X로 해제한 게
+  // 아니면 현재 메인 탭의 원고를 자동으로 등록한다. 메인 탭 변경으로
+  // mainItemId가 바뀌어도 pin이 이미 있으면 자동 변경하지 않는다.
+  useEffect(() => {
+    if (!isEpisode || !mainItemId) return;
+    if (pinnedEpisodeId) return;
+    if (mainItemId === unpinnedFromEpisodeId) return;
+    setPinnedEpisodeId(mainItemId);
+  }, [isEpisode, mainItemId, pinnedEpisodeId, unpinnedFromEpisodeId, setPinnedEpisodeId]);
+
+  // 쿼리 대상 = pin된 episode (없으면 빈 결과)
+  const queryEpisodeId = pinnedEpisodeId;
   const { data: episodeRows = [] } = useQuery<EpisodeInfo>(
-    isEpisode
+    queryEpisodeId
       ? `SELECT id, title, content, work_id, sort_order FROM episode WHERE id = ?`
       : `SELECT '' as id, '' as title, null as content, '' as work_id, 0 as sort_order WHERE 0`,
-    isEpisode ? [mainItemId] : [],
+    queryEpisodeId ? [queryEpisodeId] : [],
   );
-  const currentEpisode = episodeRows[0] ?? null;
+  const pinnedEpisode = episodeRows[0] ?? null;
+  // 등록된 원고가 있는지 (UI 표시 분기) — pin id는 있지만 DB에서 사라진 케이스 가드
+  const hasPinned = !!pinnedEpisode;
 
-  // 전역 AI 세션 스토어
   const screen = useAiSessionStore((s) => s.screen);
   const draftState = useAiSessionStore((s) => s.draftState);
   const draftResult = useAiSessionStore((s) => s.draftResult);
@@ -870,14 +889,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const refreshWalletAfterUsage = useWalletStore((s) => s.refreshAfterUsage);
 
   const handleGenerate = useCallback(async () => {
-    if (!storyline.trim() || !currentEpisode) return;
+    if (!storyline.trim() || !pinnedEpisode) return;
     if (isStreaming) return;
 
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
-      id: currentEpisode.id,
-      workId: currentEpisode.work_id,
-      title: currentEpisode.title,
-      sortOrder: currentEpisode.sort_order,
+      id: pinnedEpisode.id,
+      workId: pinnedEpisode.work_id,
+      title: pinnedEpisode.title,
+      sortOrder: pinnedEpisode.sort_order,
     };
 
     startGeneration(episode);
@@ -910,7 +929,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
     );
     setAbort(controller);
-  }, [currentEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
 
   const handleStop = () => stopGeneration();
 
@@ -919,13 +938,13 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const failReview = useAiSessionStore((s) => s.failReview);
 
   const handleReview = useCallback(async () => {
-    if (!currentEpisode?.content) return;
+    if (!pinnedEpisode?.content) return;
 
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
-      id: currentEpisode.id,
-      workId: currentEpisode.work_id,
-      title: currentEpisode.title,
-      sortOrder: currentEpisode.sort_order,
+      id: pinnedEpisode.id,
+      workId: pinnedEpisode.work_id,
+      title: pinnedEpisode.title,
+      sortOrder: pinnedEpisode.sort_order,
     };
 
     startReview(episode);
@@ -934,7 +953,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
         workId: episode.workId,
         episodeId: episode.id,
-        content: currentEpisode.content,
+        content: pinnedEpisode.content,
         episodeNumber: episode.sortOrder + 1,
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
@@ -957,7 +976,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         : message;
       toast.error('검수 실패', { description: display });
     }
-  }, [currentEpisode, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {
@@ -991,8 +1010,13 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   if (screen === 'draft-input') {
     return (
       <DraftInputScreen
-        episode={currentEpisode}
-        isEpisode={isEpisode}
+        episode={pinnedEpisode}
+        hasPinned={hasPinned}
+        canRegisterCurrent={isEpisode && !!mainItemId && mainItemId !== pinnedEpisodeId}
+        onClearPinned={clearPinnedEpisodeId}
+        onRegisterCurrent={() => {
+          if (mainItemId) setPinnedEpisodeId(mainItemId);
+        }}
         storyline={storyline}
         userPrompt={userPrompt}
         model={model}
@@ -1026,8 +1050,13 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   if (screen === 'review-input') {
     return (
       <ReviewInputScreen
-        episode={currentEpisode}
-        isEpisode={isEpisode}
+        episode={pinnedEpisode}
+        hasPinned={hasPinned}
+        canRegisterCurrent={isEpisode && !!mainItemId && mainItemId !== pinnedEpisodeId}
+        onClearPinned={clearPinnedEpisodeId}
+        onRegisterCurrent={() => {
+          if (mainItemId) setPinnedEpisodeId(mainItemId);
+        }}
         selectedWorkId={selectedWorkId}
         onStartReview={handleReview}
         onBack={() => setScreen('menu')}
@@ -1069,11 +1098,85 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   );
 }
 
+/* ── AI 대상 원고 박스 (초안/검수 공통) ── */
+
+function PinnedEpisodeBox({
+  episode,
+  hasPinned,
+  canRegisterCurrent,
+  onClearPinned,
+  onRegisterCurrent,
+}: {
+  episode: EpisodeInfo | null;
+  hasPinned: boolean;
+  canRegisterCurrent: boolean;
+  onClearPinned: () => void;
+  onRegisterCurrent: () => void;
+}) {
+  if (hasPinned && episode) {
+    return (
+      <div className="flex items-start justify-between gap-2 rounded-md bg-muted/50 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <span className="text-xs text-muted-foreground">대상 원고</span>
+          <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+            {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
+          </p>
+          {canRegisterCurrent && (
+            <button
+              type="button"
+              onClick={onRegisterCurrent}
+              className="mt-1 text-[11px] text-primary hover:underline"
+              title="메인 탭의 현재 원고로 교체"
+            >
+              현재 메인 원고로 교체
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClearPinned}
+          title="원고 등록 취소"
+          aria-label="원고 등록 취소"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  // 미등록 상태 — 메인 탭에 episode가 있으면 등록 버튼, 아니면 안내
+  return (
+    <div className="rounded-md bg-muted/50 px-3 py-2">
+      <span className="text-xs text-muted-foreground">대상 원고</span>
+      {canRegisterCurrent ? (
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">등록된 원고가 없습니다.</p>
+          <button
+            type="button"
+            onClick={onRegisterCurrent}
+            className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            현재 원고 등록
+          </button>
+        </div>
+      ) : (
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          좌측에서 원고를 선택해주세요
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── 초안 생성: 입력 화면 ── */
 
 function DraftInputScreen({
   episode,
-  isEpisode,
+  hasPinned,
+  canRegisterCurrent,
+  onClearPinned,
+  onRegisterCurrent,
   storyline,
   userPrompt,
   model,
@@ -1085,7 +1188,10 @@ function DraftInputScreen({
   onBack,
 }: {
   episode: EpisodeInfo | null;
-  isEpisode: boolean;
+  hasPinned: boolean;
+  canRegisterCurrent: boolean;
+  onClearPinned: () => void;
+  onRegisterCurrent: () => void;
   storyline: string;
   userPrompt: string;
   model: string;
@@ -1100,7 +1206,7 @@ function DraftInputScreen({
   const viewHistory = useAiSessionStore((s) => s.viewHistory);
   const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
 
-  const canGenerate = isEpisode && episode != null && storyline.trim().length > 0 && !isStreaming;
+  const canGenerate = hasPinned && episode != null && storyline.trim().length > 0 && !isStreaming;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1108,19 +1214,14 @@ function DraftInputScreen({
 
       {/* 폼 */}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {/* 현재 에피소드 */}
-        <div className="rounded-md bg-muted/50 px-3 py-2">
-          <span className="text-xs text-muted-foreground">대상 원고</span>
-          {isEpisode && episode ? (
-            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-              {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
-            </p>
-          ) : (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              좌측에서 원고를 선택해주세요
-            </p>
-          )}
-        </div>
+        {/* 등록된 대상 원고 */}
+        <PinnedEpisodeBox
+          episode={episode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={canRegisterCurrent}
+          onClearPinned={onClearPinned}
+          onRegisterCurrent={onRegisterCurrent}
+        />
 
         {/* 이번 회차 방향 */}
         <div>
@@ -1366,13 +1467,19 @@ function DraftViewScreen({
 
 function ReviewInputScreen({
   episode,
-  isEpisode,
+  hasPinned,
+  canRegisterCurrent,
+  onClearPinned,
+  onRegisterCurrent,
   selectedWorkId,
   onStartReview,
   onBack,
 }: {
   episode: EpisodeInfo | null;
-  isEpisode: boolean;
+  hasPinned: boolean;
+  canRegisterCurrent: boolean;
+  onClearPinned: () => void;
+  onRegisterCurrent: () => void;
   selectedWorkId: string | null;
   onStartReview: () => void;
   onBack: () => void;
@@ -1391,35 +1498,30 @@ function ReviewInputScreen({
       {/* 헤더는 RightPanelHeader가 통합 처리 (← + AI 도구 > 원고 검수) */}
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {!isEpisode || !episode ? (
-          <div className="flex flex-1 items-center justify-center px-6 text-center">
-            <p className="text-sm text-muted-foreground">좌측에서 원고를 선택해주세요.</p>
-          </div>
-        ) : (
-          <>
-            <div className="rounded-md bg-muted/50 px-3 py-2">
-              <span className="text-xs text-muted-foreground">대상 원고</span>
-              <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-                {episode.sort_order + 1}화: {episode.title || '(제목 없음)'}
-              </p>
-            </div>
+        <PinnedEpisodeBox
+          episode={episode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={canRegisterCurrent}
+          onClearPinned={onClearPinned}
+          onRegisterCurrent={onRegisterCurrent}
+        />
 
-            {!episode.content ? (
-              <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
-                원고 내용이 없습니다. 먼저 원고를 작성해주세요.
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={onStartReview}
-                disabled={reviewState === 'loading'}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                <Search size={13} strokeWidth={1.75} />
-                검수 시작
-              </button>
-            )}
-          </>
+        {hasPinned && episode && (
+          !episode.content ? (
+            <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+              원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onStartReview}
+              disabled={reviewState === 'loading'}
+              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Search size={13} strokeWidth={1.75} />
+              검수 시작
+            </button>
+          )
         )}
 
         {/* 검수 히스토리 목록 */}

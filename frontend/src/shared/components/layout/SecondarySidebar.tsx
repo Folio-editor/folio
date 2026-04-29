@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { ChevronsLeft, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useAuthStore } from '../../stores/authStore';
-import { useWalletStore } from '../../stores/walletStore';
-import { useNavigationStore } from '../../stores/navigationStore';
 import {
   Activity,
   WorkspaceSection,
@@ -154,24 +152,9 @@ export function SecondarySidebar({
   const writerId = useWriterId();
   const isGuest = useIsGuest();
   const writer = useAuthStore((s) => s.writer);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
-
-  const wallet = useWalletStore((s) => s.wallet);
-  const refreshWallet = useWalletStore((s) => s.refresh);
-  const resetWallet = useWalletStore((s) => s.reset);
-  const openSettings = useNavigationStore((s) => s.openSettings);
-
-  // 로그인 상태 변화에 따라 잔액을 refresh / reset
-  useEffect(() => {
-    if (isAuthenticated) {
-      void refreshWallet();
-    } else {
-      resetWallet();
-    }
-  }, [isAuthenticated, refreshWallet, resetWallet]);
 
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -300,22 +283,6 @@ export function SecondarySidebar({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {/* 잔여 크레딧 — 프로필 위 강조 박스 (클릭 시 결제 화면) */}
-            <button
-              type="button"
-              onClick={() => openSettings('payment')}
-              title="결제 / 충전"
-              className="flex items-center justify-between gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-            >
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Coins size={12} strokeWidth={1.75} />
-                잔여 크레딧
-              </span>
-              <span className="text-sm font-semibold text-foreground">
-                {wallet ? wallet.balance.toLocaleString() : '—'}
-              </span>
-            </button>
-
             {/* 프로필 — 닉네임 + 테마 + 로그아웃 */}
             <div className="flex items-center gap-2 px-2 py-1.5">
               {writer?.profileImageUrl ? (
