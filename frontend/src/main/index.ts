@@ -19,6 +19,7 @@ import {
   type BillingAuthParams,
 } from './payment/checkoutWindow';
 import { registerUpdaterHandlers } from './updater';
+import { registerExportHandlers } from './export';
 
 const createWindow = () => {
   Menu.setApplicationMenu(null);
@@ -228,6 +229,7 @@ app.on('ready', () => {
   registerPaymentHandlers();
   registerSpellcheckHandlers();
   registerUpdaterHandlers();
+  registerExportHandlers();
   // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.
   tokenRefreshScheduler.on('session-expired', () => {
     for (const win of BrowserWindow.getAllWindows()) {

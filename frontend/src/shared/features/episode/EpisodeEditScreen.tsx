@@ -11,6 +11,7 @@ import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { ExportButton } from '../workspace/ExportButton';
 import type { WorkspaceSection } from '../../types/workspace';
 
 interface EpisodeEditScreenProps {
@@ -23,6 +24,7 @@ interface EpisodeEditScreenProps {
 
 interface EpisodeRow {
   id: string;
+  work_id: string;
   title: string;
   status: string;
   content: string | null;
@@ -49,7 +51,7 @@ const STATUS_OPTIONS: StatusPillOption[] = [
 
 export function EpisodeEditScreen({ id, onBack, onSendToRight, onNavigateTo }: EpisodeEditScreenProps) {
   const { data: rows = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, content, word_count FROM episode WHERE id = ?`,
+    `SELECT id, work_id, title, status, content, word_count FROM episode WHERE id = ?`,
     [id],
   );
   const item = rows[0];
@@ -111,6 +113,7 @@ function EpisodeEditor({
               onChange={(status) => void updateEpisode(id, { status })}
             />
             <EditorToolbarToggle />
+            <ExportButton workId={item.work_id} initialEpisodeId={id} />
             <button
               type="button"
               onClick={() => setConfirmTrash(true)}
