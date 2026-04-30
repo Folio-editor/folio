@@ -305,14 +305,19 @@ async def _fetch_recent_raw(
     rows = r.fetchall()
     if not rows:
         return "", []
-    # AI가 "N화에서 ~했던 것처럼" 같은 메타 회차 참조를 쓰지 않도록
-    # 절대 회차 번호를 헤더에 노출하지 않고 상대적 위치만 표기한다.
-    # 예: 3화 쓰는 중이면 [이전 화 / 2화 전] → [직전 화, 2화 전] 라벨만.
+    # Plan C 옵션 1 보안 모델: episode.content가 "v1:" 접두사로 시작하면
+    # 클라이언트가 KEK으로 암호화한 본문이라 AI 서버는 평문을 알 수 없다.
+    # 컨텍스트에 암호문을 넣으면 LLM이 "암호화된 원고라 못 읽겠다"고 답하므로
+    # 해당 회차는 RAG 컨텍스트에서 제외한다. (후속 PR에서 클라이언트가 평문
+    # 컨텍스트를 함께 전송하는 방식으로 대체될 예정)
     ordered = list(reversed(rows))  # 과거 → 최근 순
+    plain_only = [row for row in ordered if not _is_ciphertext(row[2])]
+    if not plain_only:
+        return "", []
     lines: list[str] = []
     included_orders: list[int] = []
-    total = len(ordered)
-    for idx, row in enumerate(ordered):
+    total = len(plain_only)
+    for idx, row in enumerate(plain_only):
         steps_back = total - idx  # 1 = 직전 화, 2 = 2화 전, ...
         if steps_back == 1:
             rel_label = "직전 화"
@@ -322,6 +327,11 @@ async def _fetch_recent_raw(
         lines.append(f"=== {rel_label}: {row[1]} ===\n{content}")
         included_orders.append(int(row[0]))
     return "\n\n".join(lines), included_orders
+
+
+def _is_ciphertext(content: Any) -> bool:
+    """Plan C v1 암호문 판별. 'v1:' 접두사로 시작하는 문자열만 암호문."""
+    return isinstance(content, str) and content.startswith("v1:")
 
 
 async def _fetch_vector_similar(

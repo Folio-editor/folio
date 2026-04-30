@@ -47,6 +47,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
 import { useWriterId } from '../../hooks/useWriterId';
+import { useDecryptedEpisode } from '../../hooks/useDecryptedEpisode';
 import { apiClient, ApiError } from '../../lib/apiClient';
 import { useNavigationStore } from '../../stores/navigationStore';
 
@@ -845,6 +846,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   );
   const currentEpisode = episodeRows[0] ?? null;
 
+  // AI 호출 시 본문은 반드시 평문이어야 한다 (LLM은 v1: 암호문을 못 읽음).
+  // useDecryptedEpisode가 KEK + work_key로 복호화한 content를 반환하므로,
+  // currentEpisode.content (PowerSync 원시값) 대신 이 값을 사용한다.
+  const decryptedEpisodeId = isEpisode && mainItemId ? mainItemId : '';
+  const { data: decryptedEpisode } = useDecryptedEpisode(decryptedEpisodeId);
+  const decryptedContent = decryptedEpisode?.content ?? null;
+  const decryptStatus = decryptedEpisode?.decryptStatus;
+
   // 전역 AI 세션 스토어
   const screen = useAiSessionStore((s) => s.screen);
   const draftState = useAiSessionStore((s) => s.draftState);
@@ -919,7 +928,17 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const failReview = useAiSessionStore((s) => s.failReview);
 
   const handleReview = useCallback(async () => {
-    if (!currentEpisode?.content) return;
+    if (!currentEpisode) return;
+    // 평문 본문이 준비된 상태(plain or decrypted)에서만 검수 가능.
+    // 'no-kek' / 'no-work-key' / 'failed' / loading 상태에서는 LLM에 보낼 평문이 없다.
+    if (!decryptedContent || (decryptStatus !== 'plain' && decryptStatus !== 'decrypted')) {
+      toast.error('본문을 불러오지 못했습니다', {
+        description: decryptStatus === 'no-kek'
+          ? '암호화 키 정보가 없어 본문을 복호화할 수 없습니다. 다시 로그인 후 시도해주세요.'
+          : '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
 
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
       id: currentEpisode.id,
@@ -934,7 +953,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
         workId: episode.workId,
         episodeId: episode.id,
-        content: currentEpisode.content,
+        content: decryptedContent,
         episodeNumber: episode.sortOrder + 1,
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
@@ -957,7 +976,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         : message;
       toast.error('검수 실패', { description: display });
     }
-  }, [currentEpisode, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+  }, [currentEpisode, decryptedContent, decryptStatus, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {
