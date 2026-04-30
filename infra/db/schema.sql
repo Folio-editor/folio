@@ -137,6 +137,7 @@ CREATE TABLE work (
     description     TEXT,
     status          VARCHAR(20) NOT NULL,
     sort_order      INTEGER NOT NULL DEFAULT 0,
+    encrypted_dek   BYTEA,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );

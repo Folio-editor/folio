@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { Link2, Link2Off, Plus, Search, Trash2 } from 'lucide-react';
+import { Link2, Link2Off, Lock, Plus, Search, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { useDecryptedEpisode, type DecryptedEpisodeRow } from '../../hooks/useDecryptedEpisode';
 import { Input } from '../../components/ui/Input';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { StatusPillDropdown, type StatusPillOption } from '../../components/ui/StatusPillDropdown';
@@ -19,14 +20,6 @@ interface EpisodeEditScreenProps {
   /** 우측 패널로 보내기 — 메인 헤더 ↗ 버튼 */
   onSendToRight?: () => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
-}
-
-interface EpisodeRow {
-  id: string;
-  title: string;
-  status: string;
-  content: string | null;
-  word_count: number;
 }
 
 interface LinkRow {
@@ -48,14 +41,14 @@ const STATUS_OPTIONS: StatusPillOption[] = [
 ];
 
 export function EpisodeEditScreen({ id, onBack, onSendToRight, onNavigateTo }: EpisodeEditScreenProps) {
-  const { data: rows = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, content, word_count FROM episode WHERE id = ?`,
-    [id],
-  );
-  const item = rows[0];
+  const { data: item, isLoading } = useDecryptedEpisode(id);
 
   if (!item) {
-    return <div className="p-8 text-sm text-muted-foreground">회차를 불러오는 중…</div>;
+    return (
+      <div className="p-8 text-sm text-muted-foreground">
+        {isLoading ? '회차를 불러오는 중…' : '회차를 찾을 수 없습니다.'}
+      </div>
+    );
   }
 
   return <EpisodeEditor key={id} item={item} onBack={onBack} onSendToRight={onSendToRight} onNavigateTo={onNavigateTo} />;
@@ -67,7 +60,7 @@ function EpisodeEditor({
   onSendToRight,
   onNavigateTo,
 }: {
-  item: EpisodeRow;
+  item: DecryptedEpisodeRow;
   onBack: () => void;
   onSendToRight?: () => void;
   onNavigateTo: (section: WorkspaceSection, itemId: string | null) => void;
@@ -141,13 +134,39 @@ function EpisodeEditor({
           onCancel={() => setConfirmTrash(false)}
         />
       )}
-      <ContentEditor
-        itemId={id}
-        initialContent={item.content}
-        placeholder="본문을 작성하세요…"
-        onUpdate={(content) => void updateEpisode(id, { content })}
-        onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
-      />
+      {item.decryptStatus === 'no-kek' && (
+        <DecryptBanner
+          message="이 원고는 암호화되어 있습니다. 다시 로그인해야 본문을 볼 수 있습니다."
+        />
+      )}
+      {item.decryptStatus === 'no-work-key' && (
+        <DecryptBanner
+          message="이 작품의 암호화 키 정보를 찾지 못했습니다. 동기화가 끝날 때까지 기다려 주세요."
+        />
+      )}
+      {item.decryptStatus === 'failed' && (
+        <DecryptBanner
+          message="본문 복호화에 실패했습니다. 데이터가 손상되었거나 다른 사용자의 키로 암호화된 항목일 수 있습니다."
+        />
+      )}
+      {(item.decryptStatus === 'plain' || item.decryptStatus === 'decrypted') && (
+        <ContentEditor
+          itemId={id}
+          initialContent={item.content}
+          placeholder="본문을 작성하세요…"
+          onUpdate={(content) => void updateEpisode(id, { content })}
+          onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
+        />
+      )}
+    </div>
+  );
+}
+
+function DecryptBanner({ message }: { message: string }) {
+  return (
+    <div className="m-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+      <Lock size={14} className="mt-0.5 shrink-0" />
+      <span>{message}</span>
     </div>
   );
 }

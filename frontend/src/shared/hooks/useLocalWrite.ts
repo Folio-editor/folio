@@ -1,5 +1,15 @@
 ﻿import { usePowerSync } from '@powersync/react';
+import { encryptString } from '../crypto/cipher';
+import { getCurrentKek } from '../crypto/lifecycle';
+import { ensureWorkKey } from '../crypto/workKey';
 import { useWriterId } from './useWriterId';
+
+/**
+ * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
+ * 저장된다. 저장 시점에 KEK이 있으면 work_key를 ensureWorkKey로 확보 후 암호화하고,
+ * KEK이 없으면(게스트, 미로그인) 평문 그대로 저장한다.
+ */
+const CIPHERTEXT_PREFIX = 'v1:';
 
 /**
  * SQLite 직접 쓰기 유틸 훅.
@@ -382,8 +392,46 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+
+      // Plan C: content가 patch에 포함되어 있고 KEK이 활성화되어 있으면 암호화한다.
+      // 게스트/미로그인은 KEK이 null이라 평문으로 저장 (recover 시 prefix 부재로 plain 분기).
+      if ('content' in patch && typeof patch.content === 'string' && patch.content.length > 0) {
+        const kek = getCurrentKek();
+        if (kek) {
+          const r = await db.execute(
+            'SELECT work_id FROM episode WHERE id = ? LIMIT 1',
+            [id],
+          );
+          const workId = (r.rows?._array as { work_id: string }[] | undefined)?.[0]?.work_id;
+          if (workId) {
+            const workKey = await ensureWorkKey({
+              kek,
+              workId,
+              loadEncryptedDek: async () => {
+                const dr = await db.execute(
+                  'SELECT encrypted_dek FROM work WHERE id = ? LIMIT 1',
+                  [workId],
+                );
+                const row = (dr.rows?._array as { encrypted_dek: string | null }[] | undefined)?.[0];
+                return row?.encrypted_dek ?? null;
+              },
+              saveEncryptedDek: async (b64) => {
+                await db.execute(
+                  'UPDATE work SET encrypted_dek = ?, updated_at = ? WHERE id = ?',
+                  [b64, now, workId],
+                );
+              },
+            });
+            const cipher = await encryptString(workKey, patch.content);
+            effective.content = CIPHERTEXT_PREFIX + cipher;
+          }
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE episode SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],

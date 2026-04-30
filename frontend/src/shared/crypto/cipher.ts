@@ -71,6 +71,45 @@ export async function decryptString(key: CryptoKey, payload: string): Promise<st
 }
 
 /**
+ * raw 바이트(예: 32B work_key)를 AES-256-GCM으로 wrap → base64(IV||CT||TAG) 반환.
+ * encryptString의 byte[] 버전. KEK으로 work_key를 wrap할 때 사용.
+ */
+export async function encryptBytes(key: CryptoKey, plaintext: Uint8Array): Promise<string> {
+  const iv = new Uint8Array(IV_BYTES);
+  getCrypto().getRandomValues(iv);
+
+  const ctAndTag = await getCrypto().subtle.encrypt(
+    { name: 'AES-GCM', iv, tagLength: TAG_BITS },
+    key,
+    plaintext,
+  );
+
+  const merged = new Uint8Array(iv.length + ctAndTag.byteLength);
+  merged.set(iv, 0);
+  merged.set(new Uint8Array(ctAndTag), iv.length);
+  return bytesToBase64(merged);
+}
+
+/**
+ * base64(IV||CT||TAG) 를 복호화하여 raw 바이트 반환.
+ * KEK으로 wrapped work_key를 unwrap할 때 사용.
+ */
+export async function decryptBytes(key: CryptoKey, payload: string): Promise<Uint8Array> {
+  const merged = base64ToBytes(payload);
+  if (merged.length < IV_BYTES + 16) {
+    throw new Error('ciphertext too short');
+  }
+  const iv = merged.slice(0, IV_BYTES);
+  const body = merged.slice(IV_BYTES);
+  const plain = await getCrypto().subtle.decrypt(
+    { name: 'AES-GCM', iv, tagLength: TAG_BITS },
+    key,
+    body,
+  );
+  return new Uint8Array(plain);
+}
+
+/**
  * raw 32B 키 → AES-GCM CryptoKey.
  * extractable=false 로 만들면 export 불가능. work key는 메모리에만 머무르므로 false 추천.
  */
