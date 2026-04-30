@@ -67,6 +67,7 @@ import {
   type RightPanelTab, type ClickIntent, type MainDoc,
   docTypeToRoute, currentDocToAuxItem,
 } from '../../types/workspace';
+import { analytics, countBucket } from '../../lib/analytics';
 
 const SIDEBAR_MIN = 180;
 const RIGHT_PANEL_MIN = 200;
@@ -125,6 +126,30 @@ export function AuthenticatedApp() {
   useEffect(() => {
     setCurrentWorkId(selectedWorkId);
   }, [selectedWorkId, setCurrentWorkId]);
+
+  useEffect(() => {
+    if (!selectedWorkId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await db.getAll<{ cnt: number }>(
+          'SELECT COUNT(*) AS cnt FROM work',
+        );
+        if (cancelled) return;
+        void analytics.track('workspace_opened', {
+          work_count_bucket: countBucket(rows[0]?.cnt ?? 0),
+        });
+      } catch {
+        if (cancelled) return;
+        void analytics.track('workspace_opened', {
+          work_count_bucket: 'unknown',
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db, selectedWorkId]);
   /** 활성 탭 doc 교체 (없으면 새 탭). null 전달 시 활성 탭 닫기 — 기존 setMainDoc(null) 호환 */
   const setMainDoc = useCallback(
     (next: MainDoc | null) => {
