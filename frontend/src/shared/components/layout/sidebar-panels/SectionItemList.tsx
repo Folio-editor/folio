@@ -1,4 +1,4 @@
-import { useState, useEffect, type KeyboardEvent } from 'react';
+import { useMemo, useState, useEffect, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../../hooks/useDecryptedCharacter';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
@@ -83,25 +84,92 @@ export function SectionItemList({
     (s) => s.byPanel[panelKey] ?? (EMPTY_FILTER as string[]),
   );
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
-  const orderBy = buildOrderBy(sortMode, { titleColumn: labelField });
   // section별 필터 컬럼 — foreshadow: status, character: gender, idea-archive: tag
   const filterColumn = FILTER_COLUMNS[section];
   const filterClause = filterColumn
     ? buildInClause(filterColumn, filterValues)
     : { sql: '', params: [] };
-  const sql = `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
-     WHERE work_id = ? AND writer_id = ? ${whereSearch} ${filterClause.sql}
-     ${orderBy}`;
-  const params = [
-    workId,
-    writerId,
-    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
-    ...filterClause.params,
-  ];
 
-  const { data: rawRows = [], isFetching } = useQuery<Row>(sql, params);
-  const rows = useOptimisticRows(rawRows, {
+  // character는 name이 ciphertext이므로 SQL LIKE/ORDER BY가 부정확 → client-side 처리
+  const isCharacter = section === 'character';
+  const whereSearch = !isCharacter && trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
+  const orderBy = isCharacter
+    ? 'ORDER BY sort_order ASC, created_at ASC'
+    : buildOrderBy(sortMode, { titleColumn: labelField });
+  const sql = isCharacter
+    ? `SELECT c.id, c.name AS label, c.work_id, c.writer_id, c.gender, c.age,
+              c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM character c
+       LEFT JOIN work w ON w.id = c.work_id
+       WHERE c.work_id = ? AND c.writer_id = ? ${filterClause.sql}
+       ${orderBy}`
+    : `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
+       WHERE work_id = ? AND writer_id = ? ${whereSearch} ${filterClause.sql}
+       ${orderBy}`;
+  const params = isCharacter
+    ? [workId, writerId, ...filterClause.params]
+    : [
+        workId,
+        writerId,
+        ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
+        ...filterClause.params,
+      ];
+
+  const { data: rawRows = [], isFetching } = useQuery<Row & {
+    writer_id?: string;
+    name?: string | null;
+    gender?: string | null;
+    age?: string | null;
+    profile_image_url?: string | null;
+    created_at?: string;
+    updated_at?: string;
+    encrypted_dek?: string | null;
+  }>(sql, params);
+
+  const { data: decryptedCharacters } = useDecryptedCharacterList(
+    isCharacter
+      ? rawRows.map((r) => ({
+          id: r.id,
+          work_id: r.work_id ?? workId,
+          writer_id: r.writer_id ?? writerId,
+          name: r.label,
+          gender: r.gender ?? null,
+          age: r.age ?? null,
+          profile_image_url: r.profile_image_url ?? null,
+          sort_order: r.sort_order ?? null,
+          created_at: r.created_at ?? '',
+          updated_at: r.updated_at ?? '',
+          encrypted_dek: r.encrypted_dek ?? null,
+        }))
+      : [],
+  );
+
+  const processedRows: Row[] = useMemo(() => {
+    if (!isCharacter) return rawRows;
+    let list: Row[] = decryptedCharacters.map((c) => ({
+      id: c.id,
+      label: c.name,
+      work_id: c.work_id,
+      sort_order: c.sort_order,
+    }));
+    if (trimmed) {
+      const needle = trimmed.toLowerCase();
+      list = list.filter((r) => (r.label ?? '').toLowerCase().includes(needle));
+    }
+    if (sortMode === 'alpha') {
+      list = [...list].sort((a, b) =>
+        (a.label ?? '').localeCompare(b.label ?? '', 'ko'),
+      );
+    } else if (sortMode === 'recent') {
+      const updatedMap = new Map(decryptedCharacters.map((c) => [c.id, c.updated_at]));
+      list = [...list].sort((a, b) =>
+        (updatedMap.get(b.id) ?? '').localeCompare(updatedMap.get(a.id) ?? ''),
+      );
+    }
+    return list;
+  }, [isCharacter, rawRows, decryptedCharacters, trimmed, sortMode]);
+  const rows = useOptimisticRows(processedRows, {
     docType,
     workId,
     matches: (row) => row.work_id === workId,
@@ -288,6 +356,7 @@ function SectionItem({
   label,
   rawLabel,
   section,
+  workId,
   selected,
   onSelect,
   onAfterDelete,
@@ -326,7 +395,7 @@ function SectionItem({
       return;
     }
     if (section === 'character') {
-      void updateCharacter(id, { name: next.slice(0, 200) });
+      void updateCharacter(workId, id, { name: next.slice(0, 200) });
     } else if (section === 'foreshadow') {
       void updateForeshadow(id, { title: next.slice(0, 200) });
     }

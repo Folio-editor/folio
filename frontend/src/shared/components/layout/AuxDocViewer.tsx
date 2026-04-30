@@ -3,6 +3,8 @@ import { useQuery } from '@powersync/react';
 import { FileText, Plus } from 'lucide-react';
 import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
 import { useWriterId } from '../../hooks/useWriterId';
 import { WorldNoteInlineEditor } from '../../features/world-note/WorldNoteInlineEditor';
 import { GenderIcon } from '../../features/character/CharacterOverview';
@@ -236,6 +238,21 @@ interface CharacterMetaRow {
   gender: string | null;
   age: string | null;
   profile_image_url: string | null;
+  work_id: string;
+}
+
+interface RawCharacterMetaJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  name: string | null;
+  gender: string | null;
+  age: string | null;
+  profile_image_url: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface CharacterAuxNoteRow {
@@ -244,6 +261,20 @@ interface CharacterAuxNoteRow {
   title: string;
   content: string | null;
   sort_order: number | null;
+}
+
+interface RawCharacterAuxNoteRow {
+  id: string;
+  character_id: string;
+  writer_id: string;
+  kind: string;
+  title: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  work_id: string;
+  encrypted_dek: string | null;
 }
 
 interface CharacterAuxTagRow {
@@ -259,17 +290,52 @@ function nextSortOrder(rows: { sort_order: number | null }[]) {
 function CharacterAuxView({ docId, editable }: { docId: string; editable: boolean }) {
   const { createCharacterNote, updateCharacterNoteContent } = useLocalWrite();
 
-  const { data: metaRows = [] } = useQuery<CharacterMetaRow>(
-    `SELECT id, name, gender, age, profile_image_url FROM character WHERE id = ? LIMIT 1`,
+  const { data: rawMetaRows = [] } = useQuery<RawCharacterMetaJoinRow>(
+    `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+            c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM character c
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE c.id = ? LIMIT 1`,
     [docId],
   );
-  const meta = metaRows[0];
+  const { data: decryptedMeta } = useDecryptedCharacterList(rawMetaRows);
+  const meta: CharacterMetaRow | undefined = useMemo(() => {
+    const m = decryptedMeta[0];
+    if (!m) return undefined;
+    return {
+      id: m.id,
+      name: m.name,
+      gender: m.gender,
+      age: m.age,
+      profile_image_url: m.profile_image_url,
+      work_id: m.work_id,
+    };
+  }, [decryptedMeta]);
+  const workId = meta?.work_id ?? null;
 
-  const { data: notes = [] } = useQuery<CharacterAuxNoteRow>(
-    `SELECT id, kind, title, content, sort_order FROM character_note
-     WHERE character_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawNotes = [] } = useQuery<RawCharacterAuxNoteRow>(
+    `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+            cn.sort_order, cn.created_at, cn.updated_at,
+            c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+     FROM character_note cn
+     JOIN character c ON c.id = cn.character_id
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE cn.character_id = ?
+     ORDER BY cn.sort_order ASC, cn.created_at ASC`,
     [docId],
+  );
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNotes);
+  const notes: CharacterAuxNoteRow[] = useMemo(
+    () =>
+      decryptedNotes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        title: n.title,
+        content: n.content,
+        sort_order: n.sort_order,
+      })),
+    [decryptedNotes],
   );
 
   const { data: tags = [] } = useQuery<CharacterAuxTagRow>(
@@ -378,11 +444,11 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             하위 문서
           </p>
-          {editable && (
+          {editable && workId && (
             <button
               type="button"
               onClick={() =>
-                void createCharacterNote(docId, '새 문서', nextSortOrder(notes))
+                void createCharacterNote(workId, docId, '새 문서', nextSortOrder(notes))
               }
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >

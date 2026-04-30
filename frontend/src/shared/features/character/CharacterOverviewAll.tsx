@@ -18,6 +18,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
 import { useWriterId } from '../../hooks/useWriterId';
 import { cn } from '../../lib/cn';
 
@@ -34,11 +36,39 @@ interface CharacterRow {
   profile_image_url: string | null;
 }
 
+interface RawCharacterJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  name: string | null;
+  gender: string | null;
+  age: string | null;
+  profile_image_url: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
+}
+
 interface NoteRow {
   character_id: string;
   title: string;
   kind: string;
   content: string | null;
+}
+
+interface RawNoteJoinRow {
+  id: string;
+  character_id: string;
+  writer_id: string;
+  kind: string;
+  title: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  work_id: string;
+  encrypted_dek: string | null;
 }
 
 interface CharacterNoteSummary {
@@ -187,11 +217,28 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
     }),
   );
 
-  const { data: items = [] } = useQuery<CharacterRow>(
-    `SELECT id, name, gender, age, profile_image_url FROM character
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawCharacters = [] } = useQuery<RawCharacterJoinRow>(
+    `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+            c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM character c
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE c.work_id = ? AND c.writer_id = ?
+     ORDER BY c.sort_order ASC, c.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedCharacters } = useDecryptedCharacterList(rawCharacters);
+
+  const items: CharacterRow[] = useMemo(
+    () =>
+      decryptedCharacters.map((c) => ({
+        id: c.id,
+        name: c.name,
+        gender: c.gender ?? '',
+        age: c.age ?? '',
+        profile_image_url: c.profile_image_url,
+      })),
+    [decryptedCharacters],
   );
 
   const { data: allTags = [] } = useQuery<{ character_id: string; world_note_id: string; name: string }>(
@@ -203,11 +250,27 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
     [workId, writerId],
   );
 
-  const { data: allNotes = [] } = useQuery<NoteRow>(
-    `SELECT character_id, title, kind, content FROM character_note
-     WHERE character_id IN (SELECT id FROM character WHERE work_id = ? AND writer_id = ?)
-     ORDER BY sort_order ASC`,
+  const { data: rawNotes = [] } = useQuery<RawNoteJoinRow>(
+    `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+            cn.sort_order, cn.created_at, cn.updated_at,
+            c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+     FROM character_note cn
+     JOIN character c ON c.id = cn.character_id
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE c.work_id = ? AND c.writer_id = ?
+     ORDER BY cn.sort_order ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNotes);
+  const allNotes: NoteRow[] = useMemo(
+    () =>
+      decryptedNotes.map((n) => ({
+        character_id: n.character_id,
+        title: n.title,
+        kind: n.kind,
+        content: n.content,
+      })),
+    [decryptedNotes],
   );
 
   const tagsByCharacter = useMemo(() => {

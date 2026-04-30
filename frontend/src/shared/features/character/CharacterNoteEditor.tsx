@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { Trash2 } from 'lucide-react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { Input } from '../../components/ui/Input';
 import { IconButton } from '../../components/ui/IconButton';
@@ -25,26 +27,75 @@ interface CharacterNoteRow {
   character_id: string;
 }
 
-interface CharacterNameRow {
-  name: string;
+interface RawCharacterNoteJoinRow {
+  id: string;
+  character_id: string;
+  writer_id: string;
+  kind: string;
+  title: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  work_id: string;
+  encrypted_dek: string | null;
+}
+
+interface RawCharacterJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  name: string | null;
+  gender: string | null;
+  age: string | null;
+  profile_image_url: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 export function CharacterNoteEditor({ noteId, onBack, onBackToCharacter, onSendToRight }: CharacterNoteEditorProps) {
   const { updateCharacterNoteContent, updateCharacterNoteTitle, deleteCharacterNote } = useLocalWrite();
 
-  const { data: noteRows = [] } = useQuery<CharacterNoteRow>(
-    `SELECT id, title, content, character_id FROM character_note WHERE id = ?`,
+  const { data: rawNoteRows = [] } = useQuery<RawCharacterNoteJoinRow>(
+    `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+            cn.sort_order, cn.created_at, cn.updated_at,
+            c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+     FROM character_note cn
+     JOIN character c ON c.id = cn.character_id
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE cn.id = ?`,
     [noteId],
   );
-  const note = noteRows[0];
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNoteRows);
+  const note: CharacterNoteRow | undefined = useMemo(() => {
+    const n = decryptedNotes[0];
+    if (!n) return undefined;
+    return {
+      id: n.id,
+      title: n.title,
+      content: n.content,
+      character_id: n.character_id,
+    };
+  }, [decryptedNotes]);
 
-  const { data: nameRows = [] } = useQuery<CharacterNameRow>(
+  const { data: rawCharRows = [] } = useQuery<RawCharacterJoinRow>(
     note
-      ? `SELECT name FROM character WHERE id = ?`
-      : `SELECT '' AS name WHERE 0`,
+      ? `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+                c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM character c
+         LEFT JOIN work w ON w.id = c.work_id
+         WHERE c.id = ?`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS name,
+                NULL AS gender, NULL AS age, NULL AS profile_image_url,
+                NULL AS sort_order, NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     note ? [note.character_id] : [],
   );
-  const characterName = nameRows[0]?.name ?? '';
+  const { data: decryptedChars } = useDecryptedCharacterList(rawCharRows);
+  const characterName = decryptedChars[0]?.name ?? '';
 
   if (!note) {
     return <div className="p-8 text-sm text-muted-foreground">문서를 불러오는 중…</div>;

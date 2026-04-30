@@ -58,6 +58,21 @@ export function useLocalWrite() {
     return CIPHERTEXT_PREFIX + cipher;
   };
 
+  // PR3 — character_note의 단일 update 경로(updateCharacterNoteTitle/Content)는
+  // 호출자가 work_id를 모르므로 character JOIN으로 보강. KEK 없거나 character가 없으면 null.
+  const resolveCharacterNoteWorkId = async (
+    noteId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT c.work_id AS work_id FROM character_note cn
+       JOIN character c ON c.id = cn.character_id
+       WHERE cn.id = ? LIMIT 1`,
+      [noteId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
   return {
     // ── work ────────────────────────────────────────────────
     createWork: async (title: string): Promise<string> => {
@@ -266,6 +281,8 @@ export function useLocalWrite() {
     },
 
     // ── character ───────────────────────────────────────────
+    // PR3 — character.name/age는 work_key로 암호화. 호출자가 workId를 알고 있으면
+    // 그대로 받고, note 단일 update처럼 호출자가 모르는 경우는 내부에서 SELECT로 보강.
     createCharacter: async (
       workId: string,
       name: string,
@@ -275,14 +292,17 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encName = await encryptWorkField(workId, name, now);
+      const encAge = await encryptWorkField(workId, age, now);
       await db.execute(
         `INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, name, gender, age, sortOrder, now, now],
+        [id, workId, writerId, encName, gender, encAge, sortOrder, now, now],
       );
       return id;
     },
     updateCharacter: async (
+      workId: string,
       id: string,
       patch: Partial<{
         name: string;
@@ -294,8 +314,18 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+      // name/age는 암호화. gender(enum)·profile_image_url은 평문 유지.
+      if ('name' in patch && typeof patch.name === 'string') {
+        effective.name = await encryptWorkField(workId, patch.name, now);
+      }
+      if ('age' in patch && typeof patch.age === 'string') {
+        effective.age = await encryptWorkField(workId, patch.age, now);
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE character SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -304,26 +334,31 @@ export function useLocalWrite() {
 
     // ── character_note ───────────────────────────────────────
     /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
-    ensureCharacterNotes: async (characterId: string): Promise<void> => {
+    ensureCharacterNotes: async (workId: string, characterId: string): Promise<void> => {
       const now = new Date().toISOString();
+      // 기본 노트 3개의 title도 암호화 — '한 줄 소개'/'외형'/'성격'은 평문 자체가 메타지만
+      // 복호화 일관성(모든 character_note.title은 동일 처리)을 위해 암호화한다.
+      const encIntroTitle = await encryptWorkField(workId, '한 줄 소개', now);
+      const encAppearanceTitle = await encryptWorkField(workId, '외형', now);
+      const encPersonalityTitle = await encryptWorkField(workId, '성격', now);
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'intro', '한 줄 소개', NULL, 0, ?, ?
+         SELECT ?, ?, ?, 'intro', ?, NULL, 0, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'intro')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+        [crypto.randomUUID(), characterId, writerId, encIntroTitle, now, now, characterId],
       );
       // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'appearance', '외형', NULL, 1, ?, ?
+         SELECT ?, ?, ?, 'appearance', ?, NULL, 1, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+        [crypto.randomUUID(), characterId, writerId, encAppearanceTitle, now, now, characterId],
       );
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'personality', '성격', NULL, 2, ?, ?
+         SELECT ?, ?, ?, 'personality', ?, NULL, 2, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+        [crypto.randomUUID(), characterId, writerId, encPersonalityTitle, now, now, characterId],
       );
     },
     /**
@@ -333,6 +368,7 @@ export function useLocalWrite() {
      *                UNIQUE 보장하므로 사본은 자유 노트로 처리.
      */
     createCharacterNote: async (
+      workId: string,
       characterId: string,
       title: string,
       sortOrder: number,
@@ -340,23 +376,32 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, ?)`,
-        [id, characterId, writerId, title, content, sortOrder, now, now],
+        [id, characterId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       return id;
     },
     updateCharacterNoteTitle: async (id: string, title: string): Promise<void> => {
+      const now = new Date().toISOString();
+      // 호출자가 work_id를 모르는 단일 mutation 경로 — character JOIN으로 보강.
+      const workId = await resolveCharacterNoteWorkId(id);
+      const encTitle = workId ? await encryptWorkField(workId, title, now) : title;
       await db.execute(
         'UPDATE character_note SET title = ?, updated_at = ? WHERE id = ?',
-        [title, new Date().toISOString(), id],
+        [encTitle, now, id],
       );
     },
     updateCharacterNoteContent: async (id: string, content: string): Promise<void> => {
+      const now = new Date().toISOString();
+      const workId = await resolveCharacterNoteWorkId(id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         'UPDATE character_note SET content = ?, updated_at = ? WHERE id = ?',
-        [content, new Date().toISOString(), id],
+        [encContent, now, id],
       );
     },
 

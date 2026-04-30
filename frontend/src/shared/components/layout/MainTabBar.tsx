@@ -45,6 +45,8 @@ import {
 import { useMainTabsStore } from '../../stores/mainTabsStore';
 import type { MainDoc, MainTab, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
 
 const TAB_TITLE_QUERIES: Record<WorkspaceSection, string> = {
   episode: 'SELECT title FROM episode WHERE id = ? LIMIT 1',
@@ -71,8 +73,25 @@ function useTabTitle(doc: MainDoc | null): string {
 
   const generalSql = !isCharacter && doc ? TAB_TITLE_QUERIES[doc.section] : '';
   const generalParams = !isCharacter && doc ? [doc.itemId] : [];
-  const charSql = charId ? 'SELECT name AS title FROM character WHERE id = ? LIMIT 1' : '';
-  const cnoteSql = cnoteId ? 'SELECT title FROM character_note WHERE id = ? LIMIT 1' : '';
+  // PR3 — character.name / character_note.title은 v1: 접두사 ciphertext일 수 있어
+  // work.encrypted_dek와 JOIN해 batch decrypt 훅으로 평문 변환.
+  const charSql = charId
+    ? `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+              c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM character c
+       LEFT JOIN work w ON w.id = c.work_id
+       WHERE c.id = ? LIMIT 1`
+    : '';
+  const cnoteSql = cnoteId
+    ? `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+              cn.sort_order, cn.created_at, cn.updated_at,
+              c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+       FROM character_note cn
+       JOIN character c ON c.id = cn.character_id
+       LEFT JOIN work w ON w.id = c.work_id
+       WHERE cn.id = ? LIMIT 1`
+    : '';
 
   // 사용 안 하는 분기는 빈 결과 SQL로 — useQuery 항상 호출 (hooks rule)
   const fallbackSql = 'SELECT NULL AS title WHERE 0';
@@ -84,14 +103,40 @@ function useTabTitle(doc: MainDoc | null): string {
     generalSql || fallbackSql,
     generalSql ? generalParams : [],
   );
-  const { data: charRows = [] } = useQuery<{ title: string | null }>(
+  const { data: rawCharRows = [] } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    name: string | null;
+    gender: string | null;
+    age: string | null;
+    profile_image_url: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
     charSql || fallbackSql,
     charSql ? [charId!] : [],
   );
-  const { data: cnoteRows = [] } = useQuery<{ title: string | null }>(
+  const { data: rawCnoteRows = [] } = useQuery<{
+    id: string;
+    character_id: string;
+    writer_id: string;
+    kind: string;
+    title: string | null;
+    content: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    work_id: string;
+    encrypted_dek: string | null;
+  }>(
     cnoteSql || fallbackSql,
     cnoteSql ? [cnoteId!] : [],
   );
+  const { data: decryptedChars } = useDecryptedCharacterList(charSql ? rawCharRows : []);
+  const { data: decryptedCnotes } = useDecryptedCharacterNoteList(cnoteSql ? rawCnoteRows : []);
 
   if (!doc) return '새 탭';
   // '__all__' magic itemId — section별 통합 뷰 라벨
@@ -100,8 +145,8 @@ function useTabTitle(doc: MainDoc | null): string {
     return '전체';
   }
   if (isCharacter) {
-    if (charPrefix) return charRows[0]?.title?.trim() || '(이름 없음)';
-    if (cnotePrefix) return cnoteRows[0]?.title?.trim() || '(제목 없음)';
+    if (charPrefix) return decryptedChars[0]?.name?.trim() || '(이름 없음)';
+    if (cnotePrefix) return decryptedCnotes[0]?.title?.trim() || '(제목 없음)';
     return '(알 수 없음)';
   }
   // plot 회차는 "막이름 / 회차제목" 합성

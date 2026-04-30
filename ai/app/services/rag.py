@@ -198,27 +198,35 @@ async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
     for idx, char in enumerate(chars):
         char_id = char[0] if isinstance(char[0], uuid.UUID) else uuid.UUID(str(char[0]))
         role_label = "주인공" if idx == 0 else "부캐릭터"
+        # Plan C PR3 — name/age는 v1: 접두사면 암호문이라 평문을 알 수 없다.
+        # 이름이 암호문이면 익명화 라벨로 대체하고, 나이가 암호문이면 생략.
+        name = char[1] if not _is_ciphertext(char[1]) else f"인물{idx + 1}"
+        gender = char[2]
+        age = char[3] if not _is_ciphertext(char[3]) else None
         # 이름 라인 — 성별·나이를 헤더에 묶어 LLM이 핵심 속성을 한눈에 파악하게 한다.
         # 검수 시 "노정희 28세 → 본문에서 스무 살" 같은 속성 모순을 일관되게 잡기 위함.
         # 추가로 [C번호] 라벨을 붙여 시스템 프롬프트의 "캐릭터 룰 체크리스트"가
         # 각 인물을 한 명씩 차례로 본문과 1:1 대조하도록 강제한다 (attention 분산 완화).
         attrs: list[str] = []
-        if char[2]:
-            attrs.append(f"성별 {char[2]}")
-        if char[3]:
-            attrs.append(f"나이 {char[3]}")
-        head = f"- [C{idx + 1}] [{role_label}] {char[1]}"
+        if gender:
+            attrs.append(f"성별 {gender}")
+        if age:
+            attrs.append(f"나이 {age}")
+        head = f"- [C{idx + 1}] [{role_label}] {name}"
         if attrs:
             head += f" ({', '.join(attrs)})"
         parts = [head]
         char_notes = notes_by_char.get(char_id, [])
         for note in char_notes:
+            # title/content가 v1: 접두사면 암호문 — 해당 노트는 컨텍스트에서 제외.
+            title_raw = note[2]
             content = note[3]
-            if content:
-                label = note[2] or note[1] or ""
-                text = _plain(content)[:SUBNOTE_TRUNC]
-                if text:
-                    parts.append(f"{label}:{text}")
+            if not content or _is_ciphertext(content):
+                continue
+            label = (title_raw if not _is_ciphertext(title_raw) else None) or note[1] or ""
+            text = _plain(content)[:SUBNOTE_TRUNC]
+            if text:
+                parts.append(f"{label}:{text}")
         lines.append(" / ".join(parts))
     return "\n".join(lines)
 
