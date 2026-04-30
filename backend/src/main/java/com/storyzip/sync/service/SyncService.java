@@ -249,7 +249,17 @@ public class SyncService {
     // ── character_tag ─────────────────────────────────────────────
     private void processCharacterTag(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { charTagRepo.deleteById(id); return; }
-        CharacterTag e = charTagRepo.findById(id).orElse(null);
+        // (character_id, world_note_id) 복합 UNIQUE 제약 → 같은 페어로 살아있는 row가 있으면
+        // id가 달라도 그것을 update 대상으로 재사용. processPlan / processPlotEpisodeLink 동일 패턴.
+        UUID characterId = uuid(data, "character_id");
+        UUID worldNoteId = uuid(data, "world_note_id");
+        CharacterTag e = null;
+        if (characterId != null && worldNoteId != null) {
+            e = charTagRepo.findByCharacterIdAndWorldNoteId(characterId, worldNoteId).orElse(null);
+        }
+        if (e == null) {
+            e = charTagRepo.findById(id).orElse(null);
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = CharacterTag.builder().id(id).build();
