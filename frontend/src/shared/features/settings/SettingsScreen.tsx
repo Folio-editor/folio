@@ -40,14 +40,16 @@ const FONT_SIZE_OPTIONS = [14, 15, 16, 17, 18, 20, 22];
 
 interface SettingsScreenProps {
   settingsItemId: SettingsItemId;
+  /** AboutSettings 의 "튜토리얼 가이드 다시 시작" 후 부모로 새 workId 전달 */
+  onTutorialReset?: (newWorkId: string) => void;
 }
 
-export function SettingsScreen({ settingsItemId }: SettingsScreenProps) {
+export function SettingsScreen({ settingsItemId, onTutorialReset }: SettingsScreenProps) {
   if (settingsItemId === 'account') return <AccountSettings />;
   if (settingsItemId === 'theme') return <ThemeSettings />;
   if (settingsItemId === 'font') return <FontSettings />;
   if (settingsItemId === 'payment') return <PaymentSettings />;
-  if (settingsItemId === 'about') return <AboutSettings />;
+  if (settingsItemId === 'about') return <AboutSettings onTutorialReset={onTutorialReset} />;
   return null;
 }
 

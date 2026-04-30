@@ -7,7 +7,6 @@ import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
 import Color from '@tiptap/extension-color';
-import Underline from '@tiptap/extension-underline';
 import { TextStyle, FontFamily, FontSize } from '@tiptap/extension-text-style';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
@@ -93,12 +92,12 @@ export function ContentEditor({
         },
       },
       extensions: [
+        // StarterKit v3.x 부터 Underline 기본 포함 — 별도 import 시 'Duplicate extension names' 경고
         StarterKit.configure({
           code: false,
           codeBlock: false,
           link: { openOnClick: false },
         }),
-        Underline,
         Placeholder.configure({ placeholder }),
         Highlight.configure({ multicolor: true }),
         Typography,

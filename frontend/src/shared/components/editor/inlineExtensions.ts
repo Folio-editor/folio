@@ -12,7 +12,6 @@
 // ============================================================
 
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import TextAlign from '@tiptap/extension-text-align';
@@ -30,8 +29,9 @@ export interface InlineExtensionsOptions {
 /**
  * 인라인 에디터용 표준 extension 셋.
  * 툴바와 100% 호환되도록 textStyle 계열(Color/FontFamily/FontSize), TextAlign,
- * AuthorNote, Underline, Highlight를 모두 포함한다.
+ * AuthorNote, Highlight를 모두 포함한다.
  *
+ * Underline 은 StarterKit v3.x 부터 기본 포함이므로 별도 등록 시 'Duplicate extension names' 경고.
  * SceneBreak/CharacterCount/FindReplace/ReviewHighlight 등 본문 전용 또는 데코레이션
  * 전용 extension은 인라인 환경에 부적절하므로 제외한다(메인 ContentEditor에만 등록).
  */
@@ -40,7 +40,6 @@ export function createInlineExtensions(
 ): Extensions {
   return [
     StarterKit.configure({ code: false, codeBlock: false }),
-    Underline,
     Placeholder.configure({
       placeholder: options.placeholder ?? '내용을 입력하세요…',
     }),
