@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@powersync/react';
+import { useDecryptedWork } from '../../hooks/useDecryptedWork';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft,
@@ -95,16 +96,26 @@ export function WorkspaceHomeScreen({
   onBack,
 }: WorkspaceHomeScreenProps) {
   const writerId = useWriterId();
-  const { data: works = [] } = useQuery<WorkRow>(
-    `SELECT id, title, author_name, description, status, created_at, updated_at
-     FROM work WHERE id = ? AND writer_id = ?`,
+  // writer_id 검증은 별도 쿼리로 (useDecryptedWork는 id만으로 조회).
+  const { data: ownership = [] } = useQuery<{ id: string }>(
+    `SELECT id FROM work WHERE id = ? AND writer_id = ?`,
     [workId, writerId],
   );
-  const work = works[0];
+  const { data: decrypted } = useDecryptedWork(workId);
 
-  if (!work) {
+  if (ownership.length === 0 || !decrypted) {
     return <div className="p-8 text-sm text-muted-foreground">작품을 불러오는 중…</div>;
   }
+
+  const work: WorkRow = {
+    id: decrypted.id,
+    title: decrypted.title,
+    author_name: decrypted.author_name,
+    description: decrypted.description,
+    status: decrypted.status,
+    created_at: decrypted.created_at,
+    updated_at: decrypted.updated_at,
+  };
 
   return (
     <WorkspaceEditor

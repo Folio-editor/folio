@@ -145,11 +145,18 @@ async def _fetch_work_meta(session: AsyncSession, work_id: str) -> str:
     row = r.fetchone()
     if not row:
         return ""
-    parts = [f"제목: {row[0]}"]
-    if row[1]:
-        parts.append(f"작가명: {row[1]}")
-    if row[2]:
-        parts.append(f"작품 설명: {row[2]}")
+    # Plan C PR2 — title/author_name/description은 v1: 접두사면 암호문이라 평문을 알 수 없다.
+    # 후속 PR5에서 클라이언트가 복호화한 메타를 payload로 전달하기 전까지는 해당 필드를 생략.
+    title = row[0] if not _is_ciphertext(row[0]) else None
+    author_name = row[1] if not _is_ciphertext(row[1]) else None
+    description = row[2] if not _is_ciphertext(row[2]) else None
+    parts: list[str] = []
+    if title:
+        parts.append(f"제목: {title}")
+    if author_name:
+        parts.append(f"작가명: {author_name}")
+    if description:
+        parts.append(f"작품 설명: {description}")
     if row[3]:
         parts.append(f"상태: {row[3]}")
     return "\n".join(parts)

@@ -25,16 +25,59 @@ export function useLocalWrite() {
   const db = usePowerSync();
   const writerId = useWriterId();
 
+  // PR2 — work 메타(title/author_name/description) 암호화 헬퍼.
+  // KEK이 있으면 ensureWorkKey로 work_key 확보 후 평문 → "v1:" + base64 암호화.
+  // KEK이 없으면(게스트/미로그인) 평문 그대로 — episode와 동일 폴백 정책.
+  const encryptWorkField = async (
+    workId: string,
+    plain: string | null,
+    now: string,
+  ): Promise<string | null> => {
+    if (plain == null || plain === '') return plain;
+    const kek = getCurrentKek();
+    if (!kek) return plain;
+    const workKey = await ensureWorkKey({
+      kek,
+      workId,
+      loadEncryptedDek: async () => {
+        const dr = await db.execute(
+          'SELECT encrypted_dek FROM work WHERE id = ? LIMIT 1',
+          [workId],
+        );
+        const row = (dr.rows?._array as { encrypted_dek: string | null }[] | undefined)?.[0];
+        return row?.encrypted_dek ?? null;
+      },
+      saveEncryptedDek: async (b64) => {
+        await db.execute(
+          'UPDATE work SET encrypted_dek = ?, updated_at = ? WHERE id = ?',
+          [b64, now, workId],
+        );
+      },
+    });
+    const cipher = await encryptString(workKey, plain);
+    return CIPHERTEXT_PREFIX + cipher;
+  };
+
   return {
     // ── work ────────────────────────────────────────────────
     createWork: async (title: string): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      // 먼저 평문으로 INSERT — work 행이 있어야 ensureWorkKey가 encrypted_dek를 UPDATE할 수 있다.
       await db.execute(
         `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, NULL, NULL, '연재중', 0, ?, ?)`,
         [id, writerId, title, now, now],
       );
+      // KEK이 있으면 즉시 title 암호화 — 평문 row가 동기화 큐에 잠시 머물 수 있으나
+      // updated_at이 같은 시점이라 충돌 없이 단일 commit으로 백엔드에 도달한다.
+      const encryptedTitle = await encryptWorkField(id, title, now);
+      if (encryptedTitle !== title) {
+        await db.execute(
+          `UPDATE work SET title = ?, updated_at = ? WHERE id = ?`,
+          [encryptedTitle, now, id],
+        );
+      }
       return id;
     },
     updateWork: async (
@@ -49,8 +92,21 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+      // title/author_name/description은 암호화 대상. status는 평문 유지(필터·정렬용).
+      if ('title' in patch && typeof patch.title === 'string') {
+        effective.title = await encryptWorkField(id, patch.title, now);
+      }
+      if ('author_name' in patch) {
+        effective.author_name = await encryptWorkField(id, patch.author_name ?? null, now);
+      }
+      if ('description' in patch) {
+        effective.description = await encryptWorkField(id, patch.description ?? null, now);
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE work SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],

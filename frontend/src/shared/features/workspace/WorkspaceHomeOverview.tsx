@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { Home, Plus } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
+import { useDecryptedWorkList } from '../../hooks/useDecryptedWork';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { cn } from '../../lib/cn';
@@ -33,13 +34,34 @@ export function WorkspaceHomeOverview({ onSelectWork, onCreateWork }: WorkspaceH
   const [title, setTitle] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  const { data: works = [] } = useQuery<WorkRow>(
-    `SELECT id, title, author_name, description, status, updated_at
+  const { data: rawWorks = [] } = useQuery<{
+    id: string;
+    writer_id: string;
+    title: string | null;
+    author_name: string | null;
+    description: string | null;
+    status: string;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT id, writer_id, title, author_name, description, status,
+            sort_order, created_at, updated_at, encrypted_dek
      FROM work
      WHERE writer_id = ? AND status != 'trashed'
      ORDER BY sort_order ASC, created_at ASC`,
     [writerId],
   );
+  const { data: decrypted } = useDecryptedWorkList(rawWorks);
+  const works: WorkRow[] = decrypted.map((w) => ({
+    id: w.id,
+    title: w.title,
+    author_name: w.author_name,
+    description: w.description,
+    status: w.status,
+    updated_at: w.updated_at,
+  }));
 
   const handleCreate = async () => {
     const trimmed = title.trim();

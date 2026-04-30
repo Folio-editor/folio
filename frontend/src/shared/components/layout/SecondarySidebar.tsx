@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
+import { useDecryptedWork } from '../../hooks/useDecryptedWork';
 import { useAuthStore } from '../../stores/authStore';
 import { useWalletStore } from '../../stores/walletStore';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -110,8 +111,8 @@ interface SecondarySidebarProps {
   onSettingsItemSelect?: (id: SettingsItemId) => void;
 }
 
-interface WorkTitleRow {
-  title: string;
+interface WorkOwnershipRow {
+  id: string;
 }
 
 /**
@@ -182,15 +183,21 @@ export function SecondarySidebar({
     setSearchTerm('');
   }, [activity]);
 
-  const { data: workTitleRows = [] } = useQuery<WorkTitleRow>(
+  // PR2 — title이 v1: 암호문일 수 있어 batch 복호화 훅으로 평문을 얻는다.
+  // ownership/trashed 검증은 별도 lightweight 쿼리로 분리 (hook은 단일 work 무조건 SELECT).
+  const { data: ownershipRows = [] } = useQuery<WorkOwnershipRow>(
     selectedWorkId
-      ? `SELECT title FROM work
+      ? `SELECT id FROM work
          WHERE id = ? AND writer_id = ? AND status != 'trashed'
          LIMIT 1`
-      : `SELECT '' AS title WHERE 0`,
+      : `SELECT NULL AS id WHERE 0`,
     selectedWorkId ? [selectedWorkId, writerId] : [],
   );
-  const workTitle = workTitleRows[0]?.title ?? null;
+  const ownsWork = ownershipRows.length > 0;
+  const { data: decryptedWork } = useDecryptedWork(
+    ownsWork && selectedWorkId ? selectedWorkId : '',
+  );
+  const workTitle = ownsWork ? decryptedWork?.title ?? null : null;
 
   const header = settingsMode
     ? 'Folio'
