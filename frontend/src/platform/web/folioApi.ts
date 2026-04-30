@@ -10,6 +10,7 @@
 // ============================================================
 
 import type { FolioApi, LoginResult, Writer } from '../../shared/types/auth';
+import { createWebExportApi } from './export/exportApi';
 
 function apiUrl(): string {
   const url =
@@ -278,5 +279,6 @@ export function createWebFolioApi(): FolioApi {
       installAndRestart: async () => {},
       onStateChange: () => () => {},
     },
+    export: createWebExportApi(),
   };
 }

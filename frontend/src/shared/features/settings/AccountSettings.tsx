@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Cloud, CloudOff, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-react';
+import { Cloud, CloudOff, Coins, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-react';
 import { useQuery, useStatus } from '@powersync/react';
 import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { useWalletStore } from '../../stores/walletStore';
 import { useIsGuest } from '../../hooks/useWriterId';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useAccountInfo, useCachedAccountInfo, type CachedAccountInfo } from '../../hooks/useAccountInfo';
@@ -155,6 +156,14 @@ function AuthenticatedView() {
   const psStatus = useStatus();
   const isOnline = useNetworkStatus();
   const openSettings = useNavigationStore((s) => s.openSettings);
+  const wallet = useWalletStore((s) => s.wallet);
+  const walletLoading = useWalletStore((s) => s.loading);
+  const refreshWallet = useWalletStore((s) => s.refresh);
+
+  // 진입 시 1회 잔액 조회 (좌측 사이드바의 자동 refresh가 제거됐으므로 여기서 직접 호출)
+  useEffect(() => {
+    void refreshWallet();
+  }, [refreshWallet]);
 
   // 1) 캐시도 없고 로딩 중 — 첫 진입
   if (loading && !data) {
@@ -258,6 +267,41 @@ function AuthenticatedView() {
                   Pro로 업그레이드
                 </button>
               )}
+            </div>
+          </Section>
+
+          {/* 크레딧 잔액 */}
+          <Section title="크레딧">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Coins size={16} className="text-muted-foreground" strokeWidth={1.75} />
+                <span className="text-xs text-muted-foreground">잔여 크레딧</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-semibold text-foreground">
+                  {wallet ? wallet.balance.toLocaleString() : walletLoading ? '…' : '—'}
+                </span>
+                <span className="text-xs text-muted-foreground">크레딧</span>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void refreshWallet()}
+                disabled={walletLoading || !isOnline}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={walletLoading ? 'animate-spin' : undefined} />
+                {walletLoading ? '새로고침 중…' : '새로고침'}
+              </button>
+              <button
+                type="button"
+                onClick={() => openSettings('payment')}
+                disabled={!isOnline}
+                className="rounded-lg bg-ring px-3 py-1.5 text-xs font-medium text-background transition-colors hover:bg-ring/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                충전 / 결제
+              </button>
             </div>
           </Section>
 

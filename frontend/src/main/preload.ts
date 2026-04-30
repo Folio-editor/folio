@@ -8,6 +8,11 @@ import type {
   FolioBillingAuthResult,
   UpdaterState,
 } from '../shared/types/auth';
+import type {
+  ExportProgress,
+  ExportRequest,
+  ExportResult,
+} from '../shared/types/export';
 
 const api: FolioApi = {
   platform: 'electron',
@@ -64,6 +69,17 @@ const api: FolioApi = {
       ipcRenderer.on('updater:state', listener);
       return () => ipcRenderer.removeListener('updater:state', listener);
     },
+  },
+  export: {
+    run: (req: ExportRequest) =>
+      ipcRenderer.invoke('export:run', req) as Promise<ExportResult>,
+    onProgress: (callback: (p: ExportProgress) => void) => {
+      const listener = (_e: unknown, p: ExportProgress) => callback(p);
+      ipcRenderer.on('export:progress', listener);
+      return () => ipcRenderer.removeListener('export:progress', listener);
+    },
+    openInFolder: (filePath: string) =>
+      ipcRenderer.invoke('export:openInFolder', filePath) as Promise<void>,
   },
 };
 

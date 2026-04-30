@@ -114,6 +114,20 @@ interface AiSessionStore {
   userPrompt: string;
   model: string;
 
+  /**
+   * AI 작업의 등록된 대상 episode id.
+   * 메인 탭이 다른 문서로 바뀌어도 유지된다 — 사용자가 명시적으로
+   * 다른 원고를 등록(자동 등록 또는 setPinnedEpisodeId)하지 않는 한 변경 없음.
+   * null: 등록 해제 상태.
+   */
+  pinnedEpisodeId: string | null;
+  /**
+   * X 버튼으로 명시적으로 해제한 episode id. 같은 원고가 mainItemId로
+   * 유지되는 동안 useEffect가 다시 자동 pin하지 못하도록 가드.
+   * mainItemId가 다른 원고로 바뀌면 자동 pin이 정상 동작.
+   */
+  unpinnedFromEpisodeId: string | null;
+
   // 생성 대상 에피소드 (생성 시점에 캡처)
   targetEpisode: DraftEpisodeInfo | null;
 
@@ -140,6 +154,10 @@ interface AiSessionStore {
   setStoryline: (v: string) => void;
   setUserPrompt: (v: string) => void;
   setModel: (v: string) => void;
+  /** AI 대상 원고 등록(또는 교체). unpinned 가드를 해제하고 새 episode를 pin. */
+  setPinnedEpisodeId: (id: string) => void;
+  /** X 버튼으로 등록 해제. 같은 mainItemId로의 자동 재pin을 막기 위해 unpinnedFromEpisodeId에 기록. */
+  clearPinnedEpisodeId: () => void;
 
   startGeneration: (episode: DraftEpisodeInfo) => void;
   appendChunk: (chunk: string) => void;
@@ -168,6 +186,8 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   storyline: '',
   userPrompt: '',
   model: 'sonnet',
+  pinnedEpisodeId: null,
+  unpinnedFromEpisodeId: null,
   targetEpisode: null,
   activeAbort: null,
   isStreaming: false,
@@ -185,6 +205,13 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   setStoryline: (storyline) => set({ storyline }),
   setUserPrompt: (userPrompt) => set({ userPrompt }),
   setModel: (model) => set({ model }),
+  setPinnedEpisodeId: (id) =>
+    set({ pinnedEpisodeId: id, unpinnedFromEpisodeId: null }),
+  clearPinnedEpisodeId: () =>
+    set((s) => ({
+      pinnedEpisodeId: null,
+      unpinnedFromEpisodeId: s.pinnedEpisodeId,
+    })),
 
   startGeneration: (episode) =>
     set({
@@ -258,6 +285,8 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       storyline: '',
       userPrompt: '',
       model: 'sonnet',
+      pinnedEpisodeId: null,
+      unpinnedFromEpisodeId: null,
       targetEpisode: null,
       activeAbort: null,
       isStreaming: false,

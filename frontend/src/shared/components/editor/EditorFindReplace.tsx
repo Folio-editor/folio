@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { ChevronUp, ChevronDown, X } from 'lucide-react';
 import { Input } from '../ui/Input';
 import { cn } from '../../lib/cn';
+import type { FindReplaceStorage } from './extensions/FindReplace';
 
 interface EditorFindReplaceProps {
   editor: Editor;
@@ -18,17 +19,23 @@ export default function EditorFindReplace({
   const searchRef = useRef<HTMLInputElement>(null);
   const [showReplace, setShowReplace] = useState(false);
 
-  const storage = (editor.storage as any).findReplace as {
-    searchTerm: string;
-    replaceTerm: string;
-    results: { from: number; to: number }[];
-    currentIndex: number;
-  };
+  // editor.storage는 React 외부 상태이므로 transaction마다 강제 re-render.
+  // 이 훅이 없으면 input의 controlled value가 storage 변경을 추종 못 해 글자가 안 들어가는 것처럼 보인다.
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => {
+    editor.on('transaction', force);
+    return () => {
+      editor.off('transaction', force);
+    };
+  }, [editor]);
 
-  const searchTerm = storage.searchTerm;
-  const replaceTerm = storage.replaceTerm;
-  const results = storage.results;
-  const currentIndex = storage.currentIndex;
+  const storage = (editor.storage as { findReplace?: FindReplaceStorage })
+    .findReplace;
+
+  const searchTerm = storage?.searchTerm ?? '';
+  const replaceTerm = storage?.replaceTerm ?? '';
+  const results = storage?.results ?? [];
+  const currentIndex = storage?.currentIndex ?? -1;
 
   useEffect(() => {
     if (open) {
@@ -55,7 +62,13 @@ export default function EditorFindReplace({
           placeholder="찾기..."
           value={searchTerm}
           onChange={(e) => editor.commands.setSearchTerm(e.target.value)}
+          onCompositionEnd={(e) =>
+            editor.commands.setSearchTerm(
+              (e.target as HTMLInputElement).value,
+            )
+          }
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === 'Enter') {
               e.shiftKey
                 ? editor.commands.prevMatch()

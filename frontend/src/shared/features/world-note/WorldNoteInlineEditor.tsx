@@ -1,10 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Highlight from '@tiptap/extension-highlight';
-import TextAlign from '@tiptap/extension-text-align';
-import Typography from '@tiptap/extension-typography';
+import { createInlineExtensions } from '../../components/editor/inlineExtensions';
 import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 
 interface WorldNoteInlineEditorProps {
@@ -52,17 +48,16 @@ export function WorldNoteInlineEditor({
       editorProps: {
         attributes: { spellcheck: 'false' },
       },
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder }),
-        Highlight.configure({ multicolor: true }),
-        TextAlign.configure({ types: ['heading', 'paragraph'] }),
-        Typography,
-      ],
+      extensions: createInlineExtensions({ placeholder }),
       content: parseContent(initialContent),
       onCreate: ({ editor: ed }) => {
         lastSavedJsonRef.current = JSON.stringify(ed.getJSON());
         lastEmittedRawRef.current = initialContent ?? '';
+        // 사용자 클릭 전이라도 화면 내 인라인 에디터 하나가 default focused로 등록되어
+        // SharedFindReplace(Ctrl+F)가 즉시 동작하도록 한다.
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
       },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
