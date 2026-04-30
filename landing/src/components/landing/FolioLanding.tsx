@@ -19,6 +19,7 @@ import { PricingSection } from './PricingSection';
 import { FAQSection } from './FAQSection';
 import { FinFooter } from './FinFooter';
 import { TOOLS, type ToolMockupKey } from '../../data/landing-content';
+import { trackLandingEvent } from '../../lib/analytics';
 
 import '../../styles/landing.css';
 
@@ -33,6 +34,15 @@ const MOCKUPS: Record<ToolMockupKey, React.ComponentType> = {
 export function FolioLanding() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [loginOpen, setLoginOpen] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    trackLandingEvent('landing_viewed', {
+      platform: 'web',
+      utm_source: params.get('utm_source') ?? undefined,
+      utm_campaign: params.get('utm_campaign') ?? undefined,
+    });
+  }, []);
 
   // 에디터에서 비인증 redirect 시 ?login=1 → 모달 자동 노출 후 쿼리 정리
   useEffect(() => {
