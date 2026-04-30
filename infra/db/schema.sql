@@ -76,6 +76,14 @@ CREATE TABLE payment_event (
     processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
+CREATE TABLE analytics_event_dedup (
+    event_id        UUID PRIMARY KEY,
+    writer_id       UUID REFERENCES writer(id) ON DELETE SET NULL,
+    client_id       VARCHAR(120),
+    event_name      VARCHAR(80) NOT NULL,
+    received_at     TIMESTAMP NOT NULL DEFAULT now()
+);
+
 -- 3버킷 구조: 구독/보너스/종량제 크레딧을 출처별로 분리 관리.
 -- 차감 우선순위: subscription → bonus → purchase (빨리 소멸하는 순).
 CREATE TABLE token_wallet (
@@ -437,6 +445,7 @@ CREATE INDEX idx_payment_writer ON payment(writer_id);
 CREATE INDEX idx_subscription_writer ON subscription(writer_id);
 CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
 CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);
+CREATE INDEX idx_analytics_event_dedup_received_at ON analytics_event_dedup(received_at);
 CREATE INDEX idx_notification_writer ON notification(writer_id);
 CREATE INDEX idx_notification_unread ON notification(writer_id, is_read) WHERE is_read = false;
 CREATE INDEX idx_token_transaction_writer ON token_transaction(writer_id, created_at DESC);
