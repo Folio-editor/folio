@@ -1,9 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@powersync/react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Highlight from '@tiptap/extension-highlight';
+import { createInlineExtensions } from '../../components/editor/inlineExtensions';
 import {
   ChevronDown,
   ChevronRight,
@@ -40,6 +38,7 @@ import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
+import { SharedFindReplace } from '../../components/editor/SharedFindReplace';
 import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
@@ -238,6 +237,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <UnifiedEditorToolbar mode="shared" />
+        <SharedFindReplace />
         <div className="p-6">
         {acts.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
@@ -377,12 +377,15 @@ function ActSection({
   const actEditor = useEditor(
     {
       immediatelyRender: false,
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
-        Highlight.configure({ multicolor: true }),
-      ],
+      extensions: createInlineExtensions({
+        placeholder: '막에 대한 설명을 입력하세요…',
+      }),
       content: parseNoteContent(act.content),
+      onCreate: ({ editor: ed }) => {
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
+      },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },
@@ -661,12 +664,15 @@ function TimelineCard({
   const epEditor = useEditor(
     {
       immediatelyRender: false,
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder: '플롯 내용을 입력하세요…' }),
-        Highlight.configure({ multicolor: true }),
-      ],
+      extensions: createInlineExtensions({
+        placeholder: '플롯 내용을 입력하세요…',
+      }),
       content: parseNoteContent(episode.content),
+      onCreate: ({ editor: ed }) => {
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
+      },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },
@@ -946,12 +952,15 @@ function ActGridSection({
   const gridActEditor = useEditor(
     {
       immediatelyRender: false,
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder: '막에 대한 설명을 입력하세요…' }),
-        Highlight.configure({ multicolor: true }),
-      ],
+      extensions: createInlineExtensions({
+        placeholder: '막에 대한 설명을 입력하세요…',
+      }),
       content: parseNoteContent(act.content),
+      onCreate: ({ editor: ed }) => {
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
+      },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },
@@ -1176,12 +1185,15 @@ function ActGridEpisodeContentEditor({
   const gridEpEditor = useEditor(
     {
       immediatelyRender: false,
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder: '회차 내용을 입력하세요…' }),
-        Highlight.configure({ multicolor: true }),
-      ],
+      extensions: createInlineExtensions({
+        placeholder: '회차 내용을 입력하세요…',
+      }),
       content: parseNoteContent(episode.content),
+      onCreate: ({ editor: ed }) => {
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
+      },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },

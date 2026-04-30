@@ -97,6 +97,53 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   Cursor 기본값 보정
+   Tailwind v4의 Preflight는 button/[role="button"]의 cursor:pointer 자동 적용을
+   제거했다(브라우저 기본값으로 회귀). UX 일관성을 위해 클릭 가능한 요소에
+   pointer 커서를 명시적으로 부활시킨다. disabled 상태는 not-allowed로 분기.
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  /* dnd-kit useSortable의 attributes는 role="button" + aria-roledescription="sortable"을
+     자동 부여한다. 이걸 패널/탭 wrapper div에 spread하면 전체 영역이 클릭 가능한 것처럼
+     보이게 되므로 글로벌 cursor 룰에서 명시적으로 제외한다(드래그 핸들이 별도로
+     cursor-grab을 가진다). */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']):not([aria-roledescription='sortable']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']),
+  summary,
+  label[for],
+  select:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role='button'][aria-disabled='true'],
+  [role='tab'][aria-disabled='true'],
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  /* 텍스트 입력 가능 요소는 항상 I-beam 유지.
+     TipTap이 만드는 ProseMirror contenteditable, plain input/textarea 모두 포함.
+     [contenteditable="false"]는 제외(읽기 전용 노드뷰 등). */
+  input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):not(:disabled),
+  textarea:not(:disabled),
+  [contenteditable]:not([contenteditable='false']) {
+    cursor: text;
+  }
+
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Custom Scrollbar — overlay 스타일
    평상시 thumb 투명, 호버된 요소에서만 thumb 표시.
    영역(track)은 항상 reserve하여 layout shift 방지.

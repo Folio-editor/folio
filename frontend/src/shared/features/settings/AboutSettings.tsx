@@ -1,7 +1,19 @@
 import { useState } from 'react';
-import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw } from 'lucide-react';
+import { useQuery } from '@powersync/react';
+import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw, Sparkles } from 'lucide-react';
 import { useUpdater } from '../../hooks/useUpdater';
+import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
+import { useWriterId } from '../../hooks/useWriterId';
+import { ONBOARDING_WORK, ONBOARDING_MARKER } from '../../constants/onboardingContent';
+import { resetTabHelpShownFlags } from '../../constants/tabHelpContent';
+import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
+
+interface AboutSettingsProps {
+  /** "튜토리얼 가이드 다시 시작" 후 호출 — 부모에서 새 workId 로 home 진입 + 설정 닫기 */
+  onTutorialReset?: (newWorkId: string) => void;
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0B';
@@ -20,7 +32,7 @@ function formatDateTime(ts: number): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export function AboutSettings() {
+export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
   const {
     currentVersion,
     state,
@@ -32,6 +44,56 @@ export function AboutSettings() {
     installAndRestart,
   } = useUpdater();
   const [confirmingInstall, setConfirmingInstall] = useState(false);
+
+  // ── 튜토리얼 가이드 다시 시작 ─────────────────────────────────
+  const writerId = useWriterId();
+  const { deleteWork } = useLocalWrite();
+  const { seed: seedOnboarding } = useOnboardingSeed();
+  const [restartConfirm, setRestartConfirm] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
+
+  // 가이드 작품 식별 — 제목 + description 마커가 모두 일치해야 자동 삭제 대상
+  // (사용자가 description 을 수정한 경우 보호)
+  const { data: guideRows = [] } = useQuery<{ id: string; description: string | null }>(
+    writerId
+      ? `SELECT id, description FROM work
+         WHERE writer_id = ? AND title = ? AND status != 'trashed' LIMIT 1`
+      : `SELECT '' AS id, '' AS description WHERE 0`,
+    writerId ? [writerId, ONBOARDING_WORK.title] : [],
+  );
+  const matchedGuide = guideRows.find((r) => r.description?.includes(ONBOARDING_MARKER));
+  const hasMatchedGuide = matchedGuide !== undefined;
+
+  const restartTutorial = async () => {
+    setRestartBusy(true);
+    try {
+      // 기존 가이드 작품(매칭된 경우)을 휴지통으로 이동 — description 마커 없는 사용자 작품은 보존
+      if (matchedGuide) {
+        await deleteWork(matchedGuide.id);
+      }
+      // 새 빨간머리앤 샘플 워크스페이스 즉시 시드
+      const newWorkId = await seedOnboarding();
+      // localStorage 초기화 — 환영 다이얼로그(2개) + 8개 탭별 도움말 자동 노출 플래그
+      localStorage.removeItem('folio.onboarding.guideOffered');
+      localStorage.removeItem('folio.welcomeTour.completed');
+      resetTabHelpShownFlags();
+      setRestartConfirm(false);
+      // 부모로 콜백 — home 진입 + 설정 닫기 → home 탭 도움말이 자동 1회 노출
+      onTutorialReset?.(newWorkId);
+    } finally {
+      setRestartBusy(false);
+    }
+  };
+
+  const handleRestartClick = () => {
+    if (hasMatchedGuide) {
+      // 기존 가이드 작품 있으면 휴지통 이동 경고 모달
+      setRestartConfirm(true);
+    } else {
+      // 작품 없으면 즉시 시드 + 진입
+      void restartTutorial();
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -169,6 +231,33 @@ export function AboutSettings() {
             </Section>
           )}
 
+          {/* 도움말 — 튜토리얼 가이드 다시 시작 */}
+          <Section title="도움말">
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Sparkles size={14} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.75} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    Folio 첫 사용자 가이드
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {hasMatchedGuide
+                      ? '기존 샘플 작품을 휴지통으로 옮기고 새 샘플로 즉시 이동합니다.'
+                      : '샘플 작품을 만들고 즉시 이동해 각 탭 도움말을 다시 보여드립니다.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRestartClick}
+                disabled={restartBusy}
+                className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {restartBusy ? '처리 중…' : '튜토리얼 가이드 다시 시작'}
+              </button>
+            </div>
+          </Section>
+
           {/* 에러 */}
           {!isWeb && state.phase === 'error' && (
             <div className="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3">
@@ -194,6 +283,20 @@ export function AboutSettings() {
           )}
         </div>
       </div>
+
+      {/* 튜토리얼 다시 시작 확인 다이얼로그 (가이드 작품이 있는 경우만) */}
+      {restartConfirm && (
+        <DeleteConfirmDialog
+          title="튜토리얼 가이드 다시 시작"
+          message={`기존 샘플 작품 '${ONBOARDING_WORK.title}' 을 휴지통으로 옮기고 새 샘플 워크스페이스로 즉시 이동합니다. 30일 안에 휴지통에서 복원할 수 있습니다.`}
+          warning="작품 안에서 작성하신 내용은 함께 휴지통으로 이동합니다."
+          confirmLabel="다시 시작"
+          busyLabel="처리 중…"
+          busy={restartBusy}
+          onConfirm={() => void restartTutorial()}
+          onCancel={() => setRestartConfirm(false)}
+        />
+      )}
     </div>
   );
 }

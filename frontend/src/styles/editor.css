@@ -168,12 +168,15 @@
   user-select: none;
 }
 
-/* ── 찾기 / 바꾸기 하이라이트 ── */
-.folio-editor .find-match {
+/* ── 찾기 / 바꾸기 하이라이트 ──
+   ContentEditor(.folio-editor wrapper)뿐 아니라 WorldNoteInlineEditor,
+   PlotOverview/CharacterOverview의 인라인 useEditor 등 wrapper 클래스가 없는
+   인라인 에디터에서도 하이라이트가 보이도록 한정자 없이 정의. */
+.find-match {
   background: var(--editor-find-match);
   border-radius: 2px;
 }
-.folio-editor .find-match-current {
+.find-match-current {
   background: var(--editor-find-match-current);
   border-radius: 2px;
 }

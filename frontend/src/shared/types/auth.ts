@@ -155,6 +155,7 @@ export interface FolioApi {
   spellcheck: FolioSpellcheckApi;
   payment: FolioPaymentApi;
   updater: FolioUpdaterApi;
+  export: import('./export').FolioExportApi;
 }
 
 declare global {

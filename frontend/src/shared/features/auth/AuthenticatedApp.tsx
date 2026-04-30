@@ -53,6 +53,11 @@ import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
+import { useWriterId } from '../../hooks/useWriterId';
+import { useQuery } from '@powersync/react';
+import { ONBOARDING_WORK } from '../../constants/onboardingContent';
+import { OnboardingGuideDialog } from './OnboardingGuideDialog';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
@@ -232,6 +237,73 @@ export function AuthenticatedApp() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activity, selectedWorkId]);
+
+  // ── 신규 사용자 온보딩 가이드 ─────────────────────────────────
+  // 트리거 조건 (둘 다 만족):
+  //   1. localStorage 'folio.onboarding.guideOffered' 키 미존재
+  //   2. 가이드 작품(ONBOARDING_WORK.title 식별자) 미존재
+  // 대상: 로그인 사용자 + 게스트 모두 (writerId 만 있으면 OK).
+  //   게스트는 wa-sqlite 에 즉시 저장 → 로그인 시 useSyncResolver 가 서버로 마이그레이션.
+  // sync race 방어: 1초 지연 후 평가 + 다이얼로그 떠있는 도중 sync 로 가이드 작품 들어오면 자동 닫음
+  const onboardingWriterId = useWriterId();
+  const { seed: seedOnboarding } = useOnboardingSeed();
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
+
+  const { data: guideRows = [] } = useQuery<{ id: string }>(
+    onboardingWriterId
+      ? `SELECT id FROM work WHERE writer_id = ? AND title = ? AND status != 'trashed' LIMIT 1`
+      : `SELECT '' AS id WHERE 0`,
+    onboardingWriterId ? [onboardingWriterId, ONBOARDING_WORK.title] : [],
+  );
+  const hasGuideWork = guideRows.length > 0;
+
+  useEffect(() => {
+    if (!onboardingWriterId) return; // restore 완료 전 빈 문자열 방어
+    if (localStorage.getItem('folio.onboarding.guideOffered')) return;
+    if (hasGuideWork) return;
+    const t = setTimeout(() => {
+      if (
+        !localStorage.getItem('folio.onboarding.guideOffered') &&
+        !hasGuideWork
+      ) {
+        setOnboardingOpen(true);
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [onboardingWriterId, hasGuideWork]);
+
+  // sync race 방어 — 다이얼로그 떠 있는 동안 가이드 작품이 sync 로 들어오면 자동 닫음
+  useEffect(() => {
+    if (hasGuideWork && onboardingOpen) setOnboardingOpen(false);
+  }, [hasGuideWork, onboardingOpen]);
+
+  const handleOnboardingAccept = useCallback(async () => {
+    setOnboardingBusy(true);
+    try {
+      const newWorkId = await seedOnboarding();
+      localStorage.setItem('folio.onboarding.guideOffered', 'true');
+      setSelectedWorkId(newWorkId);
+      setActivity('home');
+      setOnboardingOpen(false);
+      // 기능 안내는 각 활동 탭의 ? 버튼 + 첫 진입 시 자동 노출되는 FloatingHelpCard 가 담당
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }, [seedOnboarding]);
+
+  const handleOnboardingSkip = useCallback(() => {
+    localStorage.setItem('folio.onboarding.guideOffered', 'true');
+    setOnboardingOpen(false);
+  }, []);
+
+  // 설정 → "튜토리얼 가이드 다시 시작" 후 호출 — 새 시드 작품으로 즉시 home 진입 + 설정 닫기
+  // home 탭 도움말은 SecondarySidebar 의 자동 노출 useEffect 가 키 미존재로 1회 노출
+  const handleTutorialReset = useCallback((newWorkId: string) => {
+    setSelectedWorkId(newWorkId);
+    setActivity('home');
+    setSettingsMode(false);
+  }, []);
 
   // 레이아웃 상태 — localStorage 에 영속
   const [sidebarWidth, setSidebarWidth] = usePersistentState(
@@ -1084,6 +1156,11 @@ export function AuthenticatedApp() {
             rightPanelVisible={rightPanelVisible}
             activeRightTab={rightPanelTab}
             onRightPanelQuickJump={(tab) => {
+              // 동일 탭이 이미 열려있으면 토글로 닫기. 다른 탭이거나 닫힌 상태면 해당 탭으로 열기.
+              if (rightPanelVisible && rightPanelTab === tab) {
+                setRightPanelVisible(false);
+                return;
+              }
               if (!rightPanelVisible) setRightPanelVisible(true);
               setRightPanelTab(tab);
             }}
@@ -1132,7 +1209,10 @@ export function AuthenticatedApp() {
         }
       >
         {settingsMode && selectedSettingsItem ? (
-          <SettingsScreen settingsItemId={selectedSettingsItem} />
+          <SettingsScreen
+            settingsItemId={selectedSettingsItem}
+            onTutorialReset={handleTutorialReset}
+          />
         ) : (
           <div className="flex h-full min-h-0 flex-col">
             <MainTabBar
@@ -1168,6 +1248,14 @@ export function AuthenticatedApp() {
           onCancel={() => void resolver.cancel()}
         />
       )}
+
+      {/* 신규 사용자 가이드 워크스페이스 다이얼로그 */}
+      <OnboardingGuideDialog
+        open={onboardingOpen}
+        busy={onboardingBusy}
+        onAccept={() => void handleOnboardingAccept()}
+        onSkip={handleOnboardingSkip}
+      />
 
       <DragOverlay dropAnimation={null}>
         {activeDrag ? (
