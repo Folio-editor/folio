@@ -43,10 +43,10 @@ interface PersistedRect {
 
 type Phase = 'closed' | 'entering' | 'idle' | 'exiting';
 
-const MIN_W = 320;
+const MIN_W = 360;
 const MIN_H = 240;
-const DEFAULT_W = 480;
-const DEFAULT_H = 380;
+const DEFAULT_W = 540;
+const DEFAULT_H = 360;
 const EXIT_MS = 250;
 
 function clampToViewport(rect: PersistedRect): PersistedRect {
@@ -90,7 +90,7 @@ function prefersReducedMotion(): boolean {
 /**
  * 비차단형 플로팅 도움말 카드.
  * - 헤더 드래그로 자유 이동
- * - 우측 하단 핸들로 리사이즈 (최소 320×240)
+ * - 우측 하단 핸들로 리사이즈 (최소 360×240)
  * - 페이지 ◀▶ 네비게이션
  * - 우상단 ✕ 닫기
  * - dim 오버레이 없음 → 카드 외부 메인 패널·사이드바 정상 조작 가능
@@ -313,8 +313,8 @@ export function FloatingHelpCard({
         onPointerCancel={onPointerUp}
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-semibold text-foreground">{title}</div>
-          <div className="text-[10px] text-muted-foreground">
+          <div className="truncate text-sm font-semibold text-foreground">{title}</div>
+          <div className="text-[11px] text-muted-foreground">
             도움말 · {safeIdx + 1} / {steps.length}
           </div>
         </div>
@@ -329,9 +329,11 @@ export function FloatingHelpCard({
       </div>
 
       {/* 본문 — 스크롤 가능 */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">{current.title}</h3>
-        <div className="text-xs leading-relaxed text-foreground/85">{current.body}</div>
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        <h3 className="mb-3 text-base font-semibold text-foreground">{current.title}</h3>
+        <div className="space-y-3 text-[13px] leading-6 text-foreground/90">
+          {current.body}
+        </div>
       </div>
 
       {/* 풋터 — 페이지 네비게이션 */}
@@ -341,7 +343,7 @@ export function FloatingHelpCard({
           onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
           disabled={isFirst}
           className={cn(
-            'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
+            'flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors',
             isFirst
               ? 'cursor-default text-muted-foreground/50'
               : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
@@ -368,7 +370,7 @@ export function FloatingHelpCard({
           <button
             type="button"
             onClick={onClose}
-            className="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             완료
           </button>
@@ -376,7 +378,7 @@ export function FloatingHelpCard({
           <button
             type="button"
             onClick={() => setStepIdx((i) => Math.min(steps.length - 1, i + 1))}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             다음
             <ChevronRight size={12} strokeWidth={2} />

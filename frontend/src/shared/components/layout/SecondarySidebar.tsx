@@ -368,7 +368,7 @@ export function SecondarySidebar({
           title={tabHelp.title}
           steps={tabHelp.steps}
           onClose={() => setHelpOpen(false)}
-          persistKey="folio.tabHelp.position"
+          persistKey="folio.tabHelp.position.v3"
           originRef={helpButtonRef}
         />
       )}
