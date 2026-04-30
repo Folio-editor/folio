@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { editorUrl } from '../../lib/loginUrl';
 import { useLandingAuth } from '../../lib/auth';
+import { currentOs, trackLandingEvent } from '../../lib/analytics';
 import { DownloadPopover } from './DownloadPopover';
 
 interface HeroProps {
@@ -14,6 +15,10 @@ export function Hero({ onRequestLogin }: HeroProps) {
   const { isAuthenticated } = useLandingAuth();
 
   const handleSecondaryClick = () => {
+    trackLandingEvent('web_enter_clicked', {
+      surface: 'hero',
+      platform: 'web',
+    });
     if (isAuthenticated) {
       window.location.href = editorUrl('/');
     } else {
@@ -35,7 +40,14 @@ export function Hero({ onRequestLogin }: HeroProps) {
           <button
             ref={downloadBtnRef}
             type="button"
-            onClick={() => setPopoverOpen((v) => !v)}
+            onClick={() => {
+              trackLandingEvent('desktop_download_clicked', {
+                surface: 'hero',
+                os: currentOs(),
+                download_channel: 'landing_cta',
+              });
+              setPopoverOpen((v) => !v);
+            }}
             className="cta-download"
             aria-haspopup="dialog"
             aria-expanded={popoverOpen}

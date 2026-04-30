@@ -48,6 +48,7 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
 import { useWriterId } from '../../hooks/useWriterId';
 import { apiClient, ApiError } from '../../lib/apiClient';
+import { analytics, charCountBucket, durationBucket } from '../../lib/analytics';
 import { useNavigationStore } from '../../stores/navigationStore';
 
 /**
@@ -948,6 +949,11 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     };
 
     startReview(episode);
+    const startedAt = Date.now();
+    void analytics.track('ai_review_requested', {
+      doc_type: 'episode',
+      char_count_bucket: charCountBucket(currentEpisode.content.length),
+    });
 
     try {
       const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
@@ -958,6 +964,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
+      void analytics.track('ai_review_succeeded', {
+        doc_type: 'episode',
+        duration_bucket: durationBucket(Date.now() - startedAt),
+      });
       refreshWalletAfterUsage();
       const issueCount = reviewResult.issues.length;
       toast.success(
@@ -969,6 +979,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failReview(message);
+      void analytics.track('ai_review_failed', {
+        doc_type: 'episode',
+        reason_code: err instanceof ApiError ? String(err.status) : 'unknown',
+      });
       // 부분 차감 가능성 — 실패해도 잔액 갱신
       refreshWalletAfterUsage();
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)

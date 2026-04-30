@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Writer } from '../types/auth';
 import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
+import { analytics } from '../lib/analytics';
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
 function isWebPlatform(): boolean {
@@ -210,6 +211,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     const currentGuestId = get().guestWriterId;
     set({ isLoggingIn: true, error: null });
+    void analytics.track('login_started', { provider: 'google' });
     try {
       const result = await window.folio.auth.loginWithGoogle();
 
@@ -264,8 +266,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
         }
       }
+      void analytics.track('login_succeeded', {
+        provider: 'google',
+        is_new_user: result.isNewUser,
+      });
     } catch (e) {
       set({ isLoggingIn: false, error: (e as Error).message });
+      void analytics.track('login_failed', {
+        reason_code: 'oauth_error',
+      });
     }
   },
 
