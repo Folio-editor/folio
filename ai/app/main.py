@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1 import _dev_ping, drafts, extract_settings, health, pipelines, reviews
@@ -8,6 +9,12 @@ from app.core.logging import configure_logging
 configure_logging()
 
 app = FastAPI(title="Folio AI", version="0.1.0")
+
+# PR5 — 클라이언트 평문 RAG 페이로드는 평균 28~40K 토큰(수십~수백 KB)이 HTTPS body로
+# 들어온다. GZipMiddleware는 응답만 압축하고, 요청 압축은 ASGI/Starlette가 표준화하지
+# 않아 클라이언트(Spring AiClient)와 합의된 별도 처리 경로로 처리해야 한다.
+# 응답 압축은 SSE 청크와 검수 JSON에 적용되어 download bandwidth를 절감한다.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Prometheus 메트릭 — /metrics 엔드포인트 자동 노출
 # (요청 수, 응답시간 분포 p50/p95/p99, 엔드포인트별 카운트 등 자동 수집)

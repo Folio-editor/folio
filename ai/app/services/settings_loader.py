@@ -1,61 +1,35 @@
+"""설정집(인물/세계관)을 LLM 프롬프트용 텍스트로 포맷팅.
+
+PR5 — Plan C 옵션 1: 더 이상 DB를 직접 SELECT하지 않고 클라이언트가 평문화해 보낸
+AiContextPayload 의 characters / world_notes 를 입력으로 받는 순수 함수.
+"""
+
 from __future__ import annotations
 
-import uuid
-from typing import Any, TypedDict
+from typing import TypedDict
 
-from sqlalchemy import text as sa_text
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.schemas.ai_context_payload import (
+    AiContextPayload,
+    CharacterPayload,
+    WorldNotePayload,
+)
 from app.services.text_extractor import extract_plain_text
 
 SETTINGS_FULL_THRESHOLD = 40
 
-
-def _is_ciphertext(value: Any) -> bool:
-    """Plan C v1 암호문 판별. 'v1:' 접두사로 시작하는 문자열만 암호문."""
-    return isinstance(value, str) and value.startswith("v1:")
+_PERSONALITY_KIND = "personality"
 
 
 class SettingsBundle(TypedDict):
     mode: str
     count: int
-    characters: list[tuple[Any, ...]]
-    world_notes: list[tuple[Any, ...]]
     characters_text: str
     world_notes_text: str
 
 
-async def load_settings(db: AsyncSession, work_id: str) -> SettingsBundle:
-    work_uuid = uuid.UUID(work_id)
-
-    character_result = await db.execute(
-        sa_text(
-            "SELECT c.name, c.gender, c.age, "
-            "       pn.content AS personality, "
-            "       '' AS content "
-            "FROM character c "
-            "LEFT JOIN character_note pn "
-            "  ON pn.character_id = c.id AND pn.kind = 'personality' "
-            "WHERE c.work_id = :wid "
-            "ORDER BY c.sort_order"
-        ),
-        {"wid": work_uuid},
-    )
-    world_note_result = await db.execute(
-        sa_text(
-            "SELECT name, content FROM world_note "
-            "WHERE work_id = :wid ORDER BY sort_order"
-        ),
-        {"wid": work_uuid},
-    )
-
-    characters = character_result.fetchall()
-    # Plan C v1 암호문(name 또는 content가 'v1:' 접두사)이면 AI 서버가 평문을 알 수 없으므로
-    # settings 컨텍스트에서 제외한다.
-    world_notes = [
-        row for row in world_note_result.fetchall()
-        if not _is_ciphertext(row[0]) and not _is_ciphertext(row[1])
-    ]
+def load_settings(payload: AiContextPayload) -> SettingsBundle:
+    characters = payload.characters
+    world_notes = [n for n in payload.world_notes if n.name]
     total = len(characters) + len(world_notes)
     mode = "full" if total <= SETTINGS_FULL_THRESHOLD else "compact"
 
@@ -69,11 +43,17 @@ async def load_settings(db: AsyncSession, work_id: str) -> SettingsBundle:
     return {
         "mode": mode,
         "count": total,
-        "characters": characters,
-        "world_notes": world_notes,
         "characters_text": characters_text,
         "world_notes_text": world_notes_text,
     }
+
+
+def _personality_of(char: CharacterPayload) -> str | None:
+    """character_note 중 kind='personality' 의 첫 항목 본문을 평문으로 반환."""
+    for note in char.notes:
+        if note.kind == _PERSONALITY_KIND and note.content:
+            return extract_plain_text(note.content)
+    return None
 
 
 def _first_line(text: str | None) -> str:
@@ -82,64 +62,64 @@ def _first_line(text: str | None) -> str:
     return text.splitlines()[0].strip()
 
 
-def _format_characters_full(rows: list[tuple[Any, ...]]) -> str:
-    if not rows:
+def _format_characters_full(chars: list[CharacterPayload]) -> str:
+    if not chars:
         return "(없음)"
 
     lines: list[str] = []
-    for name, gender, age, personality, content in rows:
-        parts = [f"- 이름: {name}"]
-        if gender:
-            parts.append(f"성별: {gender}")
-        if age:
-            parts.append(f"나이: {age}")
+    for char in chars:
+        parts = [f"- 이름: {char.name or ''}"]
+        if char.gender:
+            parts.append(f"성별: {char.gender}")
+        if char.age:
+            parts.append(f"나이: {char.age}")
+        personality = _personality_of(char)
         if personality:
-            parts.append(f"성격: {extract_plain_text(personality)}")
-        if content:
-            parts.append(f"상세: {extract_plain_text(content)}")
+            parts.append(f"성격: {personality}")
         lines.append("\n".join(parts))
     return "\n\n".join(lines)
 
 
-def _format_world_notes_full(rows: list[tuple[Any, ...]]) -> str:
-    if not rows:
+def _format_world_notes_full(notes: list[WorldNotePayload]) -> str:
+    if not notes:
         return "(없음)"
 
     lines: list[str] = []
-    for name, content in rows:
-        description = extract_plain_text(content) if content else ""
+    for note in notes:
+        description = extract_plain_text(note.content) if note.content else ""
         if description:
-            lines.append(f"- 이름: {name}\n상세: {description}")
+            lines.append(f"- 이름: {note.name}\n상세: {description}")
         else:
-            lines.append(f"- 이름: {name}")
+            lines.append(f"- 이름: {note.name}")
     return "\n\n".join(lines)
 
 
-def _format_characters_compact(rows: list[tuple[Any, ...]]) -> str:
-    if not rows:
+def _format_characters_compact(chars: list[CharacterPayload]) -> str:
+    if not chars:
         return "(없음)"
 
     lines: list[str] = []
-    for name, _gender, age, personality, _content in rows:
-        parts = [str(name)]
-        if age:
-            parts.append(f"나이:{_first_line(str(age))}")
+    for char in chars:
+        parts = [char.name or ""]
+        if char.age:
+            parts.append(f"나이:{_first_line(char.age)}")
+        personality = _personality_of(char)
         if personality:
-            parts.append(f"성격:{_first_line(extract_plain_text(personality))}")
+            parts.append(f"성격:{_first_line(personality)}")
         lines.append("- " + " / ".join(parts))
     return "\n".join(lines)
 
 
-def _format_world_notes_compact(rows: list[tuple[Any, ...]]) -> str:
-    if not rows:
+def _format_world_notes_compact(notes: list[WorldNotePayload]) -> str:
+    if not notes:
         return "(없음)"
 
     lines: list[str] = []
-    for name, content in rows:
-        description = extract_plain_text(content) if content else ""
+    for note in notes:
+        description = extract_plain_text(note.content) if note.content else ""
         summary = _first_line(description)[:50]
         if summary:
-            lines.append(f"- {name}: {summary}")
+            lines.append(f"- {note.name}: {summary}")
         else:
-            lines.append(f"- {name}")
+            lines.append(f"- {note.name}")
     return "\n".join(lines)

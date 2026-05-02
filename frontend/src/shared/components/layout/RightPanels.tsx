@@ -49,6 +49,7 @@ import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressM
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDecryptedEpisode } from '../../hooks/useDecryptedEpisode';
 import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
+import { useAiContextPayload } from '../../hooks/useAiContextPayload';
 import { apiClient, ApiError } from '../../lib/apiClient';
 import { analytics, charCountBucket, durationBucket } from '../../lib/analytics';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -905,17 +906,35 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       : `SELECT '' as id, '' as title, null as content, '' as work_id, 0 as sort_order WHERE 0`,
     queryEpisodeId ? [queryEpisodeId] : [],
   );
-  const pinnedEpisode = episodeRows[0] ?? null;
-  // 등록된 원고가 있는지 (UI 표시 분기) — pin id는 있지만 DB에서 사라진 케이스 가드
-  const hasPinned = !!pinnedEpisode;
+  const rawPinnedEpisode = episodeRows[0] ?? null;
 
   // AI 호출 시 본문은 반드시 평문이어야 한다 (LLM은 v1: 암호문을 못 읽음).
-  // useDecryptedEpisode가 KEK + work_key로 복호화한 content를 반환하므로,
-  // pinnedEpisode.content (PowerSync 원시값) 대신 이 값을 사용한다.
+  // useDecryptedEpisode가 KEK + work_key로 복호화한 title/content를 반환하므로,
+  // rawPinnedEpisode (PowerSync 원시값) 대신 이 값을 사용한다. title도 v1: ciphertext일 수 있음.
   const decryptedEpisodeId = pinnedEpisodeId ?? '';
   const { data: decryptedEpisode } = useDecryptedEpisode(decryptedEpisodeId);
   const decryptedContent = decryptedEpisode?.content ?? null;
   const decryptStatus = decryptedEpisode?.decryptStatus;
+  const pinnedEpisode: EpisodeInfo | null = rawPinnedEpisode
+    ? {
+        ...rawPinnedEpisode,
+        title: decryptedEpisode?.title ?? '',
+        content: decryptedContent,
+      }
+    : null;
+  // 등록된 원고가 있는지 (UI 표시 분기) — pin id는 있지만 DB에서 사라진 케이스 가드
+  const hasPinned = !!rawPinnedEpisode;
+
+  // PR5 — AI 서버는 더 이상 v1: 암호문 컬럼을 직접 SELECT하지 않는다.
+  // 클라이언트가 KEK + work_key로 평문화한 RAG 컨텍스트를 호출 직전 조립해
+  // 페이로드로 동봉한다. 페이로드는 AI 서버 메모리에서만 사용되며 영속화/로깅되지 않는다.
+  const aiContextWorkId = pinnedEpisode?.work_id ?? null;
+  const aiContextEpisodeNum = (pinnedEpisode?.sort_order ?? 0) + 1;
+  const {
+    payload: aiContextPayload,
+    isLoading: aiContextLoading,
+    hasUndecrypted: aiContextHasUndecrypted,
+  } = useAiContextPayload(aiContextWorkId, aiContextEpisodeNum);
 
   const screen = useAiSessionStore((s) => s.screen);
   const draftState = useAiSessionStore((s) => s.draftState);
@@ -943,7 +962,21 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const handleGenerate = useCallback(async () => {
     if (!storyline.trim() || !pinnedEpisode) return;
     if (isStreaming) return;
-
+    // PR5 — 페이로드가 아직 조립 중이면 호출 보류 (KEK/work_key 복호화 대기).
+    if (aiContextLoading || !aiContextPayload) {
+      toast.error('AI 컨텍스트 준비 중', {
+        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    // 복호화 실패 잔재(v1:)가 페이로드에 남아 있으면 호출 자체를 차단한다.
+    // LLM이 못 읽는 데이터를 보내고 토큰만 태우는 사고 방지.
+    if (aiContextHasUndecrypted) {
+      toast.error('암호화된 자료를 복호화하지 못했어요', {
+        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
+      });
+      return;
+    }
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
       id: pinnedEpisode.id,
       workId: pinnedEpisode.work_id,
@@ -962,6 +995,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         currentEpisodeNum: episode.sortOrder + 1,
         model,
         userPrompt: userPrompt.trim() || null,
+        context: aiContextPayload,
       },
       (data: unknown) => {
         const d = data as { type?: string; content?: string };
@@ -981,7 +1015,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
     );
     setAbort(controller);
-  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
 
   const handleStop = () => stopGeneration();
 
@@ -998,6 +1032,19 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         description: decryptStatus === 'no-kek'
           ? '암호화 키 정보가 없어 본문을 복호화할 수 없습니다. 다시 로그인 후 시도해주세요.'
           : '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    // PR5 — RAG 페이로드도 평문으로 준비된 상태여야 한다.
+    if (aiContextLoading || !aiContextPayload) {
+      toast.error('AI 컨텍스트 준비 중', {
+        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    if (aiContextHasUndecrypted) {
+      toast.error('암호화된 자료를 복호화하지 못했어요', {
+        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
       });
       return;
     }
@@ -1022,6 +1069,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         episodeId: episode.id,
         content: decryptedContent,
         episodeNumber: episode.sortOrder + 1,
+        context: aiContextPayload,
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
@@ -1051,7 +1099,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         : message;
       toast.error('검수 실패', { description: display });
     }
-  }, [pinnedEpisode, decryptedContent, decryptStatus, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useQuery, usePowerSync } from '@powersync/react';
 import {
   ChevronDown,
@@ -19,6 +19,11 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import {
+  useDecryptedEpisodeList,
+  type DecryptedEpisodeListRow,
+  type RawEpisodeListRow,
+} from '../../../hooks/useDecryptedEpisode';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
@@ -45,14 +50,7 @@ import {
 } from '../../ui/context-menu';
 import { DeleteConfirmDialog } from '../../ui/DeleteConfirmDialog';
 
-interface EpisodeRow {
-  id: string;
-  title: string;
-  status: string | null;
-  word_count: number;
-  work_id?: string;
-  sort_order?: number | null;
-}
+type EpisodeRow = DecryptedEpisodeListRow;
 
 interface EpisodeTreeListProps {
   workId: string;
@@ -92,20 +90,32 @@ export function EpisodeTreeList({
     (s) => s.byPanel['episode'] ?? (EMPTY_FILTER as string[]),
   );
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
+  // title 이 v1: 암호문이라 SQL LIKE 검색은 작동하지 않는다. 일단 status/sort 필터만 SQL 에서
+  // 처리하고, 제목 검색은 복호화된 결과에 대해 클라 측에서 후처리한다.
   const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const filterClause = buildInClause('status', statusFilter);
-  const sql = `SELECT id, title, status, word_count, work_id, sort_order FROM episode
-     WHERE work_id = ? AND writer_id = ? AND status != 'trashed' ${whereSearch} ${filterClause.sql}
-     ${orderBy}`;
-  const baseParams = [workId, writerId];
-  const params = [
-    ...baseParams,
-    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
-    ...filterClause.params,
-  ];
-  const { data: rawEpisodes = [], isFetching } = useQuery<EpisodeRow>(sql, params);
-  const episodes = useOptimisticRows(rawEpisodes, {
+  // LEFT JOIN 한 work 테이블에도 created_at/updated_at 이 있어 ORDER BY 절이 ambiguous 가 된다.
+  // SELECT alias 로 episode 의 컬럼을 그대로 동일 이름으로 노출하면 SQLite ORDER BY 는 alias 를 우선 해석해
+  // ambiguity 가 사라진다. (work.encrypted_dek 만 별도 alias)
+  const sql = `SELECT e.id AS id, e.work_id AS work_id, e.title AS title, e.status AS status,
+                      e.word_count AS word_count, e.sort_order AS sort_order, e.parent_id AS parent_id,
+                      e.created_at AS created_at, e.updated_at AS updated_at, w.encrypted_dek AS encrypted_dek
+                 FROM episode e
+                 LEFT JOIN work w ON w.id = e.work_id
+                WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
+                  ${filterClause.sql}
+                ${orderBy}`;
+  const { data: rawJoinedEpisodes = [], isFetching } = useQuery<RawEpisodeListRow>(
+    sql,
+    [workId, writerId, ...filterClause.params],
+  );
+  const { data: decryptedEpisodes } = useDecryptedEpisodeList(rawJoinedEpisodes);
+  const filteredEpisodes = useMemo(() => {
+    if (!trimmed) return decryptedEpisodes;
+    const lower = trimmed.toLowerCase();
+    return decryptedEpisodes.filter((ep) => ep.title.toLowerCase().includes(lower));
+  }, [decryptedEpisodes, trimmed]);
+  const episodes = useOptimisticRows(filteredEpisodes, {
     docType: 'episode',
     workId,
     matches: (row) => row.work_id === workId,
@@ -458,6 +468,3 @@ function EpisodeItem({
   );
 }
 
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}

@@ -15,6 +15,10 @@ import { useDeferredText } from '../../hooks/useDeferredText';
 import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
 import { useDecryptedForeshadowLinkList } from '../../hooks/useDecryptedForeshadowLink';
 import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { StatusPillDropdown, type StatusPillOption } from '../../components/ui/StatusPillDropdown';
@@ -817,15 +821,27 @@ function AddLinkForm({
   const [targetId, setTargetId] = useState(initialLink?.episode_id ?? initialLink?.plot_id ?? '');
   const [memo, setMemo] = useState(initialLink?.context_memo ?? '');
 
-  // episode.title 은 평문이므로 그대로
-  const { data: episodes = [] } = useQuery<TargetRow>(
-    `SELECT e.id, e.title, ep.title AS parent_title
-     FROM episode e
-     LEFT JOIN episode ep ON ep.id = e.parent_id
-     WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
-     ORDER BY e.sort_order ASC, e.created_at ASC`,
+  // episode.title 도 v1: 암호문 — work JOIN 후 batch 복호화하고 parent_title은 in-memory 합성
+  const { data: rawEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
   );
+  const { data: decryptedEpisodes } = useDecryptedEpisodeList(rawEpisodes);
+  const episodes: TargetRow[] = useMemo(() => {
+    const titleById = new Map<string, string>();
+    for (const e of decryptedEpisodes) titleById.set(e.id, e.title);
+    return decryptedEpisodes.map((e) => ({
+      id: e.id,
+      title: e.title,
+      parent_title: e.parent_id ? (titleById.get(e.parent_id) ?? null) : null,
+    }));
+  }, [decryptedEpisodes]);
 
   // plot.title 은 v1: 암호문 → 자기/부모 모두 한 번에 가져와 복호화 후 부모 합성
   const { data: rawPlots = [] } = useQuery<RawPlotForLinkRow>(

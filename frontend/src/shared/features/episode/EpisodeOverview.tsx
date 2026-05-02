@@ -5,6 +5,11 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
+import {
+  useDecryptedEpisodeList,
+  type DecryptedEpisodeListRow,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { Button } from '../../components/ui/Button';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -18,14 +23,7 @@ interface EpisodeOverviewProps {
   onSelect: (id: string) => void;
 }
 
-interface EpisodeRow {
-  id: string;
-  title: string;
-  status: string;
-  word_count: number;
-  content: string | null;
-  updated_at: string;
-}
+type EpisodeRow = DecryptedEpisodeListRow;
 
 const STATUS_COLOR: Record<string, string> = {
   '미작성': 'bg-muted text-muted-foreground',
@@ -39,12 +37,17 @@ export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
   const { createEpisode } = useLocalWrite();
   const [viewMode, setViewMode] = usePersistentState<'grid' | 'list'>('folio.ui.view-mode.episode', 'list');
 
-  const { data: episodes = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, word_count, content, updated_at FROM episode
-     WHERE work_id = ? AND writer_id = ? AND status != 'trashed'
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count, e.content,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
   );
+  const { data: episodes } = useDecryptedEpisodeList(rawEpisodes);
 
   const { data: rawLinkRows = [] } = useQuery<{
     episode_id: string;

@@ -52,6 +52,7 @@ import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
 import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { decryptWorkFieldOnce } from '../../crypto/fieldDecrypt';
+import { useBackfillEncryption } from '../../hooks/useBackfillEncryption';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -98,6 +99,8 @@ const clamp = (v: number, min: number, max: number) =>
  */
 export function AuthenticatedApp() {
   const db = usePowerSync();
+  // PR2 이전 / 게스트에서 마이그레이션된 평문 row 자동 백필. KEK + writerId가 준비되면 한 번 실행.
+  useBackfillEncryption();
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   // 메인 다중 탭 store — 작품별 탭 세트 분리 보존 모델.
@@ -544,14 +547,28 @@ export function AuthenticatedApp() {
         }
       }
 
-      // episode — 제목은 평문. (PR1에서 episode.title은 암호화 대상 아님)
+      // episode — title도 v1: 암호문이므로 work JOIN 후 단발 복호화
       if (section === 'episode') {
         try {
           const result = await db.execute(
-            'SELECT title FROM episode WHERE id = ? LIMIT 1',
+            `SELECT e.title AS title, e.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+             FROM episode e
+             LEFT JOIN work w ON w.id = e.work_id
+             WHERE e.id = ? LIMIT 1`,
             [itemId],
           );
-          return (result.rows?._array as { title: string }[])?.[0]?.title ?? '';
+          const row = (result.rows?._array as {
+            title: string | null;
+            work_id: string;
+            encrypted_dek: string | null;
+          }[])?.[0];
+          if (!row) return '';
+          const plain = await decryptWorkFieldOnce({
+            workId: row.work_id,
+            encryptedDek: row.encrypted_dek,
+            value: row.title,
+          });
+          return plain ?? '';
         } catch {
           return '';
         }

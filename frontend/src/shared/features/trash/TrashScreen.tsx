@@ -4,6 +4,10 @@ import { RotateCcw, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDecryptedWorkList } from '../../hooks/useDecryptedWork';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { Button } from '../../components/ui/Button';
 import { parseServerDate } from '../../lib/dateTime';
@@ -77,11 +81,26 @@ export function TrashScreen() {
     [decryptedTrashedWorks],
   );
 
-  const { data: trashedEpisodes = [] } = useQuery<TrashedEpisode>(
-    `SELECT id, title, updated_at, work_id FROM episode
-     WHERE writer_id = ? AND status = 'trashed'
-     ORDER BY updated_at DESC`,
+  const { data: rawTrashedEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.writer_id = ? AND e.status = 'trashed'
+      ORDER BY e.updated_at DESC`,
     [writerId],
+  );
+  const { data: decryptedTrashedEpisodes } = useDecryptedEpisodeList(rawTrashedEpisodes);
+  const trashedEpisodes: TrashedEpisode[] = useMemo(
+    () =>
+      decryptedTrashedEpisodes.map((e) => ({
+        id: e.id,
+        title: e.title,
+        updated_at: e.updated_at,
+        work_id: e.work_id,
+      })),
+    [decryptedTrashedEpisodes],
   );
 
   // work_id → title 매핑 — 휴지통에 없는 작품(연재중)도 포함해야 episode 표시 가능.

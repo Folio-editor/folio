@@ -660,10 +660,22 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      // Plan C: title 도 v1: 암호문으로 저장. 복제 경로에서 호출자가 이미 v1: 암호문을
+      // 그대로 넘긴 경우 encryptWorkField가 이중 암호화하지 않게 prefix 검사를 한다.
+      const encTitle =
+        typeof title === 'string' && title.startsWith(CIPHERTEXT_PREFIX)
+          ? title
+          : await encryptWorkField(workId, title, now);
+      // content 도 동일 정책. 복제 경로는 원본의 v1: 암호문을 그대로 받아 보존하고,
+      // 신규 작성 경로는 평문(또는 null)을 받아 암호화한다.
+      const encContent =
+        typeof content === 'string' && content.startsWith(CIPHERTEXT_PREFIX)
+          ? content
+          : await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, NULL, ?, '미작성', ?, 0, ?, ?, ?)`,
-        [id, workId, writerId, title, content, sortOrder, now, now],
+        [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       trackCreated('episode', content ? 'template' : 'manual');
       return id;
@@ -683,37 +695,33 @@ export function useLocalWrite() {
 
       const effective: Record<string, unknown> = { ...patch };
 
-      // Plan C: content가 patch에 포함되어 있고 KEK이 활성화되어 있으면 암호화한다.
-      // 게스트/미로그인은 KEK이 null이라 평문으로 저장 (recover 시 prefix 부재로 plain 분기).
-      if ('content' in patch && typeof patch.content === 'string' && patch.content.length > 0) {
-        const kek = getCurrentKek();
-        if (kek) {
-          const r = await db.execute(
-            'SELECT work_id FROM episode WHERE id = ? LIMIT 1',
-            [id],
-          );
-          const workId = (r.rows?._array as { work_id: string }[] | undefined)?.[0]?.work_id;
-          if (workId) {
-            const workKey = await ensureWorkKey({
-              kek,
-              workId,
-              loadEncryptedDek: async () => {
-                const dr = await db.execute(
-                  'SELECT encrypted_dek FROM work WHERE id = ? LIMIT 1',
-                  [workId],
-                );
-                const row = (dr.rows?._array as { encrypted_dek: string | null }[] | undefined)?.[0];
-                return row?.encrypted_dek ?? null;
-              },
-              saveEncryptedDek: async (b64) => {
-                await db.execute(
-                  'UPDATE work SET encrypted_dek = ?, updated_at = ? WHERE id = ?',
-                  [b64, now, workId],
-                );
-              },
-            });
-            const cipher = await encryptString(workKey, patch.content);
-            effective.content = CIPHERTEXT_PREFIX + cipher;
+      // Plan C: title/content patch 중 평문 값은 episode.work_id 를 조회한 뒤
+      // encryptWorkField 로 v1: 암호문화. KEK 이 없으면(게스트) 평문으로 저장된다.
+      const needsEncryption =
+        ('title' in patch && typeof patch.title === 'string' && patch.title.length > 0) ||
+        ('content' in patch && typeof patch.content === 'string' && patch.content.length > 0);
+      if (needsEncryption) {
+        const r = await db.execute(
+          'SELECT work_id FROM episode WHERE id = ? LIMIT 1',
+          [id],
+        );
+        const workId = (r.rows?._array as { work_id: string }[] | undefined)?.[0]?.work_id;
+        if (workId) {
+          if (
+            'title' in patch &&
+            typeof patch.title === 'string' &&
+            patch.title.length > 0 &&
+            !patch.title.startsWith(CIPHERTEXT_PREFIX)
+          ) {
+            effective.title = await encryptWorkField(workId, patch.title, now);
+          }
+          if (
+            'content' in patch &&
+            typeof patch.content === 'string' &&
+            patch.content.length > 0 &&
+            !patch.content.startsWith(CIPHERTEXT_PREFIX)
+          ) {
+            effective.content = await encryptWorkField(workId, patch.content, now);
           }
         }
       }

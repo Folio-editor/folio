@@ -52,8 +52,12 @@ import { useDecryptedWorldNoteList } from '../../hooks/useDecryptedWorldNote';
 import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
 import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
 import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 
-// PR4: 탭 제목 컬럼은 v1: 접두사 ciphertext일 수 있어 episode 외 모든 section은
+// PR4: 탭 제목 컬럼은 v1: 접두사 ciphertext일 수 있어 모든 section은
 // 해당 테이블의 work + JOIN으로 raw row를 가져와 batch decrypt 훅으로 평문 변환.
 const FALLBACK_SQL = 'SELECT NULL AS title WHERE 0';
 
@@ -68,12 +72,19 @@ function useTabTitle(doc: MainDoc | null): string {
   const sec = !isCharacter && doc && !isAll ? doc.section : null;
   const id = !isCharacter && doc && !isAll ? doc.itemId : null;
 
-  // episode는 평문(작품 메타 외 본문만 암호화 — title은 평문). 단순 SELECT.
-  const epSql = sec === 'episode' && id ? 'SELECT title FROM episode WHERE id = ? LIMIT 1' : '';
-  const { data: epRows = [] } = useQuery<{ title: string | null }>(
+  // episode.title도 v1: ciphertext일 수 있으므로 work JOIN + batch decrypt.
+  const epSql = sec === 'episode' && id
+    ? `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+              e.sort_order, e.parent_id, e.created_at, e.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM episode e LEFT JOIN work w ON w.id = e.work_id
+       WHERE e.id = ? LIMIT 1`
+    : '';
+  const { data: rawEpRows = [] } = useQuery<RawEpisodeListRow>(
     epSql || FALLBACK_SQL,
     epSql ? [id!] : [],
   );
+  const { data: decEp } = useDecryptedEpisodeList(epSql ? rawEpRows : []);
 
   // PR4 — 각 테이블 work JOIN + batch decrypt 훅
   const planSql = sec === 'plan' && id
@@ -211,7 +222,7 @@ function useTabTitle(doc: MainDoc | null): string {
     if (cnotePrefix) return decryptedCnotes[0]?.title?.trim() || '(제목 없음)';
     return '(알 수 없음)';
   }
-  if (sec === 'episode') return epRows[0]?.title?.trim() || '(제목 없음)';
+  if (sec === 'episode') return decEp[0]?.title?.trim() || '(제목 없음)';
   if (sec === 'plan') return decPlan[0]?.title?.trim() || '(제목 없음)';
   if (sec === 'world-note') return decWn[0]?.name?.trim() || '(제목 없음)';
   if (sec === 'plot') {

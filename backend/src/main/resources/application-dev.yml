@@ -67,3 +67,11 @@ ai:
   client:
     # dev-start.sh가 AI 서버를 8001에 띄움 (line 48). 도플러 AI_SERVER_URL 있으면 우선.
     base-url: ${AI_SERVER_URL:http://localhost:8001}
+
+# Plan C — dev에서도 KEK 흐름을 켠다. AwsSecretsManagerConfig가 fake
+# SecretsManagerClient를 주입(@Profile("dev"))하므로 AWS 자격증명 불필요.
+# 같은 dev 환경 내에서는 fake pepper가 결정적이라 row 간 복호화가 일관된다.
+folio:
+  security:
+    pepper:
+      enabled: true
