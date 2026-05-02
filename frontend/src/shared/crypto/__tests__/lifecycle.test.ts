@@ -135,4 +135,25 @@ describe('lifecycle (Plan C 결정 11)', () => {
     expect(getCurrentMaterial()?.pepperVersion).toBe('v2');
     expect(getWorkKey('w1')).toBeUndefined();
   });
+
+  it('30일 비활성 — getCurrentKek lazy 체크가 자동 폐기 트리거', async () => {
+    await initKekFromLogin(PARAMS_USER1_V1);
+    expect(getCurrentKek()).not.toBeNull();
+
+    // Date.now()를 31일 뒤로 점프 — touchActivity()가 다시 불리지 않은 상태.
+    const realNow = Date.now;
+    const future = realNow() + 31 * 24 * 60 * 60 * 1000;
+    Date.now = () => future;
+    try {
+      // lazy 체크가 INACTIVITY_TIMEOUT_MS 초과를 감지해 폐기 트리거
+      expect(getCurrentKek()).toBeNull();
+      // 폐기는 비동기 (clearKek)지만 currentKek 즉시 null이어야 한다.
+      // 영속 디스크는 이후 microtask에서 비워진다.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(stored).toBeNull();
+    } finally {
+      Date.now = realNow;
+    }
+  });
 });

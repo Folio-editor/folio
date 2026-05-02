@@ -267,10 +267,10 @@ public class AiClient {
                 if (response.statusCode() != 200) {
                     String body = response.body();
                     int bodyLen = body == null ? 0 : body.length();
-                    String bodyPreview = bodyLen == 0 ? "" : body.substring(0, Math.min(bodyLen, 200));
-                    // 200이 아닌 응답 본문은 measureChecked가 잡지 못하는 영역이라 별도로 한 줄 남김.
-                    log.warn("AI review non-200: status={} bodyLen={} preview={}",
-                            response.statusCode(), bodyLen, bodyPreview);
+                    // Plan C 옵션 1 — AI 서버가 에러 응답에 RAG context(평문 원고)를 echo할 가능성이 있어
+                    // body preview는 절대 로깅하지 않는다. status + length만 남긴다.
+                    log.warn("AI review non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
                     throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
                 }
 
