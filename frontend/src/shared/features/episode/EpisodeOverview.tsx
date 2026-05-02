@@ -4,6 +4,12 @@ import { Link2, Plus } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
+import {
+  useDecryptedEpisodeList,
+  type DecryptedEpisodeListRow,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { Button } from '../../components/ui/Button';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -17,19 +23,7 @@ interface EpisodeOverviewProps {
   onSelect: (id: string) => void;
 }
 
-interface EpisodeRow {
-  id: string;
-  title: string;
-  status: string;
-  word_count: number;
-  content: string | null;
-  updated_at: string;
-}
-
-interface LinkRow {
-  episode_id: string;
-  plot_title: string;
-}
+type EpisodeRow = DecryptedEpisodeListRow;
 
 const STATUS_COLOR: Record<string, string> = {
   '미작성': 'bg-muted text-muted-foreground',
@@ -43,26 +37,70 @@ export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
   const { createEpisode } = useLocalWrite();
   const [viewMode, setViewMode] = usePersistentState<'grid' | 'list'>('folio.ui.view-mode.episode', 'list');
 
-  const { data: episodes = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, word_count, content, updated_at FROM episode
-     WHERE work_id = ? AND writer_id = ? AND status != 'trashed'
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count, e.content,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
   );
+  const { data: episodes } = useDecryptedEpisodeList(rawEpisodes);
 
-  const { data: links = [] } = useQuery<LinkRow>(
-    `SELECT pel.episode_id, p.title AS plot_title
+  const { data: rawLinkRows = [] } = useQuery<{
+    episode_id: string;
+    plot_id: string;
+    plot_title: string | null;
+    plot_work_id: string;
+    plot_writer_id: string;
+    plot_parent_id: string | null;
+    plot_status: string | null;
+    plot_content: string | null;
+    plot_sort_order: number | null;
+    plot_created_at: string;
+    plot_updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT pel.episode_id, pel.plot_id,
+            p.title AS plot_title, p.work_id AS plot_work_id, p.writer_id AS plot_writer_id,
+            p.parent_id AS plot_parent_id, p.status AS plot_status, p.content AS plot_content,
+            p.sort_order AS plot_sort_order, p.created_at AS plot_created_at, p.updated_at AS plot_updated_at,
+            w.encrypted_dek AS encrypted_dek
      FROM plot_episode_link pel
-     JOIN plot p ON p.id = pel.plot_id`,
+     JOIN plot p ON p.id = pel.plot_id
+     LEFT JOIN work w ON w.id = p.work_id`,
   );
+  const rawPlotRows: RawPlotRow[] = useMemo(
+    () =>
+      rawLinkRows.map((r) => ({
+        id: r.plot_id,
+        work_id: r.plot_work_id,
+        writer_id: r.plot_writer_id,
+        parent_id: r.plot_parent_id,
+        title: r.plot_title,
+        status: r.plot_status,
+        content: r.plot_content,
+        sort_order: r.plot_sort_order,
+        created_at: r.plot_created_at,
+        updated_at: r.plot_updated_at,
+        encrypted_dek: r.encrypted_dek,
+      })),
+    [rawLinkRows],
+  );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
 
   const linkByEpisode = useMemo(() => {
+    const titleByPlotId = new Map<string, string>();
+    for (const p of decryptedPlots) titleByPlotId.set(p.id, p.title);
     const map = new Map<string, string>();
-    for (const link of links) {
-      map.set(link.episode_id, link.plot_title);
+    for (const r of rawLinkRows) {
+      const t = titleByPlotId.get(r.plot_id) ?? '';
+      map.set(r.episode_id, t);
     }
     return map;
-  }, [links]);
+  }, [rawLinkRows, decryptedPlots]);
 
   const handleNew = async () => {
     const title = `${episodes.length + 1}화`;

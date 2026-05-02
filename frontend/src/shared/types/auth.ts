@@ -17,6 +17,24 @@ export interface LoginResult {
    * - 자동 복원(tryRestore): 이미 결정 끝난 기존 사용자이므로 항상 false
    */
   isNewUser: boolean;
+  /**
+   * Plan C 결정 7/14 — 이번 로그인 응답에 함께 내려온 KEK 도출 재료.
+   * Pepper Provider가 비활성(dev/test)인 환경에서는 백엔드가 null을 보내며,
+   * tryRestore 경로에서는 백엔드에서 받지 않고 클라이언트 영속 저장소(restoreKek)로
+   * 복원하므로 이 필드는 비어있다.
+   */
+  encryption?: LoginEncryptionMaterial | null;
+}
+
+/**
+ * 백엔드 LoginResponse.EncryptionMaterial과 1:1 매핑.
+ * Base64 문자열 그대로 전달되어, KEK 도출 직전 lifecycle.initKekFromLogin에서 디코딩한다.
+ */
+export interface LoginEncryptionMaterial {
+  sub: string;
+  salt: string;
+  pepperUser: string;
+  pepperVersion: string;
 }
 
 /**
@@ -148,6 +166,23 @@ export interface FolioUpdaterApi {
   onStateChange: (callback: (state: UpdaterState) => void) => () => void;
 }
 
+/**
+ * Plan C 결정 1 — KEK 도출 재료를 OS 키체인(safeStorage)으로 영속화하는 IPC.
+ * 웹에서는 IndexedDB 어댑터(`kekStorage.web.ts`)가 이 인터페이스를 직접 구현해 호출 시그니처를 통일한다.
+ */
+export interface FolioCryptoMaterial {
+  sub: string;
+  saltBase64: string;
+  pepperUserBase64: string;
+  pepperVersion: string;
+}
+
+export interface FolioCryptoApi {
+  saveMaterial: (material: FolioCryptoMaterial) => Promise<void>;
+  loadMaterial: () => Promise<FolioCryptoMaterial | null>;
+  clearMaterial: () => Promise<void>;
+}
+
 export interface FolioApi {
   platform: 'electron' | 'web';
   auth: FolioAuthApi;
@@ -155,6 +190,7 @@ export interface FolioApi {
   spellcheck: FolioSpellcheckApi;
   payment: FolioPaymentApi;
   updater: FolioUpdaterApi;
+  crypto: FolioCryptoApi;
   export: import('./export').FolioExportApi;
 }
 

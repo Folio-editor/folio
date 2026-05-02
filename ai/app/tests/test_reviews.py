@@ -37,6 +37,7 @@ class FakeSession:
 
 def test_reviews_endpoint_returns_fake_review(monkeypatch):
     async def fake_assemble_context(
+        payload,
         work_id: str,
         writer_id: str,
         storyline: str,
@@ -63,6 +64,14 @@ def test_reviews_endpoint_returns_fake_review(monkeypatch):
                     "episode_id": "33333333-3333-3333-3333-333333333333",
                     "content": "검수 대상 원고 본문",
                     "episode_number": 12,
+                    "context": {
+                        "work_meta": {"title": "테스트 작품"},
+                        "characters": [],
+                        "world_notes": [],
+                        "foreshadows": [],
+                        "plots": [],
+                        "recent_episodes": [],
+                    },
                 },
             )
     finally:

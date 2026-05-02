@@ -1,19 +1,16 @@
 import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
 interface EpisodeListScreenProps {
   workId: string;
   onSelect: (id: string) => void;
-}
-
-interface EpisodeRow {
-  id: string;
-  title: string;
-  status: string;
-  word_count: number;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -26,12 +23,16 @@ const STATUS_COLOR: Record<string, string> = {
 export function EpisodeListScreen({ workId, onSelect }: EpisodeListScreenProps) {
   const writerId = useWriterId();
   const { createEpisode } = useLocalWrite();
-  const { data: items = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, word_count FROM episode
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawRows = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count, e.sort_order,
+            e.parent_id, e.created_at, e.updated_at, w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ?
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
   );
+  const { data: items } = useDecryptedEpisodeList(rawRows);
 
   const handleNew = async () => {
     const id = await createEpisode(workId, `${items.length + 1}화`, items.length);

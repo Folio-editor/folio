@@ -10,6 +10,9 @@ import {
   IconQuestionMark,
 } from '@tabler/icons-react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { resizeImageToBase64 } from '../../lib/imageResize';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -152,26 +155,52 @@ export function CharacterOverview({
 }: CharacterOverviewProps) {
   const { ensureCharacterNotes } = useLocalWrite();
 
-  useEffect(() => {
-    void ensureCharacterNotes(characterId);
-  }, [characterId, ensureCharacterNotes]);
-
-  const { data: rows = [] } = useQuery<CharacterRow>(
-    `SELECT id, name, gender, age, profile_image_url, work_id
-     FROM character
-     WHERE id = ?`,
+  // PR3 — character.name/age는 v1: 암호문일 수 있어 work.encrypted_dek와 함께 JOIN으로 받아 batch 복호화.
+  const { data: rawRows = [] } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    name: string | null;
+    gender: string | null;
+    age: string | null;
+    profile_image_url: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+            c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM character c
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE c.id = ?`,
     [characterId],
   );
+  const { data: decryptedRows } = useDecryptedCharacterList(rawRows);
+  const decrypted = decryptedRows[0] ?? null;
 
-  const character = rows[0];
+  useEffect(() => {
+    if (!decrypted) return;
+    void ensureCharacterNotes(decrypted.work_id, characterId);
+  }, [characterId, decrypted, ensureCharacterNotes]);
 
-  if (!character) {
+  if (!decrypted) {
     return (
       <div className="p-8 text-sm text-muted-foreground">
         캐릭터를 불러오는 중...
       </div>
     );
   }
+
+  const character: CharacterRow = {
+    id: decrypted.id,
+    name: decrypted.name,
+    gender: decrypted.gender ?? '미설정',
+    age: decrypted.age ?? '',
+    profile_image_url: decrypted.profile_image_url,
+    work_id: decrypted.work_id,
+  };
 
   return (
     <CharacterOverviewInner
@@ -207,11 +236,12 @@ function CharacterOverviewInner({
   const writerId = useWriterId();
   const { id } = character;
 
+  const workId = character.work_id;
   const name = useDeferredText(id, character.name, (v) =>
-    void updateCharacter(id, { name: v }),
+    void updateCharacter(workId, id, { name: v }),
   );
   const age = useDeferredText(id, character.age, (v) =>
-    void updateCharacter(id, { age: v }),
+    void updateCharacter(workId, id, { age: v }),
   );
 
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
@@ -224,20 +254,49 @@ function CharacterOverviewInner({
     const file = e.target.files?.[0];
     if (!file) return;
     const base64 = await resizeImageToBase64(file);
-    void updateCharacter(id, { profile_image_url: base64 });
+    void updateCharacter(workId, id, { profile_image_url: base64 });
     e.target.value = '';
   };
 
   const handleImageRemove = () => {
-    void updateCharacter(id, { profile_image_url: null });
+    void updateCharacter(workId, id, { profile_image_url: null });
   };
 
-  const { data: notes = [] } = useQuery<NoteSummaryRow>(
-    `SELECT id, kind, title, content, sort_order
-     FROM character_note
-     WHERE character_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  // PR3 — character_note.title/content는 v1: 암호문일 수 있어 batch 복호화.
+  const { data: rawNotes = [] } = useQuery<{
+    id: string;
+    character_id: string;
+    writer_id: string;
+    kind: string;
+    title: string | null;
+    content: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    work_id: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+            cn.sort_order, cn.created_at, cn.updated_at,
+            c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+     FROM character_note cn
+     JOIN character c ON c.id = cn.character_id
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE cn.character_id = ?
+     ORDER BY cn.sort_order ASC, cn.created_at ASC`,
     [id],
+  );
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNotes);
+  const notes: NoteSummaryRow[] = useMemo(
+    () =>
+      decryptedNotes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        title: n.title,
+        content: n.content,
+        sort_order: n.sort_order,
+      })),
+    [decryptedNotes],
   );
 
   const introNote = useMemo(
@@ -250,27 +309,50 @@ function CharacterOverviewInner({
     [notes],
   );
 
-  const { data: tags = [] } = useQuery<{ world_note_id: string; name: string }>(
-    `SELECT ct.world_note_id, wn.name
+  const { data: rawTagRows = [] } = useQuery<RawWorldNoteRow & { tag_world_note_id: string }>(
+    `SELECT ct.world_note_id AS tag_world_note_id,
+            wn.id, wn.work_id, wn.writer_id, wn.parent_id,
+            wn.name, wn.content, wn.sort_order, wn.created_at, wn.updated_at,
+            w.encrypted_dek AS encrypted_dek
      FROM character_tag ct
      JOIN world_note wn ON ct.world_note_id = wn.id
-     WHERE ct.character_id = ?
-     ORDER BY wn.name ASC`,
+     LEFT JOIN work w ON w.id = wn.work_id
+     WHERE ct.character_id = ?`,
     [id],
   );
+  const { data: decryptedTagNotes } = useDecryptedWorldNoteList(rawTagRows);
+  const tags = useMemo(
+    () =>
+      [...decryptedTagNotes]
+        .map((n) => ({ world_note_id: n.id, name: n.name }))
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ko')),
+    [decryptedTagNotes],
+  );
 
-  const { data: availableNotes = [] } = useQuery<{
-    id: string;
-    name: string;
-    parent_id: string | null;
-  }>(
+  const { data: rawAvailableRows = [] } = useQuery<RawWorldNoteRow>(
     tagPickerOpen
-      ? `SELECT id, name, parent_id
-         FROM world_note
-         WHERE work_id = ? AND writer_id = ?
-         ORDER BY sort_order ASC, name ASC`
-      : `SELECT '' AS id, '' AS name, NULL AS parent_id WHERE 0`,
+      ? `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+                n.sort_order, n.created_at, n.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM world_note n
+         LEFT JOIN work w ON w.id = n.work_id
+         WHERE n.work_id = ? AND n.writer_id = ?
+         ORDER BY n.sort_order ASC`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS name, NULL AS content, NULL AS sort_order,
+                NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     tagPickerOpen ? [character.work_id, writerId] : [],
+  );
+  const { data: decryptedAvailableNotes } = useDecryptedWorldNoteList(rawAvailableRows);
+  const availableNotes = useMemo(
+    () =>
+      decryptedAvailableNotes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        parent_id: n.parent_id,
+      })),
+    [decryptedAvailableNotes],
   );
 
   return (
@@ -362,7 +444,7 @@ function CharacterOverviewInner({
             <div className="flex flex-wrap items-baseline gap-2">
               <GenderPicker
                 value={character.gender}
-                onChange={(v) => void updateCharacter(id, { gender: v })}
+                onChange={(v) => void updateCharacter(workId, id, { gender: v })}
               />
               <input
                 value={name.value}
@@ -455,7 +537,7 @@ function CharacterOverviewInner({
           </h3>
           <button
             type="button"
-            onClick={() => void createCharacterNote(id, '새 문서', nextSortOrder(notes))}
+            onClick={() => void createCharacterNote(workId, id, '새 문서', nextSortOrder(notes))}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Plus size={12} />

@@ -2,6 +2,7 @@ import { useQuery } from '@powersync/react';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Select } from '../../components/ui/Select';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -16,11 +17,16 @@ interface IdeaArchiveEditScreenProps {
   onSendToRight?: () => void;
 }
 
-interface IdeaRow {
+interface RawIdeaRow {
   id: string;
+  work_id: string;
+  writer_id: string;
   content: string | null;
   tag: string | null;
+  sort_order: number | null;
   created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -33,14 +39,20 @@ function formatDate(iso: string): string {
 }
 
 export function IdeaArchiveEditScreen({ id, onBack, onSendToRight }: IdeaArchiveEditScreenProps) {
-  const { data: rows = [] } = useQuery<IdeaRow>(
-    `SELECT id, content, tag, created_at FROM idea_archive WHERE id = ?`,
+  const { data: rows = [] } = useQuery<RawIdeaRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.id = ? LIMIT 1`,
     [id],
   );
+  const { data: decrypted } = useDecryptedIdeaArchiveList(rows);
   const { updateIdea, deleteIdeaArchive } = useLocalWrite();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const idea = rows[0];
+  const idea = decrypted[0];
 
   if (!idea) {
     return <div className="p-8 text-sm text-muted-foreground">아이디어를 불러오는 중…</div>;

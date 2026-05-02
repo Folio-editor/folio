@@ -13,6 +13,12 @@ import {
 } from './auth/googleOAuth';
 import { getOrCreateGuestId } from './auth/guestId';
 import {
+  saveMaterial as saveEncryptionMaterial,
+  loadMaterial as loadEncryptionMaterial,
+  clearMaterial as clearEncryptionMaterial,
+  type PersistedMaterial,
+} from './auth/encryptionMaterialStore';
+import {
   openOneTimePayment,
   openBillingAuth,
   type OneTimePaymentParams,
@@ -158,6 +164,16 @@ function registerAuthHandlers() {
   );
 }
 
+function registerCryptoHandlers() {
+  ipcMain.handle('crypto:saveMaterial', (_e, material: PersistedMaterial) => {
+    saveEncryptionMaterial(material);
+  });
+  ipcMain.handle('crypto:loadMaterial', () => loadEncryptionMaterial());
+  ipcMain.handle('crypto:clearMaterial', () => {
+    clearEncryptionMaterial();
+  });
+}
+
 function registerWindowHandlers() {
   // 커스텀 TitleBar에서 사용하는 OS 창 제어 IPC.
   ipcMain.handle('window:minimize', (e) => {
@@ -228,6 +244,7 @@ app.on('ready', () => {
   registerWindowHandlers();
   registerPaymentHandlers();
   registerSpellcheckHandlers();
+  registerCryptoHandlers();
   registerUpdaterHandlers();
   registerExportHandlers();
   // Scheduler가 RT 거부/재시도 초과를 감지하면 모든 창에 세션 만료를 통지한다.

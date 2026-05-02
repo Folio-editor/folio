@@ -3,6 +3,12 @@ import { useQuery } from '@powersync/react';
 import { FileText, Plus } from 'lucide-react';
 import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useDecryptedPlanNoteList } from '../../hooks/useDecryptedPlanNote';
+import { useDecryptedWorldNoteList } from '../../hooks/useDecryptedWorldNote';
+import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
+import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
 import { useWriterId } from '../../hooks/useWriterId';
 import { WorldNoteInlineEditor } from '../../features/world-note/WorldNoteInlineEditor';
 import { GenderIcon } from '../../features/character/CharacterOverview';
@@ -40,23 +46,24 @@ interface WorldNoteDescendantRow {
   depth: number;
 }
 
-const DOC_QUERIES: Record<AuxDocType, string> = {
-  episode: 'SELECT title, content FROM episode WHERE id = ?',
-  world_note:
-    'SELECT name AS title, content, parent_id FROM world_note WHERE id = ?',
-  plan_note: 'SELECT title, content FROM plan_note WHERE id = ?',
-  character_note: 'SELECT title, content FROM character_note WHERE id = ?',
-  plot: 'SELECT title, content FROM plot WHERE id = ?',
-  character: 'SELECT name AS title, gender, age, content FROM character WHERE id = ?',
-  foreshadow: 'SELECT title, content FROM foreshadow WHERE id = ?',
-};
+interface RawWorldNoteDescendantRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  parent_id: string | null;
+  name: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
+  depth: number;
+}
 
-// world_note 외 docType만 자식 링크 — world_note는 통합 뷰에서 직접 재귀 렌더
-const CHILD_QUERIES: Partial<Record<AuxDocType, { sql: string; docType: AuxDocType }>> = {
-  plot: {
-    sql: 'SELECT id, title, NULL AS content FROM plot WHERE parent_id = ? ORDER BY sort_order ASC',
-    docType: 'plot',
-  },
+// world_note 외 docType만 자식 링크 — world_note는 통합 뷰에서 직접 재귀 렌더.
+// PR4: 자식 fetch도 docType별 별도 훅에서 직접 수행하므로 여기선 메타만 유지.
+const CHILD_QUERIES: Partial<Record<AuxDocType, { docType: AuxDocType }>> = {
+  plot: { docType: 'plot' },
 };
 
 export function AuxDocViewer({
@@ -103,18 +110,35 @@ interface WorldNoteAuxNode {
 }
 
 function WorldNoteAuxView({ docId, editable }: { docId: string; editable: boolean }) {
-  const { data: rows = [] } = useQuery<WorldNoteDescendantRow>(
+  const { data: rawRows = [] } = useQuery<RawWorldNoteDescendantRow>(
     `WITH RECURSIVE descendants AS (
-       SELECT id, name, content, parent_id, sort_order, created_at, 0 AS depth
+       SELECT id, work_id, writer_id, name, content, parent_id, sort_order, created_at, updated_at, 0 AS depth
        FROM world_note WHERE id = ?
        UNION ALL
-       SELECT w.id, w.name, w.content, w.parent_id, w.sort_order, w.created_at, d.depth + 1
+       SELECT w.id, w.work_id, w.writer_id, w.name, w.content, w.parent_id, w.sort_order, w.created_at, w.updated_at, d.depth + 1
        FROM world_note w
        JOIN descendants d ON w.parent_id = d.id
      )
-     SELECT id, name, content, parent_id, sort_order, depth FROM descendants
-     ORDER BY depth ASC, sort_order ASC, created_at ASC`,
+     SELECT d.id, d.work_id, d.writer_id, d.name, d.content, d.parent_id,
+            d.sort_order, d.created_at, d.updated_at, d.depth,
+            wk.encrypted_dek AS encrypted_dek
+     FROM descendants d
+     LEFT JOIN work wk ON wk.id = d.work_id
+     ORDER BY d.depth ASC, d.sort_order ASC, d.created_at ASC`,
     [docId],
+  );
+  const { data: decryptedDescendants } = useDecryptedWorldNoteList(rawRows);
+  const rows: WorldNoteDescendantRow[] = useMemo(
+    () =>
+      decryptedDescendants.map((d, i) => ({
+        id: d.id,
+        name: d.name,
+        content: d.content,
+        parent_id: d.parent_id,
+        sort_order: d.sort_order ?? 0,
+        depth: rawRows[i]?.depth ?? 0,
+      })),
+    [decryptedDescendants, rawRows],
   );
 
   const tree = useMemo<WorldNoteAuxNode | null>(() => {
@@ -236,6 +260,21 @@ interface CharacterMetaRow {
   gender: string | null;
   age: string | null;
   profile_image_url: string | null;
+  work_id: string;
+}
+
+interface RawCharacterMetaJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  name: string | null;
+  gender: string | null;
+  age: string | null;
+  profile_image_url: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface CharacterAuxNoteRow {
@@ -244,6 +283,20 @@ interface CharacterAuxNoteRow {
   title: string;
   content: string | null;
   sort_order: number | null;
+}
+
+interface RawCharacterAuxNoteRow {
+  id: string;
+  character_id: string;
+  writer_id: string;
+  kind: string;
+  title: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  work_id: string;
+  encrypted_dek: string | null;
 }
 
 interface CharacterAuxTagRow {
@@ -259,17 +312,52 @@ function nextSortOrder(rows: { sort_order: number | null }[]) {
 function CharacterAuxView({ docId, editable }: { docId: string; editable: boolean }) {
   const { createCharacterNote, updateCharacterNoteContent } = useLocalWrite();
 
-  const { data: metaRows = [] } = useQuery<CharacterMetaRow>(
-    `SELECT id, name, gender, age, profile_image_url FROM character WHERE id = ? LIMIT 1`,
+  const { data: rawMetaRows = [] } = useQuery<RawCharacterMetaJoinRow>(
+    `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+            c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM character c
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE c.id = ? LIMIT 1`,
     [docId],
   );
-  const meta = metaRows[0];
+  const { data: decryptedMeta } = useDecryptedCharacterList(rawMetaRows);
+  const meta: CharacterMetaRow | undefined = useMemo(() => {
+    const m = decryptedMeta[0];
+    if (!m) return undefined;
+    return {
+      id: m.id,
+      name: m.name,
+      gender: m.gender,
+      age: m.age,
+      profile_image_url: m.profile_image_url,
+      work_id: m.work_id,
+    };
+  }, [decryptedMeta]);
+  const workId = meta?.work_id ?? null;
 
-  const { data: notes = [] } = useQuery<CharacterAuxNoteRow>(
-    `SELECT id, kind, title, content, sort_order FROM character_note
-     WHERE character_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawNotes = [] } = useQuery<RawCharacterAuxNoteRow>(
+    `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+            cn.sort_order, cn.created_at, cn.updated_at,
+            c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+     FROM character_note cn
+     JOIN character c ON c.id = cn.character_id
+     LEFT JOIN work w ON w.id = c.work_id
+     WHERE cn.character_id = ?
+     ORDER BY cn.sort_order ASC, cn.created_at ASC`,
     [docId],
+  );
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNotes);
+  const notes: CharacterAuxNoteRow[] = useMemo(
+    () =>
+      decryptedNotes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        title: n.title,
+        content: n.content,
+        sort_order: n.sort_order,
+      })),
+    [decryptedNotes],
   );
 
   const { data: tags = [] } = useQuery<CharacterAuxTagRow>(
@@ -378,11 +466,11 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             하위 문서
           </p>
-          {editable && (
+          {editable && workId && (
             <button
               type="button"
               onClick={() =>
-                void createCharacterNote(docId, '새 문서', nextSortOrder(notes))
+                void createCharacterNote(workId, docId, '새 문서', nextSortOrder(notes))
               }
               className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
@@ -423,19 +511,240 @@ function CharacterAuxView({ docId, editable }: { docId: string; editable: boolea
 
 /* ── world_note 외 docType — 단일 문서 뷰 + 자식 링크 ── */
 
+interface RawDocJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string | null;
+  title: string | null;
+  content: string | null;
+  status: string | null;
+  importance: string | null;
+  parent_id: string | null;
+  gender: string | null;
+  age: string | null;
+  encrypted_dek: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function useDecryptedDoc(
+  docType: AuxDocType,
+  docId: string,
+): { doc: DocRow | undefined } {
+  // 각 테이블별로 work + JOIN으로 raw row를 fetch한 뒤 docType에 맞는 복호화 훅에 위임.
+  const isPlanNote = docType === 'plan_note';
+  const isPlot = docType === 'plot';
+  const isForeshadow = docType === 'foreshadow';
+  const isCharacter = docType === 'character';
+  const isEpisode = docType === 'episode';
+  const isCharacterNote = docType === 'character_note';
+
+  const { data: planRows = [] } = useQuery<RawDocJoinRow>(
+    isPlanNote
+      ? `SELECT pn.id, pn.work_id, pn.writer_id, pn.title, pn.content,
+                NULL AS status, NULL AS importance, NULL AS parent_id,
+                NULL AS gender, NULL AS age,
+                pn.sort_order, pn.created_at, pn.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plan_note pn LEFT JOIN work w ON w.id = pn.work_id
+         WHERE pn.id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isPlanNote ? [docId] : [],
+  );
+  const { data: plotRows = [] } = useQuery<RawDocJoinRow>(
+    isPlot
+      ? `SELECT p.id, p.work_id, p.writer_id, p.title, p.content,
+                p.status, NULL AS importance, p.parent_id,
+                NULL AS gender, NULL AS age,
+                p.sort_order, p.created_at, p.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plot p LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isPlot ? [docId] : [],
+  );
+  const { data: foreRows = [] } = useQuery<RawDocJoinRow>(
+    isForeshadow
+      ? `SELECT f.id, f.work_id, f.writer_id, f.title, f.content,
+                f.status, f.importance, NULL AS parent_id,
+                NULL AS gender, NULL AS age,
+                f.sort_order, f.created_at, f.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM foreshadow f LEFT JOIN work w ON w.id = f.work_id
+         WHERE f.id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isForeshadow ? [docId] : [],
+  );
+  // character는 work_id 직접, character_note/episode는 별도 처리(여기선 평문 fall-through하지 않음).
+  const { data: charRows = [] } = useQuery<RawDocJoinRow>(
+    isCharacter
+      ? `SELECT c.id, c.work_id, c.writer_id, c.name AS title, NULL AS content,
+                NULL AS status, NULL AS importance, NULL AS parent_id,
+                c.gender, c.age,
+                c.sort_order, c.created_at, c.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM character c LEFT JOIN work w ON w.id = c.work_id
+         WHERE c.id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isCharacter ? [docId] : [],
+  );
+  const { data: epRows = [] } = useQuery<RawDocJoinRow>(
+    isEpisode
+      ? `SELECT id, work_id, writer_id, title, content,
+                status, NULL AS importance, NULL AS parent_id,
+                NULL AS gender, NULL AS age,
+                sort_order, created_at, updated_at,
+                NULL AS encrypted_dek
+         FROM episode WHERE id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isEpisode ? [docId] : [],
+  );
+  const { data: cnoteRows = [] } = useQuery<RawDocJoinRow>(
+    isCharacterNote
+      ? `SELECT cn.id, c.work_id AS work_id, cn.writer_id, cn.title, cn.content,
+                NULL AS status, NULL AS importance, NULL AS parent_id,
+                NULL AS gender, NULL AS age,
+                cn.sort_order, cn.created_at, cn.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM character_note cn
+         JOIN character c ON c.id = cn.character_id
+         LEFT JOIN work w ON w.id = c.work_id
+         WHERE cn.id = ? LIMIT 1`
+      : 'SELECT 1 WHERE 0',
+    isCharacterNote ? [docId] : [],
+  );
+
+  // 각 raw row를 해당 batch decrypt 훅으로 변환. 한 컴포넌트 안에서 여러 훅을 호출하지만,
+  // 비활성 docType은 빈 배열을 받으므로 실제 작업은 하나만 수행된다.
+  const { data: decPlan } = useDecryptedPlanNoteList(
+    planRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      title: r.title, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const { data: decPlot } = useDecryptedPlotList(
+    plotRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const { data: decFore } = useDecryptedForeshadowList(
+    foreRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      title: r.title, status: r.status, importance: r.importance, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const { data: decChar } = useDecryptedCharacterList(
+    charRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      name: r.title, gender: r.gender, age: r.age,
+      profile_image_url: null,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const { data: decCNote } = useDecryptedCharacterNoteList(
+    cnoteRows.map((r) => ({
+      id: r.id, character_id: '',
+      writer_id: r.writer_id ?? '',
+      kind: '', title: r.title, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      work_id: r.work_id, encrypted_dek: r.encrypted_dek,
+    })),
+  );
+
+  return useMemo<{ doc: DocRow | undefined }>(() => {
+    if (isPlanNote) {
+      const p = decPlan[0];
+      if (!p) return { doc: undefined };
+      return { doc: { title: p.title, content: p.content } };
+    }
+    if (isPlot) {
+      const p = decPlot[0];
+      if (!p) return { doc: undefined };
+      return { doc: { title: p.title, content: p.content } };
+    }
+    if (isForeshadow) {
+      const f = decFore[0];
+      if (!f) return { doc: undefined };
+      return { doc: { title: f.title, content: f.content } };
+    }
+    if (isCharacter) {
+      const c = decChar[0];
+      if (!c) return { doc: undefined };
+      return {
+        doc: {
+          title: c.name,
+          content: null,
+          gender: c.gender ?? undefined,
+          age: c.age ?? undefined,
+        },
+      };
+    }
+    if (isCharacterNote) {
+      const n = decCNote[0];
+      if (!n) return { doc: undefined };
+      return { doc: { title: n.title, content: n.content } };
+    }
+    if (isEpisode) {
+      const e = epRows[0];
+      if (!e) return { doc: undefined };
+      // episode는 useDecryptedEpisode(단일행 훅) 패턴이 따로 있지만 여기선 평문/v1 분기 단순화 — content를 그대로 노출.
+      // (PR1에서 이미 episode 본문은 단일행 훅으로 다룸. AuxDocViewer는 episode 본문 편집까지 지원해서 평문 표시 우선.)
+      return { doc: { title: e.title ?? '', content: e.content } };
+    }
+    return { doc: undefined };
+  }, [
+    isPlanNote, isPlot, isForeshadow, isCharacter, isCharacterNote, isEpisode,
+    decPlan, decPlot, decFore, decChar, decCNote, epRows,
+  ]);
+}
+
 function NonWorldNoteAuxView({
   docType,
   docId,
   editable,
   onAddPanel,
 }: AuxDocViewerProps) {
-  const { data: rows = [] } = useQuery<DocRow>(DOC_QUERIES[docType], [docId]);
-  const doc = rows[0];
+  const { doc } = useDecryptedDoc(docType, docId);
 
   const childConfig = CHILD_QUERIES[docType];
-  const { data: children = [] } = useQuery<ChildRow>(
-    childConfig ? childConfig.sql : 'SELECT NULL AS id, NULL AS title, NULL AS content WHERE 0',
-    childConfig ? [docId] : [],
+  // PR4: plot 자식 회차의 title도 ciphertext일 수 있어 별도 복호화 필요.
+  const isPlotChildren = childConfig && docType === 'plot';
+  const { data: rawChildRows = [] } = useQuery<RawDocJoinRow>(
+    isPlotChildren
+      ? `SELECT p.id, p.work_id, p.writer_id, p.title, NULL AS content,
+                p.status, NULL AS importance, p.parent_id,
+                NULL AS gender, NULL AS age,
+                p.sort_order, p.created_at, p.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plot p LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.parent_id = ?
+         ORDER BY p.sort_order ASC`
+      : 'SELECT 1 WHERE 0',
+    isPlotChildren ? [docId] : [],
+  );
+  const { data: decPlotChildren } = useDecryptedPlotList(
+    rawChildRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const children: ChildRow[] = useMemo(
+    () =>
+      isPlotChildren
+        ? decPlotChildren.map((c) => ({ id: c.id, title: c.title, content: c.content }))
+        : [],
+    [isPlotChildren, decPlotChildren],
   );
 
   const {
@@ -522,20 +831,69 @@ interface PlotAuxRow {
 function PlotAuxView({ docId, editable }: { docId: string; editable: boolean }) {
   const { updatePlot } = useLocalWrite();
 
-  const { data: rows = [] } = useQuery<PlotAuxRow>(
-    `SELECT id, title, status, content, parent_id FROM plot WHERE id = ? LIMIT 1`,
+  const { data: rawRows = [] } = useQuery<RawDocJoinRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.title, p.content,
+            p.status, NULL AS importance, p.parent_id,
+            NULL AS gender, NULL AS age,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.id = ? LIMIT 1`,
     [docId],
   );
-  const item = rows[0];
+  const { data: decRows } = useDecryptedPlotList(
+    rawRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const item: PlotAuxRow | undefined = useMemo(() => {
+    const d = decRows[0];
+    if (!d) return undefined;
+    return {
+      id: d.id,
+      title: d.title,
+      status: d.status,
+      content: d.content,
+      parent_id: d.parent_id,
+    };
+  }, [decRows]);
   const isAct = item?.parent_id === null;
 
   // 막이면 자식 회차 fetch
-  const { data: episodes = [] } = useQuery<PlotAuxRow>(
+  const { data: rawEpisodes = [] } = useQuery<RawDocJoinRow>(
     isAct
-      ? `SELECT id, title, status, content, parent_id FROM plot
-         WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`
-      : `SELECT NULL AS id, NULL AS title, NULL AS status, NULL AS content, NULL AS parent_id WHERE 0`,
+      ? `SELECT p.id, p.work_id, p.writer_id, p.title, p.content,
+                p.status, NULL AS importance, p.parent_id,
+                NULL AS gender, NULL AS age,
+                p.sort_order, p.created_at, p.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plot p LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.parent_id = ?
+         ORDER BY p.sort_order ASC, p.created_at ASC`
+      : `SELECT 1 WHERE 0`,
     isAct ? [docId] : [],
+  );
+  const { data: decEpisodes } = useDecryptedPlotList(
+    rawEpisodes.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const episodes: PlotAuxRow[] = useMemo(
+    () =>
+      decEpisodes.map((e) => ({
+        id: e.id,
+        title: e.title,
+        status: e.status,
+        content: e.content,
+        parent_id: e.parent_id,
+      })),
+    [decEpisodes],
   );
 
   if (!item) {
@@ -630,11 +988,36 @@ function PlotAllAuxView({ workId, editable }: { workId: string; editable: boolea
   const writerId = useWriterId();
   const { updatePlot } = useLocalWrite();
 
-  const { data: rows = [] } = useQuery<PlotAllRow>(
-    `SELECT id, title, status, content, parent_id, sort_order FROM plot
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawRows = [] } = useQuery<RawDocJoinRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.title, p.content,
+            p.status, NULL AS importance, p.parent_id,
+            NULL AS gender, NULL AS age,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ? AND p.writer_id = ?
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decRows } = useDecryptedPlotList(
+    rawRows.map((r) => ({
+      id: r.id, work_id: r.work_id, writer_id: r.writer_id ?? '',
+      parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+      sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
+  const rows: PlotAllRow[] = useMemo(
+    () =>
+      decRows.map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+        content: d.content,
+        parent_id: d.parent_id,
+        sort_order: d.sort_order ?? 0,
+      })),
+    [decRows],
   );
 
   const acts = useMemo(() => rows.filter((r) => r.parent_id === null), [rows]);

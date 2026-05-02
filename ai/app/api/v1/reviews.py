@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.middleware.auth import require_internal_api_key
+from app.schemas.ai_context_payload import AiContextPayload
 from app.services.providers import get_llm
 from app.services.rag import assemble_context
 from app.services.repetition_detector import detect_repetitions
@@ -228,6 +229,8 @@ class ReviewRequest(BaseModel):
     episode_id: str
     content: str
     episode_number: int
+    # PR5 — 클라이언트 평문 RAG 컨텍스트.
+    context: AiContextPayload
 
 
 # 결정론적 점수 산정 가중치. LLM이 매기는 score는 호출마다 달라져 작가 신뢰도가 떨어지므로,
@@ -337,6 +340,7 @@ async def review_episode(req: ReviewRequest):
     # 의미 쿼리로 삼아 과거 화에서 톤·설정이 비슷한 청크를 끌어온다.
     review_query = extract_plain_text(req.content)[:3000]
     context = await assemble_context(
+        payload=req.context,
         work_id=req.work_id,
         writer_id=req.writer_id,
         storyline=review_query,

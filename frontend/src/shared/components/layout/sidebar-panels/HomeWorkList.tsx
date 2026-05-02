@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
@@ -10,13 +10,11 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDecryptedWorkList } from '../../../hooks/useDecryptedWork';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
-import {
-  buildOrderBy,
-  useSortPreferenceStore,
-} from '../../../stores/sortPreferenceStore';
+import { useSortPreferenceStore } from '../../../stores/sortPreferenceStore';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import {
   ContextMenu,
@@ -74,19 +72,61 @@ export function HomeWorkList({
   };
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['home-work'] ?? 'manual');
-  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
   const trimmed = searchTerm.trim();
-  const sql = trimmed
-    ? `SELECT id, title, sort_order FROM work
-       WHERE writer_id = ? AND status != 'trashed' AND title LIKE ? ESCAPE '\\'
-       ${orderBy}`
-    : `SELECT id, title, sort_order FROM work
-       WHERE writer_id = ? AND status != 'trashed'
-       ${orderBy}`;
-  const params = trimmed ? [writerId, `%${escapeLike(trimmed)}%`] : [writerId];
-  const { data: rawWorks = [] } = useQuery<WorkRow>(sql, params);
-  // work는 writer_id 기준 평탄 — 모든 작품이 같은 그룹
-  const works = useOptimisticRows(rawWorks, {
+  // PR2 — title이 v1: 암호문일 수 있어 DB의 LIKE/ORDER BY가 평문 기준으로 작동하지 않는다.
+  // 모든 작품을 받아 batch 복호화 후 메모리에서 필터·정렬한다.
+  const { data: rawWorks = [] } = useQuery<{
+    id: string;
+    writer_id: string;
+    title: string | null;
+    author_name: string | null;
+    description: string | null;
+    status: string;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT id, writer_id, title, author_name, description, status,
+            sort_order, created_at, updated_at, encrypted_dek
+     FROM work WHERE writer_id = ? AND status != 'trashed'`,
+    [writerId],
+  );
+  const { data: decryptedWorks } = useDecryptedWorkList(rawWorks);
+
+  const filteredAndSorted = useMemo<WorkRow[]>(() => {
+    const lowerTerm = trimmed.toLowerCase();
+    let list: WorkRow[] = decryptedWorks.map((w) => ({
+      id: w.id,
+      title: w.title,
+      sort_order: w.sort_order,
+    }));
+    if (lowerTerm) {
+      list = list.filter((w) => (w.title ?? '').toLowerCase().includes(lowerTerm));
+    }
+    if (sortMode === 'alpha') {
+      list = list.sort((a, b) =>
+        (a.title ?? '').localeCompare(b.title ?? '', 'ko'),
+      );
+    } else if (sortMode === 'recent') {
+      // updated_at은 ISO 문자열이라 lexical 비교 = 시간 비교 — DB ORDER BY와 동일.
+      // decryptedWorks에 updated_at이 있어야 정렬 가능 → rawWorks를 직접 참조.
+      const updatedAtById = new Map(rawWorks.map((r) => [r.id, r.updated_at]));
+      list = list.sort((a, b) => {
+        const ua = updatedAtById.get(a.id) ?? '';
+        const ub = updatedAtById.get(b.id) ?? '';
+        return ub.localeCompare(ua);
+      });
+    } else {
+      // manual (기본)
+      list = list.sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+      );
+    }
+    return list;
+  }, [decryptedWorks, trimmed, sortMode, rawWorks]);
+
+  const works = useOptimisticRows(filteredAndSorted, {
     docType: 'work',
     matches: () => true,
   });
@@ -327,6 +367,3 @@ function WorkItem({
   );
 }
 
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}

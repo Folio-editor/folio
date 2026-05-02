@@ -9,8 +9,18 @@
 // - 모든 API 호출은 Authorization: Bearer (apiClient/connector 그대로 동작)
 // ============================================================
 
-import type { FolioApi, LoginResult, Writer } from '../../shared/types/auth';
+import type {
+  FolioApi,
+  LoginEncryptionMaterial,
+  LoginResult,
+  Writer,
+} from '../../shared/types/auth';
 import { createWebExportApi } from './export/exportApi';
+import {
+  clearWebMaterial,
+  loadWebMaterial,
+  saveWebMaterial,
+} from './webEncryptionMaterialStore';
 
 function apiUrl(): string {
   const url =
@@ -94,6 +104,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
       deviceId: string;
       writer: Writer;
       isNewUser: boolean;
+      encryption: LoginEncryptionMaterial | null;
     };
 
     accessToken = payload.accessToken;
@@ -109,6 +120,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
       accessToken: payload.accessToken,
       writer: payload.writer,
       isNewUser: payload.isNewUser,
+      encryption: payload.encryption ?? null,
     };
   } catch (e) {
     console.warn('[web/folioApi] auth_code 교환 에러:', e);
@@ -253,6 +265,11 @@ export function createWebFolioApi(): FolioApi {
     spellcheck: {
       // 웹은 OS spellchecker 사전 동기화 불가 — no-op (브라우저 native spellcheck로 fallback)
       syncWords: async () => {},
+    },
+    crypto: {
+      saveMaterial: saveWebMaterial,
+      loadMaterial: loadWebMaterial,
+      clearMaterial: clearWebMaterial,
     },
     payment: {
       // 웹은 결제 창을 main process로 띄울 수 없음 — 호출 시 명시적 reject
