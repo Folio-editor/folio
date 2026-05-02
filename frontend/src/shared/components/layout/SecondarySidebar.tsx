@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { ChevronsLeft, HelpCircle, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { FloatingHelpCard } from '../ui/FloatingHelpCard';
+import { TAB_HELP } from '../../constants/tabHelpContent';
+import { cn } from '../../lib/cn';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useDecryptedWork } from '../../hooks/useDecryptedWork';
 import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { useAuthStore } from '../../stores/authStore';
-import { useWalletStore } from '../../stores/walletStore';
-import { useNavigationStore } from '../../stores/navigationStore';
 import {
   Activity,
   WorkspaceSection,
@@ -156,24 +157,9 @@ export function SecondarySidebar({
   const writerId = useWriterId();
   const isGuest = useIsGuest();
   const writer = useAuthStore((s) => s.writer);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
-
-  const wallet = useWalletStore((s) => s.wallet);
-  const refreshWallet = useWalletStore((s) => s.refresh);
-  const resetWallet = useWalletStore((s) => s.reset);
-  const openSettings = useNavigationStore((s) => s.openSettings);
-
-  // 로그인 상태 변화에 따라 잔액을 refresh / reset
-  useEffect(() => {
-    if (isAuthenticated) {
-      void refreshWallet();
-    } else {
-      resetWallet();
-    }
-  }, [isAuthenticated, refreshWallet, resetWallet]);
 
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
@@ -215,26 +201,67 @@ export function SecondarySidebar({
     setTheme(order[(order.indexOf(theme) + 1) % order.length]);
   };
 
+  // ── 탭별 컨텍스트 도움말 ─────────────────────────────────────
+  // 활동 탭별로 ? 버튼을 노출하고, 첫 진입 시 자동으로 1회 노출. 이후엔 수동 토글.
+  // settingsMode 시에는 도움말 미제공.
+  const tabHelp = settingsMode ? undefined : TAB_HELP[activity];
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!tabHelp) {
+      setHelpOpen(false);
+      return;
+    }
+    const key = `folio.tabHelp.${activity}.shown`;
+    if (localStorage.getItem(key)) {
+      setHelpOpen(false);
+      return;
+    }
+    setHelpOpen(true);
+    localStorage.setItem(key, 'true');
+  }, [activity, tabHelp]);
+
   return (
     <aside
       style={{ width }}
       className="relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm"
     >
-      {/* 헤더 — 작품 제목 (h-10) */}
+      {/* 헤더 — 작품 제목 (h-10) + 도움말/접기 버튼 */}
       <div className="flex h-10 shrink-0 items-center border-b border-sidebar-border px-4">
         <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
           <div className="min-w-0 flex-1 truncate text-sm font-semibold text-sidebar-foreground">
             {header}
           </div>
-          <button
-            type="button"
-            onClick={onCollapse}
-            aria-label="사이드바 접기"
-            title="사이드바 접기"
-            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <ChevronsLeft size={14} strokeWidth={2} />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {tabHelp && (
+              <button
+                ref={helpButtonRef}
+                type="button"
+                onClick={() => setHelpOpen((v) => !v)}
+                aria-label="이 탭 도움말"
+                aria-pressed={helpOpen}
+                title={helpOpen ? '도움말 닫기' : '이 탭 도움말'}
+                className={cn(
+                  'rounded p-1 transition-colors',
+                  helpOpen
+                    ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                )}
+              >
+                <HelpCircle size={14} strokeWidth={2} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="사이드바 접기"
+              title="사이드바 접기"
+              className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <ChevronsLeft size={14} strokeWidth={2} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -308,22 +335,6 @@ export function SecondarySidebar({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {/* 잔여 크레딧 — 프로필 위 강조 박스 (클릭 시 결제 화면) */}
-            <button
-              type="button"
-              onClick={() => openSettings('payment')}
-              title="결제 / 충전"
-              className="flex items-center justify-between gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/30 px-3 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-            >
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Coins size={12} strokeWidth={1.75} />
-                잔여 크레딧
-              </span>
-              <span className="text-sm font-semibold text-foreground">
-                {wallet ? wallet.balance.toLocaleString() : '—'}
-              </span>
-            </button>
-
             {/* 프로필 — 닉네임 + 테마 + 로그아웃 */}
             <div className="flex items-center gap-2 px-2 py-1.5">
               {writer?.profileImageUrl ? (
@@ -357,6 +368,18 @@ export function SecondarySidebar({
         onResize={onWidthChange}
         ariaLabel="사이드바 너비 조절"
       />
+
+      {/* 탭별 컨텍스트 도움말 — 화면 중앙 플로팅 카드 (드래그/리사이즈 가능, 비차단) */}
+      {tabHelp && (
+        <FloatingHelpCard
+          open={helpOpen}
+          title={tabHelp.title}
+          steps={tabHelp.steps}
+          onClose={() => setHelpOpen(false)}
+          persistKey="folio.tabHelp.position.v3"
+          originRef={helpButtonRef}
+        />
+      )}
     </aside>
   );
 }

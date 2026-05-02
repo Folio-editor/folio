@@ -6,6 +6,7 @@ import {
   type DownloadFile,
   type DownloadManifest,
 } from '../../lib/downloads';
+import { trackLandingEvent } from '../../lib/analytics';
 
 interface DownloadPopoverProps {
   anchorRef: RefObject<HTMLElement | null>;
@@ -83,7 +84,18 @@ function DownloadRow({ file }: { file: DownloadFile }) {
 
   if (disabled) {
     return (
-      <li className="cta-download-popover-row" data-disabled="true" aria-disabled="true">
+      <li
+        className="cta-download-popover-row"
+        data-disabled="true"
+        aria-disabled="true"
+        onClick={() =>
+          trackLandingEvent('desktop_download_failed', {
+            os: file.os,
+            download_channel: 'landing_cta',
+            reason_code: 'download_url_missing',
+          })
+        }
+      >
         <span className="cta-download-popover-row-label">{label}</span>
         <span className="cta-download-popover-row-format">.{file.format}</span>
         <span className="cta-download-popover-row-pending">준비 중</span>
@@ -93,7 +105,17 @@ function DownloadRow({ file }: { file: DownloadFile }) {
 
   return (
     <li className="cta-download-popover-row">
-      <a href={file.url!} download className="cta-download-popover-row-link">
+      <a
+        href={file.url!}
+        download
+        className="cta-download-popover-row-link"
+        onClick={() =>
+          trackLandingEvent('desktop_download_started', {
+            os: file.os,
+            download_channel: 'landing_cta',
+          })
+        }
+      >
         <span className="cta-download-popover-row-label">{label}</span>
         <span className="cta-download-popover-row-format">.{file.format}</span>
         {sizeText && <span className="cta-download-popover-row-size">{sizeText}</span>}

@@ -191,6 +191,7 @@ export interface FolioApi {
   payment: FolioPaymentApi;
   updater: FolioUpdaterApi;
   crypto: FolioCryptoApi;
+  export: import('./export').FolioExportApi;
 }
 
 declare global {

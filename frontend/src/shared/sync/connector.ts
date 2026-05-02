@@ -12,6 +12,7 @@ import type {
 } from '@powersync/web';
 import { apiClient, ApiError } from '../lib/apiClient';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
+import { analytics, countBucket } from '../lib/analytics';
 
 // Windows Docker에서 localhost는 IPv6 우선 해석되는데 컨테이너는 IPv4 바인딩이라
 // CONNECTION_RESET이 난다. 기본값을 127.0.0.1로 고정.
@@ -105,11 +106,21 @@ export class FolioConnector implements PowerSyncBackendConnector {
       }));
 
       try {
+        void analytics.track('sync_started', {
+          queue_count_bucket: countBucket(entries.length),
+        });
         await apiClient.post('/sync/upload', entries);
         await batch.complete();
+        void analytics.track('sync_succeeded', {
+          event_count_bucket: countBucket(entries.length),
+        });
         console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 'network';
+        void analytics.track('sync_failed', {
+          reason_code: String(status),
+          retry_count_bucket: 'unknown',
+        });
         console.warn(`[sync] uploadData 업로드 실패 (${status}) — 재시도 예정:`, e);
         break;
       }

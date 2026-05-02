@@ -13,6 +13,7 @@ import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
+import { ExportButton } from '../workspace/ExportButton';
 import type { WorkspaceSection } from '../../types/workspace';
 
 interface EpisodeEditScreenProps {
@@ -32,6 +33,7 @@ interface LinkRow {
 interface UnlinkedPlotRow {
   id: string;
   title: string;
+  act_title: string | null;
 }
 
 const STATUS_OPTIONS: StatusPillOption[] = [
@@ -105,6 +107,7 @@ function EpisodeEditor({
               onChange={(status) => void updateEpisode(id, { status })}
             />
             <EditorToolbarToggle />
+            <ExportButton workId={item.work_id} initialEpisodeId={id} />
             <button
               type="button"
               onClick={() => setConfirmTrash(true)}
@@ -338,28 +341,42 @@ function PlotLinkModal({
   const writerId = useWriterId();
   const [search, setSearch] = useState('');
 
-  // 아직 연결되지 않은 플롯 회차 목록 — title은 v1: 암호문, 클라이언트 측 검색
-  const { data: rawPlotRows = [] } = useQuery<RawPlotRow>(
+  // 아직 연결되지 않은 플롯 회차 목록 — title은 v1: 암호문, 클라이언트 측 검색.
+  // 같은 회차명이 있을 때 식별 가능하도록 막(parent) 제목까지 조회한다.
+  const { data: rawPlotRows = [] } = useQuery<RawPlotRow & { act_title_raw: string | null }>(
     `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
             p.sort_order, p.created_at, p.updated_at,
+            parent.title AS act_title_raw,
             w.encrypted_dek AS encrypted_dek
      FROM plot p
+     LEFT JOIN plot parent ON parent.id = p.parent_id
      LEFT JOIN work w ON w.id = p.work_id
      WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NOT NULL
        AND p.id NOT IN (SELECT plot_id FROM plot_episode_link)
-     ORDER BY p.sort_order ASC, p.created_at ASC`,
+     ORDER BY parent.sort_order ASC, p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
   );
   const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
+  // act_title도 v1: 암호문 가능성이 있어 별도로 부모를 복호화해야 하지만,
+  // 모달 검색용 보조 정보이므로 평문일 때만 노출하고 암호문이면 null로 둔다.
   const plots: UnlinkedPlotRow[] = useMemo(
-    () => decryptedPlots.map((p) => ({ id: p.id, title: p.title })),
-    [decryptedPlots],
+    () =>
+      decryptedPlots.map((p, idx) => {
+        const rawAct = rawPlotRows[idx]?.act_title_raw ?? null;
+        const actTitle = rawAct && !rawAct.startsWith('v1:') ? rawAct : null;
+        return { id: p.id, title: p.title, act_title: actTitle };
+      }),
+    [decryptedPlots, rawPlotRows],
   );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return plots;
-    return plots.filter((p) => p.title.toLowerCase().includes(term));
+    return plots.filter(
+      (p) =>
+        p.title.toLowerCase().includes(term) ||
+        (p.act_title?.toLowerCase().includes(term) ?? false),
+    );
   }, [plots, search]);
 
   return (
@@ -391,16 +408,26 @@ function PlotLinkModal({
             </p>
           ) : (
             <div className="flex flex-col gap-0.5">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => void onSelect(p.id)}
-                  className="truncate rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-primary/10"
-                >
-                  {p.title}
-                </button>
-              ))}
+              {filtered.map((p) => {
+                const actLabel = p.act_title?.trim() || '소속 막 없음';
+                const epLabel = p.title?.trim() || '(제목 없음)';
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => void onSelect(p.id)}
+                    title={`${actLabel} > ${epLabel}`}
+                    className="flex flex-col rounded-md px-2 py-1.5 text-left transition-colors hover:bg-primary/10"
+                  >
+                    <span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {actLabel}
+                    </span>
+                    <span className="truncate text-sm text-foreground">
+                      {epLabel}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

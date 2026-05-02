@@ -27,12 +27,13 @@ import EditorStatusBar from './EditorStatusBar';
 import EditorSettingsPanel from './EditorSettingsPanel';
 import EditorFindReplace from './EditorFindReplace';
 import EditorShortcutHelp from './EditorShortcutHelp';
+import { analytics, charCountBucket, deltaCharCountBucket, editDurationBucket } from '../../lib/analytics';
 
 interface ContentEditorProps {
   itemId: string;
   initialContent: string | null;
   placeholder?: string;
-  onUpdate: (json: string) => void;
+  onUpdate: (json: string) => void | Promise<void>;
   debounceMs?: number;
   className?: string;
   showStatusBar?: boolean;
@@ -74,6 +75,10 @@ export function ContentEditor({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const editStartedRef = useRef(false);
+  const editSessionStartRef = useRef<number | null>(null);
+  const charCountRef = useRef(0);
+  const sessionStartCharsRef = useRef(0);
 
   const settings = useEditorSettings();
   const globalToolbarVisible = useEditorToolbarStore((s) => s.visible);
@@ -92,6 +97,7 @@ export function ContentEditor({
         },
       },
       extensions: [
+        // StarterKit v3.x 부터 Underline 기본 포함 — 별도 import 시 'Duplicate extension names' 경고
         StarterKit.configure({
           code: false,
           codeBlock: false,
@@ -128,6 +134,21 @@ export function ContentEditor({
         const words = ed.storage.characterCount?.words?.() ?? 0;
         setCharCount(chars);
         setWordCount(words);
+        charCountRef.current = chars;
+
+        if (!editStartedRef.current) {
+          editStartedRef.current = true;
+          editSessionStartRef.current = Date.now();
+          void analytics.track('writing_started', {
+            platform: window.folio.platform,
+            doc_type: 'unknown',
+            entry_source: 'editor',
+          });
+          void analytics.track('document_edit_started', {
+            doc_type: 'unknown',
+            char_count_bucket: charCountBucket(chars),
+          });
+        }
 
         // charCount DB 저장 디바운스
         if (onCharCountChangeRef.current) {
@@ -148,7 +169,22 @@ export function ContentEditor({
           const json = JSON.stringify(ed.getJSON());
           // emit 직전에 lastEmittedRaw 갱신 — 외부 sync useEffect가 자기 echo로 인식해 skip
           lastEmittedRawRef.current = json;
-          updateCb(json);
+          try {
+            const result = updateCb(json);
+            if (result instanceof Promise) {
+              result.catch(() => {
+                void analytics.track('document_save_failed', {
+                  doc_type: 'unknown',
+                  reason_code: 'local_write_failed',
+                });
+              });
+            }
+          } catch {
+            void analytics.track('document_save_failed', {
+              doc_type: 'unknown',
+              reason_code: 'local_write_failed',
+            });
+          }
           setSaveStatus('saved');
         };
 
@@ -176,6 +212,10 @@ export function ContentEditor({
     setSessionStartChars(chars);
     setCharCount(chars);
     setWordCount(words);
+    sessionStartCharsRef.current = chars;
+    charCountRef.current = chars;
+    editStartedRef.current = false;
+    editSessionStartRef.current = null;
   }, [editor, itemId]);
 
   // 검수 하이라이트 스토어 구독 → 데코레이션 리빌드
@@ -247,6 +287,16 @@ export function ContentEditor({
   useEffect(() => {
     return () => {
       flushRef.current();
+      if (editStartedRef.current) {
+        const startedAt = editSessionStartRef.current ?? Date.now();
+        void analytics.track('document_edit_session_ended', {
+          doc_type: 'unknown',
+          edit_duration_bucket: editDurationBucket(Date.now() - startedAt),
+          delta_char_count_bucket: deltaCharCountBucket(
+            charCountRef.current - sessionStartCharsRef.current,
+          ),
+        });
+      }
     };
   }, []);
 

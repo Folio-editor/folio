@@ -118,7 +118,9 @@ export function ActivityBar({
     const isActive = !isDisabled && rightPanelVisible && activeRightTab === tab;
     const title = isDisabled
       ? '작품을 먼저 선택하세요'
-      : `${label} 패널 열기`;
+      : isActive
+        ? `${label} 패널 닫기`
+        : `${label} 패널 열기`;
 
     return (
       <button

@@ -15,6 +15,7 @@ import type {
   LoginResult,
   Writer,
 } from '../../shared/types/auth';
+import { createWebExportApi } from './export/exportApi';
 import {
   clearWebMaterial,
   loadWebMaterial,
@@ -295,5 +296,6 @@ export function createWebFolioApi(): FolioApi {
       installAndRestart: async () => {},
       onStateChange: () => () => {},
     },
+    export: createWebExportApi(),
   };
 }

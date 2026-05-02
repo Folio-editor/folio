@@ -18,11 +18,14 @@ import { ThemeProvider } from '../components/ThemeProvider';
 import { db } from '../sync/db';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
+import { analytics } from '../lib/analytics';
 
 // 모듈 로드 시 1회 — online/offline 이벤트 바인딩
 initNetworkListener();
 
 const connector = new FolioConnector();
+let appOpenedTracked = false;
+let editorEnteredTracked = false;
 
 interface AppRootProps {
   /** 'memory' = Electron(URL 노출 없음), 'browser' = 웹(주소 표시줄 사용) */
@@ -38,6 +41,23 @@ export function AppRoot({ router, basename }: AppRootProps) {
   const syncDecision = useAuthStore((s) => s.syncDecision);
   const restore = useAuthStore((s) => s.restore);
   const subscribeSessionEvents = useAuthStore((s) => s.subscribeSessionEvents);
+
+  useEffect(() => {
+    analytics.init();
+
+    if (appOpenedTracked) return;
+    appOpenedTracked = true;
+
+    window.folio.updater
+      .getCurrentVersion()
+      .catch(() => undefined)
+      .then((version) =>
+        analytics.track('app_opened', {
+          app_version: version,
+          online: navigator.onLine,
+        }),
+      );
+  }, []);
 
   useEffect(() => {
     void restore();
@@ -80,6 +100,16 @@ export function AppRoot({ router, basename }: AppRootProps) {
     // isOnline 변경 시에만 트리거 (isAuthenticated/syncDecision은 위 effect가 담당)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline]);
+
+  useEffect(() => {
+    if ((!isAuthenticated && !isGuest) || editorEnteredTracked) return;
+    editorEnteredTracked = true;
+
+    void analytics.track('editor_entered', {
+      platform: window.folio.platform,
+      entry_source: isAuthenticated ? 'restore_session' : 'unknown',
+    });
+  }, [isAuthenticated, isGuest]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {

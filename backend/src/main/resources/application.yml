@@ -76,6 +76,15 @@ toss:
     api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
     webhook-secret: ${TOSS_WEBHOOK_SECRET:}
 
+# Google Analytics 4 Measurement Protocol
+ga4:
+  enabled: ${GA4_ENABLED:true}
+  measurement-id: ${GA4_MEASUREMENT_ID:}
+  api-secret: ${GA4_API_SECRET:}
+  endpoint: ${GA4_ENDPOINT:https://www.google-analytics.com/mp/collect}
+  debug-endpoint: ${GA4_DEBUG_ENDPOINT:https://www.google-analytics.com/debug/mp/collect}
+  debug-mode: ${GA4_DEBUG_MODE:false}
+
 # springdoc / Swagger
 springdoc:
   api-docs:

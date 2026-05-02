@@ -3,6 +3,7 @@ import { encryptString } from '../crypto/cipher';
 import { getCurrentKek } from '../crypto/lifecycle';
 import { ensureWorkKey } from '../crypto/workKey';
 import { useWriterId } from './useWriterId';
+import { analytics, charCountBucket } from '../lib/analytics';
 
 /**
  * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
@@ -137,6 +138,27 @@ export function useLocalWrite() {
     return row?.work_id ?? null;
   };
 
+  const trackCreated = (docType: string, source = 'manual', templateType?: string) => {
+    void analytics.track('document_created', {
+      doc_type: docType,
+      source,
+      template_type: templateType,
+    });
+  };
+
+  const trackSaved = (docType: string, content?: string | null) => {
+    void analytics.track('document_saved', {
+      doc_type: docType,
+      char_count_bucket: charCountBucket(content?.length ?? 0),
+    });
+  };
+
+  const trackDeleted = (docType: string) => {
+    void analytics.track('document_deleted', {
+      doc_type: docType,
+    });
+  };
+
   return {
     // ── work ────────────────────────────────────────────────
     createWork: async (title: string): Promise<string> => {
@@ -157,6 +179,7 @@ export function useLocalWrite() {
           [encryptedTitle, now, id],
         );
       }
+      trackCreated('work');
       return id;
     },
     updateWork: async (
@@ -190,6 +213,7 @@ export function useLocalWrite() {
         `UPDATE work SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('work');
     },
     /**
      * 작품 소프트 삭제 — status를 'trashed'로 변경하여 휴지통으로 이동.
@@ -201,10 +225,12 @@ export function useLocalWrite() {
         `UPDATE work SET status = 'trashed', updated_at = ? WHERE id = ?`,
         [now, id],
       );
+      trackDeleted('work');
     },
     /** 휴지통에서 영구 삭제 — 실제 DELETE. CASCADE로 하위 엔티티 자동 정리. */
     permanentDeleteWork: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM work WHERE id = ?`, [id]);
+      trackDeleted('work');
     },
     /** 휴지통에서 작품 복원 — status를 '연재중'으로 되돌린다. */
     restoreWork: async (id: string): Promise<void> => {
@@ -232,6 +258,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
         [id, workId, writerId, now, now],
       );
+      trackCreated('plan', 'auto');
       return id;
     },
     updatePlan: async (
@@ -252,6 +279,7 @@ export function useLocalWrite() {
         `UPDATE plan SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('plan');
     },
 
     // ── plan_note (work당 1:N 자유 문서) ────────────────────
@@ -274,6 +302,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
       );
+      trackCreated('plan_note', content ? 'template' : 'manual');
       return id;
     },
     updatePlanNoteTitle: async (id: string, title: string): Promise<void> => {
@@ -284,6 +313,7 @@ export function useLocalWrite() {
         `UPDATE plan_note SET title = ?, updated_at = ? WHERE id = ?`,
         [encTitle, now, id],
       );
+      trackSaved('plan_note');
     },
     updatePlanNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
@@ -293,6 +323,7 @@ export function useLocalWrite() {
         `UPDATE plan_note SET content = ?, updated_at = ? WHERE id = ?`,
         [encContent, now, id],
       );
+      trackSaved('plan_note', content);
     },
 
     // ── world_note ─────────────────────────────────────────
@@ -336,6 +367,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, workId, writerId, parentId ?? null, encName, encContent, sortOrder, now, now],
       );
+      trackCreated('world_note', content ? 'template' : 'manual');
       return id;
     },
     updateWorldNoteContent: async (id: string, content: string): Promise<void> => {
@@ -346,6 +378,7 @@ export function useLocalWrite() {
         `UPDATE world_note SET content = ?, updated_at = ? WHERE id = ?`,
         [encContent, now, id],
       );
+      trackSaved('world_note', content);
     },
     updateWorldNoteName: async (id: string, name: string): Promise<void> => {
       const now = new Date().toISOString();
@@ -355,6 +388,7 @@ export function useLocalWrite() {
         `UPDATE world_note SET name = ?, updated_at = ? WHERE id = ?`,
         [encName, now, id],
       );
+      trackSaved('world_note');
     },
 
     // ── character ───────────────────────────────────────────
@@ -376,6 +410,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
         [id, workId, writerId, encName, gender, encAge, sortOrder, now, now],
       );
+      trackCreated('character');
       return id;
     },
     updateCharacter: async (
@@ -407,6 +442,7 @@ export function useLocalWrite() {
         `UPDATE character SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('character');
     },
 
     // ── character_note ───────────────────────────────────────
@@ -460,6 +496,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, ?)`,
         [id, characterId, writerId, encTitle, encContent, sortOrder, now, now],
       );
+      trackCreated('character_note', content ? 'template' : 'manual');
       return id;
     },
     updateCharacterNoteTitle: async (id: string, title: string): Promise<void> => {
@@ -471,6 +508,7 @@ export function useLocalWrite() {
         'UPDATE character_note SET title = ?, updated_at = ? WHERE id = ?',
         [encTitle, now, id],
       );
+      trackSaved('character_note');
     },
     updateCharacterNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
@@ -480,6 +518,7 @@ export function useLocalWrite() {
         'UPDATE character_note SET content = ?, updated_at = ? WHERE id = ?',
         [encContent, now, id],
       );
+      trackSaved('character_note', content);
     },
 
     // ── character_custom_field ────────────────────────────────
@@ -576,6 +615,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, workId, writerId, parentId, encTitle, status, encContent, sortOrder, now, now],
       );
+      trackCreated('plot', content ? 'template' : 'manual');
       return id;
     },
     updatePlot: async (
@@ -603,6 +643,7 @@ export function useLocalWrite() {
         `UPDATE plot SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('plot', patch.content);
     },
 
     // ── episode ─────────────────────────────────────────────
@@ -624,6 +665,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, NULL, ?, '미작성', ?, 0, ?, ?, ?)`,
         [id, workId, writerId, title, content, sortOrder, now, now],
       );
+      trackCreated('episode', content ? 'template' : 'manual');
       return id;
     },
     updateEpisode: async (
@@ -682,6 +724,7 @@ export function useLocalWrite() {
         `UPDATE episode SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('episode', patch.content);
     },
 
     /** 원고 소프트 삭제 — status를 'trashed'로 변경. */
@@ -691,10 +734,12 @@ export function useLocalWrite() {
         `UPDATE episode SET status = 'trashed', updated_at = ? WHERE id = ?`,
         [now, id],
       );
+      trackDeleted('episode');
     },
     /** 휴지통에서 원고 영구 삭제. */
     permanentDeleteEpisode: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM episode WHERE id = ?`, [id]);
+      trackDeleted('episode');
     },
     /** 휴지통에서 원고 복원 — status를 '미작성'으로 되돌린다. */
     restoreEpisode: async (id: string): Promise<void> => {
@@ -720,6 +765,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
         [id, workId, writerId, encTitle, '진행중', importance, sortOrder, now, now],
       );
+      trackCreated('foreshadow');
       return id;
     },
     updateForeshadow: async (
@@ -752,6 +798,7 @@ export function useLocalWrite() {
         `UPDATE foreshadow SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('foreshadow', patch.content);
     },
 
     // ── idea_archive ───────────────────────────────────────
@@ -769,6 +816,7 @@ export function useLocalWrite() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, workId, writerId, encContent, tag, sortOrder, now, now],
       );
+      trackCreated('idea_archive');
       return id;
     },
     updateIdea: async (
@@ -793,26 +841,33 @@ export function useLocalWrite() {
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
       );
+      trackSaved('idea_archive', patch.content);
     },
 
     // ── 하드 삭제 ──────────────────────────────────────────
     deleteCharacter: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM character WHERE id = ?`, [id]);
+      trackDeleted('character');
     },
     deleteCharacterNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM character_note WHERE id = ?`, [id]);
+      trackDeleted('character_note');
     },
     deleteWorldNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM world_note WHERE id = ?`, [id]);
+      trackDeleted('world_note');
     },
     deletePlanNote: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM plan_note WHERE id = ?`, [id]);
+      trackDeleted('plan_note');
     },
     deleteForeshadow: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM foreshadow WHERE id = ?`, [id]);
+      trackDeleted('foreshadow');
     },
     deleteIdeaArchive: async (id: string): Promise<void> => {
       await db.execute(`DELETE FROM idea_archive WHERE id = ?`, [id]);
+      trackDeleted('idea_archive');
     },
 
     // ── 정렬/이동 ──────────────────────────────────────────

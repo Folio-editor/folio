@@ -318,7 +318,20 @@ public class SyncService {
     // ── plot_episode_link ─────────────────────────────────────────
     private void processPlotEpisodeLink(String op, UUID id, Map<String, Object> data) {
         if ("DELETE".equals(op)) { plotEpisodeLinkRepo.deleteById(id); return; }
-        PlotEpisodeLink e = plotEpisodeLinkRepo.findById(id).orElse(null);
+        // plot_id, episode_id 모두 UNIQUE 제약 → 같은 plot/episode로 살아있는 row가 있으면
+        // id가 달라도 그것을 update 대상으로 재사용. processPlan과 동일 패턴.
+        UUID plotId    = uuid(data, "plot_id");
+        UUID episodeId = uuid(data, "episode_id");
+        PlotEpisodeLink e = null;
+        if (plotId != null) {
+            e = plotEpisodeLinkRepo.findByPlotId(plotId).orElse(null);
+        }
+        if (e == null && episodeId != null) {
+            e = plotEpisodeLinkRepo.findByEpisodeId(episodeId).orElse(null);
+        }
+        if (e == null) {
+            e = plotEpisodeLinkRepo.findById(id).orElse(null);
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = PlotEpisodeLink.builder().id(id).build();

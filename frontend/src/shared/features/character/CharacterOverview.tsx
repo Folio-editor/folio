@@ -1,10 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Highlight from '@tiptap/extension-highlight';
-import { Camera, Check, Plus, Trash2, X } from 'lucide-react';
+import { createInlineExtensions } from '../../components/editor/inlineExtensions';
+import { Camera, Check, ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react';
 import {
   IconGenderBigender,
   IconGenderFemale,
@@ -24,6 +22,7 @@ import { IconButton } from '../../components/ui/IconButton';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
+import { SharedFindReplace } from '../../components/editor/SharedFindReplace';
 import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
@@ -392,6 +391,7 @@ function CharacterOverviewInner({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <UnifiedEditorToolbar mode="shared" />
+        <SharedFindReplace />
         <div className="flex min-h-0 flex-1 flex-col px-8 py-6">
         <div className="mb-6 flex gap-6">
           <div className="group/img relative shrink-0">
@@ -604,18 +604,22 @@ function InlineNoteItem({
   onDelete: () => void;
 }) {
   const title = useDeferredText(note.id, note.title, onRename);
+  const [expanded, setExpanded] = useState(true);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const editor = useEditor(
     {
       immediatelyRender: false,
-      extensions: [
-        StarterKit.configure({ code: false, codeBlock: false }),
-        Placeholder.configure({ placeholder: '내용을 입력하세요...' }),
-        Highlight.configure({ multicolor: true }),
-      ],
+      extensions: createInlineExtensions({
+        placeholder: '내용을 입력하세요...',
+      }),
       content: parseNoteContent(note.content),
+      onCreate: ({ editor: ed }) => {
+        if (!useFocusedEditorStore.getState().editor) {
+          useFocusedEditorStore.getState().focusEditor(ed);
+        }
+      },
       onFocus: ({ editor: ed }) => {
         useFocusedEditorStore.getState().focusEditor(ed);
       },
@@ -653,6 +657,16 @@ function InlineNoteItem({
   return (
     <div className="group py-3">
       <div className="mb-1.5 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          title={expanded ? '접기' : '펼치기'}
+          aria-label={expanded ? '접기' : '펼치기'}
+          aria-expanded={expanded}
+          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
         <input
           type="text"
           value={title.value}
@@ -680,7 +694,8 @@ function InlineNoteItem({
           </button>
         )}
       </div>
-      <div>
+      {/* 접기: 본문만 숨김. 에디터 인스턴스는 유지(스크롤 위치/포커스 보존). */}
+      <div hidden={!expanded}>
         <EditorContent
           editor={editor}
           className="inline-note-editor prose prose-sm max-w-none text-xs leading-relaxed text-foreground/80 [&_.tiptap]:outline-none [&_.tiptap_p.is-editor-empty:first-child::before]:float-left [&_.tiptap_p.is-editor-empty:first-child::before]:h-0 [&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none [&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground/40 [&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]"
