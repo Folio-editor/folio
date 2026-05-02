@@ -14,6 +14,7 @@ import {
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
 import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { resizeImageToBase64 } from '../../lib/imageResize';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDeferredText } from '../../hooks/useDeferredText';
@@ -309,27 +310,50 @@ function CharacterOverviewInner({
     [notes],
   );
 
-  const { data: tags = [] } = useQuery<{ world_note_id: string; name: string }>(
-    `SELECT ct.world_note_id, wn.name
+  const { data: rawTagRows = [] } = useQuery<RawWorldNoteRow & { tag_world_note_id: string }>(
+    `SELECT ct.world_note_id AS tag_world_note_id,
+            wn.id, wn.work_id, wn.writer_id, wn.parent_id,
+            wn.name, wn.content, wn.sort_order, wn.created_at, wn.updated_at,
+            w.encrypted_dek AS encrypted_dek
      FROM character_tag ct
      JOIN world_note wn ON ct.world_note_id = wn.id
-     WHERE ct.character_id = ?
-     ORDER BY wn.name ASC`,
+     LEFT JOIN work w ON w.id = wn.work_id
+     WHERE ct.character_id = ?`,
     [id],
   );
+  const { data: decryptedTagNotes } = useDecryptedWorldNoteList(rawTagRows);
+  const tags = useMemo(
+    () =>
+      [...decryptedTagNotes]
+        .map((n) => ({ world_note_id: n.id, name: n.name }))
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ko')),
+    [decryptedTagNotes],
+  );
 
-  const { data: availableNotes = [] } = useQuery<{
-    id: string;
-    name: string;
-    parent_id: string | null;
-  }>(
+  const { data: rawAvailableRows = [] } = useQuery<RawWorldNoteRow>(
     tagPickerOpen
-      ? `SELECT id, name, parent_id
-         FROM world_note
-         WHERE work_id = ? AND writer_id = ?
-         ORDER BY sort_order ASC, name ASC`
-      : `SELECT '' AS id, '' AS name, NULL AS parent_id WHERE 0`,
+      ? `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+                n.sort_order, n.created_at, n.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM world_note n
+         LEFT JOIN work w ON w.id = n.work_id
+         WHERE n.work_id = ? AND n.writer_id = ?
+         ORDER BY n.sort_order ASC`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS name, NULL AS content, NULL AS sort_order,
+                NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     tagPickerOpen ? [character.work_id, writerId] : [],
+  );
+  const { data: decryptedAvailableNotes } = useDecryptedWorldNoteList(rawAvailableRows);
+  const availableNotes = useMemo(
+    () =>
+      decryptedAvailableNotes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        parent_id: n.parent_id,
+      })),
+    [decryptedAvailableNotes],
   );
 
   return (

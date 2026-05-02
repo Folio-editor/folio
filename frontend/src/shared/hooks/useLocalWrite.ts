@@ -73,6 +73,70 @@ export function useLocalWrite() {
     return row?.work_id ?? null;
   };
 
+  // PR4 — 단일 update 경로(updateXxx)에서 호출자가 work_id를 모르는 경우 보강.
+  // 각 테이블의 자체 work_id 컬럼을 그대로 SELECT.
+  const resolveOwnWorkId = async (
+    table: 'plan_note' | 'world_note' | 'plot' | 'foreshadow' | 'idea_archive',
+    id: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM ${table} WHERE id = ? LIMIT 1`,
+      [id],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  // foreshadow_link.context_memo는 foreshadow → work 경로로 보강.
+  const resolveForeshadowLinkWorkId = async (
+    linkId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT f.work_id AS work_id FROM foreshadow_link fl
+       JOIN foreshadow f ON f.id = fl.foreshadow_id
+       WHERE fl.id = ? LIMIT 1`,
+      [linkId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  const resolveForeshadowWorkId = async (
+    foreshadowId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM foreshadow WHERE id = ? LIMIT 1`,
+      [foreshadowId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  // character_custom_field.field_name/field_value는 character → work 경로로 보강.
+  const resolveCharacterWorkId = async (
+    characterId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM character WHERE id = ? LIMIT 1`,
+      [characterId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  const resolveCharacterCustomFieldWorkId = async (
+    fieldId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT c.work_id AS work_id FROM character_custom_field ccf
+       JOIN character c ON c.id = ccf.character_id
+       WHERE ccf.id = ? LIMIT 1`,
+      [fieldId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
   return {
     // ── work ────────────────────────────────────────────────
     createWork: async (title: string): Promise<string> => {
@@ -203,25 +267,31 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, title, content, sortOrder, now, now],
+        [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       return id;
     },
     updatePlanNoteTitle: async (id: string, title: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('plan_note', id);
+      const encTitle = workId ? await encryptWorkField(workId, title, now) : title;
       await db.execute(
         `UPDATE plan_note SET title = ?, updated_at = ? WHERE id = ?`,
-        [title, now, id],
+        [encTitle, now, id],
       );
     },
     updatePlanNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('plan_note', id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         `UPDATE plan_note SET content = ?, updated_at = ? WHERE id = ?`,
-        [content, now, id],
+        [encContent, now, id],
       );
     },
 
@@ -238,10 +308,11 @@ export function useLocalWrite() {
       const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
       const now = new Date().toISOString();
       for (let i = 0; i < templates.length; i++) {
+        const encName = await encryptWorkField(workId, templates[i], now);
         await db.execute(
           `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
            VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
-          [crypto.randomUUID(), workId, writerId, templates[i], i, now, now],
+          [crypto.randomUUID(), workId, writerId, encName, i, now, now],
         );
       }
     },
@@ -258,25 +329,31 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encName = await encryptWorkField(workId, name, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, parentId ?? null, name, content, sortOrder, now, now],
+        [id, workId, writerId, parentId ?? null, encName, encContent, sortOrder, now, now],
       );
       return id;
     },
     updateWorldNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('world_note', id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         `UPDATE world_note SET content = ?, updated_at = ? WHERE id = ?`,
-        [content, now, id],
+        [encContent, now, id],
       );
     },
     updateWorldNoteName: async (id: string, name: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('world_note', id);
+      const encName = workId ? await encryptWorkField(workId, name, now) : name;
       await db.execute(
         `UPDATE world_note SET name = ?, updated_at = ? WHERE id = ?`,
-        [name, now, id],
+        [encName, now, id],
       );
     },
 
@@ -405,6 +482,60 @@ export function useLocalWrite() {
       );
     },
 
+    // ── character_custom_field ────────────────────────────────
+    // PR4 — field_name/field_value를 work_key로 암호화. character → work 경로로 workId 보강.
+    createCharacterCustomField: async (
+      characterId: string,
+      fieldName: string,
+      fieldValue: string,
+      sortOrder: number,
+    ): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const workId = await resolveCharacterWorkId(characterId);
+      const encName = workId
+        ? await encryptWorkField(workId, fieldName, now)
+        : fieldName;
+      const encValue = workId
+        ? await encryptWorkField(workId, fieldValue, now)
+        : fieldValue;
+      await db.execute(
+        `INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, characterId, encName, encValue, sortOrder, now, now],
+      );
+      return id;
+    },
+    updateCharacterCustomField: async (
+      id: string,
+      patch: Partial<{ field_name: string; field_value: string }>,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const fields = Object.keys(patch);
+      if (fields.length === 0) return;
+
+      const workId = await resolveCharacterCustomFieldWorkId(id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('field_name' in patch && typeof patch.field_name === 'string') {
+          effective.field_name = await encryptWorkField(workId, patch.field_name, now);
+        }
+        if ('field_value' in patch && typeof patch.field_value === 'string') {
+          effective.field_value = await encryptWorkField(workId, patch.field_value, now);
+        }
+      }
+
+      const setClause = fields.map((f) => `${f} = ?`).join(', ');
+      const values = fields.map((f) => effective[f] ?? null);
+      await db.execute(
+        `UPDATE character_custom_field SET ${setClause}, updated_at = ? WHERE id = ?`,
+        [...values, now, id],
+      );
+    },
+    deleteCharacterCustomField: async (id: string): Promise<void> => {
+      await db.execute('DELETE FROM character_custom_field WHERE id = ?', [id]);
+    },
+
     // ── character_tag ─────────────────────────────────────────
     createCharacterTag: async (characterId: string, worldNoteId: string): Promise<string> => {
       const id = crypto.randomUUID();
@@ -438,10 +569,12 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const status = parentId ? '예정' : null;
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO plot (id, work_id, writer_id, parent_id, title, status, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, parentId, title, status, content, sortOrder, now, now],
+        [id, workId, writerId, parentId, encTitle, status, encContent, sortOrder, now, now],
       );
       return id;
     },
@@ -452,8 +585,20 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('plot', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('title' in patch && typeof patch.title === 'string') {
+          effective.title = await encryptWorkField(workId, patch.title, now);
+        }
+        if ('content' in patch) {
+          effective.content = await encryptWorkField(workId, patch.content ?? null, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE plot SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -569,10 +714,11 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
       await db.execute(
         `INSERT INTO foreshadow (id, work_id, writer_id, title, status, importance, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '진행중', ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, importance, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, encTitle, '진행중', importance, sortOrder, now, now],
       );
       return id;
     },
@@ -588,8 +734,20 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('foreshadow', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('title' in patch && typeof patch.title === 'string') {
+          effective.title = await encryptWorkField(workId, patch.title, now);
+        }
+        if ('content' in patch) {
+          effective.content = await encryptWorkField(workId, patch.content ?? null, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE foreshadow SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -605,10 +763,11 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO idea_archive (id, work_id, writer_id, content, tag, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, content, tag, sortOrder, now, now],
+        [id, workId, writerId, encContent, tag, sortOrder, now, now],
       );
       return id;
     },
@@ -619,8 +778,17 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('idea_archive', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('content' in patch && typeof patch.content === 'string') {
+          effective.content = await encryptWorkField(workId, patch.content, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -1076,10 +1244,14 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const workId = await resolveForeshadowWorkId(foreshadowId);
+      const encMemo = workId
+        ? await encryptWorkField(workId, contextMemo, now)
+        : contextMemo;
       await db.execute(
         `INSERT INTO foreshadow_link (id, foreshadow_id, link_type, episode_id, plot_id, context_memo, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, foreshadowId, linkType, episodeId, plotId, contextMemo, now],
+        [id, foreshadowId, linkType, episodeId, plotId, encMemo, now],
       );
       return id;
     },
@@ -1092,11 +1264,16 @@ export function useLocalWrite() {
         contextMemo: string | null;
       },
     ): Promise<void> => {
+      const now = new Date().toISOString();
+      const workId = await resolveForeshadowLinkWorkId(linkId);
+      const encMemo = workId
+        ? await encryptWorkField(workId, values.contextMemo, now)
+        : values.contextMemo;
       await db.execute(
         `UPDATE foreshadow_link
          SET link_type = ?, episode_id = ?, plot_id = ?, context_memo = ?
          WHERE id = ?`,
-        [values.linkType, values.episodeId, values.plotId, values.contextMemo, linkId],
+        [values.linkType, values.episodeId, values.plotId, encMemo, linkId],
       );
     },
     deleteForeshadowLink: async (linkId: string): Promise<void> => {

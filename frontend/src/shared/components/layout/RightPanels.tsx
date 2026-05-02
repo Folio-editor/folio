@@ -48,6 +48,7 @@ import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useDecryptedEpisode } from '../../hooks/useDecryptedEpisode';
+import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
 import { apiClient, ApiError } from '../../lib/apiClient';
 import { useNavigationStore } from '../../stores/navigationStore';
 
@@ -458,6 +459,18 @@ function IdeaTabContent({ selectedWorkId }: { selectedWorkId: string | null }) {
   );
 }
 
+interface RawIdeaListRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  content: string | null;
+  tag: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
+}
+
 interface IdeaRow {
   id: string;
   content: string;
@@ -494,11 +507,28 @@ function IdeaPanelList({
   const [searchText, setSearchText] = useState('');
   const [sortKey, setSortKey] = useState<IdeaSortKey>('default');
 
-  const { data: ideas = [] } = useQuery<IdeaRow>(
-    `SELECT id, content, tag, created_at, updated_at FROM idea_archive
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at DESC`,
+  // content/tag는 v1: 암호문 → useDecryptedIdeaArchiveList 거쳐야 한다.
+  const { data: rawRows = [] } = useQuery<RawIdeaListRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.work_id = ? AND i.writer_id = ?
+     ORDER BY i.sort_order ASC, i.created_at DESC`,
     [workId, writerId],
+  );
+  const { data: decryptedRows } = useDecryptedIdeaArchiveList(rawRows);
+  const ideas: IdeaRow[] = useMemo(
+    () =>
+      decryptedRows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        tag: r.tag,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+      })),
+    [decryptedRows],
   );
 
   const filteredIdeas = useMemo(() => {
@@ -718,23 +748,35 @@ function IdeaPanelList({
   );
 }
 
-interface IdeaDetailRow {
+interface RawIdeaDetailRow {
   id: string;
+  work_id: string;
+  writer_id: string;
   content: string | null;
   tag: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 function IdeaPanelDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { data: rows = [] } = useQuery<IdeaDetailRow>(
-    `SELECT id, content, tag FROM idea_archive WHERE id = ?`,
+  const { data: rows = [] } = useQuery<RawIdeaDetailRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.id = ? LIMIT 1`,
     [id],
   );
+  const { data: decrypted } = useDecryptedIdeaArchiveList(rows);
   const { updateIdea, deleteIdeaArchive } = useLocalWrite();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  const loaded = rows.length > 0;
-  const idea = rows[0];
+  const loaded = decrypted.length > 0;
+  const idea = decrypted[0];
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">

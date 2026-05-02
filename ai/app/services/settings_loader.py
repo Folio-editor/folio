@@ -11,6 +11,11 @@ from app.services.text_extractor import extract_plain_text
 SETTINGS_FULL_THRESHOLD = 40
 
 
+def _is_ciphertext(value: Any) -> bool:
+    """Plan C v1 암호문 판별. 'v1:' 접두사로 시작하는 문자열만 암호문."""
+    return isinstance(value, str) and value.startswith("v1:")
+
+
 class SettingsBundle(TypedDict):
     mode: str
     count: int
@@ -45,7 +50,12 @@ async def load_settings(db: AsyncSession, work_id: str) -> SettingsBundle:
     )
 
     characters = character_result.fetchall()
-    world_notes = world_note_result.fetchall()
+    # Plan C v1 암호문(name 또는 content가 'v1:' 접두사)이면 AI 서버가 평문을 알 수 없으므로
+    # settings 컨텍스트에서 제외한다.
+    world_notes = [
+        row for row in world_note_result.fetchall()
+        if not _is_ciphertext(row[0]) and not _is_ciphertext(row[1])
+    ]
     total = len(characters) + len(world_notes)
     mode = "full" if total <= SETTINGS_FULL_THRESHOLD else "compact"
 

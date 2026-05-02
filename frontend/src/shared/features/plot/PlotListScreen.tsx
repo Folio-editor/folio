@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { useQuery } from '@powersync/react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 
@@ -24,11 +26,25 @@ const STATUS_COLOR: Record<string, string> = {
 export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
   const writerId = useWriterId();
   const { createPlot } = useLocalWrite();
-  const { data: items = [] } = useQuery<PlotRow>(
-    `SELECT id, title, status FROM plot
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ? AND p.writer_id = ?
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedItems } = useDecryptedPlotList(rawRows);
+  const items: PlotRow[] = useMemo(
+    () =>
+      decryptedItems.map((p) => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+      })),
+    [decryptedItems],
   );
 
   const handleNew = async () => {

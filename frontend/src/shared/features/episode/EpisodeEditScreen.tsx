@@ -5,6 +5,7 @@ import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
 import { useDecryptedEpisode, type DecryptedEpisodeRow } from '../../hooks/useDecryptedEpisode';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
 import { Input } from '../../components/ui/Input';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { StatusPillDropdown, type StatusPillOption } from '../../components/ui/StatusPillDropdown';
@@ -185,14 +186,59 @@ function PlotLinkIndicator({
   const { linkPlotEpisode, unlinkPlotEpisode, createPlot } = useLocalWrite();
   const [showModal, setShowModal] = useState(false);
 
-  const { data: linkRows = [] } = useQuery<LinkRow>(
-    `SELECT pel.id AS link_id, pel.plot_id, p.title AS plot_title
+  const { data: rawLinkRows = [] } = useQuery<{
+    link_id: string;
+    plot_id: string;
+    plot_title: string | null;
+    plot_work_id: string;
+    plot_writer_id: string;
+    plot_parent_id: string | null;
+    plot_status: string | null;
+    plot_content: string | null;
+    plot_sort_order: number | null;
+    plot_created_at: string;
+    plot_updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT pel.id AS link_id, pel.plot_id,
+            p.title AS plot_title, p.work_id AS plot_work_id, p.writer_id AS plot_writer_id,
+            p.parent_id AS plot_parent_id, p.status AS plot_status, p.content AS plot_content,
+            p.sort_order AS plot_sort_order, p.created_at AS plot_created_at, p.updated_at AS plot_updated_at,
+            w.encrypted_dek AS encrypted_dek
      FROM plot_episode_link pel
      JOIN plot p ON p.id = pel.plot_id
+     LEFT JOIN work w ON w.id = p.work_id
      WHERE pel.episode_id = ?`,
     [episodeId],
   );
-  const link = linkRows[0] ?? null;
+  const rawPlotRows: RawPlotRow[] = useMemo(
+    () =>
+      rawLinkRows.map((r) => ({
+        id: r.plot_id,
+        work_id: r.plot_work_id,
+        writer_id: r.plot_writer_id,
+        parent_id: r.plot_parent_id,
+        title: r.plot_title,
+        status: r.plot_status,
+        content: r.plot_content,
+        sort_order: r.plot_sort_order,
+        created_at: r.plot_created_at,
+        updated_at: r.plot_updated_at,
+        encrypted_dek: r.encrypted_dek,
+      })),
+    [rawLinkRows],
+  );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
+  const link: LinkRow | null = useMemo(() => {
+    const r = rawLinkRows[0];
+    if (!r) return null;
+    const plot = decryptedPlots.find((p) => p.id === r.plot_id);
+    return {
+      link_id: r.link_id,
+      plot_id: r.plot_id,
+      plot_title: plot?.title ?? '',
+    };
+  }, [rawLinkRows, decryptedPlots]);
 
   const { data: episodeInfo = [] } = useQuery<{ work_id: string }>(
     `SELECT work_id FROM episode WHERE id = ?`,
@@ -292,13 +338,22 @@ function PlotLinkModal({
   const writerId = useWriterId();
   const [search, setSearch] = useState('');
 
-  // 아직 연결되지 않은 플롯 회차 목록
-  const { data: plots = [] } = useQuery<UnlinkedPlotRow>(
-    `SELECT p.id, p.title FROM plot p
+  // 아직 연결되지 않은 플롯 회차 목록 — title은 v1: 암호문, 클라이언트 측 검색
+  const { data: rawPlotRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
      WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NOT NULL
        AND p.id NOT IN (SELECT plot_id FROM plot_episode_link)
      ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
+  const plots: UnlinkedPlotRow[] = useMemo(
+    () => decryptedPlots.map((p) => ({ id: p.id, title: p.title })),
+    [decryptedPlots],
   );
 
   const filtered = useMemo(() => {

@@ -47,22 +47,15 @@ import type { MainDoc, MainTab, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
 import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
 import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useDecryptedPlanNoteList } from '../../hooks/useDecryptedPlanNote';
+import { useDecryptedWorldNoteList } from '../../hooks/useDecryptedWorldNote';
+import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
+import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
+import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
 
-const TAB_TITLE_QUERIES: Record<WorkspaceSection, string> = {
-  episode: 'SELECT title FROM episode WHERE id = ? LIMIT 1',
-  'world-note': 'SELECT name AS title FROM world_note WHERE id = ? LIMIT 1',
-  plan: 'SELECT title FROM plan_note WHERE id = ? LIMIT 1',
-  // plot은 회차일 때 "막이름 / 회차제목"으로 합성 — parent LEFT JOIN
-  plot:
-    `SELECT p.title AS title, p.parent_id AS parent_id, parent.title AS parent_title
-     FROM plot p
-     LEFT JOIN plot parent ON parent.id = p.parent_id
-     WHERE p.id = ? LIMIT 1`,
-  foreshadow: 'SELECT title FROM foreshadow WHERE id = ? LIMIT 1',
-  // character는 cnote:/char: prefix로 분기 — 컴포넌트 내부에서 처리
-  character: '',
-  'idea-archive': 'SELECT content AS title FROM idea_archive WHERE id = ? LIMIT 1',
-};
+// PR4: 탭 제목 컬럼은 v1: 접두사 ciphertext일 수 있어 episode 외 모든 section은
+// 해당 테이블의 work + JOIN으로 raw row를 가져와 batch decrypt 훅으로 평문 변환.
+const FALLBACK_SQL = 'SELECT NULL AS title WHERE 0';
 
 function useTabTitle(doc: MainDoc | null): string {
   const isCharacter = doc?.section === 'character';
@@ -70,11 +63,111 @@ function useTabTitle(doc: MainDoc | null): string {
   const cnotePrefix = isCharacter && doc?.itemId.startsWith('cnote:');
   const charId = charPrefix ? doc!.itemId.slice(5) : null;
   const cnoteId = cnotePrefix ? doc!.itemId.slice(6) : null;
+  const isAll = doc?.itemId === '__all__';
 
-  const generalSql = !isCharacter && doc ? TAB_TITLE_QUERIES[doc.section] : '';
-  const generalParams = !isCharacter && doc ? [doc.itemId] : [];
-  // PR3 — character.name / character_note.title은 v1: 접두사 ciphertext일 수 있어
-  // work.encrypted_dek와 JOIN해 batch decrypt 훅으로 평문 변환.
+  const sec = !isCharacter && doc && !isAll ? doc.section : null;
+  const id = !isCharacter && doc && !isAll ? doc.itemId : null;
+
+  // episode는 평문(작품 메타 외 본문만 암호화 — title은 평문). 단순 SELECT.
+  const epSql = sec === 'episode' && id ? 'SELECT title FROM episode WHERE id = ? LIMIT 1' : '';
+  const { data: epRows = [] } = useQuery<{ title: string | null }>(
+    epSql || FALLBACK_SQL,
+    epSql ? [id!] : [],
+  );
+
+  // PR4 — 각 테이블 work JOIN + batch decrypt 훅
+  const planSql = sec === 'plan' && id
+    ? `SELECT pn.id, pn.work_id, pn.writer_id, pn.title, pn.content,
+              pn.sort_order, pn.created_at, pn.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM plan_note pn LEFT JOIN work w ON w.id = pn.work_id
+       WHERE pn.id = ? LIMIT 1`
+    : '';
+  const { data: rawPlanRows = [] } = useQuery<{
+    id: string; work_id: string; writer_id: string;
+    title: string | null; content: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    encrypted_dek: string | null;
+  }>(planSql || FALLBACK_SQL, planSql ? [id!] : []);
+  const { data: decPlan } = useDecryptedPlanNoteList(planSql ? rawPlanRows : []);
+
+  const wnSql = sec === 'world-note' && id
+    ? `SELECT wn.id, wn.work_id, wn.writer_id, wn.parent_id, wn.name, wn.content,
+              wn.sort_order, wn.created_at, wn.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM world_note wn LEFT JOIN work w ON w.id = wn.work_id
+       WHERE wn.id = ? LIMIT 1`
+    : '';
+  const { data: rawWnRows = [] } = useQuery<{
+    id: string; work_id: string; writer_id: string;
+    parent_id: string | null; name: string | null; content: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    encrypted_dek: string | null;
+  }>(wnSql || FALLBACK_SQL, wnSql ? [id!] : []);
+  const { data: decWn } = useDecryptedWorldNoteList(wnSql ? rawWnRows : []);
+
+  // plot은 자기 자신 + 부모(있으면) — 합성용. 한 번에 두 행 fetch.
+  const plotSql = sec === 'plot' && id
+    ? `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+              p.sort_order, p.created_at, p.updated_at,
+              w.encrypted_dek AS encrypted_dek, 0 AS is_parent
+       FROM plot p LEFT JOIN work w ON w.id = p.work_id
+       WHERE p.id = ?
+       UNION ALL
+       SELECT pp.id, pp.work_id, pp.writer_id, pp.parent_id, pp.title, pp.status, pp.content,
+              pp.sort_order, pp.created_at, pp.updated_at,
+              ww.encrypted_dek AS encrypted_dek, 1 AS is_parent
+       FROM plot pp LEFT JOIN work ww ON ww.id = pp.work_id
+       WHERE pp.id = (SELECT parent_id FROM plot WHERE id = ?)`
+    : '';
+  const { data: rawPlotRows = [] } = useQuery<{
+    id: string; work_id: string; writer_id: string;
+    parent_id: string | null; title: string | null; status: string | null; content: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    encrypted_dek: string | null; is_parent: number;
+  }>(plotSql || FALLBACK_SQL, plotSql ? [id!, id!] : []);
+  const { data: decPlot } = useDecryptedPlotList(
+    plotSql
+      ? rawPlotRows.map((r) => ({
+          id: r.id, work_id: r.work_id, writer_id: r.writer_id,
+          parent_id: r.parent_id, title: r.title, status: r.status, content: r.content,
+          sort_order: r.sort_order, created_at: r.created_at, updated_at: r.updated_at,
+          encrypted_dek: r.encrypted_dek,
+        }))
+      : [],
+  );
+
+  const foreSql = sec === 'foreshadow' && id
+    ? `SELECT f.id, f.work_id, f.writer_id, f.title, f.status, f.importance, f.content,
+              f.sort_order, f.created_at, f.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM foreshadow f LEFT JOIN work w ON w.id = f.work_id
+       WHERE f.id = ? LIMIT 1`
+    : '';
+  const { data: rawForeRows = [] } = useQuery<{
+    id: string; work_id: string; writer_id: string;
+    title: string | null; status: string | null; importance: string | null; content: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    encrypted_dek: string | null;
+  }>(foreSql || FALLBACK_SQL, foreSql ? [id!] : []);
+  const { data: decFore } = useDecryptedForeshadowList(foreSql ? rawForeRows : []);
+
+  const ideaSql = sec === 'idea-archive' && id
+    ? `SELECT ia.id, ia.work_id, ia.writer_id, ia.content, ia.tag,
+              ia.sort_order, ia.created_at, ia.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM idea_archive ia LEFT JOIN work w ON w.id = ia.work_id
+       WHERE ia.id = ? LIMIT 1`
+    : '';
+  const { data: rawIdeaRows = [] } = useQuery<{
+    id: string; work_id: string; writer_id: string;
+    content: string | null; tag: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    encrypted_dek: string | null;
+  }>(ideaSql || FALLBACK_SQL, ideaSql ? [id!] : []);
+  const { data: decIdea } = useDecryptedIdeaArchiveList(ideaSql ? rawIdeaRows : []);
+
+  // PR3 — character / character_note
   const charSql = charId
     ? `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
               c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
@@ -92,55 +185,24 @@ function useTabTitle(doc: MainDoc | null): string {
        LEFT JOIN work w ON w.id = c.work_id
        WHERE cn.id = ? LIMIT 1`
     : '';
-
-  // 사용 안 하는 분기는 빈 결과 SQL로 — useQuery 항상 호출 (hooks rule)
-  const fallbackSql = 'SELECT NULL AS title WHERE 0';
-  const { data: generalRows = [] } = useQuery<{
-    title: string | null;
-    parent_id?: string | null;
-    parent_title?: string | null;
-  }>(
-    generalSql || fallbackSql,
-    generalSql ? generalParams : [],
-  );
   const { data: rawCharRows = [] } = useQuery<{
-    id: string;
-    work_id: string;
-    writer_id: string;
-    name: string | null;
-    gender: string | null;
-    age: string | null;
+    id: string; work_id: string; writer_id: string;
+    name: string | null; gender: string | null; age: string | null;
     profile_image_url: string | null;
-    sort_order: number | null;
-    created_at: string;
-    updated_at: string;
+    sort_order: number | null; created_at: string; updated_at: string;
     encrypted_dek: string | null;
-  }>(
-    charSql || fallbackSql,
-    charSql ? [charId!] : [],
-  );
+  }>(charSql || FALLBACK_SQL, charSql ? [charId!] : []);
   const { data: rawCnoteRows = [] } = useQuery<{
-    id: string;
-    character_id: string;
-    writer_id: string;
-    kind: string;
-    title: string | null;
-    content: string | null;
-    sort_order: number | null;
-    created_at: string;
-    updated_at: string;
-    work_id: string;
-    encrypted_dek: string | null;
-  }>(
-    cnoteSql || fallbackSql,
-    cnoteSql ? [cnoteId!] : [],
-  );
+    id: string; character_id: string; writer_id: string; kind: string;
+    title: string | null; content: string | null;
+    sort_order: number | null; created_at: string; updated_at: string;
+    work_id: string; encrypted_dek: string | null;
+  }>(cnoteSql || FALLBACK_SQL, cnoteSql ? [cnoteId!] : []);
   const { data: decryptedChars } = useDecryptedCharacterList(charSql ? rawCharRows : []);
   const { data: decryptedCnotes } = useDecryptedCharacterNoteList(cnoteSql ? rawCnoteRows : []);
 
   if (!doc) return '새 탭';
-  // '__all__' magic itemId — section별 통합 뷰 라벨
-  if (doc.itemId === '__all__') {
+  if (isAll) {
     if (doc.section === 'plot') return '전체 플롯';
     return '전체';
   }
@@ -149,18 +211,46 @@ function useTabTitle(doc: MainDoc | null): string {
     if (cnotePrefix) return decryptedCnotes[0]?.title?.trim() || '(제목 없음)';
     return '(알 수 없음)';
   }
-  // plot 회차는 "막이름 / 회차제목" 합성
-  if (doc.section === 'plot') {
-    const row = generalRows[0];
-    if (!row) return '(제목 없음)';
-    const own = row.title?.trim() || '(제목 없음)';
-    if (row.parent_id && row.parent_title) {
-      const parent = row.parent_title.trim() || '(제목 없음)';
-      return `${parent} / ${own}`;
+  if (sec === 'episode') return epRows[0]?.title?.trim() || '(제목 없음)';
+  if (sec === 'plan') return decPlan[0]?.title?.trim() || '(제목 없음)';
+  if (sec === 'world-note') return decWn[0]?.name?.trim() || '(제목 없음)';
+  if (sec === 'plot') {
+    const own = decPlot.find((_p, i) => rawPlotRows[i]?.is_parent === 0);
+    const parent = decPlot.find((_p, i) => rawPlotRows[i]?.is_parent === 1);
+    if (!own) return '(제목 없음)';
+    const ownTitle = own.title?.trim() || '(제목 없음)';
+    if (parent) {
+      return `${parent.title?.trim() || '(제목 없음)'} / ${ownTitle}`;
     }
-    return own;
+    return ownTitle;
   }
-  return generalRows[0]?.title?.trim() || '(제목 없음)';
+  if (sec === 'foreshadow') return decFore[0]?.title?.trim() || '(제목 없음)';
+  if (sec === 'idea-archive') {
+    // idea_archive는 content가 사실상 title — TipTap JSON일 수 있어 첫 텍스트 추출.
+    const c = decIdea[0]?.content;
+    if (!c) return '(메모 없음)';
+    return extractIdeaPreview(c) || '(메모 없음)';
+  }
+  return '(제목 없음)';
+}
+
+function extractIdeaPreview(raw: string): string {
+  // TipTap JSON 또는 평문일 수 있다. JSON이면 type=text 노드의 첫 chunk를 추출.
+  try {
+    const obj = JSON.parse(raw);
+    const stack: unknown[] = [obj];
+    while (stack.length > 0) {
+      const cur = stack.pop() as { type?: string; text?: string; content?: unknown[] } | null;
+      if (!cur) continue;
+      if (cur.type === 'text' && typeof cur.text === 'string' && cur.text.trim()) {
+        return cur.text.trim().slice(0, 60);
+      }
+      if (Array.isArray(cur.content)) stack.push(...cur.content);
+    }
+    return raw.slice(0, 60);
+  } catch {
+    return raw.trim().slice(0, 60);
+  }
 }
 
 interface MainTabBarProps {

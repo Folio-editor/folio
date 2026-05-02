@@ -245,8 +245,14 @@ async def _fetch_world_notes(session: AsyncSession, work_id: str) -> str:
     # 각 항목에 번호를 매겨 체크리스트 식 검수가 가능하게 한다.
     # 검수 LLM은 시스템 프롬프트의 "세계관 룰 체크리스트" 지시에 따라
     # 각 번호 항목을 본문과 1:1로 점검하게 된다 (attention 분산 완화).
+    # Plan C v1 암호문(v1: 접두사)은 AI 서버가 복호화 키를 보유하지 않으므로
+    # 컨텍스트에서 제외한다 (name 또는 content가 암호문이면 row 전체 스킵).
     lines = []
-    for idx, row in enumerate(rows, start=1):
+    idx = 0
+    for row in rows:
+        if _is_ciphertext(row[0]) or _is_ciphertext(row[1]):
+            continue
+        idx += 1
         content = _plain(row[1])[:WORLD_NOTE_TRUNC] if row[1] else ""
         lines.append(f"[W{idx}] {row[0]}: {content}")
     return "\n".join(lines)
@@ -263,8 +269,12 @@ async def _fetch_foreshadows(session: AsyncSession, work_id: str) -> str:
     rows = r.fetchall()
     if not rows:
         return ""
+    # title/content 중 하나라도 v1: 암호문이면 row 스킵.
+    # status/importance는 운영 메타데이터(평문)라 필터 대상이 아님.
     lines = []
     for row in rows:
+        if _is_ciphertext(row[0]) or _is_ciphertext(row[3]):
+            continue
         status = row[1] or "unknown"
         importance = row[2] or ""
         content = _plain(row[3])[:200] if row[3] else ""
@@ -288,8 +298,11 @@ async def _fetch_storyline(session: AsyncSession, work_id: str) -> str:
     rows = r.fetchall()
     if not rows:
         return ""
+    # title 또는 content가 v1: 암호문이면 컨텍스트에서 제외.
     lines: list[str] = []
     for row in rows:
+        if _is_ciphertext(row[0]) or _is_ciphertext(row[1]):
+            continue
         content = _plain(row[1])[:PLOT_TRUNC] if row[1] else ""
         lines.append(f"- {row[0]}: {content}")
     return "\n".join(lines)

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { ChevronsLeft, Coins, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
 import { useThemeStore, type Theme } from '../../stores/themeStore';
 import { useWriterId, useIsGuest } from '../../hooks/useWriterId';
 import { useDecryptedWork } from '../../hooks/useDecryptedWork';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { useAuthStore } from '../../stores/authStore';
 import { useWalletStore } from '../../stores/walletStore';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -376,22 +377,33 @@ function ActivityFilters({
   // character 패널일 때만 — 작품 내 캐릭터 중 한 명에라도 태그로 등록된 world_note만 옵션
   // (전체 world_note가 아니라 실제 사용 중인 태그만)
   const isCharacter = activity === 'character';
-  const { data: worldNoteRows = [] } = useQuery<{ id: string; name: string }>(
+  const { data: rawWorldNoteRows = [] } = useQuery<RawWorldNoteRow>(
     isCharacter && workId
-      ? `SELECT DISTINCT wn.id, wn.name
+      ? `SELECT DISTINCT wn.id, wn.work_id, wn.writer_id, wn.parent_id,
+                wn.name, wn.content, wn.sort_order, wn.created_at, wn.updated_at,
+                w.encrypted_dek AS encrypted_dek
          FROM world_note wn
          JOIN character_tag ct ON ct.world_note_id = wn.id
          JOIN character c ON c.id = ct.character_id
+         LEFT JOIN work w ON w.id = wn.work_id
          WHERE c.work_id = ?
          ORDER BY wn.sort_order ASC, wn.created_at ASC`
-      : `SELECT NULL AS id, NULL AS name WHERE 0`,
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS name, NULL AS content, NULL AS sort_order,
+                NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     isCharacter && workId ? [workId] : [],
   );
-  const tagOptions: FilterOption[] = isCharacter
-    ? worldNoteRows
-        .filter((r) => r.id)
-        .map((r) => ({ value: r.id, label: r.name?.trim() || '(이름 없음)' }))
-    : [];
+  const { data: decryptedWorldNoteRows } = useDecryptedWorldNoteList(rawWorldNoteRows);
+  const tagOptions: FilterOption[] = useMemo(
+    () =>
+      isCharacter
+        ? decryptedWorldNoteRows
+            .filter((r) => r.id)
+            .map((r) => ({ value: r.id, label: r.name?.trim() || '(이름 없음)' }))
+        : [],
+    [isCharacter, decryptedWorldNoteRows],
+  );
 
   useEffect(() => {
     if (!isCharacter) return;

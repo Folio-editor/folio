@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
 from app.services.text_extractor import extract_plain_text
+
+
+def _is_ciphertext(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith("v1:")
 
 
 async def list_characters(session: AsyncSession, ctx: WriterContext) -> list[dict]:
@@ -60,8 +65,11 @@ async def get_character(session: AsyncSession, ctx: WriterContext, *, name: str)
         ),
         {"cid": uuid.UUID(char["id"])},
     )
+    # field_name 또는 field_value가 v1: 암호문이면 평문을 알 수 없으므로 제외.
     char["custom_fields"] = [
-        {"field_name": r[0], "field_value": r[1]} for r in cf.fetchall()
+        {"field_name": r[0], "field_value": r[1]}
+        for r in cf.fetchall()
+        if not (_is_ciphertext(r[0]) or _is_ciphertext(r[1]))
     ]
 
     return char

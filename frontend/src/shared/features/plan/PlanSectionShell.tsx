@@ -1,5 +1,6 @@
 import { useQuery } from '@powersync/react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedPlanNoteList } from '../../hooks/useDecryptedPlanNote';
 import { ContentEditor } from '../../components/editor/ContentEditor';
 import { PlanHeader } from './PlanHeader';
 
@@ -17,10 +18,16 @@ interface PlanSectionShellProps {
   onSendToRight?: () => void;
 }
 
-interface PlanNoteRow {
+interface RawPlanNoteJoinRow {
   id: string;
-  title: string;
+  work_id: string;
+  writer_id: string;
+  title: string | null;
   content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 export function PlanSectionShell({
@@ -30,13 +37,21 @@ export function PlanSectionShell({
 }: PlanSectionShellProps) {
   const { updatePlanNoteTitle, updatePlanNoteContent, deletePlanNote } = useLocalWrite();
 
-  const { data: noteRows = [] } = useQuery<PlanNoteRow>(
+  const { data: rawRows = [] } = useQuery<RawPlanNoteJoinRow>(
     selectedItemId
-      ? `SELECT id, title, content FROM plan_note WHERE id = ? LIMIT 1`
-      : `SELECT '' AS id, '' AS title, NULL AS content WHERE 0`,
+      ? `SELECT pn.id, pn.work_id, pn.writer_id, pn.title, pn.content,
+                pn.sort_order, pn.created_at, pn.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plan_note pn
+         LEFT JOIN work w ON w.id = pn.work_id
+         WHERE pn.id = ? LIMIT 1`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS title,
+                NULL AS content, NULL AS sort_order, NULL AS created_at,
+                NULL AS updated_at, NULL AS encrypted_dek WHERE 0`,
     selectedItemId ? [selectedItemId] : [],
   );
-  const note = selectedItemId ? (noteRows[0] ?? null) : null;
+  const { data: decryptedNotes } = useDecryptedPlanNoteList(rawRows);
+  const note = selectedItemId ? (decryptedNotes[0] ?? null) : null;
 
   if (!note) {
     return (

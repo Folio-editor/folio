@@ -35,6 +35,7 @@ import {
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -125,18 +126,38 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const { data: acts = [] } = useQuery<ActRow>(
-    `SELECT id, title, content FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawPlotRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ? AND p.writer_id = ?
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
   );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
 
-  const { data: episodes = [] } = useQuery<PlotEpisodeRow>(
-    `SELECT id, parent_id, title, status, content FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NOT NULL
-     ORDER BY sort_order ASC, created_at ASC`,
-    [workId, writerId],
+  const acts: ActRow[] = useMemo(
+    () =>
+      decryptedPlots
+        .filter((p) => p.parent_id == null)
+        .map((p) => ({ id: p.id, title: p.title, content: p.content })),
+    [decryptedPlots],
+  );
+
+  const episodes: PlotEpisodeRow[] = useMemo(
+    () =>
+      decryptedPlots
+        .filter((p) => p.parent_id != null)
+        .map((p) => ({
+          id: p.id,
+          parent_id: p.parent_id as string,
+          title: p.title,
+          status: p.status,
+          content: p.content,
+        })),
+    [decryptedPlots],
   );
 
   const { data: links = [] } = useQuery<LinkRow>(
