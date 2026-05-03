@@ -243,7 +243,6 @@ export function AuthenticatedApp() {
     createWork,
     createWorldNote,
     createPlanNote,
-    ensureWorldNoteTemplates,
     placeWorldNote,
     placePlot,
     placePlanNote,
@@ -254,14 +253,6 @@ export function AuthenticatedApp() {
     placeCharacter,
     placeCharacterNote,
   } = useLocalWrite();
-
-  // 세계관 탭 진입 시 기본 템플릿 자동 생성
-  useEffect(() => {
-    if (activity === 'world-note' && selectedWorkId) {
-      void ensureWorldNoteTemplates(selectedWorkId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activity, selectedWorkId]);
 
   // ── 신규 사용자 온보딩 가이드 ─────────────────────────────────
   // 트리거 조건 (둘 다 만족):

@@ -361,6 +361,13 @@ function CharacterTreeItem({
       : `SELECT '' AS id, '' AS kind, '' AS title, 0 AS sort_order, '' AS character_id WHERE 0`,
     isExpanded ? [character.id, writerId] : [],
   );
+  // chevron 표시 조건 — intro 제외 자식 노트가 1개라도 있으면 펼침 화살표 노출
+  const { data: childCountRows = [] } = useQuery<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM character_note
+     WHERE character_id = ? AND writer_id = ? AND kind != 'intro'`,
+    [character.id, writerId],
+  );
+  const hasChildNotes = (childCountRows[0]?.cnt ?? 0) > 0;
   const notes = useOptimisticRows(rawNotes, {
     docType: 'character_note',
     characterId: character.id,
@@ -391,7 +398,7 @@ function CharacterTreeItem({
   };
 
   /**
-   * 인물 복제 — character row 자체만 복제 (사본 외형/성격 노트는 ensureCharacterNotes 가 자동 생성).
+   * 인물 복제 — character row 자체만 복제 (사본 캐릭터 개요 노트는 ensureCharacterNotes 가 자동 생성).
    * 커스텀 노트(kind='custom')는 사본하지 않음. 명시 한계.
    */
   const handleDuplicate = async () => {
@@ -456,18 +463,22 @@ function CharacterTreeItem({
                     : 'text-sidebar-foreground',
               )}
             >
-              <ChevronRight
-                size={12}
-                strokeWidth={2}
-                className={cn(
-                  'shrink-0 transition-transform',
-                  isExpanded && 'rotate-90',
-                )}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleExpand();
-                }}
-              />
+              {hasChildNotes ? (
+                <ChevronRight
+                  size={12}
+                  strokeWidth={2}
+                  className={cn(
+                    'shrink-0 transition-transform',
+                    isExpanded && 'rotate-90',
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleExpand();
+                  }}
+                />
+              ) : (
+                <span className="w-3 shrink-0" aria-hidden />
+              )}
               {character.name?.trim() || '(이름 없음)'}
             </button>
             <button

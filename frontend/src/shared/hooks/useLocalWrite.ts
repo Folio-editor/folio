@@ -176,25 +176,6 @@ export function useLocalWrite() {
     },
 
     // ── world_note ─────────────────────────────────────────
-    /** 세계관 최초 진입 시 기본 템플릿 5개 자동 생성 (이미 문서가 있으면 skip) */
-    ensureWorldNoteTemplates: async (workId: string): Promise<void> => {
-      const result = await db.execute(
-        'SELECT COUNT(*) AS cnt FROM world_note WHERE work_id = ? AND writer_id = ?',
-        [workId, writerId],
-      );
-      const count = (result.rows?._array as { cnt: number }[] | undefined)?.[0]?.cnt ?? 0;
-      if (count > 0) return;
-
-      const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
-      const now = new Date().toISOString();
-      for (let i = 0; i < templates.length; i++) {
-        await db.execute(
-          `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
-          [crypto.randomUUID(), workId, writerId, templates[i], i, now, now],
-        );
-      }
-    },
     /**
      * @param content 사전 채움 본문 (TipTap JSON 문자열). 미지정/null 시 빈 본문(NULL).
      *                복제(Duplicate) 시 원본 콘텐츠 보존 용도.
@@ -273,34 +254,20 @@ export function useLocalWrite() {
     },
 
     // ── character_note ───────────────────────────────────────
-    /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
+    /** 캐릭터에 기본 노트(캐릭터 개요)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
     ensureCharacterNotes: async (characterId: string): Promise<void> => {
       const now = new Date().toISOString();
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'intro', '한 줄 소개', NULL, 0, ?, ?
+         SELECT ?, ?, ?, 'intro', '캐릭터 개요', NULL, 0, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'intro')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
-      );
-      // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
-      await db.execute(
-        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'appearance', '외형', NULL, 1, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
-      );
-      await db.execute(
-        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'personality', '성격', NULL, 2, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
         [crypto.randomUUID(), characterId, writerId, now, now, characterId],
       );
     },
     /**
      * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
-     *                복제 시 원본 콘텐츠 보존 용도. kind는 항상 'custom' — default kind
-     *                ('intro'/'appearance'/'personality')는 ensureCharacterNotes 가 한 번만 만들고
-     *                UNIQUE 보장하므로 사본은 자유 노트로 처리.
+     *                복제 시 원본 콘텐츠 보존 용도. kind는 항상 'custom' — default kind ('intro')는
+     *                ensureCharacterNotes 가 한 번만 만들고 UNIQUE 보장하므로 사본은 자유 노트로 처리.
      */
     createCharacterNote: async (
       characterId: string,
