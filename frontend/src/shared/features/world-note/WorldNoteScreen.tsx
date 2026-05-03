@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@powersync/react';
 import { Trash2 } from 'lucide-react';
 import { WorldNoteEditor } from './WorldNoteEditor';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
@@ -20,10 +21,6 @@ interface NoteRow {
   parent_id: string | null;
 }
 
-interface ParentRow {
-  name: string;
-}
-
 /**
  * 세계관 문서 편집 화면.
  * - 상단: 브레드크럼 경로 + 인라인 편집 가능한 문서 제목
@@ -32,21 +29,39 @@ interface ParentRow {
 export function WorldNoteScreen({ noteId, onBack, onSendToRight }: WorldNoteScreenProps) {
   const { updateWorldNoteContent, updateWorldNoteName, deleteWorldNote } = useLocalWrite();
 
-  const { data: rows = [] } = useQuery<NoteRow>(
-    `SELECT id, name, content, parent_id FROM world_note WHERE id = ? LIMIT 1`,
+  const { data: rawRows = [] } = useQuery<RawWorldNoteRow>(
+    `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+            n.sort_order, n.created_at, n.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM world_note n
+     LEFT JOIN work w ON w.id = n.work_id
+     WHERE n.id = ? LIMIT 1`,
     [noteId],
   );
-
-  const note = rows[0] ?? null;
+  const { data: decryptedRows } = useDecryptedWorldNoteList(rawRows);
+  const note: NoteRow | null = useMemo(() => {
+    const r = decryptedRows[0];
+    if (!r) return null;
+    return { id: r.id, name: r.name, content: r.content, parent_id: r.parent_id };
+  }, [decryptedRows]);
 
   // 부모 이름 조회
-  const { data: parentRows = [] } = useQuery<ParentRow>(
+  const { data: rawParentRows = [] } = useQuery<RawWorldNoteRow>(
     note?.parent_id
-      ? `SELECT name FROM world_note WHERE id = ? LIMIT 1`
-      : `SELECT '' AS name WHERE 0`,
+      ? `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+                n.sort_order, n.created_at, n.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM world_note n
+         LEFT JOIN work w ON w.id = n.work_id
+         WHERE n.id = ? LIMIT 1`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS name, NULL AS content, NULL AS sort_order,
+                NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     note?.parent_id ? [note.parent_id] : [],
   );
-  const parentName = parentRows[0]?.name ?? null;
+  const { data: decryptedParentRows } = useDecryptedWorldNoteList(rawParentRows);
+  const parentName = decryptedParentRows[0]?.name ?? null;
 
   const [nameInput, setNameInput] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);

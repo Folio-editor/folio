@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useWriterId } from '../../hooks/useWriterId';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { contentToHtml } from '../../lib/tiptapPreview';
@@ -37,11 +38,26 @@ export function WorldNoteOverview({ workId, onNoteSelect }: WorldNoteOverviewPro
   );
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const { data: notes = [] } = useQuery<NoteRow>(
-    `SELECT id, name, content, parent_id FROM world_note
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawRows = [] } = useQuery<RawWorldNoteRow>(
+    `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+            n.sort_order, n.created_at, n.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM world_note n
+     LEFT JOIN work w ON w.id = n.work_id
+     WHERE n.work_id = ? AND n.writer_id = ?
+     ORDER BY n.sort_order ASC, n.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedNotes } = useDecryptedWorldNoteList(rawRows);
+  const notes: NoteRow[] = useMemo(
+    () =>
+      decryptedNotes.map((n) => ({
+        id: n.id,
+        name: n.name,
+        content: n.content,
+        parent_id: n.parent_id,
+      })),
+    [decryptedNotes],
   );
 
   const rootNotes = useMemo(

@@ -1,6 +1,7 @@
 package com.storyzip.ai.controller;
 
 import com.storyzip.ai.client.AiClient;
+import com.storyzip.ai.client.dto.AiContextPayload;
 import com.storyzip.ai.client.dto.DraftRequest;
 import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.common.exception.ErrorCode;
@@ -53,14 +54,17 @@ public class AiController {
             String storyline,
             int currentEpisodeNum,
             String model,
-            String userPrompt
+            String userPrompt,
+            // PR5 — 클라이언트 평문 RAG 컨텍스트. 백엔드는 검사·로깅 없이 pass-through.
+            AiContextPayload context
     ) {}
 
     public record ReviewClientRequest(
             String workId,
             String episodeId,
             String content,
-            int episodeNumber
+            int episodeNumber,
+            AiContextPayload context
     ) {}
 
     @PostMapping(value = "/drafts", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -85,7 +89,8 @@ public class AiController {
                 body.storyline(),
                 body.currentEpisodeNum(),
                 model,
-                body.userPrompt()
+                body.userPrompt(),
+                body.context()
         );
 
         SseEmitter emitter = new SseEmitter(5 * 60 * 1000L); // 5분 타임아웃
@@ -113,7 +118,8 @@ public class AiController {
                 writerId,
                 body.episodeId(),
                 body.content(),
-                body.episodeNumber()
+                body.episodeNumber(),
+                body.context()
         );
 
         Map<String, Object> result = aiClient.requestReview(request);

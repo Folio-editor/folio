@@ -1,6 +1,5 @@
 package com.storyzip.sync.service;
 
-import com.storyzip.ai.service.EpisodeIndexDebouncer;
 import com.storyzip.sync.domain.*;
 import com.storyzip.sync.domain.Character;
 import com.storyzip.sync.dto.SyncUploadRequest;
@@ -15,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -54,7 +54,6 @@ public class SyncService {
     private final ForeshadowRepository foreshadowRepo;
     private final ForeshadowLinkRepository foreshadowLinkRepo;
     private final IdeaArchiveRepository ideaArchiveRepo;
-    private final EpisodeIndexDebouncer episodeIndexDebouncer;
 
     /**
      * entry 1건을 독립 트랜잭션으로 처리.
@@ -100,12 +99,13 @@ public class SyncService {
             e = Work.builder().id(id).build();
         }
         e.setWriterId(writerId);
-        applyStr(data, "title",       e::setTitle);
-        applyStr(data, "author_name", e::setAuthorName);
-        applyStr(data, "description", e::setDescription);
-        applyStr(data, "status",      e::setStatus);
-        applyInt(data, "sort_order",  e::setSortOrder);
-        applyDt(data,  "created_at",  e::setCreatedAt);
+        applyStr(data, "title",         e::setTitle);
+        applyStr(data, "author_name",   e::setAuthorName);
+        applyStr(data, "description",   e::setDescription);
+        applyStr(data, "status",        e::setStatus);
+        applyInt(data, "sort_order",    e::setSortOrder);
+        applyDt(data,  "created_at",    e::setCreatedAt);
+        applyBytea(data, "encrypted_dek", e::setEncryptedDek);
         e.setUpdatedAt(LocalDateTime.now());
         // 신규 insert인 경우 NOT NULL 기본값 보정
         if (e.getTitle() == null) e.setTitle("제목 없음");
@@ -429,21 +429,8 @@ public class SyncService {
         }
         episodeRepo.save(e);
 
-        // 트랜잭션 커밋 후에만 AI 인덱싱을 발화시킨다 — 롤백 시 토큰 낭비 방지 + read-after-write 정합성 확보
-        if (data.containsKey("content")) {
-            UUID workIdSnapshot = e.getWorkId();
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        episodeIndexDebouncer.schedule(id, workIdSnapshot, writerId);
-                    }
-                });
-            } else {
-                // 트랜잭션 컨텍스트가 없는 경로(테스트 등) — 즉시 실행
-                episodeIndexDebouncer.schedule(id, workIdSnapshot, writerId);
-            }
-        }
+        // Plan C: episode.content는 클라이언트가 work_key로 AES-GCM 암호화한 v1: 페이로드로 도착한다.
+        // 서버는 평문을 못 보므로 임베딩/인덱싱 트리거를 비활성화 — 클라이언트 측 인덱싱으로 이전 예정.
     }
 
     // ── plot_episode_link ─────────────────────────────────────────
@@ -646,6 +633,20 @@ public class SyncService {
         Object v = data.get(key);
         if (v == null || v.toString().isBlank()) { setter.accept(null); return; }
         setter.accept(UUID.fromString(v.toString()));
+    }
+
+    /**
+     * BYTEA 컬럼 — PowerSync가 BYTEA를 직접 못 보내서 클라이언트가 Base64 문자열로 전송한다.
+     * 서버는 받자마자 디코드해 byte[]로 컬럼에 저장한다 (DB에는 진짜 BYTEA로 들어감).
+     */
+    private static void applyBytea(Map<String, Object> data, String key, Consumer<byte[]> setter) {
+        if (!data.containsKey(key)) return;
+        Object v = data.get(key);
+        if (v == null) { setter.accept(null); return; }
+        String s = v.toString();
+        if (s.isBlank()) { setter.accept(null); return; }
+        try { setter.accept(Base64.getDecoder().decode(s)); }
+        catch (IllegalArgumentException e) { /* 값 유지 — 잘못된 페이로드 무시 */ }
     }
 
     private static void applyDt(Map<String, Object> data, String key, Consumer<LocalDateTime> setter) {

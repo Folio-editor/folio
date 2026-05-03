@@ -12,6 +12,13 @@ import {
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
+import { useDecryptedForeshadowLinkList } from '../../hooks/useDecryptedForeshadowLink';
+import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { Input } from '../../components/ui/Input';
 import { StatusPillDropdown, type StatusPillOption } from '../../components/ui/StatusPillDropdown';
@@ -27,6 +34,20 @@ interface ForeshadowEditScreenProps {
   onSendToRight?: () => void;
 }
 
+interface RawForeshadowQueryRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  title: string | null;
+  status: string | null;
+  importance: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
+}
+
 interface ForeshadowRow {
   id: string;
   work_id: string;
@@ -34,6 +55,35 @@ interface ForeshadowRow {
   status: string;
   importance: string;
   content: string | null;
+}
+
+interface RawLinkQueryRow {
+  id: string;
+  foreshadow_id: string;
+  link_type: string;
+  episode_id: string | null;
+  plot_id: string | null;
+  context_memo: string | null;
+  created_at: string;
+  work_id: string;
+  encrypted_dek: string | null;
+  episode_title: string | null;
+  episode_sort: number | null;
+  episode_parent_title: string | null;
+}
+
+interface RawPlotForLinkRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  parent_id: string | null;
+  title: string | null;
+  status: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface LinkRow {
@@ -130,15 +180,31 @@ function formatTargetOption(target: TargetRow) {
 }
 
 export function ForeshadowEditScreen({ id, onBack, onSendToRight }: ForeshadowEditScreenProps) {
-  const { data: rows = [] } = useQuery<ForeshadowRow>(
-    `SELECT id, work_id, title, status, importance, content FROM foreshadow WHERE id = ?`,
+  // title/status/importance/content 모두 v1: 암호문 → JOIN 후 useDecryptedForeshadowList 거친다.
+  const { data: rawRows = [] } = useQuery<RawForeshadowQueryRow>(
+    `SELECT f.id, f.work_id, f.writer_id, f.title, f.status, f.importance,
+            f.content, f.sort_order, f.created_at, f.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM foreshadow f
+     LEFT JOIN work w ON w.id = f.work_id
+     WHERE f.id = ? LIMIT 1`,
     [id],
   );
-  const item = rows[0];
+  const { data: decrypted } = useDecryptedForeshadowList(rawRows);
+  const decryptedItem = decrypted[0];
 
-  if (!item) {
+  if (!decryptedItem) {
     return <div className="p-8 text-sm text-muted-foreground">복선을 불러오는 중…</div>;
   }
+
+  const item: ForeshadowRow = {
+    id: decryptedItem.id,
+    work_id: decryptedItem.work_id,
+    title: decryptedItem.title,
+    status: decryptedItem.status ?? '진행중',
+    importance: decryptedItem.importance ?? '중',
+    content: decryptedItem.content,
+  };
 
   return <ForeshadowEditor key={id} item={item} onBack={onBack} onSendToRight={onSendToRight} />;
 }
@@ -174,21 +240,67 @@ function ForeshadowEditor({
     void updateForeshadow(id, { title: v }),
   );
 
-  const { data: linkRows = [] } = useQuery<LinkRow>(
-    `SELECT fl.id, fl.link_type, fl.episode_id, fl.plot_id, fl.context_memo,
+  // foreshadow_link.context_memo 는 v1: 암호문, 그리고 plot.title 도 v1: 암호문이다.
+  // (1) link 본체 + episode 메타(평문) JOIN
+  // (2) work_id/encrypted_dek 를 같이 가져와 useDecryptedForeshadowLinkList 로 context_memo 복호화
+  // plot 타이틀은 (3) 별도 plot 쿼리 + useDecryptedPlotList 후 JS 머지
+  const { data: rawLinkRows = [] } = useQuery<RawLinkQueryRow>(
+    `SELECT fl.id, fl.foreshadow_id, fl.link_type, fl.episode_id, fl.plot_id,
+            fl.context_memo, fl.created_at,
+            f.work_id AS work_id,
+            w.encrypted_dek AS encrypted_dek,
             e.title AS episode_title, e.sort_order AS episode_sort,
-            ep.title AS episode_parent_title,
-            p.title AS plot_title,
-            pp.title AS plot_parent_title
+            ep.title AS episode_parent_title
      FROM foreshadow_link fl
+     LEFT JOIN foreshadow f ON f.id = fl.foreshadow_id
+     LEFT JOIN work w ON w.id = f.work_id
      LEFT JOIN episode e ON e.id = fl.episode_id
      LEFT JOIN episode ep ON ep.id = e.parent_id
-     LEFT JOIN plot p ON p.id = fl.plot_id
-     LEFT JOIN plot pp ON pp.id = p.parent_id
      WHERE fl.foreshadow_id = ?
      ORDER BY fl.created_at ASC`,
     [id],
   );
+
+  const { data: decryptedLinks } = useDecryptedForeshadowLinkList(rawLinkRows);
+
+  // plot 측은 별도 SELECT — link 의 plot_id 들이 가리키는 plot + 그 부모 plot 까지 한 번에.
+  const { data: rawPlotRows = [] } = useQuery<RawPlotForLinkRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ?
+     ORDER BY p.created_at ASC`,
+    [workId],
+  );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
+
+  const plotById = useMemo(() => {
+    const m = new Map<string, { title: string; parent_id: string | null }>();
+    for (const p of decryptedPlots) m.set(p.id, { title: p.title, parent_id: p.parent_id });
+    return m;
+  }, [decryptedPlots]);
+
+  const linkRows: LinkRow[] = useMemo(() => {
+    return decryptedLinks.map((l) => {
+      const rawL = rawLinkRows.find((r) => r.id === l.id);
+      const plotMeta = l.plot_id ? plotById.get(l.plot_id) : null;
+      const parent = plotMeta?.parent_id ? plotById.get(plotMeta.parent_id) : null;
+      return {
+        id: l.id,
+        link_type: l.link_type,
+        episode_id: l.episode_id,
+        plot_id: l.plot_id,
+        context_memo: l.context_memo,
+        episode_title: rawL?.episode_title ?? null,
+        episode_sort: rawL?.episode_sort ?? null,
+        episode_parent_title: rawL?.episode_parent_title ?? null,
+        plot_title: plotMeta?.title ?? null,
+        plot_parent_title: parent?.title ?? null,
+      };
+    });
+  }, [decryptedLinks, rawLinkRows, plotById]);
 
   const counts = useMemo(() => {
     const c = { plant: 0, resolve: 0, final_resolve: 0 };
@@ -709,22 +821,55 @@ function AddLinkForm({
   const [targetId, setTargetId] = useState(initialLink?.episode_id ?? initialLink?.plot_id ?? '');
   const [memo, setMemo] = useState(initialLink?.context_memo ?? '');
 
-  const { data: episodes = [] } = useQuery<TargetRow>(
-    `SELECT e.id, e.title, ep.title AS parent_title
-     FROM episode e
-     LEFT JOIN episode ep ON ep.id = e.parent_id
-     WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
-     ORDER BY e.sort_order ASC, e.created_at ASC`,
+  // episode.title 도 v1: 암호문 — work JOIN 후 batch 복호화하고 parent_title은 in-memory 합성
+  const { data: rawEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ? AND e.status != 'trashed'
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
   );
+  const { data: decryptedEpisodes } = useDecryptedEpisodeList(rawEpisodes);
+  const episodes: TargetRow[] = useMemo(() => {
+    const titleById = new Map<string, string>();
+    for (const e of decryptedEpisodes) titleById.set(e.id, e.title);
+    return decryptedEpisodes.map((e) => ({
+      id: e.id,
+      title: e.title,
+      parent_title: e.parent_id ? (titleById.get(e.parent_id) ?? null) : null,
+    }));
+  }, [decryptedEpisodes]);
 
-  const { data: plots = [] } = useQuery<TargetRow>(
-    `SELECT p.id, p.title, pp.title AS parent_title
+  // plot.title 은 v1: 암호문 → 자기/부모 모두 한 번에 가져와 복호화 후 부모 합성
+  const { data: rawPlots = [] } = useQuery<RawPlotForLinkRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status,
+            p.content, p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
      FROM plot p
-     LEFT JOIN plot pp ON pp.id = p.parent_id
-     WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NOT NULL
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ? AND p.writer_id = ?
      ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlots);
+  const plotsById = useMemo(() => {
+    const m = new Map<string, { title: string; parent_id: string | null }>();
+    for (const p of decryptedPlots) m.set(p.id, { title: p.title, parent_id: p.parent_id });
+    return m;
+  }, [decryptedPlots]);
+  const plots: TargetRow[] = useMemo(
+    () =>
+      decryptedPlots
+        .filter((p) => p.parent_id !== null)
+        .map((p) => ({
+          id: p.id,
+          title: p.title,
+          parent_title: p.parent_id ? (plotsById.get(p.parent_id)?.title ?? null) : null,
+        })),
+    [decryptedPlots, plotsById],
   );
 
   const targets = targetType === 'episode' ? episodes : plots;

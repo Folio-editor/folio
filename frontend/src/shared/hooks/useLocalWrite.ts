@@ -1,6 +1,16 @@
 ﻿import { usePowerSync } from '@powersync/react';
+import { encryptString } from '../crypto/cipher';
+import { getCurrentKek } from '../crypto/lifecycle';
+import { ensureWorkKey } from '../crypto/workKey';
 import { useWriterId } from './useWriterId';
 import { analytics, charCountBucket } from '../lib/analytics';
+
+/**
+ * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
+ * 저장된다. 저장 시점에 KEK이 있으면 work_key를 ensureWorkKey로 확보 후 암호화하고,
+ * KEK이 없으면(게스트, 미로그인) 평문 그대로 저장한다.
+ */
+const CIPHERTEXT_PREFIX = 'v1:';
 
 /**
  * SQLite 직접 쓰기 유틸 훅.
@@ -15,6 +25,118 @@ import { analytics, charCountBucket } from '../lib/analytics';
 export function useLocalWrite() {
   const db = usePowerSync();
   const writerId = useWriterId();
+
+  // PR2 — work 메타(title/author_name/description) 암호화 헬퍼.
+  // KEK이 있으면 ensureWorkKey로 work_key 확보 후 평문 → "v1:" + base64 암호화.
+  // KEK이 없으면(게스트/미로그인) 평문 그대로 — episode와 동일 폴백 정책.
+  const encryptWorkField = async (
+    workId: string,
+    plain: string | null,
+    now: string,
+  ): Promise<string | null> => {
+    if (plain == null || plain === '') return plain;
+    const kek = getCurrentKek();
+    if (!kek) return plain;
+    const workKey = await ensureWorkKey({
+      kek,
+      workId,
+      loadEncryptedDek: async () => {
+        const dr = await db.execute(
+          'SELECT encrypted_dek FROM work WHERE id = ? LIMIT 1',
+          [workId],
+        );
+        const row = (dr.rows?._array as { encrypted_dek: string | null }[] | undefined)?.[0];
+        return row?.encrypted_dek ?? null;
+      },
+      saveEncryptedDek: async (b64) => {
+        await db.execute(
+          'UPDATE work SET encrypted_dek = ?, updated_at = ? WHERE id = ?',
+          [b64, now, workId],
+        );
+      },
+    });
+    const cipher = await encryptString(workKey, plain);
+    return CIPHERTEXT_PREFIX + cipher;
+  };
+
+  // PR3 — character_note의 단일 update 경로(updateCharacterNoteTitle/Content)는
+  // 호출자가 work_id를 모르므로 character JOIN으로 보강. KEK 없거나 character가 없으면 null.
+  const resolveCharacterNoteWorkId = async (
+    noteId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT c.work_id AS work_id FROM character_note cn
+       JOIN character c ON c.id = cn.character_id
+       WHERE cn.id = ? LIMIT 1`,
+      [noteId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  // PR4 — 단일 update 경로(updateXxx)에서 호출자가 work_id를 모르는 경우 보강.
+  // 각 테이블의 자체 work_id 컬럼을 그대로 SELECT.
+  const resolveOwnWorkId = async (
+    table: 'plan_note' | 'world_note' | 'plot' | 'foreshadow' | 'idea_archive',
+    id: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM ${table} WHERE id = ? LIMIT 1`,
+      [id],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  // foreshadow_link.context_memo는 foreshadow → work 경로로 보강.
+  const resolveForeshadowLinkWorkId = async (
+    linkId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT f.work_id AS work_id FROM foreshadow_link fl
+       JOIN foreshadow f ON f.id = fl.foreshadow_id
+       WHERE fl.id = ? LIMIT 1`,
+      [linkId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  const resolveForeshadowWorkId = async (
+    foreshadowId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM foreshadow WHERE id = ? LIMIT 1`,
+      [foreshadowId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  // character_custom_field.field_name/field_value는 character → work 경로로 보강.
+  const resolveCharacterWorkId = async (
+    characterId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT work_id FROM character WHERE id = ? LIMIT 1`,
+      [characterId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
+
+  const resolveCharacterCustomFieldWorkId = async (
+    fieldId: string,
+  ): Promise<string | null> => {
+    const r = await db.execute(
+      `SELECT c.work_id AS work_id FROM character_custom_field ccf
+       JOIN character c ON c.id = ccf.character_id
+       WHERE ccf.id = ? LIMIT 1`,
+      [fieldId],
+    );
+    const row = (r.rows?._array as { work_id: string | null }[] | undefined)?.[0];
+    return row?.work_id ?? null;
+  };
 
   const trackCreated = (docType: string, source = 'manual', templateType?: string) => {
     void analytics.track('document_created', {
@@ -42,11 +164,21 @@ export function useLocalWrite() {
     createWork: async (title: string): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      // 먼저 평문으로 INSERT — work 행이 있어야 ensureWorkKey가 encrypted_dek를 UPDATE할 수 있다.
       await db.execute(
         `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, NULL, NULL, '연재중', 0, ?, ?)`,
         [id, writerId, title, now, now],
       );
+      // KEK이 있으면 즉시 title 암호화 — 평문 row가 동기화 큐에 잠시 머물 수 있으나
+      // updated_at이 같은 시점이라 충돌 없이 단일 commit으로 백엔드에 도달한다.
+      const encryptedTitle = await encryptWorkField(id, title, now);
+      if (encryptedTitle !== title) {
+        await db.execute(
+          `UPDATE work SET title = ?, updated_at = ? WHERE id = ?`,
+          [encryptedTitle, now, id],
+        );
+      }
       trackCreated('work');
       return id;
     },
@@ -62,8 +194,21 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+      // title/author_name/description은 암호화 대상. status는 평문 유지(필터·정렬용).
+      if ('title' in patch && typeof patch.title === 'string') {
+        effective.title = await encryptWorkField(id, patch.title, now);
+      }
+      if ('author_name' in patch) {
+        effective.author_name = await encryptWorkField(id, patch.author_name ?? null, now);
+      }
+      if ('description' in patch) {
+        effective.description = await encryptWorkField(id, patch.description ?? null, now);
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE work SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -150,32 +295,58 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO plan_note (id, work_id, writer_id, title, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, title, content, sortOrder, now, now],
+        [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       trackCreated('plan_note', content ? 'template' : 'manual');
       return id;
     },
     updatePlanNoteTitle: async (id: string, title: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('plan_note', id);
+      const encTitle = workId ? await encryptWorkField(workId, title, now) : title;
       await db.execute(
         `UPDATE plan_note SET title = ?, updated_at = ? WHERE id = ?`,
-        [title, now, id],
+        [encTitle, now, id],
       );
       trackSaved('plan_note');
     },
     updatePlanNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('plan_note', id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         `UPDATE plan_note SET content = ?, updated_at = ? WHERE id = ?`,
-        [content, now, id],
+        [encContent, now, id],
       );
       trackSaved('plan_note', content);
     },
 
     // ── world_note ─────────────────────────────────────────
+    /** 세계관 최초 진입 시 기본 템플릿 5개 자동 생성 (이미 문서가 있으면 skip) */
+    ensureWorldNoteTemplates: async (workId: string): Promise<void> => {
+      const result = await db.execute(
+        'SELECT COUNT(*) AS cnt FROM world_note WHERE work_id = ? AND writer_id = ?',
+        [workId, writerId],
+      );
+      const count = (result.rows?._array as { cnt: number }[] | undefined)?.[0]?.cnt ?? 0;
+      if (count > 0) return;
+
+      const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
+      const now = new Date().toISOString();
+      for (let i = 0; i < templates.length; i++) {
+        const encName = await encryptWorkField(workId, templates[i], now);
+        await db.execute(
+          `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+          [crypto.randomUUID(), workId, writerId, encName, i, now, now],
+        );
+      }
+    },
     /**
      * @param content 사전 채움 본문 (TipTap JSON 문자열). 미지정/null 시 빈 본문(NULL).
      *                복제(Duplicate) 시 원본 콘텐츠 보존 용도.
@@ -189,32 +360,40 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encName = await encryptWorkField(workId, name, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, parentId ?? null, name, content, sortOrder, now, now],
+        [id, workId, writerId, parentId ?? null, encName, encContent, sortOrder, now, now],
       );
       trackCreated('world_note', content ? 'template' : 'manual');
       return id;
     },
     updateWorldNoteContent: async (id: string, content: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('world_note', id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         `UPDATE world_note SET content = ?, updated_at = ? WHERE id = ?`,
-        [content, now, id],
+        [encContent, now, id],
       );
       trackSaved('world_note', content);
     },
     updateWorldNoteName: async (id: string, name: string): Promise<void> => {
       const now = new Date().toISOString();
+      const workId = await resolveOwnWorkId('world_note', id);
+      const encName = workId ? await encryptWorkField(workId, name, now) : name;
       await db.execute(
         `UPDATE world_note SET name = ?, updated_at = ? WHERE id = ?`,
-        [name, now, id],
+        [encName, now, id],
       );
       trackSaved('world_note');
     },
 
     // ── character ───────────────────────────────────────────
+    // PR3 — character.name/age는 work_key로 암호화. 호출자가 workId를 알고 있으면
+    // 그대로 받고, note 단일 update처럼 호출자가 모르는 경우는 내부에서 SELECT로 보강.
     createCharacter: async (
       workId: string,
       name: string,
@@ -224,15 +403,18 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encName = await encryptWorkField(workId, name, now);
+      const encAge = await encryptWorkField(workId, age, now);
       await db.execute(
         `INSERT INTO character (id, work_id, writer_id, name, profile_image_url, gender, age, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, name, gender, age, sortOrder, now, now],
+        [id, workId, writerId, encName, gender, encAge, sortOrder, now, now],
       );
       trackCreated('character');
       return id;
     },
     updateCharacter: async (
+      workId: string,
       id: string,
       patch: Partial<{
         name: string;
@@ -244,8 +426,18 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+      // name/age는 암호화. gender(enum)·profile_image_url은 평문 유지.
+      if ('name' in patch && typeof patch.name === 'string') {
+        effective.name = await encryptWorkField(workId, patch.name, now);
+      }
+      if ('age' in patch && typeof patch.age === 'string') {
+        effective.age = await encryptWorkField(workId, patch.age, now);
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE character SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -254,14 +446,32 @@ export function useLocalWrite() {
     },
 
     // ── character_note ───────────────────────────────────────
-    /** 캐릭터에 기본 노트(캐릭터 개요)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
-    ensureCharacterNotes: async (characterId: string): Promise<void> => {
+    /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
+    ensureCharacterNotes: async (workId: string, characterId: string): Promise<void> => {
       const now = new Date().toISOString();
+      // 기본 노트 3개의 title도 암호화 — '한 줄 소개'/'외형'/'성격'은 평문 자체가 메타지만
+      // 복호화 일관성(모든 character_note.title은 동일 처리)을 위해 암호화한다.
+      const encIntroTitle = await encryptWorkField(workId, '한 줄 소개', now);
+      const encAppearanceTitle = await encryptWorkField(workId, '외형', now);
+      const encPersonalityTitle = await encryptWorkField(workId, '성격', now);
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'intro', '캐릭터 개요', NULL, 0, ?, ?
+         SELECT ?, ?, ?, 'intro', ?, NULL, 0, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'intro')`,
-        [crypto.randomUUID(), characterId, writerId, now, now, characterId],
+        [crypto.randomUUID(), characterId, writerId, encIntroTitle, now, now, characterId],
+      );
+      // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
+      await db.execute(
+        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         SELECT ?, ?, ?, 'appearance', ?, NULL, 1, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
+        [crypto.randomUUID(), characterId, writerId, encAppearanceTitle, now, now, characterId],
+      );
+      await db.execute(
+        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
+         SELECT ?, ?, ?, 'personality', ?, NULL, 2, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
+        [crypto.randomUUID(), characterId, writerId, encPersonalityTitle, now, now, characterId],
       );
     },
     /**
@@ -270,6 +480,7 @@ export function useLocalWrite() {
      *                ensureCharacterNotes 가 한 번만 만들고 UNIQUE 보장하므로 사본은 자유 노트로 처리.
      */
     createCharacterNote: async (
+      workId: string,
       characterId: string,
       title: string,
       sortOrder: number,
@@ -277,27 +488,90 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, ?)`,
-        [id, characterId, writerId, title, content, sortOrder, now, now],
+        [id, characterId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       trackCreated('character_note', content ? 'template' : 'manual');
       return id;
     },
     updateCharacterNoteTitle: async (id: string, title: string): Promise<void> => {
+      const now = new Date().toISOString();
+      // 호출자가 work_id를 모르는 단일 mutation 경로 — character JOIN으로 보강.
+      const workId = await resolveCharacterNoteWorkId(id);
+      const encTitle = workId ? await encryptWorkField(workId, title, now) : title;
       await db.execute(
         'UPDATE character_note SET title = ?, updated_at = ? WHERE id = ?',
-        [title, new Date().toISOString(), id],
+        [encTitle, now, id],
       );
       trackSaved('character_note');
     },
     updateCharacterNoteContent: async (id: string, content: string): Promise<void> => {
+      const now = new Date().toISOString();
+      const workId = await resolveCharacterNoteWorkId(id);
+      const encContent = workId ? await encryptWorkField(workId, content, now) : content;
       await db.execute(
         'UPDATE character_note SET content = ?, updated_at = ? WHERE id = ?',
-        [content, new Date().toISOString(), id],
+        [encContent, now, id],
       );
       trackSaved('character_note', content);
+    },
+
+    // ── character_custom_field ────────────────────────────────
+    // PR4 — field_name/field_value를 work_key로 암호화. character → work 경로로 workId 보강.
+    createCharacterCustomField: async (
+      characterId: string,
+      fieldName: string,
+      fieldValue: string,
+      sortOrder: number,
+    ): Promise<string> => {
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const workId = await resolveCharacterWorkId(characterId);
+      const encName = workId
+        ? await encryptWorkField(workId, fieldName, now)
+        : fieldName;
+      const encValue = workId
+        ? await encryptWorkField(workId, fieldValue, now)
+        : fieldValue;
+      await db.execute(
+        `INSERT INTO character_custom_field (id, character_id, field_name, field_value, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, characterId, encName, encValue, sortOrder, now, now],
+      );
+      return id;
+    },
+    updateCharacterCustomField: async (
+      id: string,
+      patch: Partial<{ field_name: string; field_value: string }>,
+    ): Promise<void> => {
+      const now = new Date().toISOString();
+      const fields = Object.keys(patch);
+      if (fields.length === 0) return;
+
+      const workId = await resolveCharacterCustomFieldWorkId(id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('field_name' in patch && typeof patch.field_name === 'string') {
+          effective.field_name = await encryptWorkField(workId, patch.field_name, now);
+        }
+        if ('field_value' in patch && typeof patch.field_value === 'string') {
+          effective.field_value = await encryptWorkField(workId, patch.field_value, now);
+        }
+      }
+
+      const setClause = fields.map((f) => `${f} = ?`).join(', ');
+      const values = fields.map((f) => effective[f] ?? null);
+      await db.execute(
+        `UPDATE character_custom_field SET ${setClause}, updated_at = ? WHERE id = ?`,
+        [...values, now, id],
+      );
+    },
+    deleteCharacterCustomField: async (id: string): Promise<void> => {
+      await db.execute('DELETE FROM character_custom_field WHERE id = ?', [id]);
     },
 
     // ── character_tag ─────────────────────────────────────────
@@ -333,10 +607,12 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const status = parentId ? '예정' : null;
+      const encTitle = await encryptWorkField(workId, title, now);
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO plot (id, work_id, writer_id, parent_id, title, status, content, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, parentId, title, status, content, sortOrder, now, now],
+        [id, workId, writerId, parentId, encTitle, status, encContent, sortOrder, now, now],
       );
       trackCreated('plot', content ? 'template' : 'manual');
       return id;
@@ -348,8 +624,20 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('plot', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('title' in patch && typeof patch.title === 'string') {
+          effective.title = await encryptWorkField(workId, patch.title, now);
+        }
+        if ('content' in patch) {
+          effective.content = await encryptWorkField(workId, patch.content ?? null, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE plot SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -371,10 +659,22 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      // Plan C: title 도 v1: 암호문으로 저장. 복제 경로에서 호출자가 이미 v1: 암호문을
+      // 그대로 넘긴 경우 encryptWorkField가 이중 암호화하지 않게 prefix 검사를 한다.
+      const encTitle =
+        typeof title === 'string' && title.startsWith(CIPHERTEXT_PREFIX)
+          ? title
+          : await encryptWorkField(workId, title, now);
+      // content 도 동일 정책. 복제 경로는 원본의 v1: 암호문을 그대로 받아 보존하고,
+      // 신규 작성 경로는 평문(또는 null)을 받아 암호화한다.
+      const encContent =
+        typeof content === 'string' && content.startsWith(CIPHERTEXT_PREFIX)
+          ? content
+          : await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, NULL, ?, '미작성', ?, 0, ?, ?, ?)`,
-        [id, workId, writerId, title, content, sortOrder, now, now],
+        [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
       );
       trackCreated('episode', content ? 'template' : 'manual');
       return id;
@@ -391,8 +691,42 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const effective: Record<string, unknown> = { ...patch };
+
+      // Plan C: title/content patch 중 평문 값은 episode.work_id 를 조회한 뒤
+      // encryptWorkField 로 v1: 암호문화. KEK 이 없으면(게스트) 평문으로 저장된다.
+      const needsEncryption =
+        ('title' in patch && typeof patch.title === 'string' && patch.title.length > 0) ||
+        ('content' in patch && typeof patch.content === 'string' && patch.content.length > 0);
+      if (needsEncryption) {
+        const r = await db.execute(
+          'SELECT work_id FROM episode WHERE id = ? LIMIT 1',
+          [id],
+        );
+        const workId = (r.rows?._array as { work_id: string }[] | undefined)?.[0]?.work_id;
+        if (workId) {
+          if (
+            'title' in patch &&
+            typeof patch.title === 'string' &&
+            patch.title.length > 0 &&
+            !patch.title.startsWith(CIPHERTEXT_PREFIX)
+          ) {
+            effective.title = await encryptWorkField(workId, patch.title, now);
+          }
+          if (
+            'content' in patch &&
+            typeof patch.content === 'string' &&
+            patch.content.length > 0 &&
+            !patch.content.startsWith(CIPHERTEXT_PREFIX)
+          ) {
+            effective.content = await encryptWorkField(workId, patch.content, now);
+          }
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE episode SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -432,10 +766,11 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encTitle = await encryptWorkField(workId, title, now);
       await db.execute(
         `INSERT INTO foreshadow (id, work_id, writer_id, title, status, importance, content, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '진행중', ?, NULL, ?, ?, ?)`,
-        [id, workId, writerId, title, importance, sortOrder, now, now],
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        [id, workId, writerId, encTitle, '진행중', importance, sortOrder, now, now],
       );
       trackCreated('foreshadow');
       return id;
@@ -452,8 +787,20 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('foreshadow', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('title' in patch && typeof patch.title === 'string') {
+          effective.title = await encryptWorkField(workId, patch.title, now);
+        }
+        if ('content' in patch) {
+          effective.content = await encryptWorkField(workId, patch.content ?? null, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE foreshadow SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -470,10 +817,11 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const encContent = await encryptWorkField(workId, content, now);
       await db.execute(
         `INSERT INTO idea_archive (id, work_id, writer_id, content, tag, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, workId, writerId, content, tag, sortOrder, now, now],
+        [id, workId, writerId, encContent, tag, sortOrder, now, now],
       );
       trackCreated('idea_archive');
       return id;
@@ -485,8 +833,17 @@ export function useLocalWrite() {
       const now = new Date().toISOString();
       const fields = Object.keys(patch);
       if (fields.length === 0) return;
+
+      const workId = await resolveOwnWorkId('idea_archive', id);
+      const effective: Record<string, unknown> = { ...patch };
+      if (workId) {
+        if ('content' in patch && typeof patch.content === 'string') {
+          effective.content = await encryptWorkField(workId, patch.content, now);
+        }
+      }
+
       const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
+      const values = fields.map((f) => effective[f] ?? null);
       await db.execute(
         `UPDATE idea_archive SET ${setClause}, updated_at = ? WHERE id = ?`,
         [...values, now, id],
@@ -949,10 +1306,14 @@ export function useLocalWrite() {
     ): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+      const workId = await resolveForeshadowWorkId(foreshadowId);
+      const encMemo = workId
+        ? await encryptWorkField(workId, contextMemo, now)
+        : contextMemo;
       await db.execute(
         `INSERT INTO foreshadow_link (id, foreshadow_id, link_type, episode_id, plot_id, context_memo, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, foreshadowId, linkType, episodeId, plotId, contextMemo, now],
+        [id, foreshadowId, linkType, episodeId, plotId, encMemo, now],
       );
       return id;
     },
@@ -965,11 +1326,16 @@ export function useLocalWrite() {
         contextMemo: string | null;
       },
     ): Promise<void> => {
+      const now = new Date().toISOString();
+      const workId = await resolveForeshadowLinkWorkId(linkId);
+      const encMemo = workId
+        ? await encryptWorkField(workId, values.contextMemo, now)
+        : values.contextMemo;
       await db.execute(
         `UPDATE foreshadow_link
          SET link_type = ?, episode_id = ?, plot_id = ?, context_memo = ?
          WHERE id = ?`,
-        [values.linkType, values.episodeId, values.plotId, values.contextMemo, linkId],
+        [values.linkType, values.episodeId, values.plotId, encMemo, linkId],
       );
     },
     deleteForeshadowLink: async (linkId: string): Promise<void> => {

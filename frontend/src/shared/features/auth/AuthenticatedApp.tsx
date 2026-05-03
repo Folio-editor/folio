@@ -51,6 +51,8 @@ import { ForeshadowEditScreen } from '../foreshadow/ForeshadowEditScreen';
 import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
 import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { decryptWorkFieldOnce } from '../../crypto/fieldDecrypt';
+import { useBackfillEncryption } from '../../hooks/useBackfillEncryption';
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -97,6 +99,8 @@ const clamp = (v: number, min: number, max: number) =>
  */
 export function AuthenticatedApp() {
   const db = usePowerSync();
+  // PR2 이전 / 게스트에서 마이그레이션된 평문 row 자동 백필. KEK + writerId가 준비되면 한 번 실행.
+  useBackfillEncryption();
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   // 메인 다중 탭 store — 작품별 탭 세트 분리 보존 모델.
@@ -413,26 +417,43 @@ export function AuthenticatedApp() {
   // 부모 chain이 있으면 " / " separator로 합성: "부모 / 자기" / "조부모 / 부모 / 자기"
   const fetchItemTitle = useCallback(
     async (section: WorkspaceSection, itemId: string): Promise<string> => {
-      // plot — 회차면 "막 / 회차" 합성
+      // plot — 회차면 "막 / 회차" 합성. title은 v1: 암호문이므로 work JOIN 후 단발 복호화.
       if (section === 'plot') {
         if (itemId === '__all__') return '전체 플롯';
         try {
           const result = await db.execute(
-            `SELECT p.title AS title, p.parent_id AS parent_id, parent.title AS parent_title
+            `SELECT p.title AS title, p.parent_id AS parent_id, p.work_id AS work_id,
+                    parent.title AS parent_title,
+                    w.encrypted_dek AS encrypted_dek
              FROM plot p
              LEFT JOIN plot parent ON parent.id = p.parent_id
+             LEFT JOIN work w ON w.id = p.work_id
              WHERE p.id = ? LIMIT 1`,
             [itemId],
           );
           const row = (result.rows?._array as {
-            title: string;
+            title: string | null;
             parent_id: string | null;
+            work_id: string;
             parent_title: string | null;
+            encrypted_dek: string | null;
           }[])?.[0];
           if (!row) return '';
-          const own = row.title?.trim() || '(제목 없음)';
-          if (row.parent_id && row.parent_title) {
-            return `${row.parent_title.trim() || '(제목 없음)'} / ${own}`;
+          const [ownPlain, parentPlain] = await Promise.all([
+            decryptWorkFieldOnce({
+              workId: row.work_id,
+              encryptedDek: row.encrypted_dek,
+              value: row.title,
+            }),
+            decryptWorkFieldOnce({
+              workId: row.work_id,
+              encryptedDek: row.encrypted_dek,
+              value: row.parent_title,
+            }),
+          ]);
+          const own = ownPlain?.trim() || '(제목 없음)';
+          if (row.parent_id) {
+            return `${parentPlain?.trim() || '(제목 없음)'} / ${own}`;
           }
           return own;
         } catch {
@@ -440,22 +461,41 @@ export function AuthenticatedApp() {
         }
       }
 
-      // world-note — 모든 ancestor chain 합성 (RECURSIVE CTE)
+      // world-note — 모든 ancestor chain 합성 (RECURSIVE CTE).
+      // name은 v1: 암호문이므로 work_id별로 work.encrypted_dek 합쳐 단발 복호화.
       if (section === 'world-note') {
         try {
           const result = await db.execute(
             `WITH RECURSIVE ancestors AS (
-               SELECT id, parent_id, name, 0 AS lvl FROM world_note WHERE id = ?
+               SELECT id, parent_id, name, work_id, 0 AS lvl FROM world_note WHERE id = ?
                UNION ALL
-               SELECT w.id, w.parent_id, w.name, a.lvl + 1
-               FROM world_note w JOIN ancestors a ON w.id = a.parent_id
+               SELECT wn.id, wn.parent_id, wn.name, wn.work_id, a.lvl + 1
+               FROM world_note wn JOIN ancestors a ON wn.id = a.parent_id
              )
-             SELECT name FROM ancestors ORDER BY lvl DESC`,
+             SELECT a.name AS name, a.work_id AS work_id, a.lvl AS lvl,
+                    w.encrypted_dek AS encrypted_dek
+             FROM ancestors a
+             LEFT JOIN work w ON w.id = a.work_id
+             ORDER BY a.lvl DESC`,
             [itemId],
           );
-          const rows = (result.rows?._array as { name: string }[]) ?? [];
+          const rows = (result.rows?._array as {
+            name: string | null;
+            work_id: string;
+            lvl: number;
+            encrypted_dek: string | null;
+          }[]) ?? [];
           if (rows.length === 0) return '';
-          return rows.map((r) => r.name?.trim() || '(이름 없음)').join(' / ');
+          const decrypted = await Promise.all(
+            rows.map((r) =>
+              decryptWorkFieldOnce({
+                workId: r.work_id,
+                encryptedDek: r.encrypted_dek,
+                value: r.name,
+              }),
+            ),
+          );
+          return decrypted.map((n) => n?.trim() || '(이름 없음)').join(' / ');
         } catch {
           return '';
         }
@@ -498,16 +538,60 @@ export function AuthenticatedApp() {
         }
       }
 
-      const TITLE_QUERIES: Partial<Record<WorkspaceSection, { sql: string; id: string }>> = {
-        'episode':    { sql: 'SELECT title FROM episode WHERE id = ?',     id: itemId },
-        'plan':       { sql: 'SELECT title FROM plan_note WHERE id = ?',   id: itemId },
-        'foreshadow': { sql: 'SELECT title FROM foreshadow WHERE id = ?',  id: itemId },
+      // episode — title도 v1: 암호문이므로 work JOIN 후 단발 복호화
+      if (section === 'episode') {
+        try {
+          const result = await db.execute(
+            `SELECT e.title AS title, e.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+             FROM episode e
+             LEFT JOIN work w ON w.id = e.work_id
+             WHERE e.id = ? LIMIT 1`,
+            [itemId],
+          );
+          const row = (result.rows?._array as {
+            title: string | null;
+            work_id: string;
+            encrypted_dek: string | null;
+          }[])?.[0];
+          if (!row) return '';
+          const plain = await decryptWorkFieldOnce({
+            workId: row.work_id,
+            encryptedDek: row.encrypted_dek,
+            value: row.title,
+          });
+          return plain ?? '';
+        } catch {
+          return '';
+        }
+      }
+
+      // plan_note / foreshadow — title이 v1: 암호문이므로 work JOIN 후 단발 복호화
+      const ENCRYPTED_TITLE_TABLES: Partial<Record<WorkspaceSection, string>> = {
+        plan: 'plan_note',
+        foreshadow: 'foreshadow',
       };
-      const q = TITLE_QUERIES[section];
-      if (!q) return '';
+      const table = ENCRYPTED_TITLE_TABLES[section];
+      if (!table) return '';
       try {
-        const result = await db.execute(q.sql, [q.id]);
-        return (result.rows?._array as { title: string }[])?.[0]?.title ?? '';
+        const result = await db.execute(
+          `SELECT t.title AS title, t.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+           FROM ${table} t
+           LEFT JOIN work w ON w.id = t.work_id
+           WHERE t.id = ? LIMIT 1`,
+          [itemId],
+        );
+        const row = (result.rows?._array as {
+          title: string | null;
+          work_id: string;
+          encrypted_dek: string | null;
+        }[])?.[0];
+        if (!row) return '';
+        const plain = await decryptWorkFieldOnce({
+          workId: row.work_id,
+          encryptedDek: row.encrypted_dek,
+          value: row.title,
+        });
+        return plain ?? '';
       } catch {
         return '';
       }

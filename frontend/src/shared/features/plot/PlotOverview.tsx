@@ -33,6 +33,11 @@ import {
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
@@ -69,13 +74,6 @@ interface LinkInfo {
   linkId: string;
   episodeId: string;
   episodeTitle: string;
-}
-
-interface LinkRow {
-  plot_id: string;
-  link_id: string;
-  episode_id: string;
-  episode_title: string;
 }
 
 interface UnlinkedEpisodeRow {
@@ -124,25 +122,66 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const { data: acts = [] } = useQuery<ActRow>(
-    `SELECT id, title, content FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL
-     ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawPlotRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.work_id = ? AND p.writer_id = ?
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
     [workId, writerId],
   );
+  const { data: decryptedPlots } = useDecryptedPlotList(rawPlotRows);
 
-  const { data: episodes = [] } = useQuery<PlotEpisodeRow>(
-    `SELECT id, parent_id, title, status, content FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NOT NULL
-     ORDER BY sort_order ASC, created_at ASC`,
+  const acts: ActRow[] = useMemo(
+    () =>
+      decryptedPlots
+        .filter((p) => p.parent_id == null)
+        .map((p) => ({ id: p.id, title: p.title, content: p.content })),
+    [decryptedPlots],
+  );
+
+  const episodes: PlotEpisodeRow[] = useMemo(
+    () =>
+      decryptedPlots
+        .filter((p) => p.parent_id != null)
+        .map((p) => ({
+          id: p.id,
+          parent_id: p.parent_id as string,
+          title: p.title,
+          status: p.status,
+          content: p.content,
+        })),
+    [decryptedPlots],
+  );
+
+  const { data: links = [] } = useQuery<{
+    plot_id: string;
+    link_id: string;
+    episode_id: string;
+  }>(
+    `SELECT pel.plot_id, pel.id AS link_id, pel.episode_id AS episode_id
+     FROM plot_episode_link pel`,
+  );
+
+  // 연결된 episode들의 title 일괄 복호화 — work JOIN 후 batch 복호화 hook 통과.
+  const { data: rawLinkedEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+       JOIN plot_episode_link pel ON pel.episode_id = e.id
+      WHERE e.work_id = ? AND e.writer_id = ?`,
     [workId, writerId],
   );
-
-  const { data: links = [] } = useQuery<LinkRow>(
-    `SELECT pel.plot_id, pel.id AS link_id, pel.episode_id AS episode_id, e.title AS episode_title
-     FROM plot_episode_link pel
-     JOIN episode e ON e.id = pel.episode_id`,
-  );
+  const { data: decryptedLinkedEpisodes } = useDecryptedEpisodeList(rawLinkedEpisodes);
+  const linkedEpisodeTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of decryptedLinkedEpisodes) map.set(e.id, e.title);
+    return map;
+  }, [decryptedLinkedEpisodes]);
 
   const episodesByAct = useMemo(() => {
     const map = new Map<string, PlotEpisodeRow[]>();
@@ -159,11 +198,11 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
       map.set(l.plot_id, {
         linkId: l.link_id,
         episodeId: l.episode_id,
-        episodeTitle: l.episode_title,
+        episodeTitle: linkedEpisodeTitleById.get(l.episode_id) ?? '',
       });
     }
     return map;
-  }, [links]);
+  }, [links, linkedEpisodeTitleById]);
 
   const registerActRef = useCallback((actId: string, node: HTMLElement | null) => {
     if (node) actRefs.current.set(actId, node);
@@ -1228,18 +1267,33 @@ function ActGridEpisodeContentEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { data: linkRows = [] } = useQuery<LinkRow>(
-    `SELECT pel.plot_id, pel.id AS link_id, pel.episode_id AS episode_id, e.title AS episode_title
+  const { data: linkRows = [] } = useQuery<{
+    plot_id: string;
+    link_id: string;
+    episode_id: string;
+  }>(
+    `SELECT pel.plot_id, pel.id AS link_id, pel.episode_id AS episode_id
      FROM plot_episode_link pel
-     JOIN episode e ON e.id = pel.episode_id
      WHERE pel.plot_id = ?`,
     [episode.id],
   );
+  const linkedEpisodeId = linkRows[0]?.episode_id ?? '';
+  const { data: rawLinkedEpisode = [] } = useQuery<RawEpisodeListRow>(
+    linkedEpisodeId
+      ? `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+                e.sort_order, e.parent_id, e.created_at, e.updated_at,
+                w.encrypted_dek
+           FROM episode e LEFT JOIN work w ON w.id = e.work_id
+           WHERE e.id = ? LIMIT 1`
+      : `SELECT NULL AS title WHERE 0`,
+    linkedEpisodeId ? [linkedEpisodeId] : [],
+  );
+  const { data: decLinkedEpisode } = useDecryptedEpisodeList(linkedEpisodeId ? rawLinkedEpisode : []);
   const link = linkRows[0]
     ? {
         linkId: linkRows[0].link_id,
         episodeId: linkRows[0].episode_id,
-        episodeTitle: linkRows[0].episode_title,
+        episodeTitle: decLinkedEpisode[0]?.title ?? '',
       }
     : undefined;
 
@@ -1448,13 +1502,22 @@ function EpisodeLinkModal({
   const writerId = useWriterId();
   const [search, setSearch] = useState('');
 
-  const { data: episodes = [] } = useQuery<UnlinkedEpisodeRow>(
-    `SELECT e.id, e.title FROM episode e
-     WHERE e.work_id = ? AND e.writer_id = ?
-       AND e.status != 'trashed'
-       AND e.id NOT IN (SELECT episode_id FROM plot_episode_link)
-     ORDER BY e.sort_order ASC, e.created_at ASC`,
+  const { data: rawEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.work_id = ? AND e.writer_id = ?
+        AND e.status != 'trashed'
+        AND e.id NOT IN (SELECT episode_id FROM plot_episode_link)
+      ORDER BY e.sort_order ASC, e.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedEpisodes } = useDecryptedEpisodeList(rawEpisodes);
+  const episodes: UnlinkedEpisodeRow[] = useMemo(
+    () => decryptedEpisodes.map((e) => ({ id: e.id, title: e.title })),
+    [decryptedEpisodes],
   );
 
   const filtered = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, usePowerSync } from '@powersync/react';
 import {
   ChevronDown,
@@ -19,15 +19,13 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDecryptedPlanNoteList } from '../../../hooks/useDecryptedPlanNote';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
-import {
-  buildOrderBy,
-  useSortPreferenceStore,
-} from '../../../stores/sortPreferenceStore';
+import { useSortPreferenceStore } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import { SidebarListSkeleton } from './SidebarListSkeleton';
@@ -47,6 +45,20 @@ interface NoteRow {
   title: string;
   work_id?: string;
   sort_order?: number | null;
+  /** PR4: 복호화된 본문 — 복제(handleDuplicate) 경로에서 재암호화 시 사용. */
+  content?: string | null;
+}
+
+interface RawPlanNoteJoinRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  title: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface PlanNoteListProps {
@@ -74,16 +86,55 @@ export function PlanNoteList({
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['plan'] ?? 'manual');
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
-  const sql = `SELECT id, title, work_id, sort_order FROM plan_note
-     WHERE work_id = ? AND writer_id = ? ${whereSearch}
-     ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
-  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
-  const notes = useOptimisticRows(rawNotes, {
+  // PR4: title이 ciphertext가 될 수 있어 SQL LIKE/ORDER BY title 불가 — 클라이언트 측에서 처리.
+  const { data: rawRows = [], isFetching } = useQuery<RawPlanNoteJoinRow>(
+    `SELECT pn.id, pn.work_id, pn.writer_id, pn.title, pn.content,
+            pn.sort_order, pn.created_at, pn.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plan_note pn
+     LEFT JOIN work w ON w.id = pn.work_id
+     WHERE pn.work_id = ? AND pn.writer_id = ?`,
+    [workId, writerId],
+  );
+  const { data: decryptedNotes } = useDecryptedPlanNoteList(rawRows);
+
+  const filteredSortedNotes = useMemo<NoteRow[]>(() => {
+    const lower = trimmed.toLowerCase();
+    let list = decryptedNotes.map((n) => ({
+      id: n.id,
+      title: n.title,
+      work_id: n.work_id,
+      sort_order: n.sort_order,
+      content: n.content,
+      created_at: n.created_at,
+      updated_at: n.updated_at,
+    }));
+    if (lower) {
+      list = list.filter((n) => n.title.toLowerCase().includes(lower));
+    }
+    if (sortMode === 'alpha') {
+      list.sort(
+        (a, b) =>
+          a.title.localeCompare(b.title, 'ko') ||
+          a.created_at.localeCompare(b.created_at),
+      );
+    } else if (sortMode === 'recent') {
+      list.sort(
+        (a, b) =>
+          b.updated_at.localeCompare(a.updated_at) ||
+          b.created_at.localeCompare(a.created_at),
+      );
+    } else {
+      list.sort(
+        (a, b) =>
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          a.created_at.localeCompare(b.created_at),
+      );
+    }
+    return list.map(({ created_at: _ca, updated_at: _ua, ...rest }) => rest);
+  }, [decryptedNotes, trimmed, sortMode]);
+
+  const notes = useOptimisticRows(filteredSortedNotes, {
     docType: 'plan_note',
     workId,
     matches: (row) => row.work_id === workId,
@@ -341,16 +392,13 @@ function NoteItem({
   };
 
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ content: string | null }>(
-      'SELECT content FROM plan_note WHERE id = ? LIMIT 1',
-      [note.id],
-    );
-    const content = rows[0]?.content ?? null;
+    // PR4: note.content는 useDecryptedPlanNoteList가 이미 복호화한 평문.
+    // 평문을 createPlanNote에 넘기면 다시 work_key로 암호화되어 저장된다.
     const newId = await createPlanNote(
       workId,
       `${note.title?.trim() || '(제목 없음)'} (사본)`,
       Date.now(),
-      content,
+      note.content ?? null,
     );
     await placePlanNote(newId, workId, note.id, 'after');
   };
@@ -459,6 +507,3 @@ function NoteItem({
   );
 }
 
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}

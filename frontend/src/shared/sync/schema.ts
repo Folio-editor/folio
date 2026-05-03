@@ -12,14 +12,18 @@
 import { column, Schema, Table } from '@powersync/web';
 
 const work = new Table({
-  writer_id:   column.text,
-  title:       column.text,
-  author_name: column.text,
-  description: column.text,
-  status:      column.text,
-  sort_order:  column.integer,
-  created_at:  column.text,
-  updated_at:  column.text,
+  writer_id:     column.text,
+  title:         column.text,
+  author_name:   column.text,
+  description:   column.text,
+  status:        column.text,
+  sort_order:    column.integer,
+  created_at:    column.text,
+  updated_at:    column.text,
+  // Plan C 결정 21 — wrap된 work_key (KEK으로 AES-GCM wrap한 32B DEK).
+  // PostgreSQL BYTEA지만 PowerSync는 BYTEA를 직접 못 보내므로 Base64 문자열로 운반한다.
+  // 서버 SyncService.applyBytea가 디코드해 진짜 BYTEA로 저장.
+  encrypted_dek: column.text,
 });
 
 const plan = new Table({

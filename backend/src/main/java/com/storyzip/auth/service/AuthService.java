@@ -37,6 +37,7 @@ public class AuthService {
     private final RefreshTokenRedisService refreshTokenRedisService;
     private final JwtProvider jwtProvider;
     private final TokenWalletService tokenWalletService;
+    private final LoginEncryptionMaterializer encryptionMaterializer;
 
     /**
      * Electron PKCE 로그인 — Google 인증 완료 후 code/code_verifier 수신 → JWT 발급.
@@ -126,10 +127,15 @@ public class AuthService {
     }
 
     private LoginResponse issueTokens(Writer writer, String deviceId, boolean isNewUser) {
+        // Plan C 결정 7/14 — 응답에 KEK 도출 재료(pepper_user, salt, version) 포함.
+        // PepperProvider 비활성 시 encryption=null → 클라이언트는 KEK 흐름 disable.
+        // 레거시 사용자 백필이 발생하면 @Transactional이 dirty checking으로 영속화한다.
+        LoginResponse.EncryptionMaterial encryption = encryptionMaterializer.materialize(writer);
+
         String access = jwtProvider.createAccessToken(writer.getId(), writer.getEmail(), writer.getRole().name());
         String refresh = jwtProvider.createRefreshToken();
         refreshTokenRedisService.save(writer.getId(), deviceId, refresh, jwtProvider.getRefreshExpirySeconds());
-        return new LoginResponse(access, refresh, WriterDto.from(writer), isNewUser);
+        return new LoginResponse(access, refresh, WriterDto.from(writer), isNewUser, encryption);
     }
 
     /**

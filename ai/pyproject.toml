@@ -15,6 +15,9 @@ dependencies = [
     "structlog>=24.4",
     # Prometheus 메트릭 노출 — /metrics 엔드포인트 자동 생성
     "prometheus-fastapi-instrumentator>=7.0.0",
+    # /metrics 라우트를 직접 등록(인증 의존성 부착)하기 위해 명시.
+    # instrumentator의 transitive 의존성이지만 직접 import하므로 lock-in.
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]

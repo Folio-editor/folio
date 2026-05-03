@@ -40,4 +40,7 @@ public class Work {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "encrypted_dek", columnDefinition = "BYTEA")
+    private byte[] encryptedDek;
 }

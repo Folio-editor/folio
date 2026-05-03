@@ -1,16 +1,21 @@
 """RAG 컨텍스트 조립 엔진.
 
-입력: work_id, writer_id, storyline, current_episode_num
+입력: payload(클라이언트 평문 컨텍스트), work_id, writer_id, storyline, current_episode_num
 출력: 28,000 토큰 이하의 컨텍스트 문자열 (LLM 프롬프트에 삽입)
 
 수집 소스 및 토큰 예산:
-- 작품 메타데이터 (~500)
-- 설정집 벡터 검색 (~2,000~5,000)
-- 미회수 떡밥 (~500~1,000)
+- 작품 메타데이터 (~500)            ← payload.work_meta
+- 설정집(인물/세계관) (~2,000~5,000)  ← payload.characters / payload.world_notes
+- 미회수 떡밥 (~500~1,000)          ← payload.foreshadows (review 모드만)
 - 최근 5~10화 요약 (~2,000~4,000)
-- 최근 1~2화 원문 샘플 (~10,000~15,000)
-- 관련 과거 화 벡터 검색 (~1,500~3,000)
-- 작가 스토리라인 (~500~1,000)
+- 최근 1~2화 원문 샘플 (~10,000~15,000) ← payload.recent_episodes
+- 관련 과거 화 벡터 검색 (~1,500~3,000) ← episode_chunk DB SELECT (평문 예외)
+- 작가 스토리라인 (~500~1,000)        ← payload.plots
+
+PR5 — Plan C 옵션 1 보안 모델: 클라이언트가 KEK + work_key로 평문화한 컨텍스트를
+페이로드로 동봉하면, AI 서버는 더 이상 work/character/world_note/plot/foreshadow/
+character_note/character_custom_field/episode 의 v1: 암호문 컬럼을 SELECT하지 않는다.
+vector_search(episode_chunk + embedding)와 timeline은 평문 예외 영역이라 DB 직접 SELECT 유지.
 """
 
 from __future__ import annotations
@@ -23,6 +28,15 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session
+from app.schemas.ai_context_payload import (
+    AiContextPayload,
+    CharacterPayload,
+    ForeshadowPayload,
+    PlotPayload,
+    RecentEpisodePayload,
+    WorkMetaPayload,
+    WorldNotePayload,
+)
 from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
 from app.services.settings_loader import load_settings
@@ -88,6 +102,7 @@ PROTECTED_KEYS_BY_MODE: dict[str, set[str]] = {
 
 
 async def assemble_context(
+    payload: AiContextPayload,
     work_id: str,
     writer_id: str,
     storyline: str,
@@ -99,25 +114,28 @@ async def assemble_context(
     include_foreshadows = mode in FORESHADOWS_MODES
 
     async with async_session() as session:
-        sections = {}
-        settings_bundle = await load_settings(session, work_id)
+        sections: dict[str, str] = {}
+        settings_bundle = load_settings(payload)
 
-        sections["work_meta"] = await _fetch_work_meta(session, work_id)
+        sections["work_meta"] = _format_work_meta(payload.work_meta)
         if settings_bundle["mode"] == "full":
-            sections["characters"] = await _fetch_characters(session, work_id)
-            sections["world_notes"] = await _fetch_world_notes(session, work_id)
+            sections["characters"] = _format_characters(payload.characters)
+            sections["world_notes"] = _format_world_notes(payload.world_notes)
         else:
             sections["characters"] = settings_bundle["characters_text"]
             sections["world_notes"] = settings_bundle["world_notes_text"]
         if include_foreshadows:
-            sections["foreshadows"] = await _fetch_foreshadows(session, work_id)
+            sections["foreshadows"] = _format_foreshadows(payload.foreshadows)
         if mode in TIMELINE_MODES:
+            # timeline은 episode.content에 의존하지만 v1: 암호문이면 markers 매칭이
+            # 빈 결과로 fallback된다. 페이로드로 옮기면 검수 대상 이전 모든 회차를
+            # 보내야 해서 페이로드가 폭발적으로 커지므로 PR5 범위에서는 DB 직접 유지.
             sections["timeline"] = await build_timeline(
                 session, work_id, current_episode_num
             )
-        sections["storyline"] = await _fetch_storyline(session, work_id)
-        recent_raw_text, recent_raw_orders = await _fetch_recent_raw(
-            session, work_id, current_episode_num, limit=recent_raw_limit
+        sections["storyline"] = _format_storyline(payload.plots)
+        recent_raw_text, recent_raw_orders = _format_recent_raw(
+            payload.recent_episodes, limit=recent_raw_limit
         )
         sections["recent_raw"] = recent_raw_text
         sections["vector_search"] = await _fetch_vector_similar(
@@ -134,193 +152,140 @@ async def assemble_context(
     return _trim_to_budget(sections, protected_keys=protected)
 
 
-async def _fetch_work_meta(session: AsyncSession, work_id: str) -> str:
-    r = await session.execute(
-        sa_text(
-            "SELECT title, author_name, description, status "
-            "FROM work WHERE id = :wid"
-        ),
-        {"wid": uuid.UUID(work_id)},
-    )
-    row = r.fetchone()
-    if not row:
-        return ""
-    parts = [f"제목: {row[0]}"]
-    if row[1]:
-        parts.append(f"작가명: {row[1]}")
-    if row[2]:
-        parts.append(f"작품 설명: {row[2]}")
-    if row[3]:
-        parts.append(f"상태: {row[3]}")
+def _format_work_meta(meta: WorkMetaPayload) -> str:
+    parts: list[str] = []
+    if meta.title:
+        parts.append(f"제목: {meta.title}")
+    if meta.author_name:
+        parts.append(f"작가명: {meta.author_name}")
+    if meta.description:
+        parts.append(f"작품 설명: {meta.description}")
+    if meta.status:
+        parts.append(f"상태: {meta.status}")
     return "\n".join(parts)
 
 
-async def _fetch_characters(session: AsyncSession, work_id: str) -> str:
-    wid = uuid.UUID(work_id)
-    r = await session.execute(
-        sa_text(
-            "SELECT id, name, gender, age "
-            "FROM character WHERE work_id = :wid ORDER BY sort_order"
-        ),
-        {"wid": wid},
-    )
-    chars = r.fetchall()
+def _format_characters(chars: list[CharacterPayload]) -> str:
     if not chars:
         return ""
 
-    # character_note에서 성격/외형 등 서브노트 조회
-    nr = await session.execute(
-        sa_text(
-            "SELECT cn.character_id, cn.kind, cn.title, cn.content "
-            "FROM character_note cn "
-            "JOIN character c ON c.id = cn.character_id "
-            "WHERE c.work_id = :wid "
-            "ORDER BY cn.sort_order"
-        ),
-        {"wid": wid},
-    )
-    notes = nr.fetchall()
-    notes_by_char: dict[uuid.UUID, list[tuple]] = {}
-    for note in notes:
-        cid = note[0] if isinstance(note[0], uuid.UUID) else uuid.UUID(str(note[0]))
-        notes_by_char.setdefault(cid, []).append(note)
-
-    lines = []
+    lines: list[str] = []
     # character 테이블에 주인공 플래그가 없으므로 sort_order 최상위(=첫 번째) 인물을
     # 주인공으로 간주해 명시 라벨을 붙인다. 프롬프트의 "중심 인물" 지시와 일치시킨다.
     for idx, char in enumerate(chars):
-        char_id = char[0] if isinstance(char[0], uuid.UUID) else uuid.UUID(str(char[0]))
         role_label = "주인공" if idx == 0 else "부캐릭터"
+        name = char.name or f"인물{idx + 1}"
         # 이름 라인 — 성별·나이를 헤더에 묶어 LLM이 핵심 속성을 한눈에 파악하게 한다.
         # 검수 시 "노정희 28세 → 본문에서 스무 살" 같은 속성 모순을 일관되게 잡기 위함.
         # 추가로 [C번호] 라벨을 붙여 시스템 프롬프트의 "캐릭터 룰 체크리스트"가
         # 각 인물을 한 명씩 차례로 본문과 1:1 대조하도록 강제한다 (attention 분산 완화).
         attrs: list[str] = []
-        if char[2]:
-            attrs.append(f"성별 {char[2]}")
-        if char[3]:
-            attrs.append(f"나이 {char[3]}")
-        head = f"- [C{idx + 1}] [{role_label}] {char[1]}"
+        if char.gender:
+            attrs.append(f"성별 {char.gender}")
+        if char.age:
+            attrs.append(f"나이 {char.age}")
+        head = f"- [C{idx + 1}] [{role_label}] {name}"
         if attrs:
             head += f" ({', '.join(attrs)})"
         parts = [head]
-        char_notes = notes_by_char.get(char_id, [])
-        for note in char_notes:
-            content = note[3]
-            if content:
-                label = note[2] or note[1] or ""
-                text = _plain(content)[:SUBNOTE_TRUNC]
-                if text:
-                    parts.append(f"{label}:{text}")
+        for note in char.notes:
+            content = note.content
+            if not content:
+                continue
+            label = note.title or note.kind or ""
+            text = _plain(content)[:SUBNOTE_TRUNC]
+            if text:
+                parts.append(f"{label}:{text}")
+        # custom_fields도 본문 검수에 직접적으로 쓰이는 정보(직업·소지품 위치 등)라
+        # 인물 헤더 아래 함께 기재한다.
+        for cf in char.custom_fields:
+            if not cf.field_name or not cf.field_value:
+                continue
+            value = _plain(cf.field_value)[:SUBNOTE_TRUNC]
+            if value:
+                parts.append(f"{cf.field_name}:{value}")
         lines.append(" / ".join(parts))
     return "\n".join(lines)
 
 
-async def _fetch_world_notes(session: AsyncSession, work_id: str) -> str:
-    r = await session.execute(
-        sa_text(
-            "SELECT name, content FROM world_note "
-            "WHERE work_id = :wid ORDER BY sort_order"
-        ),
-        {"wid": uuid.UUID(work_id)},
-    )
-    rows = r.fetchall()
-    if not rows:
+def _format_world_notes(notes: list[WorldNotePayload]) -> str:
+    if not notes:
         return ""
     # 각 항목에 번호를 매겨 체크리스트 식 검수가 가능하게 한다.
     # 검수 LLM은 시스템 프롬프트의 "세계관 룰 체크리스트" 지시에 따라
     # 각 번호 항목을 본문과 1:1로 점검하게 된다 (attention 분산 완화).
-    lines = []
-    for idx, row in enumerate(rows, start=1):
-        content = _plain(row[1])[:WORLD_NOTE_TRUNC] if row[1] else ""
-        lines.append(f"[W{idx}] {row[0]}: {content}")
+    lines: list[str] = []
+    idx = 0
+    for note in notes:
+        if not note.name:
+            continue
+        idx += 1
+        content = _plain(note.content)[:WORLD_NOTE_TRUNC] if note.content else ""
+        lines.append(f"[W{idx}] {note.name}: {content}")
     return "\n".join(lines)
 
 
-async def _fetch_foreshadows(session: AsyncSession, work_id: str) -> str:
-    r = await session.execute(
-        sa_text(
-            "SELECT title, status, importance, content "
-            "FROM foreshadow WHERE work_id = :wid ORDER BY sort_order"
-        ),
-        {"wid": uuid.UUID(work_id)},
-    )
-    rows = r.fetchall()
-    if not rows:
+def _format_foreshadows(foreshadows: list[ForeshadowPayload]) -> str:
+    if not foreshadows:
         return ""
-    lines = []
-    for row in rows:
-        status = row[1] or "unknown"
-        importance = row[2] or ""
-        content = _plain(row[3])[:200] if row[3] else ""
-        lines.append(f"- [{status}] {row[0]} (중요도:{importance}) {content}")
+    lines: list[str] = []
+    for f in foreshadows:
+        if not f.title:
+            continue
+        status = f.status or "unknown"
+        importance = f.importance or ""
+        content = _plain(f.content)[:200] if f.content else ""
+        lines.append(f"- [{status}] {f.title} (중요도:{importance}) {content}")
     return "\n".join(lines)
 
 
-async def _fetch_storyline(session: AsyncSession, work_id: str) -> str:
+def _format_storyline(plots: list[PlotPayload]) -> str:
     """작품 전체 플롯(plot)만 반환한다.
 
     이번 회차 방향(storyline)은 drafts.py의 user prompt에서 별도 지시로 전달되므로
     여기서는 중복 삽입하지 않는다.
     """
-    r = await session.execute(
-        sa_text(
-            "SELECT title, content FROM plot "
-            "WHERE work_id = :wid ORDER BY sort_order"
-        ),
-        {"wid": uuid.UUID(work_id)},
-    )
-    rows = r.fetchall()
-    if not rows:
+    if not plots:
         return ""
     lines: list[str] = []
-    for row in rows:
-        content = _plain(row[1])[:PLOT_TRUNC] if row[1] else ""
-        lines.append(f"- {row[0]}: {content}")
+    for p in plots:
+        if not p.title:
+            continue
+        content = _plain(p.content)[:PLOT_TRUNC] if p.content else ""
+        lines.append(f"- {p.title}: {content}")
     return "\n".join(lines)
 
 
-async def _fetch_recent_summaries(
-    session: AsyncSession, work_id: str, current_episode_num: int
-) -> str:
-    return ""
-
-
-async def _fetch_recent_raw(
-    session: AsyncSession, work_id: str, current_episode_num: int, limit: int = 4
+def _format_recent_raw(
+    episodes: list[RecentEpisodePayload], limit: int
 ) -> tuple[str, list[int]]:
-    """최근 화 원문을 반환하고, 포함된 sort_order 리스트도 함께 돌려준다.
+    """클라이언트가 평문화해 보낸 회차들을 라벨링해 반환.
 
-    vector 검색이 이미 원문으로 들어간 화의 청크를 중복 반환하지 않도록
-    exclusion 용도로 사용된다.
+    페이로드는 과거→최근 순으로 보내진다(useAiContextPayload).
+    server-side에서 mode별 limit으로 끝(=최신)에서부터 잘라 사용한다.
+    vector_search가 이미 원문으로 들어간 화의 청크를 중복 반환하지 않도록
+    포함된 sort_order 리스트도 함께 돌려준다.
     """
-    r = await session.execute(
-        sa_text(
-            "SELECT sort_order, title, content FROM episode "
-            "WHERE work_id = :wid AND sort_order < :ep_num "
-            "ORDER BY sort_order DESC LIMIT :lim"
-        ),
-        {"wid": uuid.UUID(work_id), "ep_num": current_episode_num, "lim": limit},
-    )
-    rows = r.fetchall()
-    if not rows:
+    if not episodes:
         return "", []
-    # AI가 "N화에서 ~했던 것처럼" 같은 메타 회차 참조를 쓰지 않도록
-    # 절대 회차 번호를 헤더에 노출하지 않고 상대적 위치만 표기한다.
-    # 예: 3화 쓰는 중이면 [이전 화 / 2화 전] → [직전 화, 2화 전] 라벨만.
-    ordered = list(reversed(rows))  # 과거 → 최근 순
+    # 평문이 누락된 회차(복호화 실패 등)는 제외 — content가 None이면 스킵.
+    plain_only = [e for e in episodes if e.content]
+    if not plain_only:
+        return "", []
+    # 끝(최신)에서 limit개만 사용.
+    selected = plain_only[-limit:] if limit > 0 else []
+    if not selected:
+        return "", []
     lines: list[str] = []
     included_orders: list[int] = []
-    total = len(ordered)
-    for idx, row in enumerate(ordered):
+    total = len(selected)
+    for idx, ep in enumerate(selected):
         steps_back = total - idx  # 1 = 직전 화, 2 = 2화 전, ...
-        if steps_back == 1:
-            rel_label = "직전 화"
-        else:
-            rel_label = f"{steps_back}화 전"
-        content = _plain(row[2])
-        lines.append(f"=== {rel_label}: {row[1]} ===\n{content}")
-        included_orders.append(int(row[0]))
+        rel_label = "직전 화" if steps_back == 1 else f"{steps_back}화 전"
+        title = ep.title or ""
+        content = _plain(ep.content)
+        lines.append(f"=== {rel_label}: {title} ===\n{content}")
+        included_orders.append(int(ep.sort_order))
     return "\n\n".join(lines), included_orders
 
 

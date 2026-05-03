@@ -19,7 +19,13 @@ bucket_definitions:
   user_workspace:
     parameters: select request.user_id() as user_id
     data:
-      - select * from work         where writer_id = bucket.user_id
+      # work.encrypted_dek는 BYTEA → PowerSync는 binary를 직접 sync하지 못하므로
+      # sync-rules에서 base64() (SQLite 함수) 로 TEXT 변환 후 클라이언트로 보낸다.
+      # 클라이언트 schema.ts에서도 column.text로 선언되어 있다.
+      - select id, writer_id, title, author_name, description, status,
+               sort_order, created_at, updated_at,
+               base64(encrypted_dek) as encrypted_dek
+          from work where writer_id = bucket.user_id
       - select * from plan         where writer_id = bucket.user_id
       - select * from plan_note    where writer_id = bucket.user_id
       - select * from world_note   where writer_id = bucket.user_id

@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { Check, Lightbulb, Pencil, Send, Trash2, X } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { TAG_LIST, TAG_COLOR } from './ideaConstants';
@@ -11,6 +12,18 @@ import { extractText, textToTiptap, timeAgo } from './ideaUtils';
 interface IdeaArchiveListScreenProps {
   workId: string;
   onSelect: (id: string) => void;
+}
+
+interface RawIdeaRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  content: string | null;
+  tag: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface IdeaRow {
@@ -35,12 +48,26 @@ export function IdeaArchiveListScreen({ workId, onSelect }: IdeaArchiveListScree
   const [deleteBusy, setDeleteBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: ideas = [] } = useQuery<IdeaRow>(
-    `SELECT id, content, tag, sort_order, updated_at FROM idea_archive
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at DESC`,
+  // content/tag는 v1: 암호문 → useDecryptedIdeaArchiveList 거쳐야 한다.
+  // sort_order ASC, created_at DESC 정렬은 그대로 SQL에서 수행 (sort_order는 평문).
+  const { data: rawRows = [] } = useQuery<RawIdeaRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.work_id = ? AND i.writer_id = ?
+     ORDER BY i.sort_order ASC, i.created_at DESC`,
     [workId, writerId],
   );
+  const { data: decryptedRows } = useDecryptedIdeaArchiveList(rawRows);
+  const ideas: IdeaRow[] = decryptedRows.map((r) => ({
+    id: r.id,
+    content: r.content,
+    tag: r.tag,
+    sort_order: r.sort_order ?? 0,
+    updated_at: r.updated_at,
+  }));
 
   const filteredIdeas = activeTag ? ideas.filter((idea) => idea.tag === activeTag) : ideas;
   const visibleIdeaIds = filteredIdeas.map((idea) => idea.id);
