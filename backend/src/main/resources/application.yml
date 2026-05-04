@@ -57,6 +57,17 @@ ai:
 # app.web.* 블록은 application-{dev,test,prod}.yml로 분리
 # (랜딩/에디터/API URL, 쿠키 속성, CORS 모두 환경별로 다름)
 
+# Folio 보안 (Plan C — 결정 6/15/16)
+# server_pepper는 AWS Secrets Manager에 보관, Spring 메모리에 5분 TTL 캐시.
+# enabled=false 일 때는 PepperProvider/AwsSecretsManagerConfig 빈이 등록되지 않는다.
+# (dev/test에서 AWS 자격 없이도 컨텍스트가 시동되도록 — prod 프로필에서 true로 덮어씀)
+folio:
+  security:
+    pepper:
+      enabled: ${FOLIO_PEPPER_ENABLED:false}
+      secret-id: ${FOLIO_PEPPER_SECRET_ID:folio/encryption/pepper}
+      aws-region: ${FOLIO_AWS_REGION:ap-northeast-2}
+
 # 토스페이먼츠
 toss:
   payments:
@@ -64,6 +75,15 @@ toss:
     secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
     api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
     webhook-secret: ${TOSS_WEBHOOK_SECRET:}
+
+# Google Analytics 4 Measurement Protocol
+ga4:
+  enabled: ${GA4_ENABLED:true}
+  measurement-id: ${GA4_MEASUREMENT_ID:}
+  api-secret: ${GA4_API_SECRET:}
+  endpoint: ${GA4_ENDPOINT:https://www.google-analytics.com/mp/collect}
+  debug-endpoint: ${GA4_DEBUG_ENDPOINT:https://www.google-analytics.com/debug/mp/collect}
+  debug-mode: ${GA4_DEBUG_MODE:false}
 
 # springdoc / Swagger
 springdoc:

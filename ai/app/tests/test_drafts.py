@@ -14,6 +14,7 @@ def test_drafts_endpoint_accepts_opus_model(monkeypatch):
     captured: dict[str, str | None] = {"model_override": None}
 
     async def fake_assemble_context(
+        payload,
         work_id: str,
         writer_id: str,
         storyline: str,
@@ -50,6 +51,14 @@ def test_drafts_endpoint_accepts_opus_model(monkeypatch):
                 "storyline": "박지훈이 두 번째 방송을 시작한다",
                 "current_episode_num": 2,
                 "model": "opus",
+                "context": {
+                    "work_meta": {"title": "테스트 작품", "author_name": "테스트 작가"},
+                    "characters": [],
+                    "world_notes": [],
+                    "foreshadows": [],
+                    "plots": [],
+                    "recent_episodes": [],
+                },
             },
         ) as response:
             events = [line for line in response.iter_lines() if line]

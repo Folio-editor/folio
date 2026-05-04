@@ -6,6 +6,7 @@ import type {
   FolioOneTimePaymentResult,
   FolioBillingAuthParams,
   FolioBillingAuthResult,
+  FolioCryptoMaterial,
   UpdaterState,
 } from '../shared/types/auth';
 import type {
@@ -56,6 +57,13 @@ const api: FolioApi = {
   spellcheck: {
     syncWords: (words: string[]) =>
       ipcRenderer.invoke('spellcheck:syncWords', words) as Promise<void>,
+  },
+  crypto: {
+    saveMaterial: (material: FolioCryptoMaterial) =>
+      ipcRenderer.invoke('crypto:saveMaterial', material) as Promise<void>,
+    loadMaterial: () =>
+      ipcRenderer.invoke('crypto:loadMaterial') as Promise<FolioCryptoMaterial | null>,
+    clearMaterial: () => ipcRenderer.invoke('crypto:clearMaterial') as Promise<void>,
   },
   updater: {
     getCurrentVersion: () =>

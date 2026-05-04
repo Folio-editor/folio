@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedWorkList } from '../../hooks/useDecryptedWork';
+import {
+  useDecryptedEpisodeList,
+  type RawEpisodeListRow,
+} from '../../hooks/useDecryptedEpisode';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { Button } from '../../components/ui/Button';
 import { parseServerDate } from '../../lib/dateTime';
@@ -46,26 +51,81 @@ export function TrashScreen() {
     permanentDeleteEpisode,
   } = useLocalWrite();
 
-  const { data: trashedWorks = [] } = useQuery<TrashedWork>(
-    `SELECT id, title, updated_at FROM work
-     WHERE writer_id = ? AND status = 'trashed'
+  // PR2 — work title은 v1: 암호문일 수 있어 batch 복호화 후 매핑.
+  const { data: rawTrashedWorks = [] } = useQuery<{
+    id: string;
+    writer_id: string;
+    title: string | null;
+    author_name: string | null;
+    description: string | null;
+    status: string;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT id, writer_id, title, author_name, description, status,
+            sort_order, created_at, updated_at, encrypted_dek
+     FROM work WHERE writer_id = ? AND status = 'trashed'
      ORDER BY updated_at DESC`,
     [writerId],
   );
-
-  const { data: trashedEpisodes = [] } = useQuery<TrashedEpisode>(
-    `SELECT id, title, updated_at, work_id FROM episode
-     WHERE writer_id = ? AND status = 'trashed'
-     ORDER BY updated_at DESC`,
-    [writerId],
+  const { data: decryptedTrashedWorks } = useDecryptedWorkList(rawTrashedWorks);
+  const trashedWorks: TrashedWork[] = useMemo(
+    () =>
+      decryptedTrashedWorks.map((w) => ({
+        id: w.id,
+        title: w.title,
+        updated_at: w.updated_at,
+      })),
+    [decryptedTrashedWorks],
   );
 
-  // work_id → title 매핑 (JOIN 대신 별도 쿼리)
-  const { data: allWorks = [] } = useQuery<{ id: string; title: string }>(
-    `SELECT id, title FROM work WHERE writer_id = ?`,
+  const { data: rawTrashedEpisodes = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek
+       FROM episode e
+       LEFT JOIN work w ON w.id = e.work_id
+      WHERE e.writer_id = ? AND e.status = 'trashed'
+      ORDER BY e.updated_at DESC`,
     [writerId],
   );
-  const workTitleMap = new Map(allWorks.map((w) => [w.id, w.title]));
+  const { data: decryptedTrashedEpisodes } = useDecryptedEpisodeList(rawTrashedEpisodes);
+  const trashedEpisodes: TrashedEpisode[] = useMemo(
+    () =>
+      decryptedTrashedEpisodes.map((e) => ({
+        id: e.id,
+        title: e.title,
+        updated_at: e.updated_at,
+        work_id: e.work_id,
+      })),
+    [decryptedTrashedEpisodes],
+  );
+
+  // work_id → title 매핑 — 휴지통에 없는 작품(연재중)도 포함해야 episode 표시 가능.
+  const { data: rawAllWorks = [] } = useQuery<{
+    id: string;
+    writer_id: string;
+    title: string | null;
+    author_name: string | null;
+    description: string | null;
+    status: string;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(
+    `SELECT id, writer_id, title, author_name, description, status,
+            sort_order, created_at, updated_at, encrypted_dek
+     FROM work WHERE writer_id = ?`,
+    [writerId],
+  );
+  const { data: decryptedAllWorks } = useDecryptedWorkList(rawAllWorks);
+  const workTitleMap = useMemo(
+    () => new Map(decryptedAllWorks.map((w) => [w.id, w.title])),
+    [decryptedAllWorks],
+  );
 
   const [confirmTarget, setConfirmTarget] = useState<{
     type: 'work' | 'episode' | 'all';

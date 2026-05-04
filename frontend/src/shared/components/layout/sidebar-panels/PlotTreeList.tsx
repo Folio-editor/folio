@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, usePowerSync } from '@powersync/react';
 import {
   ChevronDown,
@@ -22,16 +22,14 @@ import {
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
+import { useDecryptedPlotList, type RawPlotRow } from '../../../hooks/useDecryptedPlot';
+import { decryptWorkFieldOnce } from '../../../crypto/fieldDecrypt';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
+import { useSortPreferenceStore } from '../../../stores/sortPreferenceStore';
 import {
-  buildOrderBy,
-  useSortPreferenceStore,
-} from '../../../stores/sortPreferenceStore';
-import {
-  buildInClause,
   useFilterPreferenceStore,
   EMPTY_FILTER,
 } from '../../../stores/filterPreferenceStore';
@@ -92,18 +90,55 @@ export function PlotTreeList({
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['plot'] ?? 'manual');
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND title LIKE ? ESCAPE '\\'` : '';
-  const orderBy = buildOrderBy(sortMode, { titleColumn: 'title' });
-  const sql = `SELECT id, title, status, work_id, parent_id, sort_order,
-     (SELECT COUNT(*) FROM plot c WHERE c.parent_id = plot.id) AS child_count
-     FROM plot
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
-     ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
-  const { data: rawActs = [], isFetching } = useQuery<PlotRow>(sql, params);
-  const acts = useOptimisticRows(rawActs, {
+  // title/status는 v1: 암호문 → SQL LIKE/ORDER BY title 불가, 클라이언트 측 필터/정렬
+  const sql = `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+                      p.sort_order, p.created_at, p.updated_at,
+                      w.encrypted_dek AS encrypted_dek,
+                      (SELECT COUNT(*) FROM plot c WHERE c.parent_id = p.id) AS child_count
+               FROM plot p
+               LEFT JOIN work w ON w.id = p.work_id
+               WHERE p.work_id = ? AND p.writer_id = ? AND p.parent_id IS NULL
+               ORDER BY p.sort_order ASC, p.created_at ASC`;
+  const params = [workId, writerId];
+  const { data: rawActRows = [], isFetching } = useQuery<RawPlotRow & { child_count?: number }>(
+    sql,
+    params,
+  );
+  const childCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rawActRows) map.set(r.id, r.child_count ?? 0);
+    return map;
+  }, [rawActRows]);
+  const { data: decryptedActs } = useDecryptedPlotList(rawActRows);
+  const decryptedActsList: PlotRow[] = useMemo(
+    () =>
+      decryptedActs.map((p) => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        work_id: p.work_id,
+        parent_id: p.parent_id,
+        sort_order: p.sort_order,
+        child_count: childCountById.get(p.id) ?? 0,
+      })),
+    [decryptedActs, childCountById],
+  );
+  const sortedActs = useMemo(() => {
+    const list = [...decryptedActsList];
+    if (sortMode === 'recent') {
+      // recent: created_at desc 가능하나 raw에 없어서 manual sort_order asc 유지
+    } else if (sortMode === 'alpha') {
+      list.sort((a, b) =>
+        (a.title || '').localeCompare(b.title || '', undefined, { numeric: true }),
+      );
+    }
+    if (trimmed) {
+      const lower = trimmed.toLowerCase();
+      return list.filter((r) => (r.title || '').toLowerCase().includes(lower));
+    }
+    return list;
+  }, [decryptedActsList, sortMode, trimmed]);
+  const acts = useOptimisticRows(sortedActs, {
     docType: 'plot',
     parentId: null,
     matches: (row) => row.work_id === workId,
@@ -369,11 +404,20 @@ function ActTreeItem({
 
   /** 막 복제 — 같은 root 레벨에 사본 생성 (자식 회차들은 사본하지 않음) */
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ content: string | null }>(
-      'SELECT content FROM plot WHERE id = ? LIMIT 1',
+    const rows = await db.getAll<{ content: string | null; encrypted_dek: string | null }>(
+      `SELECT p.content, w.encrypted_dek
+         FROM plot p LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.id = ? LIMIT 1`,
       [act.id],
     );
-    const content = rows[0]?.content ?? null;
+    const raw = rows[0];
+    const content = raw
+      ? await decryptWorkFieldOnce({
+          workId,
+          encryptedDek: raw.encrypted_dek,
+          value: raw.content,
+        })
+      : null;
     const newId = await createPlot(
       workId,
       `${act.title?.trim() || '(제목 없음)'} (사본)`,
@@ -411,18 +455,45 @@ function ActTreeItem({
   const childStatusFilter = useFilterPreferenceStore(
     (s) => s.byPanel['plot'] ?? (EMPTY_FILTER as string[]),
   );
-  const childOrderBy = buildOrderBy(childSortMode, { titleColumn: 'title' });
-  const childFilterClause = buildInClause('status', childStatusFilter);
 
-  const { data: rawEpisodes = [] } = useQuery<PlotRow>(
+  // title/status는 v1: 암호문 → SQL 필터/정렬 불가, 클라이언트 측 처리
+  const { data: rawChildRows = [] } = useQuery<RawPlotRow>(
     isExpanded
-      ? `SELECT id, title, status, work_id, parent_id, sort_order FROM plot
-         WHERE parent_id = ? AND writer_id = ? ${childFilterClause.sql}
-         ${childOrderBy}`
-      : `SELECT '' AS id, '' AS title, '' AS status, '' AS work_id, '' AS parent_id, 0 AS sort_order WHERE 0`,
-    isExpanded ? [act.id, writerId, ...childFilterClause.params] : [],
+      ? `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+                p.sort_order, p.created_at, p.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plot p
+         LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.parent_id = ? AND p.writer_id = ?
+         ORDER BY p.sort_order ASC, p.created_at ASC`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS title, NULL AS status, NULL AS content,
+                NULL AS sort_order, NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
+    isExpanded ? [act.id, writerId] : [],
   );
-  const episodes = useOptimisticRows(rawEpisodes, {
+  const { data: decryptedChildRows } = useDecryptedPlotList(rawChildRows);
+  const childList: PlotRow[] = useMemo(() => {
+    let list: PlotRow[] = decryptedChildRows.map((p) => ({
+      id: p.id,
+      title: p.title,
+      status: p.status,
+      work_id: p.work_id,
+      parent_id: p.parent_id,
+      sort_order: p.sort_order,
+    }));
+    if (childStatusFilter.length > 0) {
+      const set = new Set(childStatusFilter);
+      list = list.filter((r) => r.status != null && set.has(r.status));
+    }
+    if (childSortMode === 'alpha') {
+      list = [...list].sort((a, b) =>
+        (a.title || '').localeCompare(b.title || '', undefined, { numeric: true }),
+      );
+    }
+    return list;
+  }, [decryptedChildRows, childStatusFilter, childSortMode]);
+  const episodes = useOptimisticRows(childList, {
     docType: 'plot',
     parentId: act.id,
     matches: (row) => row.parent_id === act.id,
@@ -664,11 +735,20 @@ function EpisodeItem({
   };
 
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ content: string | null }>(
-      'SELECT content FROM plot WHERE id = ? LIMIT 1',
+    const rows = await db.getAll<{ content: string | null; encrypted_dek: string | null }>(
+      `SELECT p.content, w.encrypted_dek
+         FROM plot p LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.id = ? LIMIT 1`,
       [episode.id],
     );
-    const content = rows[0]?.content ?? null;
+    const raw = rows[0];
+    const content = raw
+      ? await decryptWorkFieldOnce({
+          workId,
+          encryptedDek: raw.encrypted_dek,
+          value: raw.content,
+        })
+      : null;
     const newId = await createPlot(
       workId,
       `${episode.title?.trim() || '(제목 없음)'} (사본)`,
@@ -854,10 +934,6 @@ function InlineCreateInput({
       className="mb-1 h-9 w-full rounded-lg border border-ring bg-background px-3 text-sm text-foreground outline-none ring-1 ring-ring placeholder:text-muted-foreground"
     />
   );
-}
-
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 /* ── 플롯 "전체" 가상 항목 — 클릭 시 메인 PlotOverview로 진입 ── */

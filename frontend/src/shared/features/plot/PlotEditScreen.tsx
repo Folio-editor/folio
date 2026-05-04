@@ -1,8 +1,9 @@
 import { useQuery } from '@powersync/react';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDeferredText } from '../../hooks/useDeferredText';
+import { useDecryptedPlotList, type RawPlotRow } from '../../hooks/useDecryptedPlot';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { IconButton } from '../../components/ui/IconButton';
@@ -35,11 +36,28 @@ const STATUS_OPTIONS = [
 ];
 
 export function PlotEditScreen({ id, onBack }: PlotEditScreenProps) {
-  const { data: rows = [] } = useQuery<PlotRow>(
-    `SELECT id, title, status, content, parent_id, work_id FROM plot WHERE id = ?`,
+  const { data: rawRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.id = ?`,
     [id],
   );
-  const item = rows[0];
+  const { data: decryptedRows } = useDecryptedPlotList(rawRows);
+  const item: PlotRow | undefined = useMemo(() => {
+    const r = decryptedRows[0];
+    if (!r) return undefined;
+    return {
+      id: r.id,
+      title: r.title,
+      status: r.status ?? '예정',
+      content: r.content,
+      parent_id: r.parent_id,
+      work_id: r.work_id,
+    };
+  }, [decryptedRows]);
 
   if (!item) {
     return <div className="p-8 text-sm text-muted-foreground">플롯을 불러오는 중…</div>;
@@ -60,13 +78,22 @@ function PlotEditor({ item, onBack }: { item: PlotRow; onBack: () => void }) {
   const title = useDeferredText(id, item.title, (v) => void updatePlot(id, { title: v }));
 
   // 부모 막 제목 fetch — breadcrumb 표시용
-  const { data: parentRows = [] } = useQuery<{ title: string }>(
+  const { data: rawParentRows = [] } = useQuery<RawPlotRow>(
     item.parent_id
-      ? `SELECT title FROM plot WHERE id = ? LIMIT 1`
-      : `SELECT '' AS title WHERE 0`,
+      ? `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+                p.sort_order, p.created_at, p.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM plot p
+         LEFT JOIN work w ON w.id = p.work_id
+         WHERE p.id = ? LIMIT 1`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS title, NULL AS status, NULL AS content,
+                NULL AS sort_order, NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek WHERE 0`,
     item.parent_id ? [item.parent_id] : [],
   );
-  const parentTitle = parentRows[0]?.title ?? '';
+  const { data: decryptedParentRows } = useDecryptedPlotList(rawParentRows);
+  const parentTitle = decryptedParentRows[0]?.title ?? '';
 
   return (
     <div className="flex h-full flex-col">
@@ -124,10 +151,27 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
   const { id } = act;
   const title = useDeferredText(id, act.title, (v) => void updatePlot(id, { title: v }));
 
-  const { data: episodes = [] } = useQuery<EpisodeRow>(
-    `SELECT id, title, status, content, sort_order FROM plot
-     WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`,
+  const { data: rawEpisodeRows = [] } = useQuery<RawPlotRow>(
+    `SELECT p.id, p.work_id, p.writer_id, p.parent_id, p.title, p.status, p.content,
+            p.sort_order, p.created_at, p.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM plot p
+     LEFT JOIN work w ON w.id = p.work_id
+     WHERE p.parent_id = ?
+     ORDER BY p.sort_order ASC, p.created_at ASC`,
     [id],
+  );
+  const { data: decryptedEpisodes } = useDecryptedPlotList(rawEpisodeRows);
+  const episodes: EpisodeRow[] = useMemo(
+    () =>
+      decryptedEpisodes.map((p) => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        content: p.content,
+        sort_order: p.sort_order,
+      })),
+    [decryptedEpisodes],
   );
 
   const handleNewEpisode = async () => {

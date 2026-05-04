@@ -9,8 +9,19 @@
 // - 모든 API 호출은 Authorization: Bearer (apiClient/connector 그대로 동작)
 // ============================================================
 
-import type { FolioApi, LoginResult, Writer } from '../../shared/types/auth';
+import type {
+  FolioApi,
+  LoginEncryptionMaterial,
+  LoginResult,
+  Writer,
+} from '../../shared/types/auth';
 import { createWebExportApi } from './export/exportApi';
+import { webOpenBillingAuth, webOpenOneTime } from './payment/webCheckout';
+import {
+  clearWebMaterial,
+  loadWebMaterial,
+  saveWebMaterial,
+} from './webEncryptionMaterialStore';
 
 function apiUrl(): string {
   const url =
@@ -94,6 +105,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
       deviceId: string;
       writer: Writer;
       isNewUser: boolean;
+      encryption: LoginEncryptionMaterial | null;
     };
 
     accessToken = payload.accessToken;
@@ -109,6 +121,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
       accessToken: payload.accessToken,
       writer: payload.writer,
       isNewUser: payload.isNewUser,
+      encryption: payload.encryption ?? null,
     };
   } catch (e) {
     console.warn('[web/folioApi] auth_code 교환 에러:', e);
@@ -254,14 +267,18 @@ export function createWebFolioApi(): FolioApi {
       // 웹은 OS spellchecker 사전 동기화 불가 — no-op (브라우저 native spellcheck로 fallback)
       syncWords: async () => {},
     },
+    crypto: {
+      saveMaterial: saveWebMaterial,
+      loadMaterial: loadWebMaterial,
+      clearMaterial: clearWebMaterial,
+    },
     payment: {
-      // 웹은 결제 창을 main process로 띄울 수 없음 — 호출 시 명시적 reject
-      openOneTime: async () => {
-        throw new Error('웹 환경에서는 결제 기능을 사용할 수 없습니다.');
-      },
-      openBillingAuth: async () => {
-        throw new Error('웹 환경에서는 결제 기능을 사용할 수 없습니다.');
-      },
+      // 웹은 별창을 띄울 수 없으므로 토스 SDK가 풀페이지 redirect로 진행한다.
+      // 결과는 /checkout/success | /checkout/fail 라우트가 받아 백엔드 confirm/create를
+      // 직접 호출한 뒤 원래 페이지로 location.replace + sessionStorage 결과 전달.
+      // → 본 함수의 Promise는 redirect로 끊기므로 정상 흐름에서는 resolve되지 않는다.
+      openOneTime: webOpenOneTime,
+      openBillingAuth: webOpenBillingAuth,
     },
     updater: {
       // 웹은 자동 업데이트 대상이 아님 — 브라우저가 알아서 새 버전을 로드.

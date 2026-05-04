@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.middleware.auth import require_internal_api_key
+from app.schemas.ai_context_payload import AiContextPayload
 from app.services.providers import get_llm
 from app.services.rag import assemble_context
 
@@ -30,6 +31,9 @@ class DraftRequest(BaseModel):
     current_episode_num: int
     model: str = "sonnet"
     user_prompt: str | None = None
+    # PR5 — 클라이언트가 KEK + work_key로 평문화해 보낸 RAG 컨텍스트.
+    # AI 서버는 이 페이로드를 메모리에서만 사용하고 절대 로깅·영속화하지 않는다.
+    context: AiContextPayload
 SYSTEM_PROMPT = (
     "당신은 웹소설 전문 작가입니다. "
     "아래 작품 컨텍스트를 참고하여 이번 회차의 초안을 작성하세요.\n\n"
@@ -110,6 +114,7 @@ async def _generate_sse(req: DraftRequest):
     rag_mode = "draft_opus" if is_opus else "draft_sonnet"
 
     context = await assemble_context(
+        payload=req.context,
         work_id=req.work_id,
         writer_id=req.writer_id,
         storyline=req.storyline,

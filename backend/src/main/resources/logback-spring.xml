@@ -53,6 +53,16 @@
         <logger name="external" level="INFO" />
         <logger name="org.hibernate.SQL" level="WARN" />
         <logger name="org.springframework.security" level="WARN" />
+        <!--
+          Plan C 옵션 1 보안 모델 — AI 호출 경로의 평문 RAG 컨텍스트가 wire-level
+          DEBUG 로그로 흘러나오지 않도록 HTTP 클라이언트 본문 추적 패키지를 WARN으로 고정.
+          (DTO의 toString은 이미 마스킹되어 있지만, RestClient/JdkHttpClient가 raw body를
+          별도로 찍는 경로를 logback 레벨에서 한 번 더 차단한다.)
+        -->
+        <logger name="org.springframework.web.client.RestClient" level="WARN" />
+        <logger name="org.springframework.http.client" level="WARN" />
+        <logger name="jdk.internal.net.http" level="WARN" />
+        <logger name="jdk.httpclient" level="WARN" />
     </springProfile>
 
 </configuration>

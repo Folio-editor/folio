@@ -36,6 +36,7 @@ public class SecurityConfig {
             "/api/v1/auth/web/logout",
             "/api/v1/auth/dev/**",
             "/api/v1/payments/webhook/**",
+            "/api/v1/analytics/events",
             "/test-payment.html",
             "/test-subscription.html",
             "/payment-result.html",

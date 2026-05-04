@@ -47,7 +47,11 @@ import { Skeleton } from '../ui/Skeleton';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
 import { useWriterId } from '../../hooks/useWriterId';
+import { useDecryptedEpisode } from '../../hooks/useDecryptedEpisode';
+import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
+import { useAiContextPayload } from '../../hooks/useAiContextPayload';
 import { apiClient, ApiError } from '../../lib/apiClient';
+import { analytics, charCountBucket, durationBucket } from '../../lib/analytics';
 import { useNavigationStore } from '../../stores/navigationStore';
 
 /**
@@ -457,6 +461,18 @@ function IdeaTabContent({ selectedWorkId }: { selectedWorkId: string | null }) {
   );
 }
 
+interface RawIdeaListRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  content: string | null;
+  tag: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
+}
+
 interface IdeaRow {
   id: string;
   content: string;
@@ -493,11 +509,28 @@ function IdeaPanelList({
   const [searchText, setSearchText] = useState('');
   const [sortKey, setSortKey] = useState<IdeaSortKey>('default');
 
-  const { data: ideas = [] } = useQuery<IdeaRow>(
-    `SELECT id, content, tag, created_at, updated_at FROM idea_archive
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at DESC`,
+  // content/tag는 v1: 암호문 → useDecryptedIdeaArchiveList 거쳐야 한다.
+  const { data: rawRows = [] } = useQuery<RawIdeaListRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.work_id = ? AND i.writer_id = ?
+     ORDER BY i.sort_order ASC, i.created_at DESC`,
     [workId, writerId],
+  );
+  const { data: decryptedRows } = useDecryptedIdeaArchiveList(rawRows);
+  const ideas: IdeaRow[] = useMemo(
+    () =>
+      decryptedRows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        tag: r.tag,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+      })),
+    [decryptedRows],
   );
 
   const filteredIdeas = useMemo(() => {
@@ -717,23 +750,35 @@ function IdeaPanelList({
   );
 }
 
-interface IdeaDetailRow {
+interface RawIdeaDetailRow {
   id: string;
+  work_id: string;
+  writer_id: string;
   content: string | null;
   tag: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 function IdeaPanelDetail({ id, onBack }: { id: string; onBack: () => void }) {
-  const { data: rows = [] } = useQuery<IdeaDetailRow>(
-    `SELECT id, content, tag FROM idea_archive WHERE id = ?`,
+  const { data: rows = [] } = useQuery<RawIdeaDetailRow>(
+    `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+            i.created_at, i.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM idea_archive i
+     LEFT JOIN work w ON w.id = i.work_id
+     WHERE i.id = ? LIMIT 1`,
     [id],
   );
+  const { data: decrypted } = useDecryptedIdeaArchiveList(rows);
   const { updateIdea, deleteIdeaArchive } = useLocalWrite();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  const loaded = rows.length > 0;
-  const idea = rows[0];
+  const loaded = decrypted.length > 0;
+  const idea = decrypted[0];
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -861,9 +906,35 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       : `SELECT '' as id, '' as title, null as content, '' as work_id, 0 as sort_order WHERE 0`,
     queryEpisodeId ? [queryEpisodeId] : [],
   );
-  const pinnedEpisode = episodeRows[0] ?? null;
+  const rawPinnedEpisode = episodeRows[0] ?? null;
+
+  // AI 호출 시 본문은 반드시 평문이어야 한다 (LLM은 v1: 암호문을 못 읽음).
+  // useDecryptedEpisode가 KEK + work_key로 복호화한 title/content를 반환하므로,
+  // rawPinnedEpisode (PowerSync 원시값) 대신 이 값을 사용한다. title도 v1: ciphertext일 수 있음.
+  const decryptedEpisodeId = pinnedEpisodeId ?? '';
+  const { data: decryptedEpisode } = useDecryptedEpisode(decryptedEpisodeId);
+  const decryptedContent = decryptedEpisode?.content ?? null;
+  const decryptStatus = decryptedEpisode?.decryptStatus;
+  const pinnedEpisode: EpisodeInfo | null = rawPinnedEpisode
+    ? {
+        ...rawPinnedEpisode,
+        title: decryptedEpisode?.title ?? '',
+        content: decryptedContent,
+      }
+    : null;
   // 등록된 원고가 있는지 (UI 표시 분기) — pin id는 있지만 DB에서 사라진 케이스 가드
-  const hasPinned = !!pinnedEpisode;
+  const hasPinned = !!rawPinnedEpisode;
+
+  // PR5 — AI 서버는 더 이상 v1: 암호문 컬럼을 직접 SELECT하지 않는다.
+  // 클라이언트가 KEK + work_key로 평문화한 RAG 컨텍스트를 호출 직전 조립해
+  // 페이로드로 동봉한다. 페이로드는 AI 서버 메모리에서만 사용되며 영속화/로깅되지 않는다.
+  const aiContextWorkId = pinnedEpisode?.work_id ?? null;
+  const aiContextEpisodeNum = (pinnedEpisode?.sort_order ?? 0) + 1;
+  const {
+    payload: aiContextPayload,
+    isLoading: aiContextLoading,
+    hasUndecrypted: aiContextHasUndecrypted,
+  } = useAiContextPayload(aiContextWorkId, aiContextEpisodeNum);
 
   const screen = useAiSessionStore((s) => s.screen);
   const draftState = useAiSessionStore((s) => s.draftState);
@@ -891,7 +962,21 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const handleGenerate = useCallback(async () => {
     if (!storyline.trim() || !pinnedEpisode) return;
     if (isStreaming) return;
-
+    // PR5 — 페이로드가 아직 조립 중이면 호출 보류 (KEK/work_key 복호화 대기).
+    if (aiContextLoading || !aiContextPayload) {
+      toast.error('AI 컨텍스트 준비 중', {
+        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    // 복호화 실패 잔재(v1:)가 페이로드에 남아 있으면 호출 자체를 차단한다.
+    // LLM이 못 읽는 데이터를 보내고 토큰만 태우는 사고 방지.
+    if (aiContextHasUndecrypted) {
+      toast.error('암호화된 자료를 복호화하지 못했어요', {
+        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
+      });
+      return;
+    }
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
       id: pinnedEpisode.id,
       workId: pinnedEpisode.work_id,
@@ -910,6 +995,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         currentEpisodeNum: episode.sortOrder + 1,
         model,
         userPrompt: userPrompt.trim() || null,
+        context: aiContextPayload,
       },
       (data: unknown) => {
         const d = data as { type?: string; content?: string };
@@ -929,7 +1015,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
     );
     setAbort(controller);
-  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
 
   const handleStop = () => stopGeneration();
 
@@ -938,7 +1024,30 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const failReview = useAiSessionStore((s) => s.failReview);
 
   const handleReview = useCallback(async () => {
-    if (!pinnedEpisode?.content) return;
+    if (!pinnedEpisode) return;
+    // 평문 본문이 준비된 상태(plain or decrypted)에서만 검수 가능.
+    // 'no-kek' / 'no-work-key' / 'failed' / loading 상태에서는 LLM에 보낼 평문이 없다.
+    if (!decryptedContent || (decryptStatus !== 'plain' && decryptStatus !== 'decrypted')) {
+      toast.error('본문을 불러오지 못했습니다', {
+        description: decryptStatus === 'no-kek'
+          ? '암호화 키 정보가 없어 본문을 복호화할 수 없습니다. 다시 로그인 후 시도해주세요.'
+          : '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    // PR5 — RAG 페이로드도 평문으로 준비된 상태여야 한다.
+    if (aiContextLoading || !aiContextPayload) {
+      toast.error('AI 컨텍스트 준비 중', {
+        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    if (aiContextHasUndecrypted) {
+      toast.error('암호화된 자료를 복호화하지 못했어요', {
+        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
+      });
+      return;
+    }
 
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
       id: pinnedEpisode.id,
@@ -948,16 +1057,26 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     };
 
     startReview(episode);
+    const startedAt = Date.now();
+    void analytics.track('ai_review_requested', {
+      doc_type: 'episode',
+      char_count_bucket: charCountBucket(decryptedContent.length),
+    });
 
     try {
       const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
         workId: episode.workId,
         episodeId: episode.id,
-        content: pinnedEpisode.content,
+        content: decryptedContent,
         episodeNumber: episode.sortOrder + 1,
+        context: aiContextPayload,
       });
       const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
       finishReview(reviewResult);
+      void analytics.track('ai_review_succeeded', {
+        doc_type: 'episode',
+        duration_bucket: durationBucket(Date.now() - startedAt),
+      });
       refreshWalletAfterUsage();
       const issueCount = reviewResult.issues.length;
       toast.success(
@@ -969,6 +1088,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failReview(message);
+      void analytics.track('ai_review_failed', {
+        doc_type: 'episode',
+        reason_code: err instanceof ApiError ? String(err.status) : 'unknown',
+      });
       // 부분 차감 가능성 — 실패해도 잔액 갱신
       refreshWalletAfterUsage();
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
@@ -976,7 +1099,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         : message;
       toast.error('검수 실패', { description: display });
     }
-  }, [pinnedEpisode, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+  }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {

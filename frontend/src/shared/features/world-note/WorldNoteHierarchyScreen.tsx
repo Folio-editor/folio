@@ -12,6 +12,7 @@ import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle
 import { UnifiedEditorToolbar } from '../../components/editor/UnifiedEditorToolbar';
 import { SharedFindReplace } from '../../components/editor/SharedFindReplace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../hooks/useDecryptedWorldNote';
 import { useOptimisticMoveStore } from '../../lib/optimisticMoveStore';
 import {
   WorldNoteRecursiveSection,
@@ -56,19 +57,40 @@ export function WorldNoteHierarchyScreen({
 
   // 클릭한 noteId 자체를 root로 — 그 노드의 모든 descendants fetch
   // 부모/조상은 트리에 포함되지 않음 (선택 노드가 통합 화면의 root가 됨)
-  const { data: descendantRows = [] } = useQuery<DescendantRow>(
+  // name/content는 v1: 암호문 → 각 row의 work의 encrypted_dek와 함께 가져와 일괄 복호화
+  const { data: rawDescendantRows = [] } = useQuery<
+    RawWorldNoteRow & { depth: number }
+  >(
     `WITH RECURSIVE descendants AS (
-       SELECT id, work_id, name, content, parent_id, sort_order, created_at, 0 AS depth
+       SELECT id, work_id, writer_id, name, content, parent_id, sort_order, created_at, updated_at, 0 AS depth
        FROM world_note WHERE id = ?
        UNION ALL
-       SELECT w.id, w.work_id, w.name, w.content, w.parent_id, w.sort_order, w.created_at, d.depth + 1
+       SELECT w.id, w.work_id, w.writer_id, w.name, w.content, w.parent_id, w.sort_order, w.created_at, w.updated_at, d.depth + 1
        FROM world_note w
        JOIN descendants d ON w.parent_id = d.id
      )
-     SELECT id, work_id, name, content, parent_id, sort_order, depth FROM descendants
-     ORDER BY depth ASC, sort_order ASC, created_at ASC`,
+     SELECT d.id, d.work_id, d.writer_id, d.name, d.content, d.parent_id,
+            d.sort_order, d.created_at, d.updated_at, d.depth,
+            wk.encrypted_dek AS encrypted_dek
+     FROM descendants d
+     LEFT JOIN work wk ON wk.id = d.work_id
+     ORDER BY d.depth ASC, d.sort_order ASC, d.created_at ASC`,
     [noteId],
   );
+  const { data: decryptedDescendants } = useDecryptedWorldNoteList(rawDescendantRows);
+  const descendantRows: DescendantRow[] = useMemo(() => {
+    const depthById = new Map<string, number>();
+    for (const r of rawDescendantRows) depthById.set(r.id, r.depth);
+    return decryptedDescendants.map((r) => ({
+      id: r.id,
+      work_id: r.work_id,
+      name: r.name,
+      content: r.content,
+      parent_id: r.parent_id,
+      sort_order: r.sort_order ?? 0,
+      depth: depthById.get(r.id) ?? 0,
+    }));
+  }, [decryptedDescendants, rawDescendantRows]);
 
   // 큰 트리 진입 시 freeze 방지 — 사용자 입력은 즉시, 백그라운드만 deferred
   const deferredRows = useDeferredValue(descendantRows);

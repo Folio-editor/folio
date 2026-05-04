@@ -11,7 +11,11 @@ import {
   parseJwtExp,
   type RefreshOutcome,
 } from './tokenRefreshScheduler';
-import type { LoginResult, Writer } from '../../shared/types/auth';
+import type {
+  LoginEncryptionMaterial,
+  LoginResult,
+  Writer,
+} from '../../shared/types/auth';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const SCOPE = 'openid email profile';
@@ -144,6 +148,7 @@ export async function loginWithGoogle(
       refreshToken: string;
       writer: Writer;
       isNewUser: boolean;
+      encryption: LoginEncryptionMaterial | null;
     };
     console.log('[oauth] 로그인 성공, writer:', body.writer?.id, 'isNewUser:', body.isNewUser);
 
@@ -157,7 +162,12 @@ export async function loginWithGoogle(
 
     tokenRefreshScheduler.start(body.accessToken);
 
-    return { accessToken: body.accessToken, writer: body.writer, isNewUser: body.isNewUser };
+    return {
+      accessToken: body.accessToken,
+      writer: body.writer,
+      isNewUser: body.isNewUser,
+      encryption: body.encryption ?? null,
+    };
   } finally {
     server.close();
   }

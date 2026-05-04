@@ -1,4 +1,4 @@
-import { useState, useEffect, type KeyboardEvent } from 'react';
+import { useMemo, useState, useEffect, type KeyboardEvent } from 'react';
 import { useQuery } from '@powersync/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useDroppable, type DraggableAttributes } from '@dnd-kit/core';
@@ -10,6 +10,9 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../../hooks/useDecryptedCharacter';
+import { useDecryptedForeshadowList } from '../../../hooks/useDecryptedForeshadow';
+import { useDecryptedIdeaArchiveList } from '../../../hooks/useDecryptedIdeaArchive';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
@@ -17,12 +20,10 @@ import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
 import {
-  buildOrderBy,
   useSortPreferenceStore,
   type SortPanelKey,
 } from '../../../stores/sortPreferenceStore';
 import {
-  buildInClause,
   useFilterPreferenceStore,
   EMPTY_FILTER,
 } from '../../../stores/filterPreferenceStore';
@@ -69,9 +70,7 @@ export function SectionItemList({
 }: SectionItemListProps) {
   const writerId = useWriterId();
   const { createForeshadow } = useLocalWrite();
-  const table = SECTION_TABLES[section];
-  const labelField = LABEL_FIELDS[section];
-  const docType = table; // SECTION_TABLES가 곧 dnd 시스템의 docType
+  const docType = SECTION_TABLES[section]; // SECTION_TABLES가 곧 dnd 시스템의 docType
 
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
@@ -83,25 +82,182 @@ export function SectionItemList({
     (s) => s.byPanel[panelKey] ?? (EMPTY_FILTER as string[]),
   );
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND ${labelField} LIKE ? ESCAPE '\\'` : '';
-  const orderBy = buildOrderBy(sortMode, { titleColumn: labelField });
-  // section별 필터 컬럼 — foreshadow: status, character: gender, idea-archive: tag
-  const filterColumn = FILTER_COLUMNS[section];
-  const filterClause = filterColumn
-    ? buildInClause(filterColumn, filterValues)
-    : { sql: '', params: [] };
-  const sql = `SELECT id, ${labelField} AS label, work_id, sort_order FROM ${table}
-     WHERE work_id = ? AND writer_id = ? ${whereSearch} ${filterClause.sql}
-     ${orderBy}`;
-  const params = [
-    workId,
-    writerId,
-    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
-    ...filterClause.params,
-  ];
 
-  const { data: rawRows = [], isFetching } = useQuery<Row>(sql, params);
-  const rows = useOptimisticRows(rawRows, {
+  // PR3/PR4: character.name, foreshadow.title/status/importance, idea_archive.content/tag 모두 ciphertext.
+  // SQL LIKE/ORDER BY/IN(filter)이 ciphertext 컬럼 위에서는 부정확 → 모든 섹션을 raw 조회 + client-side로 처리.
+  // sort_order/created_at/updated_at는 평문이므로 SQL ORDER BY는 manual 모드 기본 정렬에 사용.
+  const isCharacter = section === 'character';
+  const isForeshadow = section === 'foreshadow';
+  const isIdea = section === 'idea-archive';
+
+  const characterSql = isCharacter
+    ? `SELECT c.id, c.work_id, c.writer_id, c.name, c.gender, c.age,
+              c.profile_image_url, c.sort_order, c.created_at, c.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM character c
+       LEFT JOIN work w ON w.id = c.work_id
+       WHERE c.work_id = ? AND c.writer_id = ?
+       ORDER BY c.sort_order ASC, c.created_at ASC`
+    : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS name,
+              NULL AS gender, NULL AS age, NULL AS profile_image_url,
+              NULL AS sort_order, NULL AS created_at, NULL AS updated_at,
+              NULL AS encrypted_dek WHERE 0`;
+  const foreshadowSql = isForeshadow
+    ? `SELECT f.id, f.work_id, f.writer_id, f.title, f.status, f.importance,
+              f.content, f.sort_order, f.created_at, f.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM foreshadow f
+       LEFT JOIN work w ON w.id = f.work_id
+       WHERE f.work_id = ? AND f.writer_id = ?
+       ORDER BY f.sort_order ASC, f.created_at ASC`
+    : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS title,
+              NULL AS status, NULL AS importance, NULL AS content,
+              NULL AS sort_order, NULL AS created_at, NULL AS updated_at,
+              NULL AS encrypted_dek WHERE 0`;
+  const ideaSql = isIdea
+    ? `SELECT i.id, i.work_id, i.writer_id, i.content, i.tag, i.sort_order,
+              i.created_at, i.updated_at,
+              w.encrypted_dek AS encrypted_dek
+       FROM idea_archive i
+       LEFT JOIN work w ON w.id = i.work_id
+       WHERE i.work_id = ? AND i.writer_id = ?
+       ORDER BY i.sort_order ASC, i.created_at ASC`
+    : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS content,
+              NULL AS tag, NULL AS sort_order, NULL AS created_at,
+              NULL AS updated_at, NULL AS encrypted_dek WHERE 0`;
+
+  const characterParams = isCharacter ? [workId, writerId] : [];
+  const foreshadowParams = isForeshadow ? [workId, writerId] : [];
+  const ideaParams = isIdea ? [workId, writerId] : [];
+
+  const { data: rawCharacterRows = [], isFetching: isFetchingCharacter } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    name: string | null;
+    gender: string | null;
+    age: string | null;
+    profile_image_url: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(characterSql, characterParams);
+  const { data: rawForeshadowRows = [], isFetching: isFetchingForeshadow } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    title: string | null;
+    status: string | null;
+    importance: string | null;
+    content: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(foreshadowSql, foreshadowParams);
+  const { data: rawIdeaRows = [], isFetching: isFetchingIdea } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    content: string | null;
+    tag: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(ideaSql, ideaParams);
+
+  const isFetching = isCharacter
+    ? isFetchingCharacter
+    : isForeshadow
+      ? isFetchingForeshadow
+      : isFetchingIdea;
+
+  const { data: decryptedCharacters } = useDecryptedCharacterList(rawCharacterRows);
+  const { data: decryptedForeshadows } = useDecryptedForeshadowList(rawForeshadowRows);
+  const { data: decryptedIdeas } = useDecryptedIdeaArchiveList(rawIdeaRows);
+
+  const processedRows: Row[] = useMemo(() => {
+    let list: Row[] = [];
+    let updatedMap = new Map<string, string>();
+    let filterField: ((id: string) => string | null) | null = null;
+
+    if (isCharacter) {
+      list = decryptedCharacters.map((c) => ({
+        id: c.id,
+        label: c.name,
+        work_id: c.work_id,
+        sort_order: c.sort_order,
+      }));
+      updatedMap = new Map(decryptedCharacters.map((c) => [c.id, c.updated_at]));
+      const genderById = new Map(decryptedCharacters.map((c) => [c.id, c.gender]));
+      filterField = (id) => genderById.get(id) ?? null;
+    } else if (isForeshadow) {
+      list = decryptedForeshadows.map((f) => ({
+        id: f.id,
+        label: f.title,
+        work_id: f.work_id,
+        sort_order: f.sort_order,
+      }));
+      updatedMap = new Map(decryptedForeshadows.map((f) => [f.id, f.updated_at]));
+      const importanceById = new Map(decryptedForeshadows.map((f) => [f.id, f.importance]));
+      filterField = (id) => importanceById.get(id) ?? null;
+    } else if (isIdea) {
+      list = decryptedIdeas.map((i) => ({
+        id: i.id,
+        label: i.content,
+        work_id: i.work_id,
+        sort_order: i.sort_order,
+      }));
+      updatedMap = new Map(decryptedIdeas.map((i) => [i.id, i.updated_at]));
+      const tagById = new Map(decryptedIdeas.map((i) => [i.id, i.tag]));
+      filterField = (id) => tagById.get(id) ?? null;
+    }
+
+    // 필터 (foreshadow.importance / character.gender / idea_archive.tag)
+    if (filterValues.length > 0 && filterField) {
+      const allowed = new Set(filterValues);
+      list = list.filter((r) => {
+        const v = filterField!(r.id);
+        return v != null && allowed.has(v);
+      });
+    }
+
+    // 검색 — idea-archive는 TipTap JSON이라 extractPlainText로 비교
+    if (trimmed) {
+      const needle = trimmed.toLowerCase();
+      list = list.filter((r) => {
+        const raw = r.label ?? '';
+        const text = isIdea ? extractPlainText(raw) : raw;
+        return text.toLowerCase().includes(needle);
+      });
+    }
+
+    if (sortMode === 'alpha') {
+      list = [...list].sort((a, b) => {
+        const al = isIdea ? extractPlainText(a.label ?? '') : (a.label ?? '');
+        const bl = isIdea ? extractPlainText(b.label ?? '') : (b.label ?? '');
+        return al.localeCompare(bl, 'ko');
+      });
+    } else if (sortMode === 'recent') {
+      list = [...list].sort((a, b) =>
+        (updatedMap.get(b.id) ?? '').localeCompare(updatedMap.get(a.id) ?? ''),
+      );
+    }
+    return list;
+  }, [
+    isCharacter,
+    isForeshadow,
+    isIdea,
+    decryptedCharacters,
+    decryptedForeshadows,
+    decryptedIdeas,
+    filterValues,
+    trimmed,
+    sortMode,
+  ]);
+  const rows = useOptimisticRows(processedRows, {
     docType,
     workId,
     matches: (row) => row.work_id === workId,
@@ -288,6 +444,7 @@ function SectionItem({
   label,
   rawLabel,
   section,
+  workId,
   selected,
   onSelect,
   onAfterDelete,
@@ -326,7 +483,7 @@ function SectionItem({
       return;
     }
     if (section === 'character') {
-      void updateCharacter(id, { name: next.slice(0, 200) });
+      void updateCharacter(workId, id, { name: next.slice(0, 200) });
     } else if (section === 'foreshadow') {
       void updateForeshadow(id, { title: next.slice(0, 200) });
     }
@@ -424,19 +581,6 @@ function SectionItem({
   );
 }
 
-const LABEL_FIELDS: Record<Section, string> = {
-  character: 'name',
-  foreshadow: 'title',
-  'idea-archive': 'content',
-};
-
-/** 섹션별 필터 SQL 컬럼 매핑 — null이면 필터링 없음 */
-const FILTER_COLUMNS: Record<Section, string | null> = {
-  character: 'gender',
-  foreshadow: 'importance',
-  'idea-archive': 'tag',
-};
-
 const EMPTY_LABELS: Record<Section, string> = {
   character: '등장인물이 없습니다.',
   foreshadow: '복선이 없습니다.',
@@ -454,10 +598,6 @@ const DELETE_LABELS: Record<Section, string> = {
   foreshadow: '복선 삭제',
   'idea-archive': '아이디어 삭제',
 };
-
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
 
 /** TipTap JSON content에서 일반 텍스트만 추출 */
 function extractPlainText(raw: string): string {

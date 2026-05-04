@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { Plus } from 'lucide-react';
 import { useWriterId } from '../../hooks/useWriterId';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
+import { useDecryptedForeshadowList } from '../../hooks/useDecryptedForeshadow';
 import { Button } from '../../components/ui/Button';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ForeshadowLifecycleStepper } from './ForeshadowLifecycleStepper';
@@ -11,6 +12,20 @@ import { cn } from '../../lib/cn';
 interface ForeshadowOverviewProps {
   workId: string;
   onSelect: (id: string) => void;
+}
+
+interface RawForeshadowRow {
+  id: string;
+  work_id: string;
+  writer_id: string;
+  title: string | null;
+  status: string | null;
+  importance: string | null;
+  content: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+  encrypted_dek: string | null;
 }
 
 interface ForeshadowRow {
@@ -49,11 +64,27 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
   const { createForeshadow } = useLocalWrite();
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
-  const { data: items = [] } = useQuery<ForeshadowRow>(
-    `SELECT id, title, status, importance FROM foreshadow
-     WHERE work_id = ? AND writer_id = ?
-     ORDER BY sort_order ASC, created_at ASC`,
+  // title/status/importance 모두 v1: 암호문 → useDecryptedForeshadowList 거쳐야 한다.
+  const { data: rawRows = [] } = useQuery<RawForeshadowRow>(
+    `SELECT f.id, f.work_id, f.writer_id, f.title, f.status, f.importance,
+            f.content, f.sort_order, f.created_at, f.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM foreshadow f
+     LEFT JOIN work w ON w.id = f.work_id
+     WHERE f.work_id = ? AND f.writer_id = ?
+     ORDER BY f.sort_order ASC, f.created_at ASC`,
     [workId, writerId],
+  );
+  const { data: decryptedItems } = useDecryptedForeshadowList(rawRows);
+  const items: ForeshadowRow[] = useMemo(
+    () =>
+      decryptedItems.map((f) => ({
+        id: f.id,
+        title: f.title,
+        status: f.status ?? '진행중',
+        importance: f.importance ?? '중',
+      })),
+    [decryptedItems],
   );
 
   const { data: links = [] } = useQuery<LinkRow>(

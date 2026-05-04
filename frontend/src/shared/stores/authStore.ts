@@ -1,11 +1,39 @@
 import { create } from 'zustand';
-import type { Writer } from '../types/auth';
+import type { LoginEncryptionMaterial, Writer } from '../types/auth';
 import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
+import {
+  clearKek,
+  initKekFromLogin,
+  restoreKek,
+} from '../crypto/lifecycle';
+import { analytics } from '../lib/analytics';
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
 function isWebPlatform(): boolean {
   return typeof window !== 'undefined' && window.folio?.platform === 'web';
+}
+
+/**
+ * 로그인 응답의 EncryptionMaterial로 KEK를 메모리에 도출.
+ * Pepper Provider가 비활성(dev/test)인 백엔드 환경에서는 encryption이 null/undefined로
+ * 내려오므로 KEK 도출을 건너뛴다(=암호화 동작 disable).
+ */
+async function deriveKekFromLogin(
+  encryption: LoginEncryptionMaterial | null | undefined,
+): Promise<void> {
+  if (!encryption) return;
+  try {
+    await initKekFromLogin({
+      sub: encryption.sub,
+      saltBase64: encryption.salt,
+      pepperUserBase64: encryption.pepperUser,
+      pepperVersion: encryption.pepperVersion,
+    });
+  } catch (e) {
+    // KEK 도출 실패는 로그인 자체를 막지 않는다 — 암호화/복호화가 필요한 시점에 사용자에게 노출.
+    console.warn('[auth] KEK 도출 실패:', e);
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -123,6 +151,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // 자동 복원: 이미 결정 끝난 기존 사용자 → 서버 우선으로 즉시 결정 확정.
         // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
         // App.tsx가 syncDecision만 보고 connect하므로 disconnectAndClear는 호출되지 않는다.
+        //
+        // KEK 복원: 백엔드 /auth/me는 EncryptionMaterial을 내려주지 않으므로,
+        // 이전 로그인에서 영속 저장된 재료(safeStorage / IndexedDB)에서 재도출한다.
+        // 영속 재료가 없거나(앱 첫 설치 후 자동 로그인 불가) pepper 회전 등으로
+        // 재도출 실패하면 KEK는 null로 남고 사용자는 다음 명시 로그인에서 새로 받아야 한다.
+        try {
+          await restoreKek();
+        } catch (e) {
+          console.warn('[auth] restoreKek 실패:', e);
+        }
         set({
           writer: result.writer,
           guestWriterId: null,
@@ -210,8 +248,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     const currentGuestId = get().guestWriterId;
     set({ isLoggingIn: true, error: null });
+    void analytics.track('login_started', { provider: 'google' });
     try {
       const result = await window.folio.auth.loginWithGoogle();
+
+      // KEK 도출: pepper_user/salt/sub/version 영속 + 메모리 KEK 즉시 사용 가능 상태로.
+      // 사용자 전환(initKekFromLogin 내부에서 sub 비교)도 자동 처리된다.
+      await deriveKekFromLogin(result.encryption);
 
       // 신규 가입자 + 게스트 UUID 있으면 pre-state 재매핑으로 UI 깜빡임 제거
       const shouldPreRemap =
@@ -264,8 +307,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           console.warn('[AuthStore] commitLastKnownWriterId 실패:', e);
         }
       }
+      void analytics.track('login_succeeded', {
+        provider: 'google',
+        is_new_user: result.isNewUser,
+      });
     } catch (e) {
       set({ isLoggingIn: false, error: (e as Error).message });
+      void analytics.track('login_failed', {
+        reason_code: 'oauth_error',
+      });
     }
   },
 
@@ -316,6 +366,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await window.folio.auth.logout();
     } finally {
+      // KEK + work key 캐시 + 영속 재료까지 모두 폐기. 네트워크 오류로 logout이 실패해도
+      // 메모리/디스크 비우기는 진행해야 다음 사용자 세션에 KEK 잔류를 막는다.
+      try {
+        await clearKek();
+      } catch (e) {
+        console.warn('[auth] clearKek 실패:', e);
+      }
       if (isWebPlatform()) {
         // 웹은 로그아웃 시 게스트로 떨어지지 않음 — 비인증 상태로만 전환.
         // AppRoot가 비인증 상태를 감지해 로그인 안내(또는 랜딩 redirect) 화면을 표시.

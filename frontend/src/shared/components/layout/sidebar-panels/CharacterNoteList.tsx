@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, usePowerSync } from '@powersync/react';
 import {
   ChevronDown,
@@ -20,15 +20,14 @@ import {
 } from '@dnd-kit/sortable';
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
+import { useDecryptedCharacterList } from '../../../hooks/useDecryptedCharacter';
+import { useDecryptedCharacterNoteList } from '../../../hooks/useDecryptedCharacterNote';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
-import {
-  buildOrderBy,
-  useSortPreferenceStore,
-} from '../../../stores/sortPreferenceStore';
+import { useSortPreferenceStore } from '../../../stores/sortPreferenceStore';
 import {
   useFilterPreferenceStore,
   EMPTY_FILTER,
@@ -50,6 +49,8 @@ interface CharacterRow {
   name: string;
   work_id?: string;
   sort_order?: number | null;
+  /** PR3 — 인물 복제 시 사본의 age 평문을 다시 암호화해야 하므로 복호화된 값을 함께 전달. */
+  age?: string | null;
 }
 
 interface CharacterNoteRow {
@@ -58,6 +59,8 @@ interface CharacterNoteRow {
   title: string;
   sort_order: number | null;
   character_id?: string;
+  /** PR3 — 노트 복제 시 사본 content를 다시 암호화해야 해 복호화된 값을 함께 전달. */
+  content?: string | null;
 }
 
 interface CharacterNoteListProps {
@@ -125,27 +128,70 @@ export function CharacterNoteList({
   );
   const clearFilter = useFilterPreferenceStore((s) => s.clear);
   const trimmed = searchTerm.trim();
-  const whereName = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
-  const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
-  // 태그 필터 — character_tag 다대다 EXISTS 절 (선택된 world_note 중 하나라도 가진 캐릭터)
+
+  // PR3 — character.name이 v1: 암호문일 수 있어 LIKE/ORDER BY가 평문 기준으로 동작 안 함.
+  // 모든 캐릭터를 받아 batch 복호화 후 메모리에서 필터·정렬한다.
+  // 태그 필터는 character_tag JOIN이 평문이라 SQL EXISTS로 그대로 처리해도 되지만
+  // 단순화를 위해 메모리 필터에 합류시킨다 (캐릭터 수 < ~50 가정).
   const tagPlaceholders = tagFilter.map(() => '?').join(', ');
-  const tagClause =
+  const tagJoin =
     tagFilter.length > 0
       ? `AND EXISTS (SELECT 1 FROM character_tag ct
                        WHERE ct.character_id = character.id
                          AND ct.world_note_id IN (${tagPlaceholders}))`
       : '';
-  const sql = `SELECT id, name, work_id, sort_order FROM character
-     WHERE work_id = ? AND writer_id = ? ${whereName} ${tagClause}
-     ${orderBy}`;
-  const params = [
-    workId,
-    writerId,
-    ...(trimmed ? [`%${escapeLike(trimmed)}%`] : []),
-    ...tagFilter,
-  ];
-  const { data: rawCharacters = [], isFetching } = useQuery<CharacterRow>(sql, params);
-  const characters = useOptimisticRows(rawCharacters, {
+  const charSql = `SELECT character.id, character.work_id, character.writer_id,
+            character.name, character.gender, character.age,
+            character.profile_image_url, character.sort_order,
+            character.created_at, character.updated_at,
+            work.encrypted_dek AS encrypted_dek
+     FROM character
+     LEFT JOIN work ON work.id = character.work_id
+     WHERE character.work_id = ? AND character.writer_id = ? ${tagJoin}`;
+  const charParams = [workId, writerId, ...tagFilter];
+  const { data: rawCharacters = [], isFetching } = useQuery<{
+    id: string;
+    work_id: string;
+    writer_id: string;
+    name: string | null;
+    gender: string | null;
+    age: string | null;
+    profile_image_url: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    encrypted_dek: string | null;
+  }>(charSql, charParams);
+  const { data: decryptedCharacters } = useDecryptedCharacterList(rawCharacters);
+  const filteredAndSortedChars = useMemo<CharacterRow[]>(() => {
+    const lowerTerm = trimmed.toLowerCase();
+    let list: CharacterRow[] = decryptedCharacters.map((c) => ({
+      id: c.id,
+      name: c.name,
+      work_id: c.work_id,
+      sort_order: c.sort_order,
+      age: c.age,
+    }));
+    if (lowerTerm) {
+      list = list.filter((c) => (c.name ?? '').toLowerCase().includes(lowerTerm));
+    }
+    if (sortMode === 'alpha') {
+      list = list.sort((a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '', 'ko'),
+      );
+    } else if (sortMode === 'recent') {
+      const updatedAtById = new Map(rawCharacters.map((r) => [r.id, r.updated_at]));
+      list = list.sort((a, b) => {
+        const ua = updatedAtById.get(a.id) ?? '';
+        const ub = updatedAtById.get(b.id) ?? '';
+        return ub.localeCompare(ua);
+      });
+    } else {
+      list = list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    }
+    return list;
+  }, [decryptedCharacters, trimmed, sortMode, rawCharacters]);
+  const characters = useOptimisticRows(filteredAndSortedChars, {
     docType: 'character',
     workId,
     matches: (row) => row.work_id === workId,
@@ -160,7 +206,7 @@ export function CharacterNoteList({
     void (async () => {
       if (tagFilter.length > 0) clearFilter('character-tag');
       const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
-      await ensureCharacterNotes(id);
+      await ensureCharacterNotes(workId, id);
       setExpandedCharId(id);
       onItemSelect('char:' + id, 'default');
     })();
@@ -345,6 +391,7 @@ function CharacterTreeItem({
     createCharacterNote,
     deleteCharacter,
     placeCharacter,
+    ensureCharacterNotes,
   } = useLocalWrite();
   const [creatingNote, setCreatingNote] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -352,16 +399,61 @@ function CharacterTreeItem({
   const charClickHandlers = useSidebarClickHandler(onCharacterActivate);
 
   const noteSortMode = useSortPreferenceStore((s) => s.byPanel['character'] ?? 'manual');
-  const noteOrderBy = buildOrderBy(noteSortMode, { titleColumn: 'title' });
-  const { data: rawNotes = [] } = useQuery<CharacterNoteRow>(
+  // PR3 — character_note.title이 v1: 암호문일 수 있어 평문 기준 정렬을 위해 메모리 처리.
+  // work.encrypted_dek는 work_key 풀기에 필요해 JOIN으로 결합한다.
+  const { data: rawNotesAll = [] } = useQuery<{
+    id: string;
+    character_id: string;
+    writer_id: string;
+    kind: string;
+    title: string | null;
+    content: string | null;
+    sort_order: number | null;
+    created_at: string;
+    updated_at: string;
+    work_id: string;
+    encrypted_dek: string | null;
+  }>(
     isExpanded
-      ? `SELECT id, kind, title, sort_order, character_id FROM character_note
-         WHERE character_id = ? AND writer_id = ? AND kind != 'intro'
-         ${noteOrderBy}`
-      : `SELECT '' AS id, '' AS kind, '' AS title, 0 AS sort_order, '' AS character_id WHERE 0`,
+      ? `SELECT cn.id, cn.character_id, cn.writer_id, cn.kind, cn.title, cn.content,
+                cn.sort_order, cn.created_at, cn.updated_at,
+                c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
+         FROM character_note cn
+         JOIN character c ON c.id = cn.character_id
+         LEFT JOIN work w ON w.id = c.work_id
+         WHERE cn.character_id = ? AND cn.writer_id = ? AND cn.kind != 'intro'`
+      : `SELECT '' AS id, '' AS character_id, '' AS writer_id, '' AS kind,
+                '' AS title, NULL AS content, 0 AS sort_order, '' AS created_at,
+                '' AS updated_at, '' AS work_id, NULL AS encrypted_dek WHERE 0`,
     isExpanded ? [character.id, writerId] : [],
   );
-  const notes = useOptimisticRows(rawNotes, {
+  const { data: decryptedNotes } = useDecryptedCharacterNoteList(rawNotesAll);
+  const sortedNotes = useMemo<CharacterNoteRow[]>(() => {
+    let list: CharacterNoteRow[] = decryptedNotes.map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      title: n.title,
+      sort_order: n.sort_order,
+      character_id: n.character_id,
+      content: n.content,
+    }));
+    if (noteSortMode === 'alpha') {
+      list = list.sort((a, b) =>
+        (a.title ?? '').localeCompare(b.title ?? '', 'ko'),
+      );
+    } else if (noteSortMode === 'recent') {
+      const updatedAtById = new Map(rawNotesAll.map((r) => [r.id, r.updated_at]));
+      list = list.sort((a, b) => {
+        const ua = updatedAtById.get(a.id) ?? '';
+        const ub = updatedAtById.get(b.id) ?? '';
+        return ub.localeCompare(ua);
+      });
+    } else {
+      list = list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    }
+    return list;
+  }, [decryptedNotes, noteSortMode, rawNotesAll]);
+  const notes = useOptimisticRows(sortedNotes, {
     docType: 'character_note',
     characterId: character.id,
     matches: (row) => row.character_id === character.id,
@@ -370,7 +462,7 @@ function CharacterTreeItem({
   const handleCreateNote = async (name: string) => {
     setCreatingNote(false);
     if (!name.trim()) return;
-    const id = await createCharacterNote(character.id, name.trim(), nextSortOrder(notes));
+    const id = await createCharacterNote(workId, character.id, name.trim(), nextSortOrder(notes));
     onNoteActivate(id, 'default');
   };
 
@@ -393,14 +485,16 @@ function CharacterTreeItem({
   /**
    * 인물 복제 — character row 자체만 복제 (사본 외형/성격 노트는 ensureCharacterNotes 가 자동 생성).
    * 커스텀 노트(kind='custom')는 사본하지 않음. 명시 한계.
+   * PR3 — character.age는 v1: 암호문일 수 있어 복호화된 hook 결과(decryptedAge)를 사용한다.
    */
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ gender: string | null; age: string | null }>(
-      'SELECT gender, age FROM "character" WHERE id = ? LIMIT 1',
+    // gender는 평문 enum이라 DB에서 그대로 읽으면 되고, age/name은 props/hook에서 복호화 결과 사용.
+    const rows = await db.getAll<{ gender: string | null }>(
+      'SELECT gender FROM "character" WHERE id = ? LIMIT 1',
       [character.id],
     );
     const gender = rows[0]?.gender ?? '';
-    const age = rows[0]?.age ?? '';
+    const age = character.age ?? '';
     const newId = await createCharacter(
       workId,
       `${character.name?.trim() || '(이름 없음)'} (사본)`,
@@ -409,6 +503,7 @@ function CharacterTreeItem({
       Date.now(),
     );
     await placeCharacter(newId, workId, character.id, 'after');
+    await ensureCharacterNotes(workId, newId);
   };
 
   const fetchSiblings = async (): Promise<string[]> => {
@@ -530,6 +625,7 @@ function CharacterTreeItem({
                   key={note.id}
                   note={note}
                   characterId={character.id}
+                  workId={workId}
                   selected={selectedNoteId === note.id}
                   onSelect={(intent) => onNoteActivate(note.id, intent)}
                   onAfterDelete={() => onAfterNoteDelete(note.id)}
@@ -553,6 +649,7 @@ function CharacterTreeItem({
 interface SortableNoteItemProps {
   note: CharacterNoteRow;
   characterId: string;
+  workId: string;
   selected: boolean;
   onSelect: (intent: ClickIntent) => void;
   onAfterDelete: () => void;
@@ -604,6 +701,7 @@ function SortableNoteItem(props: SortableNoteItemProps) {
 function NoteItem({
   note,
   characterId,
+  workId,
   selected,
   onSelect,
   onAfterDelete,
@@ -665,16 +763,14 @@ function NoteItem({
   };
 
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ content: string | null }>(
-      'SELECT content FROM character_note WHERE id = ? LIMIT 1',
-      [note.id],
-    );
-    const content = rows[0]?.content ?? null;
+    // PR3 — note.content는 이미 복호화된 평문(decryptedNotes 매핑 결과). DB에서 raw로
+    // 다시 읽으면 ciphertext가 되어 createCharacterNote가 이중 암호화하게 된다.
     const newId = await createCharacterNote(
+      workId,
       characterId,
       `${note.title?.trim() || '(제목 없음)'} (사본)`,
       Date.now(),
-      content,
+      note.content ?? null,
     );
     await placeCharacterNote(newId, characterId, note.id, 'after');
   };
@@ -827,6 +923,3 @@ function InlineCreateInput({
   );
 }
 
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}

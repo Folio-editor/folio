@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, usePowerSync } from '@powersync/react';
 import {
   ChevronDown,
@@ -21,14 +21,13 @@ import {
 import { useWriterId } from '../../../hooks/useWriterId';
 import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
+import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../../hooks/useDecryptedWorldNote';
+import { decryptWorkFieldOnce } from '../../../crypto/fieldDecrypt';
 import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
-import {
-  buildOrderBy,
-  useSortPreferenceStore,
-} from '../../../stores/sortPreferenceStore';
+import { useSortPreferenceStore } from '../../../stores/sortPreferenceStore';
 import type { ClickIntent } from '../../../types/workspace';
 import { SidebarSortPicker } from './SidebarSortPicker';
 import { SidebarListSkeleton } from './SidebarListSkeleton';
@@ -72,19 +71,52 @@ export function WorldNoteList({
 
   const sortMode = useSortPreferenceStore((s) => s.byPanel['world-note'] ?? 'manual');
   const trimmed = searchTerm.trim();
-  const whereSearch = trimmed ? `AND name LIKE ? ESCAPE '\\'` : '';
-  // 동적 ORDER BY — 정렬 기준에 따라 sort_order/updated_at/name
-  const orderBy = buildOrderBy(sortMode, { titleColumn: 'name' });
-  const sql = `SELECT id, name, work_id, parent_id, sort_order,
-     (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = world_note.id) AS child_count
-     FROM world_note
-     WHERE work_id = ? AND writer_id = ? AND parent_id IS NULL ${whereSearch}
-     ${orderBy}`;
-  const params = trimmed
-    ? [workId, writerId, `%${escapeLike(trimmed)}%`]
-    : [workId, writerId];
-  const { data: rawNotes = [], isFetching } = useQuery<NoteRow>(sql, params);
-  const notes = useOptimisticRows(rawNotes, {
+  // name은 v1: 암호문 → SQL LIKE/ORDER BY name 불가, 클라이언트 측 처리
+  const sql = `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+                      n.sort_order, n.created_at, n.updated_at,
+                      w.encrypted_dek AS encrypted_dek,
+                      (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
+               FROM world_note n
+               LEFT JOIN work w ON w.id = n.work_id
+               WHERE n.work_id = ? AND n.writer_id = ? AND n.parent_id IS NULL
+               ORDER BY n.sort_order ASC, n.created_at ASC`;
+  const params = [workId, writerId];
+  const { data: rawNoteRows = [], isFetching } = useQuery<RawWorldNoteRow & { child_count?: number }>(
+    sql,
+    params,
+  );
+  const rootChildCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rawNoteRows) map.set(r.id, r.child_count ?? 0);
+    return map;
+  }, [rawNoteRows]);
+  const { data: decryptedRoots } = useDecryptedWorldNoteList(rawNoteRows);
+  const decryptedRootList: NoteRow[] = useMemo(
+    () =>
+      decryptedRoots.map((n) => ({
+        id: n.id,
+        name: n.name,
+        work_id: n.work_id,
+        parent_id: n.parent_id,
+        sort_order: n.sort_order,
+        child_count: rootChildCountById.get(n.id) ?? 0,
+      })),
+    [decryptedRoots, rootChildCountById],
+  );
+  const sortedRootList = useMemo(() => {
+    let list = [...decryptedRootList];
+    if (sortMode === 'alpha') {
+      list.sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }),
+      );
+    }
+    if (trimmed) {
+      const lower = trimmed.toLowerCase();
+      list = list.filter((r) => (r.name || '').toLowerCase().includes(lower));
+    }
+    return list;
+  }, [decryptedRootList, sortMode, trimmed]);
+  const notes = useOptimisticRows(sortedRootList, {
     docType: 'world_note',
     parentId: null,
     matches: (row) => row.work_id === workId,
@@ -366,11 +398,20 @@ function WorldNoteTreeItem({
 
   /** 같은 부모 아래 사본 생성 — 본문 보존 + 원본 바로 다음 위치 */
   const handleDuplicate = async () => {
-    const rows = await db.getAll<{ content: string | null }>(
-      'SELECT content FROM world_note WHERE id = ? LIMIT 1',
+    const rows = await db.getAll<{ content: string | null; encrypted_dek: string | null }>(
+      `SELECT n.content, w.encrypted_dek
+         FROM world_note n LEFT JOIN work w ON w.id = n.work_id
+         WHERE n.id = ? LIMIT 1`,
       [note.id],
     );
-    const content = rows[0]?.content ?? null;
+    const raw = rows[0];
+    const content = raw
+      ? await decryptWorkFieldOnce({
+          workId,
+          encryptedDek: raw.encrypted_dek,
+          value: raw.content,
+        })
+      : null;
     const parentId = note.parent_id ?? null;
     const newId = await createWorldNote(
       workId,
@@ -413,18 +454,45 @@ function WorldNoteTreeItem({
   const clickHandlers = useSidebarClickHandler((intent) => onSelect(note.id, intent));
 
   const childSortMode = useSortPreferenceStore((s) => s.byPanel['world-note'] ?? 'manual');
-  const childOrderBy = buildOrderBy(childSortMode, { titleColumn: 'name' });
-  const { data: rawChildren = [] } = useQuery<NoteRow>(
+  const { data: rawChildRows = [] } = useQuery<RawWorldNoteRow & { child_count?: number }>(
     isExpanded
-      ? `SELECT id, name, work_id, parent_id, sort_order,
-           (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = world_note.id) AS child_count
-         FROM world_note
-         WHERE parent_id = ? AND writer_id = ?
-         ${childOrderBy}`
-      : `SELECT '' AS id, '' AS name, '' AS work_id, '' AS parent_id, 0 AS sort_order, 0 AS child_count WHERE 0`,
+      ? `SELECT n.id, n.work_id, n.writer_id, n.parent_id, n.name, n.content,
+                n.sort_order, n.created_at, n.updated_at,
+                w.encrypted_dek AS encrypted_dek,
+                (SELECT COUNT(*) FROM world_note c WHERE c.parent_id = n.id) AS child_count
+         FROM world_note n
+         LEFT JOIN work w ON w.id = n.work_id
+         WHERE n.parent_id = ? AND n.writer_id = ?
+         ORDER BY n.sort_order ASC, n.created_at ASC`
+      : `SELECT NULL AS id, NULL AS work_id, NULL AS writer_id, NULL AS parent_id,
+                NULL AS name, NULL AS content, NULL AS sort_order,
+                NULL AS created_at, NULL AS updated_at,
+                NULL AS encrypted_dek, 0 AS child_count WHERE 0`,
     isExpanded ? [note.id, writerId] : [],
   );
-  const children = useOptimisticRows(rawChildren, {
+  const childCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rawChildRows) map.set(r.id, r.child_count ?? 0);
+    return map;
+  }, [rawChildRows]);
+  const { data: decryptedChildren } = useDecryptedWorldNoteList(rawChildRows);
+  const childList: NoteRow[] = useMemo(() => {
+    let list: NoteRow[] = decryptedChildren.map((n) => ({
+      id: n.id,
+      name: n.name,
+      work_id: n.work_id,
+      parent_id: n.parent_id,
+      sort_order: n.sort_order,
+      child_count: childCountById.get(n.id) ?? 0,
+    }));
+    if (childSortMode === 'alpha') {
+      list = [...list].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }),
+      );
+    }
+    return list;
+  }, [decryptedChildren, childCountById, childSortMode]);
+  const children = useOptimisticRows(childList, {
     docType: 'world_note',
     parentId: note.id,
     matches: (row) => row.parent_id === note.id,
@@ -626,6 +694,3 @@ function InlineCreateInput({
   );
 }
 
-function escapeLike(input: string): string {
-  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
