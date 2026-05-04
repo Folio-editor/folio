@@ -64,7 +64,6 @@ export type SyncDecision = 'use-server' | 'use-local' | null;
  */
 const WRITER_ID_TABLES = [
   'work',
-  'plan',
   'plan_note',
   'world_note',
   'character',

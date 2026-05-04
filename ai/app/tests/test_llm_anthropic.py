@@ -196,7 +196,7 @@ async def test_generate_with_tools_handles_tool_loop(monkeypatch: pytest.MonkeyP
         responses=[
             _response(
                 "tool_use",
-                [_tool_use_block("tool-1", "get_plan", {"section": "all"})],
+                [_tool_use_block("tool-1", "get_plot", {"section": "all"})],
                 input_tokens=100,
                 output_tokens=20,
             ),
@@ -220,13 +220,13 @@ async def test_generate_with_tools_handles_tool_loop(monkeypatch: pytest.MonkeyP
     result = await llm.generate_with_tools(
         system="review system",
         user="review user",
-        tools=[{"name": "get_plan"}],
+        tools=[{"name": "get_plot"}],
         tool_executor=tool_executor,
     )
 
     assert result == {"issues": [], "summary": "ok", "score": 100}
     assert llm.last_usage == {"input_tokens": 130, "output_tokens": 35}
-    assert tool_calls == [("get_plan", {"section": "all"})]
+    assert tool_calls == [("get_plot", {"section": "all"})]
     assert len(messages_api.create_calls) == 2
 
     second_messages = messages_api.create_calls[1]["messages"]

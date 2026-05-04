@@ -15,7 +15,7 @@ import { Toaster } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { AuthenticatedApp } from '../features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../components/ThemeProvider';
-import { db } from '../sync/db';
+import { db, ensureSchemaVersion } from '../sync/db';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
 import { analytics } from '../lib/analytics';
@@ -60,7 +60,13 @@ export function AppRoot({ router, basename }: AppRootProps) {
   }, []);
 
   useEffect(() => {
-    void restore();
+    // PowerSync 스키마 버전 체크 — 신규 컬럼이 schema.ts에 추가되었지만 기존 사용자
+    // SQLite엔 아직 없을 수 있으므로 1회 disconnectAndClear 후 재다운로드.
+    // restore() 보다 먼저 await 해야 connect 시점의 schema mismatch 를 방지한다.
+    void (async () => {
+      await ensureSchemaVersion();
+      await restore();
+    })();
   }, [restore]);
 
   // Main 프로세스(Electron) 또는 web FolioApi(브라우저)의 세션 만료 알림 수신

@@ -18,6 +18,8 @@ const work = new Table({
   description:   column.text,
   status:        column.text,
   sort_order:    column.integer,
+  genres:        column.text,  // JSON array — 읽을 때 JSON.parse() 필요
+  moods:         column.text,  // JSON array — 읽을 때 JSON.parse() 필요
   created_at:    column.text,
   updated_at:    column.text,
   // Plan C 결정 21 — wrap된 work_key (KEK으로 AES-GCM wrap한 32B DEK).
@@ -26,17 +28,8 @@ const work = new Table({
   encrypted_dek: column.text,
 });
 
-const plan = new Table({
-  work_id:         column.text,
-  writer_id:       column.text,
-  slogan:          column.text,
-  genres:          column.text,  // JSON array — 읽을 때 JSON.parse() 필요
-  moods:           column.text,  // JSON array — 읽을 때 JSON.parse() 필요
-  target_audience: column.text,
-  created_at:      column.text,
-  updated_at:      column.text,
-});
-
+// (구) plan 테이블은 ERD 정리 2단계로 폐기됨. plan_note 가 work_id 를 직접
+// FK 로 가지고 있어 plan 행 자체가 불필요.
 // 기획서 하위 자유 문서 (1:N). 트리/parent_id 없음.
 const plan_note = new Table({
   work_id:    column.text,
@@ -161,7 +154,6 @@ const idea_archive = new Table({
 
 export const AppSchema = new Schema({
   work,
-  plan,
   plan_note,
   world_note,
   character,

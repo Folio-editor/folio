@@ -78,7 +78,13 @@ export function buildBlocks(input: RenderInput): Block[] {
       const tryAdd = (header: string, count: number) => {
         if (count > 0) sections.push({ header, items: [{ depth: 0, label: '본문 참조' }] });
       };
-      tryAdd('기획', payload.plan ? 1 : 0);
+      // 기획 섹션은 work 의 장르/분위기 메타 또는 planNotes 가 있으면 표시.
+      tryAdd(
+        '기획',
+        ((payload.work?.genres?.length ?? 0) > 0 ? 1 : 0) +
+          ((payload.work?.moods?.length ?? 0) > 0 ? 1 : 0) +
+          (payload.planNotes?.length ?? 0),
+      );
       tryAdd('인물', payload.characters?.length ?? 0);
       tryAdd('플롯', payload.plots?.length ?? 0);
       tryAdd('복선', payload.foreshadows?.length ?? 0);
@@ -90,7 +96,8 @@ export function buildBlocks(input: RenderInput): Block[] {
     out.push(
       ...buildSettingsBundle(
         {
-          plan: payload.plan ?? null,
+          // 장르·분위기 표시는 work 직속 컬럼에서 읽으므로 work 도 함께 전달.
+          work: payload.work,
           ...(payload.planNotes ? { planNotes: payload.planNotes } : {}),
           ...(payload.characters ? { characters: payload.characters } : {}),
           ...(payload.characterNotes ? { characterNotes: payload.characterNotes } : {}),

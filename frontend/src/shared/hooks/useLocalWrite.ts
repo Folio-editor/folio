@@ -165,9 +165,10 @@ export function useLocalWrite() {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       // 먼저 평문으로 INSERT — work 행이 있어야 ensureWorkKey가 encrypted_dek를 UPDATE할 수 있다.
+      // genres/moods는 NULL로 시작 (작가가 워크스페이스 화면에서 태그 추가 시 채워짐).
       await db.execute(
-        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, ?, ?)`,
+        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, genres, moods, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, NULL, NULL, ?, ?)`,
         [id, writerId, title, now, now],
       );
       // KEK이 있으면 즉시 title 암호화 — 평문 row가 동기화 큐에 잠시 머물 수 있으나
@@ -189,6 +190,10 @@ export function useLocalWrite() {
         author_name: string | null;
         description: string | null;
         status: string;
+        // genres/moods는 JSON 직렬화된 string으로 받는다 (호출 측에서 JSON.stringify).
+        // SQLite TEXT 컬럼이며, 평문 유지 (필터·정렬·검색 메타).
+        genres: string | null;
+        moods: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -196,7 +201,7 @@ export function useLocalWrite() {
       if (fields.length === 0) return;
 
       const effective: Record<string, unknown> = { ...patch };
-      // title/author_name/description은 암호화 대상. status는 평문 유지(필터·정렬용).
+      // title/author_name/description은 암호화 대상. status·genres·moods는 평문 유지.
       if ('title' in patch && typeof patch.title === 'string') {
         effective.title = await encryptWorkField(id, patch.title, now);
       }
@@ -241,48 +246,10 @@ export function useLocalWrite() {
       );
     },
 
-    // ── plan (work당 1개) ────────────────────────────────────
-    /** 기존 plan 있으면 해당 id, 없으면 새로 생성 */
-    ensurePlan: async (workId: string): Promise<string> => {
-      const result = await db.execute(
-        `SELECT id FROM plan WHERE work_id = ? LIMIT 1`,
-        [workId],
-      );
-      const existing = (result.rows?._array as { id: string }[] | undefined)?.[0];
-      if (existing) return existing.id;
-
-      const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-      await db.execute(
-        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
-        [id, workId, writerId, now, now],
-      );
-      trackCreated('plan', 'auto');
-      return id;
-    },
-    updatePlan: async (
-      id: string,
-      patch: Partial<{
-        slogan: string | null;
-        genres: string | null;
-        moods: string | null;
-        target_audience: string | null;
-      }>,
-    ): Promise<void> => {
-      const now = new Date().toISOString();
-      const fields = Object.keys(patch);
-      if (fields.length === 0) return;
-      const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
-      await db.execute(
-        `UPDATE plan SET ${setClause}, updated_at = ? WHERE id = ?`,
-        [...values, now, id],
-      );
-      trackSaved('plan');
-    },
-
     // ── plan_note (work당 1:N 자유 문서) ────────────────────
+    // (구) plan 테이블·ensurePlan 은 ERD 정리 2단계로 폐기됨.
+    //   - 1단계: slogan/genres/moods/target_audience 컬럼이 work 로 이전·폐기
+    //   - 2단계: plan 테이블 자체 폐기 (plan_note 가 work_id 직접 FK)
     /**
      * @param content - 신규 문서 본문(TipTap JSON 직렬화 string). 템플릿 미리채우기 용도.
      *                  생략·null 시 빈 본문(NULL)으로 INSERT — 기존 동작 호환.

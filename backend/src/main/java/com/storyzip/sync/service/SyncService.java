@@ -41,7 +41,6 @@ import java.util.function.Consumer;
 public class SyncService {
 
     private final WorkRepository workRepo;
-    private final PlanRepository planRepo;
     private final PlanNoteRepository planNoteRepo;
     private final WorldNoteRepository worldNoteRepo;
     private final CharacterRepository characterRepo;
@@ -69,7 +68,6 @@ public class SyncService {
 
         switch (table) {
             case "work" -> processWork(op, id, data, writerId);
-            case "plan" -> processPlan(op, id, data, writerId);
             case "plan_note" -> processPlanNote(op, id, data, writerId);
             case "world_note" -> processWorldNote(op, id, data, writerId);
             case "character" -> processCharacter(op, id, data, writerId);
@@ -104,6 +102,8 @@ public class SyncService {
         applyStr(data, "description",   e::setDescription);
         applyStr(data, "status",        e::setStatus);
         applyInt(data, "sort_order",    e::setSortOrder);
+        applyStr(data, "genres",        e::setGenres);
+        applyStr(data, "moods",         e::setMoods);
         applyDt(data,  "created_at",    e::setCreatedAt);
         applyBytea(data, "encrypted_dek", e::setEncryptedDek);
         e.setUpdatedAt(LocalDateTime.now());
@@ -115,43 +115,9 @@ public class SyncService {
         workRepo.save(e);
     }
 
-    // ── plan ────────────────────────────────────────────────────
-    private void processPlan(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        UUID workId = uuid(data, "work_id");
-        // 1:1 UNIQUE 제약 → work_id로 기존 entity 선 조회, 없으면 id로 조회
-        Plan e = null;
-        if (workId != null) {
-            e = planRepo.findByWorkId(workId).orElse(null);
-        }
-        if (e == null) {
-            e = planRepo.findById(id).orElse(null);
-        }
-        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "plan", id)) return;
-        if ("DELETE".equals(op)) {
-            if (e != null) planRepo.deleteById(e.getId());
-            return;
-        }
-        if (e == null) {
-            if ("PATCH".equals(op)) return;  // PATCH 대상 없음 — 무시
-            e = Plan.builder().id(id).build();
-        }
-        e.setWriterId(writerId);
-        applyUuid(data, "work_id", e::setWorkId);
-        applyStr(data,  "slogan",          e::setSlogan);
-        applyStr(data,  "genres",          e::setGenres);
-        applyStr(data,  "moods",           e::setMoods);
-        applyStr(data,  "target_audience", e::setTargetAudience);
-        applyDt(data,   "created_at",      e::setCreatedAt);
-        e.setUpdatedAt(LocalDateTime.now());
-        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
-        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
-            logFkSkip("plan", id, "work_id", e.getWorkId());
-            return;
-        }
-        planRepo.save(e);
-    }
-
     // ── plan_note ────────────────────────────────────────────────
+    // (구) plan 테이블·processPlan 은 ERD 정리 2단계로 폐기됨.
+    //   plan_note 가 work_id 를 직접 FK 로 가지고 있어 plan 행 자체가 불필요.
     private void processPlanNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
         PlanNote e = planNoteRepo.findById(id).orElse(null);
         if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "plan_note", id)) return;
@@ -317,7 +283,7 @@ public class SyncService {
     // ── character_tag ─────────────────────────────────────────────
     private void processCharacterTag(String op, UUID id, Map<String, Object> data, UUID writerId) {
         // (character_id, world_note_id) 복합 UNIQUE 제약 → 같은 페어로 살아있는 row가 있으면
-        // id가 달라도 그것을 update 대상으로 재사용. processPlan / processPlotEpisodeLink 동일 패턴.
+        // id가 달라도 그것을 update 대상으로 재사용. processPlotEpisodeLink 동일 패턴.
         UUID characterId = uuid(data, "character_id");
         UUID worldNoteId = uuid(data, "world_note_id");
         CharacterTag e = null;
@@ -436,7 +402,7 @@ public class SyncService {
     // ── plot_episode_link ─────────────────────────────────────────
     private void processPlotEpisodeLink(String op, UUID id, Map<String, Object> data, UUID writerId) {
         // plot_id, episode_id 모두 UNIQUE 제약 → 같은 plot/episode로 살아있는 row가 있으면
-        // id가 달라도 그것을 update 대상으로 재사용. processPlan과 동일 패턴.
+        // id가 달라도 그것을 update 대상으로 재사용. character_tag 와 동일 패턴.
         UUID plotId    = uuid(data, "plot_id");
         UUID episodeId = uuid(data, "episode_id");
         PlotEpisodeLink e = null;
@@ -660,7 +626,8 @@ public class SyncService {
         } catch (Exception e) { /* 값 유지 */ }
     }
 
-    // uuid() 헬퍼는 processPlan에서 work_id 조회 시 사용 (findByWorkId)
+    // uuid() 헬퍼: 복합 UNIQUE 제약 entity (character_tag, plot_episode_link 등) 에서
+    // data 의 컬럼 값으로 기존 entity 를 미리 조회할 때 사용.
     private UUID uuid(Map<String, Object> data, String key) {
         Object v = data.get(key);
         return v != null ? UUID.fromString(v.toString()) : null;

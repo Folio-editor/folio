@@ -136,13 +136,13 @@ Folio는 Episode(대용량·반복)는 RAG, Character/WorldNote/Plan/Plot(소용
 | **episode** (+ `episode_chunk`) | **RAG** | 수백 화 × 수천 토큰, 반복 조회, 의미 검색 필요 | `chunk_and_embed` 사전 처리 → 벡터 검색 |
 | **character** (+ `character_custom_field`) | **MCP** | 수십 명, 이름 기반 선택 조회 | `get_character(name)` / `list_characters()` 툴 |
 | **world_note** | **MCP** | 수십~수백 개, 태그 기반 선택 조회 | `list_world_notes(tags)` / `get_world_note(name)` 툴 |
-| **plan** | **MCP** | 회차당 1개, 항상 통째로 주입 | `get_plan()` 툴 |
+| ~~**plan**~~ | — | **ERD 정리 2단계로 테이블 폐기.** 자유 기획 문서는 `plan_note` 단독 관리. 장르·분위기는 `work` 메타 참조 | `get_plan()` 툴 폐기됨 |
 | **plot** | **MCP** | 작품당 1개, 항상 통째로 주입 | `get_plot()` 툴 |
 | **character_custom_field** | **MCP** (부속) | `get_character` 호출 시 함께 반환 | 독립 툴 없음 |
 | **foreshadow** | **MVP 제외** | 추후 재설계 | — |
 | **foreshadow_link** | **MVP 제외** | 추후 재설계 | — |
 
-> **주의**: 위 MCP 대상 테이블들(`character`, `world_note`, `plan`, `plot`, `character_custom_field`)은 **PowerSync 동기화 대상**이다. MCP 툴은 이 테이블들을 **읽기만** 하며, 벡터 컬럼을 추가하지 않는다. 벡터 기반 의미 검색이 필요해지면 별도 `*_embedding` 테이블을 신설한다(Phase 2 예정).
+> **주의**: 위 MCP 대상 테이블들(`character`, `world_note`, `plot`, `character_custom_field`)은 **PowerSync 동기화 대상**이다. MCP 툴은 이 테이블들을 **읽기만** 하며, 벡터 컬럼을 추가하지 않는다. 벡터 기반 의미 검색이 필요해지면 별도 `*_embedding` 테이블을 신설한다(Phase 2 예정). (구) plan 은 폐기됨.
 
 ---
 
@@ -184,7 +184,7 @@ POST /v1/drafts
   ▼
   1. 토큰 잔액 확인 (token_wallet)
   2. 사전 RAG 조립 (코드)
-     - plan 원문               ← MCP: get_plan()
+     - work 메타(장르·분위기)  ← work 직접 SELECT (plan 테이블 폐기됨)
      - plot 원문               ← MCP: get_plot()
      - 최근 3화 요약           ← episode_summary WHERE is_confirmed
      - 스토리라인 벡터 검색     ← episode_chunk ORDER BY embedding<=>$
@@ -198,7 +198,7 @@ POST /v1/drafts
   5. token_transaction INSERT (-1500) (ai_prompt_template.token_cost 기반, Phase 2)
 ```
 
-사용 테이블: `plan`/`plot`/`character`/`character_custom_field`/`world_note` (MCP 읽기), `episode_summary`/`episode_chunk` (RAG 읽기), `token_wallet`/`token_transaction` (쓰기)
+사용 테이블: `work`/`plot`/`character`/`character_custom_field`/`world_note` (MCP·직접 읽기), `episode_summary`/`episode_chunk` (RAG 읽기), `token_wallet`/`token_transaction` (쓰기). plan 테이블은 폐기됨
 
 ### 4.3 기능 ③ 검수 (전수 대조 + MCP 필터링)
 
@@ -221,7 +221,7 @@ POST /v1/reviews
   5. ai_analysis INSERT, token_transaction INSERT (-500)
 ```
 
-사용 테이블: `character`/`world_note`/`plan`/`plot` (MCP 읽기), `episode_summary` (RAG 읽기), `ai_analysis` (쓰기)
+사용 테이블: `character`/`world_note`/`work`/`plot` (MCP·직접 읽기), `episode_summary` (RAG 읽기), `ai_analysis` (쓰기). plan 테이블은 폐기됨
 
 ---
 
@@ -229,7 +229,7 @@ POST /v1/reviews
 
 | 툴 | 시그니처 | 용도 |
 |----|---------|------|
-| `get_plan` | `() → Plan` | 작품 스토리라인 |
+| ~~`get_plan`~~ | — | **폐기** (plan 테이블 폐기). 장르·분위기는 work 메타에서 |
 | `get_plot` | `() → Plot` | 전체 줄거리 |
 | `list_characters` | `() → Character[]` | 이름+역할만, 간략 목록 |
 | `get_character` | `(name: str) → Character + CustomFields` | 특정 인물 풀 프로필 |

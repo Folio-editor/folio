@@ -27,14 +27,16 @@ import type {
   ForeshadowSnapshot,
   IdeaArchiveSnapshot,
   PlanNoteSnapshot,
-  PlanSnapshot,
   PlotEpisodeLinkSnapshot,
   PlotSnapshot,
+  WorkSnapshot,
   WorldNoteSnapshot,
 } from '../../types/export';
 
 export interface SettingsBundleInput {
-  plan?: PlanSnapshot | null;
+  /** 작품 메타. 장르/분위기는 work 직속 컬럼이라 plan 섹션에서도 work 를 참조한다. */
+  work?: WorkSnapshot;
+  // (구) plan?: PlanSnapshot 필드는 ERD 정리 2단계로 폐기됨. plan 섹션은 work + planNotes 만 사용.
   planNotes?: PlanNoteSnapshot[];
   characters?: CharacterSnapshot[];
   characterNotes?: CharacterNoteSnapshot[];
@@ -74,7 +76,7 @@ export function buildSettingsBundle(
     out.push(...body);
   };
 
-  pushSection('기획', buildPlanSection(input.plan, input.planNotes, options));
+  pushSection('기획', buildPlanSection(input.work, input.planNotes, options));
   pushSection(
     '인물',
     buildCharacterSection(
@@ -105,22 +107,19 @@ export function buildSettingsBundle(
 }
 
 function buildPlanSection(
-  plan: PlanSnapshot | null | undefined,
+  work: WorkSnapshot | undefined,
   notes: PlanNoteSnapshot[] | undefined,
   options: SettingsBundleOptions,
 ): Block[] {
   const out: Block[] = [];
-  if (plan) {
+  if (work) {
+    // ERD 정리로 장르·분위기는 work 직속 컬럼이 됨. 슬로건/타겟 독자는 폐기.
     const rows: Array<{ key: string; value: string }> = [];
-    if (plan.slogan) rows.push({ key: '슬로건', value: plan.slogan });
-    if (plan.genres && plan.genres.length) {
-      rows.push({ key: '장르', value: plan.genres.join(', ') });
+    if (work.genres && work.genres.length) {
+      rows.push({ key: '장르', value: work.genres.join(', ') });
     }
-    if (plan.moods && plan.moods.length) {
-      rows.push({ key: '분위기', value: plan.moods.join(', ') });
-    }
-    if (plan.target_audience) {
-      rows.push({ key: '타겟 독자', value: plan.target_audience });
+    if (work.moods && work.moods.length) {
+      rows.push({ key: '분위기', value: work.moods.join(', ') });
     }
     if (rows.length > 0) {
       out.push({ kind: 'keyValueTable', rows } satisfies KeyValueTableBlock);

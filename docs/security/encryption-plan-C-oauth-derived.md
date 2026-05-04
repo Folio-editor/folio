@@ -546,7 +546,7 @@ ALTER TABLE work
 | 16 | Spring pepper 캐시 | 인메모리 5분 TTL. 만료 시 Secrets Manager 재조회. byte[] 사용 + `Arrays.fill(arr, (byte)0)` 명시적 zeroize |
 | 17 | 로깅 마스킹 | request body의 `pepper`, `pepper_user`, `salt`, `googleIdToken`, `content` 필드 자동 마스킹 (Spring Logback ConverterPattern + Sentry beforeSend) |
 | 18 | AI 서버 DB 격리 | AI 서버 Postgres는 RAG 동작 위해 평문 보관 불가피. 별도 RDS 인스턴스(또는 별도 DB + 별도 IAM) + RDS at-rest 암호화(KMS) + 메인 DB 권한자 접근 차단 + 별도 CloudTrail. 작가 탈퇴/동의 철회 시 episode_chunk·embedding·plan/character/plot/world_note 미러 cascade 삭제. EpisodeIndexDebouncer는 SyncService에서 분리하고 AI 동의자가 명시 트리거하는 별도 엔드포인트로 이전 |
-| 19 | 암호화 대상 컬럼 | `episode.content` / `plot.content` / `character_note.content` / `world_note.content` / `plan_note.content` / `foreshadow.content` / `idea_archive.content` / `plan.slogan` / `plan.genres` / `plan.moods` / `plan.target_audience` / `character_custom_field.field_value`. 메타데이터(제목/이름/태그 등)는 평문 유지하며 사용자에게 명시 |
+| 19 | 암호화 대상 컬럼 | `episode.content` / `plot.content` / `character_note.content` / `world_note.content` / `plan_note.content` / `foreshadow.content` / `idea_archive.content` / `character_custom_field.field_value`. 메타데이터(제목/이름/태그/장르/분위기 등)는 평문 유지하며 사용자에게 명시. (구) plan.slogan/genres/moods/target_audience 컬럼은 ERD 정리(2026-05)로 폐기·이전됨 |
 
 ---
 

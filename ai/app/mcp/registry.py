@@ -13,20 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mcp.context import WriterContext
 from app.mcp.tools.character import get_character, list_characters
 from app.mcp.tools.episode_search import search_episode_chunks
-from app.mcp.tools.plan import get_plan
 from app.mcp.tools.plot import get_plot
 from app.mcp.tools.world_note import get_world_note, list_world_notes
 
+# (구) get_plan 도구는 ERD 정리 2단계로 plan 테이블이 폐기되어 함께 제거됨.
+# 장르·분위기는 work 메타에서, 자유 기획 문서는 별도 plan_note 도구(향후 추가)에서 조회.
+
 MCP_TOOLS: list[dict[str, Any]] = [
-    {
-        "name": "get_plan",
-        "description": "작품 기획서를 조회합니다. 장르, 분위기, 슬로건, 타겟 독자, 기획 내용을 포함합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
     {
         "name": "get_plot",
         "description": "작품의 전체 플롯(줄거리) 목록을 조회합니다.",
@@ -106,7 +99,6 @@ MCP_TOOLS: list[dict[str, Any]] = [
 ToolHandler = Callable[..., Coroutine[Any, Any, Any]]
 
 _HANDLER_MAP: dict[str, ToolHandler] = {
-    "get_plan": get_plan,
     "get_character": get_character,
     "get_plot": get_plot,
     "list_characters": list_characters,

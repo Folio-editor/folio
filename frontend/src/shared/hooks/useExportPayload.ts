@@ -20,7 +20,6 @@ import type {
   ForeshadowSnapshot,
   IdeaArchiveSnapshot,
   PlanNoteSnapshot,
-  PlanSnapshot,
   PlotEpisodeLinkSnapshot,
   PlotSnapshot,
   WorkSnapshot,
@@ -49,14 +48,32 @@ export function useExportPayload(): (scope: ExportScope) => Promise<ExportPayloa
 
   return useCallback(
     async (scope: ExportScope): Promise<ExportPayload> => {
-      const work = await db.getOptional<WorkSnapshot>(
-        `SELECT id, title, author_name, description, status FROM work
+      const workRow = await db.getOptional<{
+        id: string;
+        title: string;
+        author_name: string | null;
+        description: string | null;
+        status: string;
+        genres: string | null;
+        moods: string | null;
+      }>(
+        `SELECT id, title, author_name, description, status, genres, moods FROM work
          WHERE id = ? AND writer_id = ?`,
         [scope.workId, writerId],
       );
-      if (!work) {
+      if (!workRow) {
         throw new Error('작품을 찾을 수 없습니다.');
       }
+      // genres·moods 는 SQLite TEXT(JSON) → string[] 파싱.
+      const work: WorkSnapshot = {
+        id: workRow.id,
+        title: workRow.title,
+        author_name: workRow.author_name,
+        description: workRow.description,
+        status: workRow.status,
+        genres: parseJsonArray(workRow.genres),
+        moods: parseJsonArray(workRow.moods),
+      };
 
       const authorName =
         work.author_name?.trim() || writer?.nickname?.trim() || '작가 미상';
@@ -77,25 +94,10 @@ export function useExportPayload(): (scope: ExportScope) => Promise<ExportPayloa
       };
 
       if (scope.kind === 'planSet') {
-        const planRow = await db.getOptional<{
-          slogan: string | null;
-          genres: string | null;
-          moods: string | null;
-          target_audience: string | null;
-        }>(
-          `SELECT slogan, genres, moods, target_audience FROM plan
-           WHERE work_id = ? AND writer_id = ?`,
-          [scope.workId, writerId],
-        );
-        const plan: PlanSnapshot | null = planRow
-          ? {
-              slogan: planRow.slogan,
-              genres: parseJsonArray(planRow.genres),
-              moods: parseJsonArray(planRow.moods),
-              target_audience: planRow.target_audience,
-            }
-          : null;
-        payload.plan = plan;
+        // ERD 정리 2단계로 plan 테이블 자체가 폐기됨.
+        //   - 1단계: slogan/genres/moods/target_audience 컬럼이 work 로 이전·폐기 (payload.work.genres/moods)
+        //   - 2단계: plan 행 자체 폐기 (plan_note 가 work_id 직접 FK)
+        // payload 에 plan 필드 자체 없음.
 
         payload.planNotes = await db.getAll<PlanNoteSnapshot>(
           `SELECT id, title, content, sort_order FROM plan_note

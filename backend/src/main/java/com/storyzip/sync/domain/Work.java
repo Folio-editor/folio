@@ -2,6 +2,8 @@ package com.storyzip.sync.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -34,6 +36,14 @@ public class Work {
 
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private String genres;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private String moods;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

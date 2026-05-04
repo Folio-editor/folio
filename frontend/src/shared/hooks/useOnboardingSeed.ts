@@ -33,19 +33,17 @@ export function useOnboardingSeed() {
   const db = usePowerSync();
 
   const seed = useCallback(async (): Promise<string> => {
-    // 1. 작품 + 메타
+    // 1. 작품 + 메타 (장르/분위기 태그는 ERD 정리로 work 직속 컬럼이 됨)
     const workId = await localWrite.createWork(ONBOARDING_WORK.title);
     await localWrite.updateWork(workId, {
       author_name: ONBOARDING_WORK.authorName,
       description: ONBOARDING_WORK.description,
-    });
-
-    // 2. 기획 메타 (장르/분위기 태그 — 작품 홈에 노출) + 기획 노트 1개
-    const planId = await localWrite.ensurePlan(workId);
-    await localWrite.updatePlan(planId, {
       genres: JSON.stringify(ONBOARDING_PLAN_META.genres),
       moods: JSON.stringify(ONBOARDING_PLAN_META.moods),
     });
+
+    // 2. 기획 노트 1개 — plan 테이블은 ERD 정리 2단계로 폐기됨.
+    //    plan_note 가 work_id 를 직접 FK 로 가지므로 별도 부모 행 불필요.
     await localWrite.createPlanNote(
       workId,
       ONBOARDING_PLAN_NOTE.title,

@@ -82,9 +82,9 @@ function doc(...nodes: Node[]): string {
 }
 
 // ── 기획 메타 (작품 홈에 노출되는 장르 / 분위기 태그) ─────────
-// plan.genres / plan.moods 컬럼은 JSON.stringify 된 string[] 형식으로 저장된다
-// (WorkspaceHomeScreen.parseTags 가 JSON.parse 후 string[] 만 사용).
-// useOnboardingSeed 가 ensurePlan 직후 updatePlan 으로 채운다.
+// ERD 정리로 work.genres / work.moods 컬럼으로 이전됨. JSON.stringify 된
+// string[] 형식으로 저장된다 (WorkspaceHomeScreen.parseTags 가 JSON.parse 후 사용).
+// useOnboardingSeed 가 createWork 직후 updateWork 로 채운다.
 export const ONBOARDING_PLAN_META = {
   genres: ['성장소설', '가족 드라마'],
   moods: ['따뜻함', '잔잔함', '유머'],

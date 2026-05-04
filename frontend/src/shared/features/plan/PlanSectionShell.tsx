@@ -9,8 +9,10 @@ interface PlanSectionShellProps {
    * Stage Manager 모델에서 mainDoc.section='plan' + mainDoc.itemId 일 때만 진입.
    * itemId는 plan_note의 id이며, 여기서는 해당 노트의 본문 에디터만 렌더한다.
    *
-   * 메타데이터(slogan/genres/moods/target_audience)는 plan 테이블에 컬럼으로 존속하지만
-   * 현재 UI에서는 표시·편집하지 않는다 (서비스 보류). 차후 재노출 시 PR-A의 ERD 이전과 함께 재설계.
+   * (구) plan 테이블의 slogan/genres/moods/target_audience 컬럼은 ERD 정리로 폐기·이전됨:
+   *   - genres·moods → work 직속 (작품 허브에서 편집)
+   *   - slogan, target_audience → 폐기
+   * 현재 plan 테이블은 plan_note 자유 문서 그룹의 부모 역할만 함.
    */
   workId: string;
   selectedItemId: string | null;
