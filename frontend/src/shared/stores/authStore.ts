@@ -4,9 +4,11 @@ import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
 import {
   clearKek,
+  getCurrentKek,
   initKekFromLogin,
   restoreKek,
 } from '../crypto/lifecycle';
+import { runBackfillForWriter } from '../crypto/backfill';
 import { analytics } from '../lib/analytics';
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
@@ -100,6 +102,13 @@ interface AuthState {
   isNewUser: boolean;
   /** PowerSync connect 게이팅 — null이면 connect 금지 */
   syncDecision: SyncDecision;
+  /**
+   * Plan C 결정 22 — KEK 도출/회전/폐기 시 증가하는 카운터.
+   * useBackfillEncryption 훅의 useEffect deps로 사용되어, login() 동기 백필 후 잔존
+   * 평문이 있다면 fallback 백필 실행. KEK은 모듈 스코프 변수라 React가 직접 추적 못 하므로
+   * 이 카운터를 통해 KEK 라이프사이클 변화를 컴포넌트 레이어로 전파한다.
+   */
+  kekVersion: number;
 
   currentWriterId: () => string | null;
 
@@ -132,6 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
   isNewUser: false,
   syncDecision: null,
+  kekVersion: 0,
 
   /**
    * useQuery 필터에 사용할 writerId.
@@ -161,7 +171,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } catch (e) {
           console.warn('[auth] restoreKek 실패:', e);
         }
-        set({
+        set((s) => ({
           writer: result.writer,
           guestWriterId: null,
           previousGuestId: null,
@@ -171,7 +181,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isRestoring: false,
           isNewUser: false,
           syncDecision: 'use-server',
-        });
+          // Plan C 결정 22: restoreKek 결과를 컴포넌트 레이어로 전파.
+          // 잔존 평문이 있다면 useBackfillEncryption 훅이 자동 재시도.
+          kekVersion: s.kekVersion + 1,
+        }));
         return;
       }
     } catch {
@@ -275,12 +288,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           console.log(
             `[sync] login-time remap: ${currentGuestId} → ${result.writer.id}`,
           );
+
+          // Plan C 결정 22 — PowerSync connect 게이트(syncDecision)를 풀기 전에
+          // 평문→ciphertext 동기 백필. AppRoot의 connect useEffect는 이 시점 이후에
+          // syncDecision='use-local' set을 보고 발화하므로, race 없이 ciphertext만 업로드된다.
+          // 백필 자체는 멱등(NOT LIKE 'v1:%' 필터) + ensureWorkKey 동시성 보호.
+          const kek = getCurrentKek();
+          if (kek) {
+            try {
+              await runBackfillForWriter({
+                db,
+                kek,
+                writerId: result.writer.id,
+              });
+            } catch (e) {
+              // 백필 실패는 로그인 자체를 막지 않음 — useBackfillEncryption 훅이 재시도.
+              console.warn('[auth] login-time backfill 실패 — 훅이 재시도함:', e);
+            }
+          } else {
+            // encryption=null 응답(백엔드 PepperProvider 비활성) 또는 KEK 도출 실패 케이스.
+            // 평문 그대로 저장되며, 추후 PepperProvider 활성화 + 재로그인 시 백필 자동 동작.
+            console.warn(
+              '[auth] KEK 미도출 상태 — 백필 스킵. 백엔드 encryption 응답 확인 필요',
+            );
+          }
         } catch (e) {
           console.warn('[AuthStore] login-time remap 실패:', e);
         }
       }
 
-      set({
+      set((s) => ({
         writer: result.writer,
         guestWriterId: null,
         // 신규 가입자는 위에서 이미 재매핑 완료 → previousGuestId 보관 불필요
@@ -297,7 +334,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         lastKnownWriterId: shouldPreRemap
           ? result.writer.id
           : get().lastKnownWriterId,
-      });
+        // Plan C 결정 22: deriveKekFromLogin 결과를 컴포넌트 레이어로 전파.
+        // useBackfillEncryption 훅이 잔존 평문 fallback 처리.
+        kekVersion: s.kekVersion + 1,
+      }));
 
       // 신규 가입자 lastKnownWriterId 파일 영속
       if (shouldPreRemap) {
@@ -343,6 +383,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         });
         console.log(`[sync] 로컬 writer_id 재매핑: ${previousGuestId} → ${writer.id}`);
+
+        // Plan C 결정 22 — 기존 회원이 게스트 데이터 보존(use-local) 선택 시에도
+        // syncDecision set 전에 평문→ciphertext 동기 백필. login() 분기와 동일 정책.
+        const kek = getCurrentKek();
+        if (kek) {
+          try {
+            await runBackfillForWriter({ db, kek, writerId: writer.id });
+          } catch (e) {
+            console.warn(
+              '[auth] resolveSyncDecision-time backfill 실패 — 훅이 재시도함:',
+              e,
+            );
+          }
+        }
       } catch (e) {
         console.warn('[AuthStore] writer_id 재매핑 실패:', e);
       }
@@ -376,7 +430,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (isWebPlatform()) {
         // 웹은 로그아웃 시 게스트로 떨어지지 않음 — 비인증 상태로만 전환.
         // AppRoot가 비인증 상태를 감지해 로그인 안내(또는 랜딩 redirect) 화면을 표시.
-        set({
+        set((s) => ({
           writer: null,
           guestWriterId: null,
           previousGuestId: null,
@@ -385,13 +439,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isGuest: false,
           isNewUser: false,
           syncDecision: null,
-        });
+          // Plan C 결정 22: clearKek 결과 전파. 다음 사용자 로그인 시 fresh state 보장.
+          kekVersion: s.kekVersion + 1,
+        }));
         return;
       }
       const guestWriterId = get().guestWriterId ?? (await window.folio.auth.getGuestId());
       // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
       // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.
-      set({
+      set((s) => ({
         writer: null,
         guestWriterId,
         previousGuestId: null,
@@ -399,7 +455,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isGuest: true,
         isNewUser: false,
         syncDecision: null,
-      });
+        // Plan C 결정 22: clearKek 결과 전파.
+        kekVersion: s.kekVersion + 1,
+      }));
     }
   },
 

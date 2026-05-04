@@ -6,6 +6,7 @@ import {
   type BackfillProgress,
 } from '../crypto/backfill';
 import { useWriterId } from './useWriterId';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * Plan C 옵션 1 — 평문 row 자동 백필 훅.
@@ -27,21 +28,27 @@ export function useBackfillEncryption(): {
 } {
   const db = usePowerSync();
   const writerId = useWriterId();
+  // Plan C 결정 22 — KEK 라이프사이클 변화를 deps로 추적하기 위한 카운터.
+  // KEK 자체는 모듈 스코프 변수라 React가 직접 추적할 수 없으므로 authStore의
+  // kekVersion(initKekFromLogin/restoreKek/clearKek 시 증가)을 deps에 둔다.
+  const kekVersion = useAuthStore((s) => s.kekVersion);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<BackfillProgress | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
-  // 같은 writerId 에서 두 번 트리거되지 않도록 guard. KEK 재도출 등으로 다시 실행하려면
-  // ref 키를 (writerId + kek 식별자) 같은 합성 값으로 바꿀 수 있지만, KEK 객체는 모듈 스코프
-  // 단일 핸들이라 writerId 만으로 충분하다.
+  // 합성 가드 — 같은 writerId + 같은 kekVersion 조합은 한 번만 실행.
+  // login()이 이미 동기 백필을 끝낸 직후 마운트되어도 backfill SELECT의
+  // NOT LIKE 'v1:%' 필터로 0건 매치 → 실질 no-op이지만, 가드로 중복 진입 자체 차단.
+  // KEK 회전(pepper 변경) 시 kekVersion이 바뀌어 자동 재실행.
   const startedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!writerId) return;
     const kek = getCurrentKek();
     if (!kek) return;
-    if (startedRef.current === writerId) return;
-    startedRef.current = writerId;
+    const guard = `${writerId}:${kekVersion}`;
+    if (startedRef.current === guard) return;
+    startedRef.current = guard;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -78,7 +85,7 @@ export function useBackfillEncryption(): {
       cancelled = true;
       controller.abort();
     };
-  }, [db, writerId]);
+  }, [db, writerId, kekVersion]);
 
   return { isRunning, progress, error };
 }

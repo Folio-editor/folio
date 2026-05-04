@@ -42,7 +42,9 @@ interface ContentEditorProps {
   onCharCountChange?: (count: number) => void;
 }
 
-const DEFAULT_DEBOUNCE_MS = 3000;
+// Plan C 결정 3 — onUpdate 디바운스 300~500ms 범위. 빠른 타이핑 시 매 키스트로크마다
+// AES-GCM 암호화 + db.execute(UPDATE) + PowerSync CRUD 큐 적재가 발생하므로 400ms로 일괄.
+const DEFAULT_DEBOUNCE_MS = 400;
 
 export function ContentEditor({
   itemId,

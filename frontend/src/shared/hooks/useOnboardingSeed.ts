@@ -67,7 +67,10 @@ export function useOnboardingSeed() {
     for (let i = 0; i < ONBOARDING_CHARACTERS.length; i++) {
       const c = ONBOARDING_CHARACTERS[i];
       const charId = await localWrite.createCharacter(workId, c.name, c.gender, c.age, i * 1000);
-      await localWrite.ensureCharacterNotes(charId);
+      // Plan C 머지 후 ensureCharacterNotes / createCharacterNote 시그니처 앞에 workId 인자가 추가됨.
+      // 호출처가 따라가지 못하면 character_id 자리에 workId 또는 title 평문이 들어가
+      // (1) NOT NULL 위반 (2) "Invalid UUID string: 관계도" 두 에러로 발현된다.
+      await localWrite.ensureCharacterNotes(workId, charId);
       // ensureCharacterNotes 는 ID 를 반환하지 않으므로 인라인 SELECT 로 intro note id 조회
       const r = await db.execute(
         `SELECT id FROM character_note WHERE character_id = ? AND kind = 'intro' LIMIT 1`,
@@ -79,6 +82,7 @@ export function useOnboardingSeed() {
       }
       // 공통 하위 노트 (모든 캐릭터 공통)
       await localWrite.createCharacterNote(
+        workId,
         charId,
         ONBOARDING_CHARACTER_COMMON_NOTE.title,
         1000,
@@ -86,6 +90,7 @@ export function useOnboardingSeed() {
       );
       // 개별 하위 노트 (캐릭터별 고유)
       await localWrite.createCharacterNote(
+        workId,
         charId,
         c.individualNote.title,
         2000,

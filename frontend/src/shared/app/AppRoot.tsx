@@ -73,6 +73,12 @@ export function AppRoot({ router, basename }: AppRootProps) {
   //   - syncDecision이 결정되기 전(login 직후, null)에는 connect 금지 → 로컬 게스트 데이터가 의도치 않게 업로드되는 것을 막는다
   //   - 로그인 + 결정 완료 → connect (sync 양방향 활성)
   //   - 로그아웃/게스트 → disconnect
+  //
+  // ★ Plan C 결정 22: syncDecision !== null 게이트가 평문 백필 완료 보장의 핵심.
+  //   authStore.login() / resolveSyncDecision('use-local')은 PowerSync connect를 풀기 전에
+  //   await runBackfillForWriter()로 평문→ciphertext 변환을 동기 완료한 뒤에만
+  //   set({syncDecision: 'use-local'})을 호출한다. 따라서 이 useEffect가 발화되는 시점엔
+  //   이미 SQLite의 모든 게스트 평문이 'v1:' ciphertext로 변환되어 있어 race window가 없다.
   useEffect(() => {
     if (isAuthenticated && syncDecision !== null) {
       // use-server는 disconnectAndClear 직후라 SDK 내부 정리가 끝나야 connect 가능.
