@@ -4,6 +4,7 @@ import { getCurrentKek } from '../crypto/lifecycle';
 import { ensureWorkKey } from '../crypto/workKey';
 import { useWriterId } from './useWriterId';
 import { analytics, charCountBucket } from '../lib/analytics';
+import { WORLD_NOTE_TEMPLATES } from '../constants/worldNoteTemplates';
 
 /**
  * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
@@ -336,10 +337,9 @@ export function useLocalWrite() {
       const count = (result.rows?._array as { cnt: number }[] | undefined)?.[0]?.cnt ?? 0;
       if (count > 0) return;
 
-      const templates = ['시대/배경', '공간/지리', '세력/조직', '규칙/법칙', '역사/연표'];
       const now = new Date().toISOString();
-      for (let i = 0; i < templates.length; i++) {
-        const encName = await encryptWorkField(workId, templates[i], now);
+      for (let i = 0; i < WORLD_NOTE_TEMPLATES.length; i++) {
+        const encName = await encryptWorkField(workId, WORLD_NOTE_TEMPLATES[i], now);
         await db.execute(
           `INSERT INTO world_note (id, work_id, writer_id, parent_id, name, content, sort_order, created_at, updated_at)
            VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
