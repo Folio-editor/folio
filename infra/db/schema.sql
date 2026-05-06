@@ -408,7 +408,7 @@ CREATE TABLE export (
 
 -- 동기화 필터링 (PowerSync RLS)
 CREATE INDEX idx_work_writer ON work(writer_id);
-CREATE INDEX idx_plan_writer ON plan(writer_id);
+-- (구) idx_plan_writer 는 plan 테이블 폐기로 함께 제거됨 (ERD 정리 2단계).
 CREATE INDEX idx_plan_note_writer ON plan_note(writer_id);
 CREATE INDEX idx_plan_note_work   ON plan_note(work_id);
 CREATE INDEX idx_world_note_writer ON world_note(writer_id);
@@ -449,9 +449,9 @@ CREATE INDEX idx_token_wallet_bonus_expires
 CREATE INDEX idx_ai_analysis_episode ON ai_analysis(episode_id);
 CREATE INDEX idx_export_writer ON export(writer_id);
 
--- JSONB 인덱스
-CREATE INDEX idx_plan_genres ON plan USING GIN (genres);
-CREATE INDEX idx_plan_moods ON plan USING GIN (moods);
+-- JSONB 인덱스 (genres/moods 는 ERD 정리 1단계로 plan → work 이전됨)
+CREATE INDEX idx_work_genres ON work USING GIN (genres);
+CREATE INDEX idx_work_moods ON work USING GIN (moods);
 
 -- AI 전용
 CREATE INDEX idx_episode_chunk_embedding

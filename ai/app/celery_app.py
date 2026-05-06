@@ -35,7 +35,5 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.ping_task": {"queue": "indexing"},
         "app.tasks.chunk_and_embed": {"queue": "indexing"},
-        "app.tasks.generate_draft": {"queue": "draft"},
-        "app.tasks.run_review": {"queue": "review"},
     },
 )

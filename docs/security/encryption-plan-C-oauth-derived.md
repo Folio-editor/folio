@@ -1,16 +1,38 @@
 # Plan C — 최종 기획안 (AWS Secrets Manager 채택, DB 마이그레이션 제외)
 
+> ⚠ **상태 변경 (2026-05) — KMS 모델로 전환 결정**
+>
+> 본 Plan C 옵션 1 ("운영자도 본문 못 봄") 은 AI 자동 인덱싱·MCP·요약 등 AI 자동
+> 백그라운드 처리와 양립 불가능하여 **AWS KMS envelope encryption 모델**로 전환됨.
+>
+> | 항목 | Plan C 옵션 1 (구) | KMS (신) |
+> |------|----------------------|--------------|
+> | DB ciphertext-only | ✅ | ✅ (외부 해커·DB 침해 보호) |
+> | 운영자 접근 | ❌ 불가능 | ✅ KMS 권한자만 (감사 로그) |
+> | AI 자동 인덱싱 | ❌ 본질적 불가 | ✅ PowerSync sync 시점 자동 |
+> | 작가 신뢰 모델 | "Folio 팀도 못 봄" (1Password·Signal) | "운영팀은 정책상 안 봄, 기술상 가능" (Notion·Google Docs) |
+>
+> 변경 사항:
+> - 클라이언트 KEK·work_key 흐름은 **유지** (오프라인 퍼스트·웹·로컬 퍼스트 호환)
+> - 서버 측 `work.server_encrypted_dek` BYTEA 컬럼 추가 (KMS master_kek wrap)
+> - `KmsService.java` (Spring) 신규 — KMS Encrypt/Decrypt wrapper
+> - 작품 생성 시 work_key 발급 흐름 변경 (서버 발급 권장)
+> - 본 문서의 "AI DB 별도 격리·동의 트리거" 부분은 KMS 통합 작업에서 재검토
+>
+> 상세: `docs/ai-agent-transition-draft-v2.md` 의 KMS 통합 섹션 참조.
+
 전제 재확인:
 
 - AWS Secrets Manager 사용 (결정 15: Secrets Manager 채택)
 - DB 마이그레이션은 본 기획 범위 밖 (별도 진행)
 - 이전 [하드닝안](./encryption-plan-C-hardening.md)의 결함 4건 + 미세 3건 + Folio 환경 정합성 4건을 모두 반영한 단일 진실 문서
+- **(2026-05 갱신) KMS 모델로 전환 — 위 박스 참조**
 
 ---
 
 ## 한 줄 결론
 
-KEK는 클라이언트가 매번 도출하고, server_pepper는 AWS Secrets Manager에 보관하며, 클라이언트엔 사용자별 파생값(pepper_user)만 전달한다. 본문은 work 단위 DEK로, PII는 시스템 키로 분리 암호화한다. **운영자가 prod 메인 DB / 백업 / 로그를 봐도 본문은 암호문**이다. 단, AI 처리에 동의한 데이터는 별도 보안 경계인 AI 서버 DB(평문 + 임베딩)에 저장되며, 이 영역은 별도 IAM 권한으로 격리한다.
+KEK는 클라이언트가 매번 도출하고, server_pepper는 AWS Secrets Manager에 보관하며, 클라이언트엔 사용자별 파생값(pepper_user)만 전달한다. 본문은 work 단위 DEK로, PII는 시스템 키로 분리 암호화한다. **(구) 운영자가 prod 메인 DB / 백업 / 로그를 봐도 본문은 암호문이었으나, (2026-05 갱신) KMS 채택으로 운영팀은 KMS 권한·감사 로그·정책 통제 하에 AI 처리 시점 한정 복호화 가능. AI DB 별도 격리는 그대로 유지**.
 
 ---
 

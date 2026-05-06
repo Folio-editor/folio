@@ -1,11 +1,28 @@
 Plan C — 최종 기획안 (AWS Secrets Manager 채택, DB 마이그레이션 제외)
 ======================================================
 
+> ⚠ **상태 변경 (2026-05) — KMS 모델로 전환 결정**
+> 본 Plan C 옵션 1 ("운영자도 본문 못 봄") 은 AI 자동 인덱싱·MCP·요약 등 AI 자동 백그라운드 처리와
+> 양립 불가능함이 확인되어 **AWS KMS 기반 envelope encryption 모델**로 전환하기로 결정함.
+> 변경 사유:
+> - AI 인덱싱 트리거가 본질적으로 막힘 (서버는 평문 못 봄)
+> - 작가 명시 트리거는 UX 부담 (오프라인 퍼스트 정합 깨짐)
+> - 클라이언트 임베딩(Transformers.js) 은 알파 단계 인프라 부담 큼
+> 신규 모델 (KMS):
+> - DB 는 ciphertext-only 유지 (외부 해커·DB 침해 보호)
+> - Folio 운영팀 (KMS 권한자) 은 AI 처리 시점에 한정 복호화 가능 (Notion·Google Docs 모델)
+> - 작가에게 개인정보처리방침에 명시
+> 본 문서의 클라이언트 KEK·work_key 흐름은 그대로 유지하고, 서버 측 별도 wrap 키
+> (`work.server_encrypted_dek` BYTEA, KMS master_kek 로 wrap) 만 추가.
+>
+> 상세: `docs/ai-agent-transition-draft-v2.md` 의 KMS 통합 섹션 참조.
+
 전제 재확인:
 
 *   AWS Secrets Manager 사용 (결정 15: Secrets Manager 채택)
 *   DB 마이그레이션은 본 기획 범위 밖 (별도 진행)
 *   이전 하드닝안의 결함 4건 + 미세 3건 + Folio 환경 정합성 4건을 모두 반영한 단일 진실 문서
+*   **(2026-05 갱신) KMS 모델로 전환 — 위 박스 참조**
 
 * * *
 

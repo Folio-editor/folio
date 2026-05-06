@@ -677,9 +677,18 @@ usage가 비어있거나 in+out 합 0이면 차감 skip + WARN.
 
 ### 🔴 #1 — 인덱싱 파이프라인의 끊긴 체인
 
-**상태**: `chunk_and_embed_task`만 호출되고 `generate_summary_task` / `extract_items_task`는 정의만 존재 ([ai/app/api/v1/pipelines.py:73](../ai/app/api/v1/pipelines.py#L73), [ai/app/celery_app.py:9-13](../ai/app/celery_app.py#L9-L13)). `episode_summary`·`extraction_suggestion` 테이블에 데이터가 쌓이지 않는다.
+**상태 (2026-05 갱신)**: 단순히 chain 연결 누락이 아니라 **트리거 hook 자체가 끊긴 더 깊은 문제**.
+- Spring `EpisodeIndexDebouncer.schedule()` 호출처가 backend 전체에 0건 (PR1~PR4 시대 설계, Plan C 적용으로 끊김)
+- 따라서 `chunk_and_embed_task` 도 호출되지 않고 episode_chunk 도 비어있음
+- `generate_summary_task` / `extract_items_task` 는 정의만 존재 + Celery include 미등록
+- Clean-up Phase (2026-05) 에서 `EpisodeIndexDebouncer.java` 통째로 폐기됨
 
-**의사결정 필요**: 두 태스크를 ① 살릴지(체인 연결 + Celery include 추가 + 비용 검토) ② 폐기할지(코드·테이블·DDL 정리). [ai-overview.md](ai-overview.md) 등 다수 문서가 동작 전제로 기술되어 있으므로 결정 후 docs 일괄 정리 필요.
+**해결 경로 (확정)**:
+1. **KMS 통합 작업** — `KmsService.java` + `work.server_encrypted_dek` 컬럼 추가 + 신규 트리거 hook (SyncService.processEpisode 끝 + KMS 복호화 + FastAPI 호출)
+2. **에이전트 Phase 1** — `generate_summary_task` 활성화 + Celery include + chain 연결 + FTS 인덱스 + 백필
+3. 이 두 작업이 완료되면 자동 인덱싱 + 회차 요약 + 추출 제안 모두 동작
+
+상세: `docs/ai-agent-transition-draft-v2.md`
 
 ### 🔴 #2 — 프롬프트가 라우터 코드에 인라인
 
@@ -689,13 +698,9 @@ usage가 비어있거나 in+out 합 0이면 차감 skip + WARN.
 
 **의사결정 필요**: 별도 `prompts/` 디렉토리(현재 비어있음)로 분리할지, 인라인 유지하되 버전 라벨만 부여할지
 
-### 🟡 #3 — `task_routes`의 dead routes
+### ✅ #3 — `task_routes`의 dead routes (Clean-up 에서 해결됨)
 
-**상태**: `app.tasks.generate_draft`, `app.tasks.run_review` 라우팅 룰만 있고 task 정의는 없음 ([ai/app/celery_app.py:38-39](../ai/app/celery_app.py#L38-L39))
-
-**위험**: 미래에 동명 task가 우연히 추가되면 의도치 않은 큐로 라우팅됨
-
-**대응**: 단순 삭제 or `# TODO: future use`로 명시
+~~`app.tasks.generate_draft`, `app.tasks.run_review` 라우팅 룰~~ 은 Clean-up Phase (2026-05) 에서 통째 삭제됨.
 
 ### 🟡 #4 — `AiContextPayload` 3-side 스키마
 

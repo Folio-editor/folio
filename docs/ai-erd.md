@@ -2,7 +2,16 @@
 
 > 본 문서는 Folio AI 기능이 사용하는 **서버 전용 테이블**과, 기존 동기화 테이블(`episode`, `character`, `world_note` 등)을 **RAG / MCP 중 어떤 방식으로 활용하는지** 정리한다.
 >
-> 관련 문서: [architecture.md](architecture.md), [AI_architecture2.md](AI_architecture2.md), [ai-data-pipeline.md](ai-data-pipeline.md), [ai-overview.md](ai-overview.md), [infra.md](infra.md)
+> 관련 문서: [architecture.md](architecture.md), [AI_architecture2.md](AI_architecture2.md), [ai-data-pipeline.md](ai-data-pipeline.md), [ai-overview.md](ai-overview.md), [infra.md](infra.md), [ai-agent-transition-draft-v2.md](ai-agent-transition-draft-v2.md)
+>
+> ⚠ **2026-05 갱신**:
+> - `plan` 테이블 폐기됨 → `get_plan` MCP 도구 함께 제거됨
+> - **KMS 모델 채택 결정** — Plan C 옵션 1 → KMS envelope encryption 으로 전환
+>   - 서버 측 KMS 권한자가 AI 처리 시점 한정 복호화 가능
+>   - MCP 도구가 서버 직접 SELECT + KMS 복호화 패턴으로 전환 가능 (현재 v1 암호문 그대로 LLM 전달하는 깨진 상태 정정 예정)
+>   - 자동 인덱싱 트리거 복원 (PowerSync sync 시점에 서버 자동 처리)
+> - 결정론 후처리 (`repetition_detector`·`structural_validators`·`timeline_extractor`) 통째 폐기
+> - `EpisodeIndexDebouncer.java` 폐기 → KMS 통합 작업에서 신규 작성 예정
 
 ---
 
