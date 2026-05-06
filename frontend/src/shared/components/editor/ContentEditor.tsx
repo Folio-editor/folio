@@ -26,7 +26,7 @@ import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
 import EditorSettingsPanel from './EditorSettingsPanel';
 import EditorFindReplace from './EditorFindReplace';
-import EditorShortcutHelp from './EditorShortcutHelp';
+import { useHelpModalStore } from '../../stores/helpModalStore';
 import { analytics, charCountBucket, deltaCharCountBucket, editDurationBucket } from '../../lib/analytics';
 
 interface ContentEditorProps {
@@ -74,7 +74,7 @@ export function ContentEditor({
   const [sessionStartChars, setSessionStartChars] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
-  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const openShortcutHelp = useHelpModalStore((s) => s.openShortcutHelp);
   const editStartedRef = useRef(false);
   const editSessionStartRef = useRef<number | null>(null);
   const charCountRef = useRef(0);
@@ -352,7 +352,7 @@ export function ContentEditor({
             mode="single"
             editor={editor}
             onToggleFindReplace={() => setFindReplaceOpen((v) => !v)}
-            onToggleShortcutHelp={() => setShortcutHelpOpen(true)}
+            onToggleShortcutHelp={openShortcutHelp}
             onToggleSettings={() => setSettingsOpen((v) => !v)}
           />
 
@@ -401,8 +401,7 @@ export function ContentEditor({
         />
       )}
 
-      {/* 단축키 도움말 모달 */}
-      <EditorShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      {/* 단축키 도움말 모달은 AuthenticatedApp 에서 한 번만 마운트 (글로벌 F1 공유) */}
     </div>
   );
 }
