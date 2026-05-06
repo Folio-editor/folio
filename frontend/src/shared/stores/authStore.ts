@@ -3,12 +3,12 @@ import type { LoginEncryptionMaterial, Writer } from '../types/auth';
 import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
 import {
-  clearKek,
   getCurrentKek,
   initKekFromLogin,
   restoreKek,
 } from '../crypto/lifecycle';
-import { runBackfillForWriter } from '../crypto/backfill';
+// backfill 폐기됨 — SQLite 는 항상 평문 저장 정책 (옵션 A).
+// upload sanitize 가 서버 전송 시점에만 ciphertext 변환.
 import { analytics } from '../lib/analytics';
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
@@ -154,6 +154,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   restore: async () => {
     set({ isRestoring: true, error: null });
+    // KEK 복원은 인증 상태와 무관하게 항상 시도. 게스트 모드 / 로그아웃 후에도
+    // 영속 저장된 KEK 재료로 복호화 가능하도록 (로컬 퍼스트 보장).
+    try {
+      await restoreKek();
+    } catch (e) {
+      console.warn('[auth] restoreKek (early) 실패:', e);
+    }
     try {
       const result = await window.folio.auth.tryRestore();
       if (result) {
@@ -288,25 +295,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             `[sync] login-time remap: ${currentGuestId} → ${result.writer.id}`,
           );
 
-          // Plan C 결정 22 — PowerSync connect 게이트(syncDecision)를 풀기 전에
-          // 평문→ciphertext 동기 백필. AppRoot의 connect useEffect는 이 시점 이후에
-          // syncDecision='use-local' set을 보고 발화하므로, race 없이 ciphertext만 업로드된다.
-          // 백필 자체는 멱등(NOT LIKE 'v1:%' 필터) + ensureWorkKey 동시성 보호.
+          // 옵션 A: SQLite 는 항상 평문 저장 → backfill 단계 불필요.
+          // upload sanitize 가 PowerSync upload 시점에 평문→ciphertext 변환을 처리한다.
           const kek = getCurrentKek();
           if (kek) {
-            try {
-              await runBackfillForWriter({
-                db,
-                kek,
-                writerId: result.writer.id,
-              });
-            } catch (e) {
-              // 백필 실패는 로그인 자체를 막지 않음 — useBackfillEncryption 훅이 재시도.
-              console.warn('[auth] login-time backfill 실패 — 훅이 재시도함:', e);
-            }
+            // KEK 활성화됨 — 정상 흐름
           } else {
             // encryption=null 응답(백엔드 PepperProvider 비활성) 또는 KEK 도출 실패 케이스.
-            // 평문 그대로 저장되며, 추후 PepperProvider 활성화 + 재로그인 시 백필 자동 동작.
+            // SQLite 에 평문 저장되며 sanitize 가 KEK 부재 시 평문 그대로 upload (현재 폴백).
             console.warn(
               '[auth] KEK 미도출 상태 — 백필 스킵. 백엔드 encryption 응답 확인 필요',
             );
@@ -383,19 +379,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         console.log(`[sync] 로컬 writer_id 재매핑: ${previousGuestId} → ${writer.id}`);
 
-        // Plan C 결정 22 — 기존 회원이 게스트 데이터 보존(use-local) 선택 시에도
-        // syncDecision set 전에 평문→ciphertext 동기 백필. login() 분기와 동일 정책.
-        const kek = getCurrentKek();
-        if (kek) {
-          try {
-            await runBackfillForWriter({ db, kek, writerId: writer.id });
-          } catch (e) {
-            console.warn(
-              '[auth] resolveSyncDecision-time backfill 실패 — 훅이 재시도함:',
-              e,
-            );
-          }
-        }
+        // 옵션 A: SQLite 평문 유지 — backfill 불필요. sanitize 가 upload 시점에 변환.
       } catch (e) {
         console.warn('[AuthStore] writer_id 재매핑 실패:', e);
       }
@@ -419,12 +403,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await window.folio.auth.logout();
     } finally {
-      // KEK + work key 캐시 + 영속 재료까지 모두 폐기. 네트워크 오류로 logout이 실패해도
-      // 메모리/디스크 비우기는 진행해야 다음 사용자 세션에 KEK 잔류를 막는다.
+      // 옵션 A: 로컬 SQLite 항상 평문 → KEK 폐기 무관하게 자기 데이터 표시 가능.
+      // 그러나 KEK 영구 유지 정책: 다음 같은 사용자 재로그인 시 즉시 KEK 사용 가능.
+      // 다른 사용자 로그인 시 initKekFromLogin 이 새 pepper/salt 로 자동 교체.
+      // → clearKek 호출 안 함.
+      // Vault Transit (plan V-8): pending server-dek 큐에 raw work_key 가 남아 있으면
+      // 다음 사용자 세션으로 누설될 수 있다. 로그아웃 시 무조건 폐기.
       try {
-        await clearKek();
+        const { clearPendingServerDeks } = await import('../crypto/serverDek');
+        clearPendingServerDeks();
       } catch (e) {
-        console.warn('[auth] clearKek 실패:', e);
+        console.warn('[auth] clearPendingServerDeks 실패:', e);
       }
       if (isWebPlatform()) {
         // 웹은 로그아웃 시 게스트로 떨어지지 않음 — 비인증 상태로만 전환.

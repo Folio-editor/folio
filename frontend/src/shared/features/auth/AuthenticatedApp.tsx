@@ -52,7 +52,7 @@ import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
 import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { decryptWorkFieldOnce } from '../../crypto/fieldDecrypt';
-import { useBackfillEncryption } from '../../hooks/useBackfillEncryption';
+// useBackfillEncryption 폐기됨 — SQLite 항상 평문 정책 (옵션 A).
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -99,8 +99,7 @@ const clamp = (v: number, min: number, max: number) =>
  */
 export function AuthenticatedApp() {
   const db = usePowerSync();
-  // PR2 이전 / 게스트에서 마이그레이션된 평문 row 자동 백필. KEK + writerId가 준비되면 한 번 실행.
-  useBackfillEncryption();
+  // 옵션 A: SQLite 평문 유지. backfill·암호화 hook 불필요.
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   // 메인 다중 탭 store — 작품별 탭 세트 분리 보존 모델.

@@ -42,6 +42,10 @@ services:
       PS_JWT_AUDIENCE: powersync-prod
       AI_SERVER_URL: http://fastapi-blue:8000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in Doppler}
+      # Vault Transit envelope encryption (curious-wiggling-thacker plan V-2).
+      # enabled / url / transit-key / cache-ttl 은 application-prod.yml 의 코드 default 사용.
+      # **VAULT_TOKEN 만 시크릿** — vault-init.sh 출력값을 Doppler 에 등록.
+      VAULT_TOKEN: ${VAULT_TOKEN:?VAULT_TOKEN must be set in Doppler — bash infra/scripts/vault-init.sh 로 발급}
       TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
       TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
       TOSS_API_BASE_URL: ${TOSS_API_BASE_URL:-https://api.tosspayments.com}
@@ -75,6 +79,9 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       # INTERNAL_API_KEY로 통일 (이전 AI_INTERNAL_API_KEY 매핑 제거)
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in Doppler}
+      # AI 서버는 Vault 토큰 미보유 — backend 의 InternalDecryptController 경유 (plan V-7).
+      # 컴포즈 내부 도메인 + 색상 격리 → 환경 무관 hardcode (시크릿 아님).
+      BACKEND_INTERNAL_URL: http://spring-boot-blue:8080
       # DB/REDIS 시크릿이 위 spring-boot-blue 단계에서 이미 :? validated → 안전
       DATABASE_URL: postgresql+asyncpg://${DB_USERNAME}:${DB_PASSWORD}@postgresql:5432/${DB_NAME}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0

@@ -5,6 +5,10 @@ node_modules/
 # Nginx runtime (deploy 스크립트가 동적으로 교체)
 infra/prod/nginx/upstream-active.conf
 
+# Vault 초기화 시크릿 (root token + unseal key) — 절대 커밋 금지
+infra/vault/.init.secrets
+infra/vault/data/
+
 # Build output
 dist/
 dist-web/

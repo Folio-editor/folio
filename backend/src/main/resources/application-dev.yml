@@ -38,11 +38,11 @@ springdoc:
 
 logging:
   level:
-    "[com.storyzip]": DEBUG
-    "[org.springframework.security]": DEBUG
-    "[org.springframework.web.servlet.DispatcherServlet]": DEBUG
-    "[org.hibernate.SQL]": DEBUG
-    "[org.hibernate.orm.jdbc.bind]": TRACE
+    "[com.storyzip]": INFO
+    "[org.springframework.security]": WARN
+    "[org.springframework.web.servlet.DispatcherServlet]": WARN
+    "[org.hibernate.SQL]": WARN
+    "[org.hibernate.orm.jdbc.bind]": WARN
 
 # ────────────────────────────────────────────────────────────
 # 환경별 설정 hardcode (도플러 슬림화 — 옵션 B)
@@ -68,10 +68,13 @@ ai:
     # dev-start.sh가 AI 서버를 8001에 띄움 (line 48). 도플러 AI_SERVER_URL 있으면 우선.
     base-url: ${AI_SERVER_URL:http://localhost:8001}
 
-# Plan C — dev에서도 KEK 흐름을 켠다. AwsSecretsManagerConfig가 fake
-# SecretsManagerClient를 주입(@Profile("dev"))하므로 AWS 자격증명 불필요.
-# 같은 dev 환경 내에서는 fake pepper가 결정적이라 row 간 복호화가 일관된다.
+# Plan C — dev 에서도 KEK 흐름 켬. SERVER_PEPPER 는 Doppler dev config 에서 주입.
 folio:
   security:
     pepper:
       enabled: true
+    # vault.enabled 는 application.yml 에서 true hardcode (dev/prod 동일 경로).
+    # dev: backend 가 호스트에서 직접 실행 (gradlew bootRun) → docker 내부 도메인 'vault' 해석 불가.
+    # compose 가 publish 한 host port (localhost:8200) 사용. prod 는 backend 도 컨테이너라 vault hostname 그대로.
+    vault:
+      url: http://localhost:8200

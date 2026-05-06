@@ -26,6 +26,10 @@ const work = new Table({
   // PostgreSQL BYTEA지만 PowerSync는 BYTEA를 직접 못 보내므로 Base64 문자열로 운반한다.
   // 서버 SyncService.applyBytea가 디코드해 진짜 BYTEA로 저장.
   encrypted_dek: column.text,
+  // Vault Transit envelope encryption (curious-wiggling-thacker plan V-4).
+  // 서버에서 Vault 로 wrap 한 work_key. 클라이언트는 사용하지 않음 (단순 통과 — 다중
+  // 디바이스 동기화 일관성용). NULL 가능 (오프라인 신규 작품, 온라인 복귀 시 발급).
+  server_encrypted_dek: column.text,
 });
 
 // (구) plan 테이블은 ERD 정리 2단계로 폐기됨. plan_note 가 work_id 를 직접

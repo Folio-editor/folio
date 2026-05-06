@@ -62,3 +62,10 @@ app:
 ai:
   client:
     base-url: http://fastapi-test:8000
+
+# Vault 는 단위·통합 테스트에서 띄우지 않음 → 비활성. testcontainers 기반 vault
+# 통합 테스트는 별도 @ActiveProfiles 또는 @TestPropertySource 로 enabled=true override.
+folio:
+  security:
+    vault:
+      enabled: false

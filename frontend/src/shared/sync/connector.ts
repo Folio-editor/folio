@@ -122,6 +122,22 @@ export class FolioConnector implements PowerSyncBackendConnector {
           event_count_bucket: countBucket(entries.length),
         });
         console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
+        // batch 안에 work PUT 이 있으면 서버에 work 행 도달 → server-dek 즉시 발급 가능.
+        // pending queue + SQLite 의 stale work (server_encrypted_dek=NULL) 둘 다 trigger.
+        // sanitize 의 issueServerDek 는 즉시 호출 안 하고 pending 만 적재 →
+        // 여기 trigger 가 진짜 발급. backend INSERT 커밋·트랜잭션 가시성 위해 짧은 delay.
+        const hasWorkPut = entries.some((e) => e.table === 'work' && e.op === 'PUT');
+        if (hasWorkPut) {
+          const { retryPendingServerDeks } = await import('../crypto/serverDek');
+          const { reconcileMissingServerDeks } = await import(
+            '../crypto/serverDekReconciler'
+          );
+          setTimeout(() => {
+            void retryPendingServerDeks();
+            void reconcileMissingServerDeks();
+          }, 500);
+        }
+        // reconcilePlaintextAll 호출 제거 — sync down 과 race 로 무한 round-trip 발생.
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 'network';
         void analytics.track('sync_failed', {

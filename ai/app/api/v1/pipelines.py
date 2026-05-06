@@ -17,6 +17,10 @@ from app.db.session import get_session
 from app.middleware.auth import require_internal_api_key
 from app.services.chunker import chunk_text
 from app.services.text_extractor import extract_plain_text
+from app.services.work_key_resolver import (
+    WorkKeyResolverError,
+    resolve_episode_plaintext,
+)
 from app.tasks.chunk_and_embed import chunk_and_embed_task
 
 router = APIRouter(
@@ -30,7 +34,10 @@ class EpisodePipelineRequest(BaseModel):
     episode_id: str
     work_id: str
     writer_id: str
-    content: str
+    # Vault Transit 전환 (curious-wiggling-thacker plan V-7):
+    # backend SyncService 가 호출 시 content=None — 이 라우터에서 work_key_resolver 로
+    # 직접 평문 fetch. 레거시 호출자는 평문을 직접 보낼 수도 있음 (테스트 등).
+    content: str | None = None
 
 
 class EpisodePipelineResponse(BaseModel):
@@ -52,8 +59,18 @@ async def trigger_episode_pipeline(
     req: EpisodePipelineRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    args = (req.episode_id, req.work_id, req.writer_id, req.content)
-    _, request_signature = _build_chunk_signature(req.content)
+    # Vault Transit 경로: content 가 None 이면 backend 내부 API 호출하여 평문 획득.
+    # 시그니처 비교 (idempotency) 를 위해 라우터에서 한 번 fetch — 큐 적재는 None 으로 하고
+    # task 가 다시 fetch 해도 되지만, 그러면 시그니처 비교가 안 되어 매번 재인덱싱 발생.
+    plaintext = req.content
+    if plaintext is None:
+        try:
+            plaintext = await resolve_episode_plaintext(req.episode_id, req.work_id)
+        except WorkKeyResolverError as e:
+            return EpisodePipelineResponse(status="skipped", reason=f"no_plaintext: {e}")
+
+    args = (req.episode_id, req.work_id, req.writer_id, plaintext)
+    _, request_signature = _build_chunk_signature(plaintext)
 
     existing = await session.execute(
         select(EpisodeChunk.content)

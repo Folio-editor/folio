@@ -6,9 +6,8 @@ import { useWriterId } from './useWriterId';
 import { analytics, charCountBucket } from '../lib/analytics';
 
 /**
- * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
- * 저장된다. 저장 시점에 KEK이 있으면 work_key를 ensureWorkKey로 확보 후 암호화하고,
- * KEK이 없으면(게스트, 미로그인) 평문 그대로 저장한다.
+ * Plan C: 작성 시점에 KEK 으로 ciphertext 변환 후 SQLite 저장. KEK 없으면 (게스트) 평문.
+ * 표시 시점에 useDecrypted* hook 이 KEK 으로 메모리 복호화.
  */
 const CIPHERTEXT_PREFIX = 'v1:';
 
@@ -26,9 +25,7 @@ export function useLocalWrite() {
   const db = usePowerSync();
   const writerId = useWriterId();
 
-  // PR2 — work 메타(title/author_name/description) 암호화 헬퍼.
-  // KEK이 있으면 ensureWorkKey로 work_key 확보 후 평문 → "v1:" + base64 암호화.
-  // KEK이 없으면(게스트/미로그인) 평문 그대로 — episode와 동일 폴백 정책.
+  // KEK 있으면 work_key 로 ciphertext, 없으면 (게스트) 평문 그대로.
   const encryptWorkField = async (
     workId: string,
     plain: string | null,

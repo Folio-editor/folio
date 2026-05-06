@@ -35,5 +35,9 @@ export default defineConfig(({ mode }) => ({
   },
   server: {
     port: 5173,
+    // 5173 점유 시 자동 fallback (5174→5175→...) 차단.
+    // 다른 포트 = 다른 origin = 다른 IndexedDB → KEK material/게스트ID/SQLite 가
+    // origin 별로 분리되어 "두 계정 공존" 처럼 보이는 문제 방지.
+    strictPort: true,
   },
 }));

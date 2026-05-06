@@ -16,6 +16,10 @@ from app.db.models.episode_chunk import EpisodeChunk
 from app.services.chunker import chunk_text, count_tokens
 from app.services.providers import get_embedder
 from app.services.text_extractor import extract_plain_text
+from app.services.work_key_resolver import (
+    WorkKeyResolverError,
+    resolve_episode_plaintext,
+)
 
 # stdlib logger를 사용한다. configure_logging()이 설정한 JSON 포맷터가
 # 모든 stdlib 로그에도 적용되므로 extra={}로 전달한 필드가 JSON 출력에 포함된다.
@@ -23,7 +27,19 @@ from app.services.text_extractor import extract_plain_text
 logger = logging.getLogger(__name__)
 
 
-async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> int:
+async def _run(episode_id: str, work_id: str, writer_id: str, content: str | None) -> int:
+    # Vault Transit 전환 (curious-wiggling-thacker plan V-7):
+    # backend SyncService 가 트리거할 땐 content=None — AI 서버가 직접 평문 fetch.
+    # 페이로드로 content 가 전달된 경우 (레거시·테스트) 는 그대로 사용.
+    if content is None:
+        try:
+            content = await resolve_episode_plaintext(episode_id, work_id)
+        except WorkKeyResolverError as e:
+            logger.warning(
+                "chunk_embed.skip_no_plaintext",
+                extra={"episode_id": episode_id, "reason": str(e)},
+            )
+            return 0
     # 본문이 비었거나(작가가 전체 삭제) 청킹 결과가 0이면 기존 청크는 무조건
     # 제거해야 한다. 그렇지 않으면 옛 본문 임베딩이 RAG에 계속 끌려온다.
     chunks = chunk_text(extract_plain_text(content))
@@ -64,7 +80,9 @@ async def _run(episode_id: str, work_id: str, writer_id: str, content: str) -> i
     max_retries=3,
     retry_backoff=True,
 )
-def chunk_and_embed_task(self, episode_id: str, work_id: str, writer_id: str, content: str) -> dict:
+def chunk_and_embed_task(
+    self, episode_id: str, work_id: str, writer_id: str, content: str | None
+) -> dict:
     # content 본문은 절대 로그 필드로 전달하지 않는다. 길이/ID만 기록.
     logger.info(
         "chunk_embed.start",

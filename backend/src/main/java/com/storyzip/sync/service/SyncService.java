@@ -1,16 +1,25 @@
 package com.storyzip.sync.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.storyzip.ai.client.AiClient;
+import com.storyzip.ai.client.dto.EpisodePipelineRequest;
+import com.storyzip.common.exception.AiException;
 import com.storyzip.sync.domain.*;
 import com.storyzip.sync.domain.Character;
 import com.storyzip.sync.dto.SyncUploadRequest;
 import com.storyzip.sync.repository.*;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.time.Duration;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -53,6 +62,27 @@ public class SyncService {
     private final ForeshadowRepository foreshadowRepo;
     private final ForeshadowLinkRepository foreshadowLinkRepo;
     private final IdeaArchiveRepository ideaArchiveRepo;
+
+    /**
+     * Vault Transit 인덱싱 트리거 (curious-wiggling-thacker plan V-6).
+     * server_encrypted_dek 가 발급된 작품의 episode 가 변경되면 AI 인덱싱 자동 호출.
+     * AiClient 빈이 없는 환경 (test profile 등) 에서도 SyncService 가 기동되도록 ObjectProvider.
+     */
+    private final ObjectProvider<AiClient> aiClientProvider;
+
+    /**
+     * 동일 episode 5초 내 재호출 무시 — 한 번의 sync batch 에 episode PUT + 다른 PATCH 가
+     * 같이 도착해도 인덱싱은 1회만 수행.
+     */
+    private Cache<UUID, Long> episodeIndexDebounce;
+
+    @PostConstruct
+    void initDebounce() {
+        episodeIndexDebounce = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(5))
+                .maximumSize(10_000)
+                .build();
+    }
 
     /**
      * entry 1건을 독립 트랜잭션으로 처리.
@@ -106,6 +136,10 @@ public class SyncService {
         applyStr(data, "moods",         e::setMoods);
         applyDt(data,  "created_at",    e::setCreatedAt);
         applyBytea(data, "encrypted_dek", e::setEncryptedDek);
+        // server_encrypted_dek 는 클라이언트가 직접 만들지 않고 WorkServerDekController 에서
+        // VaultKmsService.encrypt() 로 발급. 그러나 PowerSync sync 페이로드에 포함되어
+        // 다중 디바이스 일관성을 유지하므로 그대로 통과.
+        applyBytea(data, "server_encrypted_dek", e::setServerEncryptedDek);
         e.setUpdatedAt(LocalDateTime.now());
         // 신규 insert인 경우 NOT NULL 기본값 보정
         if (e.getTitle() == null) e.setTitle("제목 없음");
@@ -395,8 +429,51 @@ public class SyncService {
         }
         episodeRepo.save(e);
 
-        // Plan C: episode.content는 클라이언트가 work_key로 AES-GCM 암호화한 v1: 페이로드로 도착한다.
-        // 서버는 평문을 못 보므로 임베딩/인덱싱 트리거를 비활성화 — 클라이언트 측 인덱싱으로 이전 예정.
+        // Vault Transit 전환 (curious-wiggling-thacker plan V-6):
+        // server_encrypted_dek 가 발급된 작품에 한해 AI 인덱싱 파이프라인 자동 호출.
+        // - server_encrypted_dek NULL 인 작품 (오프라인 신규, pending) 은 skip → 발급 후 다음 sync 때 자동 동작
+        // - 본문은 ciphertext 로만 서버에 저장됨 → AI 서버가 internal API 로 평문 fetch (V-7)
+        // - 동일 episode 5초 내 재호출 디바운스 (PUT + PATCH 연속 도착 흡수)
+        triggerEpisodeIndexingAfterCommit(id, e.getWorkId(), writerId);
+    }
+
+    private void triggerEpisodeIndexingAfterCommit(UUID episodeId, UUID workId, UUID writerId) {
+        if (workId == null) return;
+        AiClient aiClient = aiClientProvider.getIfAvailable();
+        if (aiClient == null) return;
+        Long last = episodeIndexDebounce.getIfPresent(episodeId);
+        long now = System.currentTimeMillis();
+        if (last != null && (now - last) < 5_000) return;
+        episodeIndexDebounce.put(episodeId, now);
+
+        // server_encrypted_dek 발급 여부 확인 (없으면 AI 서버가 본문 복호화 불가)
+        Boolean ready = workRepo.findById(workId)
+                .map(w -> w.getServerEncryptedDek() != null)
+                .orElse(false);
+        if (!Boolean.TRUE.equals(ready)) {
+            log.debug("episode {} 인덱싱 skip — work {} server_encrypted_dek 미발급", episodeId, workId);
+            return;
+        }
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { invokeAi(aiClient, episodeId, workId, writerId); }
+            });
+        } else {
+            invokeAi(aiClient, episodeId, workId, writerId);
+        }
+    }
+
+    private void invokeAi(AiClient aiClient, UUID episodeId, UUID workId, UUID writerId) {
+        try {
+            // content 는 null — AI 서버가 internal decrypt API 로 평문 fetch (V-7)
+            aiClient.triggerEpisodePipeline(new EpisodePipelineRequest(
+                    episodeId.toString(), workId.toString(), writerId.toString(), null));
+        } catch (AiException e) {
+            log.warn("AI 인덱싱 트리거 실패 episode={} : {}", episodeId, e.getMessage());
+        } catch (Exception e) {
+            log.warn("AI 인덱싱 트리거 예외 episode={}", episodeId, e);
+        }
     }
 
     // ── plot_episode_link ─────────────────────────────────────────

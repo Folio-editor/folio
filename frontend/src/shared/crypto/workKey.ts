@@ -34,14 +34,23 @@ export interface WrappedWorkKey {
 /**
  * 새 work_key를 만들어 KEK으로 wrap. 호출자는 반환된 encryptedDekB64를
  * work.encrypted_dek 컬럼에 저장하고 workKey는 메모리 캐시에 둔다.
+ *
+ * <p>onRawAvailable 콜백: Vault Transit 전환 (curious-wiggling-thacker plan V-5) —
+ * 신규 raw work_key 가 생성된 직후 1회 동기 호출. 호출자는 이 안에서 raw 를
+ * 서버에 한 번 전송하여 server_encrypted_dek 발급받는다. 콜백 종료 후
+ * finally 에서 raw 가 zeroize 되므로 콜백 안에서만 raw 를 사용해야 한다.
  */
 export async function createAndWrapWorkKey(
   kek: CryptoKey,
+  onRawAvailable?: (raw: Uint8Array) => Promise<void>,
 ): Promise<WrappedWorkKey> {
   const raw = generateWorkKey();
   try {
     const encryptedDekB64 = await encryptBytes(kek, raw);
     const workKey = await importAesGcmKey(raw, false);
+    if (onRawAvailable) {
+      await onRawAvailable(raw);
+    }
     return { encryptedDekB64, workKey };
   } finally {
     zeroize(raw);
@@ -68,6 +77,24 @@ export async function unwrapAndCacheWorkKey(
 
 const inflight = new Map<string, Promise<CryptoKey>>();
 
+/**
+ * 신규 raw work_key 생성 직후 1회 호출되는 전역 훅.
+ * 앱 부팅 시 setOnWorkKeyCreatedHook(issueServerDek) 로 등록 →
+ * Vault Transit server_encrypted_dek 발급 자동 수행.
+ * crypto core 가 apiClient 에 직접 의존하지 않도록 indirection.
+ *
+ * curious-wiggling-thacker plan V-5.
+ */
+let onWorkKeyCreatedHook:
+  | ((workId: string, rawWorkKey: Uint8Array) => Promise<void>)
+  | null = null;
+
+export function setOnWorkKeyCreatedHook(
+  fn: ((workId: string, rawWorkKey: Uint8Array) => Promise<void>) | null,
+): void {
+  onWorkKeyCreatedHook = fn;
+}
+
 export interface EnsureWorkKeyParams {
   kek: CryptoKey;
   workId: string;
@@ -75,6 +102,12 @@ export interface EnsureWorkKeyParams {
   loadEncryptedDek: () => Promise<string | null>;
   /** 새로 만든 wrapped DEK을 work.encrypted_dek에 INSERT/UPDATE 한다. */
   saveEncryptedDek: (encryptedDekB64: string) => Promise<void>;
+  /**
+   * 신규 work_key 가 생성된 직후 raw 를 받아 서버 발급 (server_encrypted_dek) 처리한다.
+   * Vault Transit 전환 (plan V-5). 미설정 시 발급 단계는 건너뛴다 (오프라인·테스트).
+   * 호출자는 실패해도 throw 하지 않도록 (queue 적재) 처리하는 것이 권장.
+   */
+  onCreated?: (rawWorkKey: Uint8Array) => Promise<void>;
 }
 
 /**
@@ -87,6 +120,7 @@ export async function ensureWorkKey({
   workId,
   loadEncryptedDek,
   saveEncryptedDek,
+  onCreated,
 }: EnsureWorkKeyParams): Promise<CryptoKey> {
   const cached = getCachedWorkKey(workId);
   if (cached) return cached;
@@ -100,7 +134,15 @@ export async function ensureWorkKey({
       if (dek) {
         return await unwrapAndCacheWorkKey(kek, workId, dek);
       }
-      const { encryptedDekB64, workKey } = await createAndWrapWorkKey(kek);
+      const effectiveOnCreated =
+        onCreated ??
+        (onWorkKeyCreatedHook
+          ? async (raw: Uint8Array) => onWorkKeyCreatedHook!(workId, raw)
+          : undefined);
+      const { encryptedDekB64, workKey } = await createAndWrapWorkKey(
+        kek,
+        effectiveOnCreated,
+      );
       await saveEncryptedDek(encryptedDekB64);
       setCachedWorkKey(workId, workKey);
       return workKey;

@@ -89,10 +89,9 @@ ai:
     # prod는 default 없음 — 도플러 누락 시 즉시 startup 실패 (fail-fast)
     internal-api-key: ${INTERNAL_API_KEY}
 
-# Plan C — server_pepper Secrets Manager 활성화 (운영에서만)
+# Plan C — server_pepper 는 Doppler 의 SERVER_PEPPER 환경변수에서 직접 주입.
 folio:
   security:
     pepper:
       enabled: true
-      secret-id: ${FOLIO_PEPPER_SECRET_ID:folio/encryption/pepper}
-      aws-region: ${FOLIO_AWS_REGION:ap-northeast-2}
+    # vault.enabled 는 application.yml 에서 true hardcode (dev/prod 동일 경로).

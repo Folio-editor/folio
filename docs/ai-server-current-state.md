@@ -675,20 +675,19 @@ usage가 비어있거나 in+out 합 0이면 차감 skip + WARN.
 
 > 전면 수정 시 가장 먼저 의사결정이 필요한 5개 지점.
 
-### 🔴 #1 — 인덱싱 파이프라인의 끊긴 체인
+### ✅ #1 — 인덱싱 파이프라인의 끊긴 체인 (Vault Transit 전환으로 해결, 2026-05-05)
 
-**상태 (2026-05 갱신)**: 단순히 chain 연결 누락이 아니라 **트리거 hook 자체가 끊긴 더 깊은 문제**.
-- Spring `EpisodeIndexDebouncer.schedule()` 호출처가 backend 전체에 0건 (PR1~PR4 시대 설계, Plan C 적용으로 끊김)
-- 따라서 `chunk_and_embed_task` 도 호출되지 않고 episode_chunk 도 비어있음
-- `generate_summary_task` / `extract_items_task` 는 정의만 존재 + Celery include 미등록
-- Clean-up Phase (2026-05) 에서 `EpisodeIndexDebouncer.java` 통째로 폐기됨
+**해결 내용**:
+- `KmsService` (인터페이스) + `VaultKmsService` 구현 추가 — Vault Transit Engine 호출 (self-hosted, 외부 통신 0)
+- `work.server_encrypted_dek BYTEA` 컬럼 추가 + PowerSync sync-rules 갱신
+- `WorkServerDekController` — 작품 생성 시 클라이언트가 raw work_key 한 번 전송 → Vault wrap → 저장
+- `SyncService.processEpisode` 끝에서 자동 hook (5초 디바운스, server_encrypted_dek NOT NULL 작품만)
+- `InternalDecryptController` — AI 서버가 backend 내부 API 로 평문 fetch (AES-GCM 복호화)
+- AI 서버 `work_key_resolver.py` + `chunk_and_embed_task` 가 work_key_resolver 사용
 
-**해결 경로 (확정)**:
-1. **KMS 통합 작업** — `KmsService.java` + `work.server_encrypted_dek` 컬럼 추가 + 신규 트리거 hook (SyncService.processEpisode 끝 + KMS 복호화 + FastAPI 호출)
-2. **에이전트 Phase 1** — `generate_summary_task` 활성화 + Celery include + chain 연결 + FTS 인덱스 + 백필
-3. 이 두 작업이 완료되면 자동 인덱싱 + 회차 요약 + 추출 제안 모두 동작
-
-상세: `docs/ai-agent-transition-draft-v2.md`
+**남은 후속**:
+- Phase 1: `generate_summary_task` 활성화 + Celery include + chain 연결 + FTS 인덱스
+- 상세: `docs/security/vault-integration.md`, `docs/ai-agent-transition-draft-v2.md`
 
 ### 🔴 #2 — 프롬프트가 라우터 코드에 인라인
 

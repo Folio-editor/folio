@@ -16,6 +16,9 @@ import { useAuthStore } from '../stores/authStore';
 import { AuthenticatedApp } from '../features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../components/ThemeProvider';
 import { db, ensureSchemaVersion } from '../sync/db';
+import { setOnWorkKeyCreatedHook } from '../crypto/workKey';
+import { issueServerDek, retryPendingServerDeks } from '../crypto/serverDek';
+import { reconcileMissingServerDeks } from '../crypto/serverDekReconciler';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
 import { analytics } from '../lib/analytics';
@@ -65,7 +68,22 @@ export function AppRoot({ router, basename }: AppRootProps) {
     // restore() 보다 먼저 await 해야 connect 시점의 schema mismatch 를 방지한다.
     void (async () => {
       await ensureSchemaVersion();
+      // Vault Transit (plan V-5) — 신규 work_key 생성 직후 자동으로 server_encrypted_dek 발급.
+      // 게스트 모드 (미인증) 는 서버 sync 자체를 안 하므로 호출 skip → 401 노이즈 0.
+      setOnWorkKeyCreatedHook(async (workId, raw) => {
+        const { isAuthenticated } = useAuthStore.getState();
+        if (!isAuthenticated) return;
+        await issueServerDek(workId, raw);
+      });
       await restore();
+      // 로그인 복원 후 1회 — 오프라인 시 누적된 pending server-dek 일괄 발급 시도
+      void retryPendingServerDeks();
+      // serverPlaintextReconciler 호출 제거 — sync down 이 server ciphertext 를 매번
+      // SQLite 에 덮어쓰는 흐름과 reconciler UPDATE 가 race → 무한 round-trip 위험.
+      // 표시 시점 메모리 복호화 (useDecrypted* hooks) 로 사용자 경험 평문 보장.
+      setTimeout(() => {
+        void reconcileMissingServerDeks();
+      }, 5000);
     })();
   }, [restore]);
 
@@ -95,6 +113,15 @@ export function AppRoot({ router, basename }: AppRootProps) {
         } catch (e) {
           console.warn('[AppRoot] db.connect 실패 — 다음 렌더에서 재시도:', e);
         }
+        // 게스트 → 로그인 전환 직후 backfill 단계에서 401/409 로 pending 적재된
+        // server-dek 항목을 즉시 발급. PowerSync sync 가 work upload 완료 후
+        // 짧게 지연 (5초) 두어 backend 가 work 행 인식한 상태에서 retry.
+        setTimeout(() => {
+          void retryPendingServerDeks();
+          // pending 큐에 없지만 SQLite 의 work 중 server_encrypted_dek 가 비어있는
+          // 행 (이미 만든 stale 작품 포함) 도 자동 보강.
+          void reconcileMissingServerDeks();
+        }, 5000);
       })();
     } else if (!isAuthenticated) {
       void db.disconnect();
@@ -108,6 +135,10 @@ export function AppRoot({ router, basename }: AppRootProps) {
       db.connect(connector).catch((e) =>
         console.warn('[AppRoot] 온라인 복귀 reconnect 실패:', e),
       );
+      // Vault Transit (plan V-5/V-8) — 오프라인에서 누적된 server-dek pending 재시도
+      // + SQLite 의 stale work (server_encrypted_dek=NULL) 자동 보강
+      void retryPendingServerDeks();
+      void reconcileMissingServerDeks();
     }
     // isOnline 변경 시에만 트리거 (isAuthenticated/syncDecision은 위 effect가 담당)
     // eslint-disable-next-line react-hooks/exhaustive-deps

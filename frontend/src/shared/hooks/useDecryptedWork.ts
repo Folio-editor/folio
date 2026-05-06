@@ -112,6 +112,9 @@ async function decryptRow(
       decryptField(raw.author_name, workKey),
       decryptField(raw.description, workKey),
     ]);
+    // lazy reconcile 제거 — PowerSync sync down 이 server ciphertext 로 매번 덮어쓰므로
+    // SQLite 평문 UPDATE 가 즉시 다음 sync down 에 무력화 + ps_crud trigger 가 발화하면
+    // 무한 round-trip 위험. 표시 시점 메모리 복호화로 사용자 경험 평문 유지.
     return {
       ...base,
       title: title ?? '',

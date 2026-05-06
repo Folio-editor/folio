@@ -58,15 +58,26 @@ ai:
 # (랜딩/에디터/API URL, 쿠키 속성, CORS 모두 환경별로 다름)
 
 # Folio 보안 (Plan C — 결정 6/15/16)
-# server_pepper는 AWS Secrets Manager에 보관, Spring 메모리에 5분 TTL 캐시.
-# enabled=false 일 때는 PepperProvider/AwsSecretsManagerConfig 빈이 등록되지 않는다.
-# (dev/test에서 AWS 자격 없이도 컨텍스트가 시동되도록 — prod 프로필에서 true로 덮어씀)
+# server_pepper 는 Doppler 의 SERVER_PEPPER 환경변수 (32B base64) 로 직접 주입.
+# 이전엔 AWS Secrets Manager 사용했으나 EC2 외부 차단 환경에서 사용 불가 → 폐기.
 folio:
   security:
     pepper:
       enabled: ${FOLIO_PEPPER_ENABLED:false}
-      secret-id: ${FOLIO_PEPPER_SECRET_ID:folio/encryption/pepper}
-      aws-region: ${FOLIO_AWS_REGION:ap-northeast-2}
+      master-pepper-base64: ${SERVER_PEPPER:}
+      version: ${SERVER_PEPPER_VERSION:v1}
+    # Vault Transit envelope encryption (curious-wiggling-thacker plan V-2).
+    # dev/prod 모두 doppler 가 동일하게 VAULT_TOKEN 주입 → 환경별 분기 불필요.
+    # test profile 만 application-test.yml 에서 enabled=false 로 override (vault 컨테이너 미기동).
+    # **VAULT_TOKEN 만 시크릿 — Doppler 에서 주입.** 나머지는 환경 무관 고정값.
+    vault:
+      enabled: true
+      url: http://vault:8200   # 컴포즈 내부 도메인 — 모든 환경 동일
+      token: ${VAULT_TOKEN:}   # 유일한 시크릿 (vault-init.sh 출력 → Doppler 등록)
+      transit-key: folio-work-dek
+      cache-ttl-seconds: 300
+      connect-timeout-ms: 2000
+      read-timeout-ms: 5000
 
 # 토스페이먼츠
 toss:
