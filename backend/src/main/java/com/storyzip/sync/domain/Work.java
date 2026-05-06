@@ -54,6 +54,13 @@ public class Work {
     @Column(name = "encrypted_dek", columnDefinition = "BYTEA")
     private byte[] encryptedDek;
 
+    /**
+     * 작품 종류 식별 (NULL = 일반, 'onboarding' = 신규 사용자 가이드).
+     * 평문 컬럼이라 SELECT WHERE 매칭 안전.
+     */
+    @Column(length = 20)
+    private String kind;
+
     // Vault Transit envelope encryption: work_key 를 Vault 로 wrap 한 결과.
     // NULL = 오프라인 신규 작품 (온라인 복귀 시 발급) → AI 인덱싱 skip 대상.
     @Column(name = "server_encrypted_dek", columnDefinition = "BYTEA")

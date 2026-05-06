@@ -148,6 +148,10 @@ CREATE TABLE work (
     genres          JSONB DEFAULT '[]'::jsonb,
     moods           JSONB DEFAULT '[]'::jsonb,
     encrypted_dek   BYTEA,
+    -- 작품 종류 식별 (NULL = 일반 사용자 작품, 'onboarding' = 신규 사용자 가이드).
+    -- ciphertext 무관 평문 컬럼이라 SELECT WHERE 매칭 안전. 향후 'novel'/'short_story' 등
+    -- 확장 여지. 기본 NULL → 기존 데이터 영향 0.
+    kind            VARCHAR(20),
     -- Vault Transit envelope encryption: work_key 를 Vault 로 추가 wrap 한 결과.
     -- 작품 생성 시 클라이언트가 raw work_key 를 한 번 TLS 로 서버 전송 → VaultKmsService.encrypt()
     -- → 이 컬럼 채움. 오프라인 신규 작품은 NULL 허용 (온라인 복귀 시 발급).

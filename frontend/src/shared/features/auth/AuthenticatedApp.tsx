@@ -269,11 +269,12 @@ export function AuthenticatedApp() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
 
+  // kind = 'onboarding' 매칭 (평문 컬럼이라 ciphertext 무관 안전)
   const { data: guideRows = [] } = useQuery<{ id: string }>(
     onboardingWriterId
-      ? `SELECT id FROM work WHERE writer_id = ? AND title = ? AND status != 'trashed' LIMIT 1`
+      ? `SELECT id FROM work WHERE writer_id = ? AND kind = 'onboarding' AND status != 'trashed' LIMIT 1`
       : `SELECT '' AS id WHERE 0`,
-    onboardingWriterId ? [onboardingWriterId, ONBOARDING_WORK.title] : [],
+    onboardingWriterId ? [onboardingWriterId] : [],
   );
   const hasGuideWork = guideRows.length > 0;
 

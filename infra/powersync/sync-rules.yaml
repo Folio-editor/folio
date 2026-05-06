@@ -25,7 +25,7 @@ bucket_definitions:
       # server_encrypted_dek (Vault Transit wrap) 도 BYTEA → base64 변환.
       # 클라이언트는 사용 안 함 (다중 디바이스 동기화 일관성용 통과).
       - select id, writer_id, title, author_name, description, status,
-               sort_order, genres, moods, created_at, updated_at,
+               sort_order, genres, moods, kind, created_at, updated_at,
                base64(encrypted_dek) as encrypted_dek,
                base64(server_encrypted_dek) as server_encrypted_dek
           from work where writer_id = bucket.user_id

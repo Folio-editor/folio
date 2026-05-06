@@ -34,7 +34,7 @@ export function useOnboardingSeed() {
 
   const seed = useCallback(async (): Promise<string> => {
     // 1. 작품 + 메타 (장르/분위기 태그는 ERD 정리로 work 직속 컬럼이 됨)
-    const workId = await localWrite.createWork(ONBOARDING_WORK.title);
+    const workId = await localWrite.createWork(ONBOARDING_WORK.title, { kind: 'onboarding' });
     await localWrite.updateWork(workId, {
       author_name: ONBOARDING_WORK.authorName,
       description: ONBOARDING_WORK.description,

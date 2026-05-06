@@ -20,6 +20,7 @@ export interface Work {
   sort_order: number;            // 목록 정렬 순서
   genres: string[] | null;       // 장르 태그 배열 (PG: JSONB / SQLite: TEXT JSON)
   moods: string[] | null;        // 분위기 태그 배열 (PG: JSONB / SQLite: TEXT JSON)
+  kind: string | null;           // 작품 종류 (null = 일반, 'onboarding' = 가이드)
   created_at: string;            // ISO timestamp
   updated_at: string;
 }

@@ -136,6 +136,7 @@ public class SyncService {
         applyStr(data, "moods",         e::setMoods);
         applyDt(data,  "created_at",    e::setCreatedAt);
         applyBytea(data, "encrypted_dek", e::setEncryptedDek);
+        applyStr(data, "kind", e::setKind);
         // server_encrypted_dek 는 클라이언트가 직접 만들지 않고 WorkServerDekController 에서
         // VaultKmsService.encrypt() 로 발급. 그러나 PowerSync sync 페이로드에 포함되어
         // 다중 디바이스 일관성을 유지하므로 그대로 통과.

@@ -158,15 +158,16 @@ export function useLocalWrite() {
 
   return {
     // ── work ────────────────────────────────────────────────
-    createWork: async (title: string): Promise<string> => {
+    createWork: async (title: string, opts?: { kind?: string | null }): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       // 먼저 평문으로 INSERT — work 행이 있어야 ensureWorkKey가 encrypted_dek를 UPDATE할 수 있다.
       // genres/moods는 NULL로 시작 (작가가 워크스페이스 화면에서 태그 추가 시 채워짐).
+      // kind: null = 일반 사용자 작품, 'onboarding' = 신규 가이드 작품 (평문 식별자).
       await db.execute(
-        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, genres, moods, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, NULL, NULL, ?, ?)`,
-        [id, writerId, title, now, now],
+        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, genres, moods, kind, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, NULL, NULL, ?, ?, ?)`,
+        [id, writerId, title, opts?.kind ?? null, now, now],
       );
       // KEK이 있으면 즉시 title 암호화 — 평문 row가 동기화 큐에 잠시 머물 수 있으나
       // updated_at이 같은 시점이라 충돌 없이 단일 commit으로 백엔드에 도달한다.

@@ -39,7 +39,7 @@ if (import.meta.env.DEV) {
 //    오프라인 작가가 신 버전 받기 전 인터넷 연결이 끊기지 않도록 안내 필요.
 //  - 데스크톱(Electron) 자동 업데이트 흐름에서도 동일하게 첫 부팅 1회 실행.
 // ────────────────────────────────────────────────────────────
-const SCHEMA_VERSION = 'v4_server_encrypted_dek';
+const SCHEMA_VERSION = 'v5_work_kind';
 const SCHEMA_VERSION_KEY = 'folio.schema.version';
 
 /**
