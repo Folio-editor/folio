@@ -40,21 +40,25 @@ SYSTEM_PROMPT = (
     "- 본문에 명시된 정보만 사용 (추측·확장 금지)\n"
     "- 인물·장소 이름은 본문 표기 그대로 (별칭 매핑 금지)\n"
     "- 핵심 사건은 시간순 정렬\n"
-    "- 복선 candidates 는 작가 의도 명확한 것만 (모호한 묘사 제외)"
+    "- 복선 candidates 는 작가 의도 명확한 것만 (모호한 묘사 제외)\n"
+    # Phase 3 R-K — 노이즈 제거 정책
+    "- present_characters: 고유 명칭 있는 인물만. '도사들'·'시녀들' 같은 무명 군중 제외.\n"
+    "- present_locations: 작품 전개의 주요 무대만. '화장실'·'편의점' 같은 일상 공간 제외.\n"
+    "- summary: 3 문장 이내로 압축 (cliffhanger 가 끝점 별도 보존하므로 결말 반복 금지)."
 )
 
 SCHEMA_HINT = """{
-  "oneline_summary": "string (15~30자) — 회차 한 줄 요약",
-  "summary": "string — 3~5 문장 줄거리",
-  "pov_character": "string | null — 회차 시점 인물 (모호하면 null)",
-  "present_characters": ["등장 인물명"],
-  "present_locations": ["등장 장소"],
-  "key_events": [{"order": 1, "event": "사건 설명"}],
-  "time_progression": "string — 회차 내 시간 흐름 (예: '한 시간', '하루', '3년')",
-  "tone": "string — 회차 톤 (예: '잔잔한 일상', '긴장감 고조')",
-  "cliffhanger": "string | null — 회차 끝점 / 다음 화 hook",
-  "foreshadow_planted": [{"name": "복선 이름", "description": "설명"}],
-  "keywords": ["검색 키워드 5~10개"]
+  "oneline_summary": "string (15~30자)",
+  "summary": "string (3 문장)",
+  "pov_character": "string | null",
+  "present_characters": ["고유명 인물만"],
+  "present_locations": ["주요 무대만"],
+  "key_events": [{"order": 1, "event": "string"}],
+  "time_progression": "string",
+  "tone": "string",
+  "cliffhanger": "string | null",
+  "foreshadow_planted": [{"name": "string", "description": "string"}],
+  "keywords": ["5~10개"]
 }"""
 
 

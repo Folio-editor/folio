@@ -5,6 +5,7 @@ import type { AuxDocType, AuxPanelItem } from '../../types/workspace';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
 import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useDecryptedEpisodeList } from '../../hooks/useDecryptedEpisode';
 import { useDecryptedPlanNoteList } from '../../hooks/useDecryptedPlanNote';
 import { useDecryptedWorldNoteList } from '../../hooks/useDecryptedWorldNote';
 import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
@@ -589,14 +590,17 @@ function useDecryptedDoc(
       : 'SELECT 1 WHERE 0',
     isCharacter ? [docId] : [],
   );
+  // Phase 3 — episode 도 work.encrypted_dek 조인으로 복호화 가능하도록 수정.
+  // 이전엔 NULL AS encrypted_dek + raw content 노출로 보조 뷰어에 ciphertext 표시.
   const { data: epRows = [] } = useQuery<RawDocJoinRow>(
     isEpisode
-      ? `SELECT id, work_id, writer_id, title, content,
-                status, NULL AS importance, NULL AS parent_id,
+      ? `SELECT e.id, e.work_id, e.writer_id, e.title, e.content,
+                e.status, NULL AS importance, e.parent_id,
                 NULL AS gender, NULL AS age,
-                sort_order, created_at, updated_at,
-                NULL AS encrypted_dek
-         FROM episode WHERE id = ? LIMIT 1`
+                e.sort_order, e.created_at, e.updated_at,
+                w.encrypted_dek AS encrypted_dek
+         FROM episode e LEFT JOIN work w ON w.id = e.work_id
+         WHERE e.id = ? LIMIT 1`
       : 'SELECT 1 WHERE 0',
     isEpisode ? [docId] : [],
   );
@@ -659,6 +663,18 @@ function useDecryptedDoc(
       work_id: r.work_id, encrypted_dek: r.encrypted_dek,
     })),
   );
+  const { data: decEpisode } = useDecryptedEpisodeList(
+    epRows.map((r) => ({
+      id: r.id, work_id: r.work_id, title: r.title,
+      status: r.status ?? '',
+      word_count: 0,
+      content: r.content,
+      sort_order: r.sort_order,
+      parent_id: r.parent_id,
+      created_at: r.created_at, updated_at: r.updated_at,
+      encrypted_dek: r.encrypted_dek,
+    })),
+  );
 
   return useMemo<{ doc: DocRow | undefined }>(() => {
     if (isPlanNote) {
@@ -694,16 +710,14 @@ function useDecryptedDoc(
       return { doc: { title: n.title, content: n.content } };
     }
     if (isEpisode) {
-      const e = epRows[0];
+      const e = decEpisode[0];
       if (!e) return { doc: undefined };
-      // episode는 useDecryptedEpisode(단일행 훅) 패턴이 따로 있지만 여기선 평문/v1 분기 단순화 — content를 그대로 노출.
-      // (PR1에서 이미 episode 본문은 단일행 훅으로 다룸. AuxDocViewer는 episode 본문 편집까지 지원해서 평문 표시 우선.)
       return { doc: { title: e.title ?? '', content: e.content } };
     }
     return { doc: undefined };
   }, [
     isPlanNote, isPlot, isForeshadow, isCharacter, isCharacterNote, isEpisode,
-    decPlan, decPlot, decFore, decChar, decCNote, epRows,
+    decPlan, decPlot, decFore, decChar, decCNote, decEpisode,
   ]);
 }
 

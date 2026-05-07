@@ -1,6 +1,11 @@
 package com.storyzip.ai.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.storyzip.ai.client.dto.AgentCreateThreadRequest;
+import com.storyzip.ai.client.dto.AgentMessageRequest;
+import com.storyzip.ai.client.dto.AgentRunResponse;
+import com.storyzip.ai.client.dto.AgentTaskResponse;
+import com.storyzip.ai.client.dto.AgentThreadResponse;
 import com.storyzip.ai.client.dto.DraftRequest;
 import com.storyzip.ai.client.dto.EpisodePipelineRequest;
 import com.storyzip.ai.client.dto.EpisodePipelineResponse;
@@ -131,6 +136,206 @@ public class AiClient {
     /** 회차 요약 파이프라인 트리거 (Haiku, 프리미엄 전용). */
     public EpisodePipelineResponse triggerEpisodeSummary(EpisodePipelineRequest request) {
         return invokeAiPipeline("triggerEpisodeSummary", "/v1/pipelines/episode-summary", request);
+    }
+
+    // ─────────── Phase 4: Agent 서비스 ───────────
+
+    private static final long AI_AGENT_SLA_MS = 60_000L;     // sync agent qa/ideation 한도
+
+    public AgentThreadResponse createAgentThread(AgentCreateThreadRequest request) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "createAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                AgentThreadResponse body = restClient.post()
+                        .uri("/v1/agent/threads")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(AgentThreadResponse.class);
+                if (body == null || body.threadId() == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    public AgentRunResponse sendAgentMessage(String threadId, AgentMessageRequest request) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "sendAgentMessage", AI_AGENT_SLA_MS, () -> {
+            try {
+                AgentRunResponse body = restClient.post()
+                        .uri("/v1/agent/threads/{tid}/messages", threadId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(AgentRunResponse.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    public AgentTaskResponse sendAgentMessageAsync(String threadId, AgentMessageRequest request) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "sendAgentMessageAsync", AI_QUICK_SLA_MS, () -> {
+            try {
+                AgentTaskResponse body = restClient.post()
+                        .uri("/v1/agent/threads/{tid}/messages/async", threadId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(AgentTaskResponse.class);
+                if (body == null || body.taskId() == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    public Map<String, Object> getAgentThread(String threadId) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "getAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = restClient.get()
+                        .uri("/v1/agent/threads/{tid}", threadId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(Map.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    /**
+     * Agent SSE 스트리밍 — AI 서버 /v1/agent/threads/{tid}/messages/stream 프록시.
+     * step / done / error 이벤트를 그대로 SseEmitter 로 전달.
+     */
+    public void streamAgentMessage(
+            String threadId,
+            AgentMessageRequest body,
+            SseEmitter emitter
+    ) {
+        Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
+            ObjectMapper mapper = new ObjectMapper();
+            long startNanos = System.nanoTime();
+            try {
+                String jsonBody = mapper.writeValueAsString(body);
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl()
+                                + "/v1/agent/threads/" + threadId + "/messages/stream"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(10))
+                        .build();
+                HttpClient sseClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+                log.info("[EXT_START] system=ai op=streamAgentMessage thread={}", threadId);
+                HttpResponse<java.io.InputStream> resp = sseClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofInputStream()
+                );
+                if (resp.statusCode() != 200) {
+                    long el = (System.nanoTime() - startNanos) / 1_000_000L;
+                    log.warn("[EXT_FAIL] op=streamAgentMessage elapsedMs={} status={}",
+                            el, resp.statusCode());
+                    emitter.completeWithError(new AiException(ErrorCode.AI_RESPONSE_INVALID));
+                    return;
+                }
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(resp.body(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.startsWith("data: ")) {
+                            String data = line.substring(6);
+                            try {
+                                emitter.send(SseEmitter.event().data(data,
+                                        org.springframework.http.MediaType.APPLICATION_JSON));
+                            } catch (Exception sendErr) {
+                                log.debug("agent SSE downstream disconnected; drain upstream");
+                            }
+                        }
+                    }
+                }
+                long el = (System.nanoTime() - startNanos) / 1_000_000L;
+                log.info("[EXT_OK] op=streamAgentMessage elapsedMs={} status=ok", el);
+                try { emitter.complete(); } catch (Exception ignored) {}
+            } catch (Exception e) {
+                long el = (System.nanoTime() - startNanos) / 1_000_000L;
+                log.warn("[EXT_FAIL] op=streamAgentMessage elapsedMs={} errType={} errMsg={}",
+                        el, e.getClass().getSimpleName(), e.getMessage(), e);
+                emitter.completeWithError(e);
+            }
+        }));
+    }
+
+    public Map<String, Object> getAgentTaskStatus(String taskId) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "getAgentTaskStatus", AI_QUICK_SLA_MS, () -> {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = restClient.get()
+                        .uri("/v1/agent/tasks/{tid}/status", taskId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(Map.class);
+                return body == null ? Map.of() : body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    public java.util.List<Map<String, Object>> listAgentThreads(String workId, String writerId) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "listAgentThreads", AI_QUICK_SLA_MS, () -> {
+            try {
+                java.util.List<Map<String, Object>> body = restClient.get()
+                        .uri(uriBuilder -> uriBuilder.path("/v1/agent/threads")
+                                .queryParam("work_id", workId)
+                                .queryParam("writer_id", writerId)
+                                .build())
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(java.util.List.class);
+                return body == null ? java.util.List.of() : body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
     }
 
     /** Celery 태스크 적재 — dev 스모크 전용. */
