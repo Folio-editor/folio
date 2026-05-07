@@ -53,12 +53,7 @@ dependencies {
     // .env 파일 자동 로딩 (Spring Boot가 시작 시 backend/.env 를 환경변수로 주입)
     implementation("me.paulschwarz:spring-dotenv:4.0.0")
 
-    // AWS Secrets Manager — server_pepper 보관 (Plan C 결정 6)
-    // BOM으로 모듈 간 버전 정합성을 보장
-    implementation(platform("software.amazon.awssdk:bom:2.30.0"))
-    implementation("software.amazon.awssdk:secretsmanager")
-
-    // Pepper 5분 인메모리 TTL 캐시 (Plan C 결정 16)
+    // Caffeine — WorkKeyService TTL 캐시 (Vault 호출 최소화)
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
     // Lombok

@@ -2,6 +2,8 @@ package com.storyzip.sync.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -35,6 +37,14 @@ public class Work {
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private String genres;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private String moods;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -43,4 +53,16 @@ public class Work {
 
     @Column(name = "encrypted_dek", columnDefinition = "BYTEA")
     private byte[] encryptedDek;
+
+    /**
+     * 작품 종류 식별 (NULL = 일반, 'onboarding' = 신규 사용자 가이드).
+     * 평문 컬럼이라 SELECT WHERE 매칭 안전.
+     */
+    @Column(length = 20)
+    private String kind;
+
+    // Vault Transit envelope encryption: work_key 를 Vault 로 wrap 한 결과.
+    // NULL = 오프라인 신규 작품 (온라인 복귀 시 발급) → AI 인덱싱 skip 대상.
+    @Column(name = "server_encrypted_dek", columnDefinition = "BYTEA")
+    private byte[] serverEncryptedDek;
 }

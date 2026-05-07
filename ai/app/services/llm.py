@@ -95,6 +95,21 @@ class FakeLLM(LLMProvider):
         blob = f"{system}\n{user}\n{schema_hint}".lower()
         if "review" in blob:
             return {"issues": [], "newItems": []}
+        if "oneline_summary" in blob:
+            # episode_summary v2 스키마 (curious-wiggling-thacker R-3)
+            return {
+                "oneline_summary": "[fake] 한 줄 요약",
+                "summary": "[fake] 회차 요약 더미. 3~5 문장 분량의 줄거리.",
+                "pov_character": "주인공",
+                "present_characters": ["주인공", "조연1"],
+                "present_locations": ["사무실"],
+                "key_events": [{"order": 1, "event": "[fake] 사건"}],
+                "time_progression": "한 시간",
+                "tone": "잔잔한 일상",
+                "cliffhanger": None,
+                "foreshadow_planted": [],
+                "keywords": ["fake", "테스트"],
+            }
         return {
             "summary": "[fake] 회차 요약 더미",
             "characters": {"existing": [], "new": []},

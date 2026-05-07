@@ -3,10 +3,12 @@ import type { LoginEncryptionMaterial, Writer } from '../types/auth';
 import { db } from '../sync/db';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
 import {
-  clearKek,
+  getCurrentKek,
   initKekFromLogin,
   restoreKek,
 } from '../crypto/lifecycle';
+// backfill 폐기됨 — SQLite 는 항상 평문 저장 정책 (옵션 A).
+// upload sanitize 가 서버 전송 시점에만 ciphertext 변환.
 import { analytics } from '../lib/analytics';
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
@@ -62,7 +64,6 @@ export type SyncDecision = 'use-server' | 'use-local' | null;
  */
 const WRITER_ID_TABLES = [
   'work',
-  'plan',
   'plan_note',
   'world_note',
   'character',
@@ -100,6 +101,13 @@ interface AuthState {
   isNewUser: boolean;
   /** PowerSync connect 게이팅 — null이면 connect 금지 */
   syncDecision: SyncDecision;
+  /**
+   * Plan C 결정 22 — KEK 도출/회전/폐기 시 증가하는 카운터.
+   * useBackfillEncryption 훅의 useEffect deps로 사용되어, login() 동기 백필 후 잔존
+   * 평문이 있다면 fallback 백필 실행. KEK은 모듈 스코프 변수라 React가 직접 추적 못 하므로
+   * 이 카운터를 통해 KEK 라이프사이클 변화를 컴포넌트 레이어로 전파한다.
+   */
+  kekVersion: number;
 
   currentWriterId: () => string | null;
 
@@ -132,6 +140,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
   isNewUser: false,
   syncDecision: null,
+  kekVersion: 0,
 
   /**
    * useQuery 필터에 사용할 writerId.
@@ -145,6 +154,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   restore: async () => {
     set({ isRestoring: true, error: null });
+    // KEK 복원은 인증 상태와 무관하게 항상 시도. 게스트 모드 / 로그아웃 후에도
+    // 영속 저장된 KEK 재료로 복호화 가능하도록 (로컬 퍼스트 보장).
+    try {
+      await restoreKek();
+    } catch (e) {
+      console.warn('[auth] restoreKek (early) 실패:', e);
+    }
     try {
       const result = await window.folio.auth.tryRestore();
       if (result) {
@@ -152,16 +168,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
         // App.tsx가 syncDecision만 보고 connect하므로 disconnectAndClear는 호출되지 않는다.
         //
-        // KEK 복원: 백엔드 /auth/me는 EncryptionMaterial을 내려주지 않으므로,
-        // 이전 로그인에서 영속 저장된 재료(safeStorage / IndexedDB)에서 재도출한다.
-        // 영속 재료가 없거나(앱 첫 설치 후 자동 로그인 불가) pepper 회전 등으로
-        // 재도출 실패하면 KEK는 null로 남고 사용자는 다음 명시 로그인에서 새로 받아야 한다.
-        try {
-          await restoreKek();
-        } catch (e) {
-          console.warn('[auth] restoreKek 실패:', e);
+        // KEK 복원:
+        //   1순위 — tryRestore 응답에 encryption이 동봉돼 있으면 그걸로 즉시 도출.
+        //           웹의 auth_code exchange는 신규 EncryptionMaterial을 매 로그인마다 내려준다.
+        //   2순위 — encryption 없거나(refresh 경로 등) 도출 실패 시 영속 저장에서 복원.
+        // 둘 다 실패하면 KEK는 null로 남고 사용자는 다음 명시 로그인에서 새로 받아야 한다.
+        if (result.encryption) {
+          await deriveKekFromLogin(result.encryption);
+        } else {
+          try {
+            await restoreKek();
+          } catch (e) {
+            console.warn('[auth] restoreKek 실패:', e);
+          }
         }
-        set({
+        set((s) => ({
           writer: result.writer,
           guestWriterId: null,
           previousGuestId: null,
@@ -171,7 +192,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isRestoring: false,
           isNewUser: false,
           syncDecision: 'use-server',
-        });
+          // Plan C 결정 22: restoreKek 결과를 컴포넌트 레이어로 전파.
+          // 잔존 평문이 있다면 useBackfillEncryption 훅이 자동 재시도.
+          kekVersion: s.kekVersion + 1,
+        }));
         return;
       }
     } catch {
@@ -275,12 +299,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           console.log(
             `[sync] login-time remap: ${currentGuestId} → ${result.writer.id}`,
           );
+
+          // 옵션 A: SQLite 는 항상 평문 저장 → backfill 단계 불필요.
+          // upload sanitize 가 PowerSync upload 시점에 평문→ciphertext 변환을 처리한다.
+          const kek = getCurrentKek();
+          if (kek) {
+            // KEK 활성화됨 — 정상 흐름
+          } else {
+            // encryption=null 응답(백엔드 PepperProvider 비활성) 또는 KEK 도출 실패 케이스.
+            // SQLite 에 평문 저장되며 sanitize 가 KEK 부재 시 평문 그대로 upload (현재 폴백).
+            console.warn(
+              '[auth] KEK 미도출 상태 — 백필 스킵. 백엔드 encryption 응답 확인 필요',
+            );
+          }
         } catch (e) {
           console.warn('[AuthStore] login-time remap 실패:', e);
         }
       }
 
-      set({
+      set((s) => ({
         writer: result.writer,
         guestWriterId: null,
         // 신규 가입자는 위에서 이미 재매핑 완료 → previousGuestId 보관 불필요
@@ -297,7 +334,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         lastKnownWriterId: shouldPreRemap
           ? result.writer.id
           : get().lastKnownWriterId,
-      });
+        // Plan C 결정 22: deriveKekFromLogin 결과를 컴포넌트 레이어로 전파.
+        // useBackfillEncryption 훅이 잔존 평문 fallback 처리.
+        kekVersion: s.kekVersion + 1,
+      }));
 
       // 신규 가입자 lastKnownWriterId 파일 영속
       if (shouldPreRemap) {
@@ -343,6 +383,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         });
         console.log(`[sync] 로컬 writer_id 재매핑: ${previousGuestId} → ${writer.id}`);
+
+        // 옵션 A: SQLite 평문 유지 — backfill 불필요. sanitize 가 upload 시점에 변환.
       } catch (e) {
         console.warn('[AuthStore] writer_id 재매핑 실패:', e);
       }
@@ -366,17 +408,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await window.folio.auth.logout();
     } finally {
-      // KEK + work key 캐시 + 영속 재료까지 모두 폐기. 네트워크 오류로 logout이 실패해도
-      // 메모리/디스크 비우기는 진행해야 다음 사용자 세션에 KEK 잔류를 막는다.
+      // 옵션 A: 로컬 SQLite 항상 평문 → KEK 폐기 무관하게 자기 데이터 표시 가능.
+      // 그러나 KEK 영구 유지 정책: 다음 같은 사용자 재로그인 시 즉시 KEK 사용 가능.
+      // 다른 사용자 로그인 시 initKekFromLogin 이 새 pepper/salt 로 자동 교체.
+      // → clearKek 호출 안 함.
+      // Vault Transit (plan V-8): pending server-dek 큐에 raw work_key 가 남아 있으면
+      // 다음 사용자 세션으로 누설될 수 있다. 로그아웃 시 무조건 폐기.
       try {
-        await clearKek();
+        const { clearPendingServerDeks } = await import('../crypto/serverDek');
+        clearPendingServerDeks();
       } catch (e) {
-        console.warn('[auth] clearKek 실패:', e);
+        console.warn('[auth] clearPendingServerDeks 실패:', e);
       }
       if (isWebPlatform()) {
         // 웹은 로그아웃 시 게스트로 떨어지지 않음 — 비인증 상태로만 전환.
         // AppRoot가 비인증 상태를 감지해 로그인 안내(또는 랜딩 redirect) 화면을 표시.
-        set({
+        set((s) => ({
           writer: null,
           guestWriterId: null,
           previousGuestId: null,
@@ -385,13 +432,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isGuest: false,
           isNewUser: false,
           syncDecision: null,
-        });
+          // Plan C 결정 22: clearKek 결과 전파. 다음 사용자 로그인 시 fresh state 보장.
+          kekVersion: s.kekVersion + 1,
+        }));
         return;
       }
       const guestWriterId = get().guestWriterId ?? (await window.folio.auth.getGuestId());
       // 로컬 퍼스트: lastKnownWriterId는 유지한다. useQuery 필터가 그대로라
       // 글 목록 등이 "사라진 것처럼" 보이는 현상을 막는다.
-      set({
+      set((s) => ({
         writer: null,
         guestWriterId,
         previousGuestId: null,
@@ -399,7 +448,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isGuest: true,
         isNewUser: false,
         syncDecision: null,
-      });
+        // Plan C 결정 22: clearKek 결과 전파.
+        kekVersion: s.kekVersion + 1,
+      }));
     }
   },
 

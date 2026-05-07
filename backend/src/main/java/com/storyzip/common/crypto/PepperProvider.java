@@ -1,40 +1,25 @@
 package com.storyzip.common.crypto;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
-import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
-import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Base64;
 
 /**
- * Plan C 결정 6/7/12/16 — server_pepper 보관소.
+ * server_pepper 보관소 (Plan C 결정 6/7/12/16).
  *
- * <p>AWS Secrets Manager에서 {@code folio/encryption/pepper} 시크릿을 5분 TTL Caffeine 캐시로
- * 조회하고, HKDF-SHA256으로 사용자별 / PII용 파생 키를 만든다.
+ * <p>이전엔 AWS Secrets Manager 에서 로드했으나 EC2 외부 차단 환경에서 사용 불가 →
+ * <b>Doppler 의 {@code SERVER_PEPPER} 환경변수</b>로 직접 주입 (32 byte base64).
  *
- * <p>server_pepper 자체는 절대 외부로 반환되지 않는다. 호출자는 derive* 메서드의 결과만
- * 받으며, 사용 직후 {@link Hkdf#zeroize(byte[])} 로 즉시 폐기해야 한다.
+ * <p>HKDF-SHA256 으로 사용자별 / PII용 파생 키를 만든다. server_pepper 자체는 절대 외부로
+ * 반환되지 않으며, 호출자는 {@link #derivePepperUser(String)} 등의 결과만 받고 사용 직후
+ * {@link Hkdf#zeroize(byte[])} 로 폐기해야 한다.
  *
- * <p>시크릿 JSON 포맷:
- * <pre>{@code
- * {
- *   "active": "v1",
- *   "v1": "<base64-32B-random>",
- *   "v1_created_at": "2026-04-29T00:00:00Z"
- * }
- * }</pre>
+ * <p>회전 정책: SERVER_PEPPER 갱신 + SERVER_PEPPER_VERSION bump + backend 재기동.
  */
 @Slf4j
 @Component
@@ -48,27 +33,29 @@ public class PepperProvider implements DisposableBean {
     private static final byte[] PII_SYSTEM_SALT =
             "pii-system-salt-v1".getBytes(StandardCharsets.UTF_8);
     private static final int DERIVED_KEY_LENGTH = 32;
-    private static final String CACHE_KEY = "pepper";
 
-    private final SecretsManagerClient secretsManagerClient;
-    private final ObjectMapper objectMapper;
-    private final String secretId;
-    private final Cache<String, PepperBundle> cache;
+    private final byte[] activePepper;
+    private final String activeVersion;
 
     public PepperProvider(
-            SecretsManagerClient secretsManagerClient,
-            ObjectMapper objectMapper,
-            @Value("${folio.security.pepper.secret-id:folio/encryption/pepper}") String secretId) {
-        this.secretsManagerClient = secretsManagerClient;
-        this.objectMapper = objectMapper;
-        this.secretId = secretId;
-        this.cache = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofMinutes(5))
-                .maximumSize(1)
-                .removalListener((String k, PepperBundle v, RemovalCause cause) -> {
-                    if (v != null) v.destroy();
-                })
-                .build();
+            @Value("${folio.security.pepper.master-pepper-base64:}") String masterPepperBase64,
+            @Value("${folio.security.pepper.version:v1}") String version) {
+        if (masterPepperBase64 == null || masterPepperBase64.isBlank()) {
+            throw new IllegalStateException(
+                "SERVER_PEPPER 미설정. Doppler 의 SERVER_PEPPER 시크릿 등록 필요. "
+                + "발급: NEW_PEPPER=$(openssl rand -base64 32 | tr -d '\\n') && doppler secrets set SERVER_PEPPER=\"$NEW_PEPPER\"");
+        }
+        // Doppler 또는 ENV 가 trailing whitespace/newline 붙이는 케이스 차단.
+        String clean = masterPepperBase64.replaceAll("\\s+", "");
+        byte[] decoded = Base64.getDecoder().decode(clean);
+        if (decoded.length != 32) {
+            Hkdf.zeroize(decoded);
+            throw new IllegalStateException(
+                "SERVER_PEPPER must be 32 bytes (base64 of 32B), got " + decoded.length);
+        }
+        this.activePepper = decoded;
+        this.activeVersion = version;
+        log.info("PepperProvider 초기화: version={}, source=ENV(SERVER_PEPPER)", version);
     }
 
     /**
@@ -80,10 +67,9 @@ public class PepperProvider implements DisposableBean {
         if (googleSub == null || googleSub.isBlank()) {
             throw new IllegalArgumentException("googleSub must not be blank");
         }
-        PepperBundle bundle = loadBundle();
         byte[] salt = googleSub.getBytes(StandardCharsets.UTF_8);
-        byte[] derived = Hkdf.deriveKey(bundle.activePepper(), salt, PEPPER_USER_INFO, DERIVED_KEY_LENGTH);
-        return new DerivedKey(derived, bundle.activeVersion());
+        byte[] derived = Hkdf.deriveKey(activePepper, salt, PEPPER_USER_INFO, DERIVED_KEY_LENGTH);
+        return new DerivedKey(derived, activeVersion);
     }
 
     /**
@@ -92,77 +78,24 @@ public class PepperProvider implements DisposableBean {
      * <p>HKDF(IKM=server_pepper, salt="pii-system-salt-v1", info="folio-pii-v1") → 32B
      */
     public DerivedKey derivePiiKey() {
-        PepperBundle bundle = loadBundle();
-        byte[] derived = Hkdf.deriveKey(bundle.activePepper(), PII_SYSTEM_SALT, PII_KEY_INFO, DERIVED_KEY_LENGTH);
-        return new DerivedKey(derived, bundle.activeVersion());
+        byte[] derived = Hkdf.deriveKey(activePepper, PII_SYSTEM_SALT, PII_KEY_INFO, DERIVED_KEY_LENGTH);
+        return new DerivedKey(derived, activeVersion);
     }
 
     /**
-     * email_hash = SHA-256-HMAC(server_pepper, email_lowercase). 무지개 테이블 방어용.
-     * 결정 9의 "SHA-256(email_lowercase + pepper)"를 HMAC 형태로 안전하게 구현.
+     * email_hash = HKDF(server_pepper, email_lowercase, "folio-email-hash-v1") → 32B.
+     * 무지개 테이블 방어용.
      */
     public byte[] hashEmail(String emailLowercase) {
         if (emailLowercase == null) throw new IllegalArgumentException("email must not be null");
-        PepperBundle bundle = loadBundle();
         byte[] msg = emailLowercase.getBytes(StandardCharsets.UTF_8);
-        return Hkdf.deriveKey(bundle.activePepper(), msg,
+        return Hkdf.deriveKey(activePepper, msg,
                 "folio-email-hash-v1".getBytes(StandardCharsets.UTF_8), 32);
-    }
-
-    /** 캐시 강제 무효화 (회전 시 외부 트리거용). */
-    public void invalidate() {
-        cache.invalidateAll();
-    }
-
-    private PepperBundle loadBundle() {
-        return cache.get(CACHE_KEY, k -> fetchFromSecretsManager());
-    }
-
-    private PepperBundle fetchFromSecretsManager() {
-        GetSecretValueResponse response = secretsManagerClient.getSecretValue(
-                GetSecretValueRequest.builder().secretId(secretId).build());
-
-        String secretString = response.secretString();
-        if (secretString == null || secretString.isBlank()) {
-            throw new IllegalStateException("pepper secret is empty: " + secretId);
-        }
-
-        try {
-            JsonNode root = objectMapper.readTree(secretString);
-            String active = root.path("active").asText(null);
-            if (active == null || active.isBlank()) {
-                throw new IllegalStateException("pepper secret missing 'active' field");
-            }
-            JsonNode versionNode = root.path(active);
-            if (versionNode.isMissingNode() || !versionNode.isTextual()) {
-                throw new IllegalStateException("pepper secret missing version: " + active);
-            }
-            byte[] pepper = Base64.getDecoder().decode(versionNode.asText());
-            if (pepper.length != 32) {
-                Hkdf.zeroize(pepper);
-                throw new IllegalStateException("pepper must be 32 bytes, got " + pepper.length);
-            }
-            return new PepperBundle(active, pepper);
-        } catch (Exception e) {
-            throw new IllegalStateException("failed to parse pepper secret", e);
-        }
     }
 
     @Override
     public void destroy() {
-        cache.asMap().forEach((k, v) -> v.destroy());
-        cache.invalidateAll();
-        cache.cleanUp();
-    }
-
-    /**
-     * server_pepper 원본을 5분 동안 메모리에 들고 있는 캐시 엔트리.
-     * destroy 시 byte[] zeroize.
-     */
-    private record PepperBundle(String activeVersion, byte[] activePepper) {
-        void destroy() {
-            Hkdf.zeroize(activePepper);
-        }
+        Hkdf.zeroize(activePepper);
     }
 
     /**

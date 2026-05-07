@@ -50,7 +50,9 @@ google:
 # AI 서버 (FastAPI) — base-url은 환경별이라 application-{profile}.yml로 이동
 ai:
   client:
-    internal-api-key: ${INTERNAL_API_KEY:dev-internal-key}
+    # INTERNAL_API_KEY 미주입 시 부팅 실패 (Phase 2 R-D 보호 장치).
+    # 기본값을 두면 silent 401 로 모든 AI 호출이 죽는데도 운영자가 모름.
+    internal-api-key: ${INTERNAL_API_KEY}
     connect-timeout: 3s
     read-timeout: 10s
 
@@ -58,23 +60,34 @@ ai:
 # (랜딩/에디터/API URL, 쿠키 속성, CORS 모두 환경별로 다름)
 
 # Folio 보안 (Plan C — 결정 6/15/16)
-# server_pepper는 AWS Secrets Manager에 보관, Spring 메모리에 5분 TTL 캐시.
-# enabled=false 일 때는 PepperProvider/AwsSecretsManagerConfig 빈이 등록되지 않는다.
-# (dev/test에서 AWS 자격 없이도 컨텍스트가 시동되도록 — prod 프로필에서 true로 덮어씀)
+# server_pepper 는 Doppler 의 SERVER_PEPPER 환경변수 (32B base64) 로 직접 주입.
+# 이전엔 AWS Secrets Manager 사용했으나 EC2 외부 차단 환경에서 사용 불가 → 폐기.
 folio:
   security:
     pepper:
       enabled: ${FOLIO_PEPPER_ENABLED:false}
-      secret-id: ${FOLIO_PEPPER_SECRET_ID:folio/encryption/pepper}
-      aws-region: ${FOLIO_AWS_REGION:ap-northeast-2}
+      master-pepper-base64: ${SERVER_PEPPER:}
+      version: ${SERVER_PEPPER_VERSION:v1}
+    # Vault Transit envelope encryption (curious-wiggling-thacker plan V-2).
+    # dev/prod 모두 doppler 가 동일하게 VAULT_TOKEN 주입 → 환경별 분기 불필요.
+    # test profile 만 application-test.yml 에서 enabled=false 로 override (vault 컨테이너 미기동).
+    # **VAULT_TOKEN 만 시크릿 — Doppler 에서 주입.** 나머지는 환경 무관 고정값.
+    vault:
+      enabled: true
+      url: http://vault:8200   # 컴포즈 내부 도메인 — 모든 환경 동일
+      token: ${VAULT_TOKEN:}   # 유일한 시크릿 (vault-init.sh 출력 → Doppler 등록)
+      transit-key: folio-work-dek
+      cache-ttl-seconds: 300
+      connect-timeout-ms: 2000
+      read-timeout-ms: 5000
 
-# 토스페이먼츠
-toss:
-  payments:
-    client-key: ${TOSS_CLIENT_KEY:test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
-    secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
-    api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
-    webhook-secret: ${TOSS_WEBHOOK_SECRET:}
+# PortOne (포트원) V2
+# storeId/channelKey는 클라이언트 전용 — 서버 yml에는 두지 않는다.
+# 백엔드는 apiSecret만 필요 (REST 호출용 Authorization 헤더).
+portone:
+  api-secret: ${PORTONE_API_SECRET:}
+  api-base-url: ${PORTONE_API_BASE_URL:https://api.portone.io}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
 
 # Google Analytics 4 Measurement Protocol
 ga4:

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AiScreen = 'menu' | 'draft-input' | 'draft-view' | 'review-input' | 'review-result' | 'history-view' | 'review-history-view';
+export type AiScreen = 'menu' | 'draft-input' | 'draft-view' | 'review-input' | 'review-result' | 'spellcheck-input' | 'spellcheck-result' | 'history-view' | 'review-history-view' | 'spellcheck-history-view';
 
 /**
  * AiScreen → 사용자에게 노출되는 도구명. 우측 패널 공통 헤더가
@@ -17,6 +17,10 @@ export function getAiToolName(screen: AiScreen): string | null {
     case 'review-result':
     case 'review-history-view':
       return '원고 검수';
+    case 'spellcheck-input':
+    case 'spellcheck-result':
+    case 'spellcheck-history-view':
+      return '맞춤법 검사';
     case 'menu':
     default:
       return null;
@@ -24,6 +28,7 @@ export function getAiToolName(screen: AiScreen): string | null {
 }
 export type DraftState = 'idle' | 'streaming' | 'done' | 'error';
 export type ReviewState = 'idle' | 'loading' | 'done' | 'error';
+export type SpellcheckState = 'idle' | 'loading' | 'done' | 'error';
 
 export interface DraftEpisodeInfo {
   id: string;
@@ -66,8 +71,30 @@ export interface ReviewHistoryEntry {
   createdAt: number;
 }
 
+export interface SpellcheckIssue {
+  type: 'typo' | 'spacing' | 'punctuation';
+  line: number;
+  original: string;
+  suggestion: string;
+  reason: string;
+}
+
+export interface SpellcheckResult {
+  issues: SpellcheckIssue[];
+  summary: string;
+}
+
+export interface SpellcheckHistoryEntry {
+  id: string;
+  workId: string;
+  episode: DraftEpisodeInfo;
+  result: SpellcheckResult;
+  createdAt: number;
+}
+
 const HISTORY_KEY = 'folio:ai-draft-history';
 const REVIEW_HISTORY_KEY = 'folio:ai-review-history';
+const SPELLCHECK_HISTORY_KEY = 'folio:ai-spellcheck-history';
 const MAX_HISTORY = 10;
 
 function loadHistory(): DraftHistoryEntry[] {
@@ -98,6 +125,21 @@ function loadReviewHistory(): ReviewHistoryEntry[] {
 
 function saveReviewHistory(entries: ReviewHistoryEntry[]) {
   localStorage.setItem(REVIEW_HISTORY_KEY, JSON.stringify(entries));
+}
+
+function loadSpellcheckHistory(): SpellcheckHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(SPELLCHECK_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSpellcheckHistory(entries: SpellcheckHistoryEntry[]) {
+  localStorage.setItem(SPELLCHECK_HISTORY_KEY, JSON.stringify(entries));
 }
 
 interface AiSessionStore {
@@ -149,6 +191,23 @@ interface AiSessionStore {
   reviewHistory: ReviewHistoryEntry[];
   viewingReviewHistoryId: string | null;
 
+  spellcheckState: SpellcheckState;
+  spellcheckResult: SpellcheckResult | null;
+  spellcheckError: string;
+  spellcheckTargetEpisode: DraftEpisodeInfo | null;
+  spellcheckHistory: SpellcheckHistoryEntry[];
+  viewingSpellcheckHistoryId: string | null;
+  spellcheckAppliedIssues: number[];
+  /** 본문 하이라이트 extension 의 캐시 무효화용 카운터. result/applied/hover 변경 시 increment. */
+  spellcheckVersion: number;
+  /** 카드 ↔ 본문 hover 동기화 — 사용자가 카드에 hover 한 issue 인덱스. */
+  spellcheckHoveredIssue: number | null;
+  /**
+   * '선택 영역만 검사' 모드일 때 사용자가 드래그한 PM doc 위치 범위.
+   * null = 회차 전체 검사 모드. 적용 핸들러와 하이라이트가 이 범위로 검색 scope 를 좁힌다.
+   */
+  spellcheckSelectionRange: { from: number; to: number } | null;
+
   // 액션
   setScreen: (screen: AiScreen) => void;
   setStoryline: (v: string) => void;
@@ -176,6 +235,13 @@ interface AiSessionStore {
   failReview: (error: string) => void;
   viewReviewHistory: (id: string) => void;
   deleteReviewHistory: (id: string) => void;
+  startSpellcheck: (episode: DraftEpisodeInfo, selectionRange?: { from: number; to: number } | null) => void;
+  finishSpellcheck: (result: SpellcheckResult) => void;
+  failSpellcheck: (error: string) => void;
+  viewSpellcheckHistory: (id: string) => void;
+  deleteSpellcheckHistory: (id: string) => void;
+  markSpellcheckIssueApplied: (index: number) => void;
+  setSpellcheckHoveredIssue: (index: number | null) => void;
 }
 
 export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
@@ -200,8 +266,18 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   reviewTargetEpisode: null,
   reviewHistory: loadReviewHistory(),
   viewingReviewHistoryId: null,
+  spellcheckState: 'idle',
+  spellcheckResult: null,
+  spellcheckError: '',
+  spellcheckTargetEpisode: null,
+  spellcheckHistory: loadSpellcheckHistory(),
+  viewingSpellcheckHistoryId: null,
+  spellcheckAppliedIssues: [],
+  spellcheckVersion: 0,
+  spellcheckHoveredIssue: null,
+  spellcheckSelectionRange: null,
 
-  setScreen: (screen) => set({ screen, viewingHistoryId: null, viewingReviewHistoryId: null }),
+  setScreen: (screen) => set({ screen, viewingHistoryId: null, viewingReviewHistoryId: null, viewingSpellcheckHistoryId: null }),
   setStoryline: (storyline) => set({ storyline }),
   setUserPrompt: (userPrompt) => set({ userPrompt }),
   setModel: (model) => set({ model }),
@@ -296,6 +372,11 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       reviewError: '',
       reviewTargetEpisode: null,
       viewingReviewHistoryId: null,
+      spellcheckState: 'idle',
+      spellcheckResult: null,
+      spellcheckError: '',
+      spellcheckTargetEpisode: null,
+      viewingSpellcheckHistoryId: null,
     });
   },
 
@@ -382,6 +463,100 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       reviewHistory: updated,
       ...(s.viewingReviewHistoryId === id
         ? { screen: 'review-input' as const, viewingReviewHistoryId: null }
+        : {}),
+    }));
+  },
+
+  startSpellcheck: (episode, selectionRange = null) =>
+    set((s) => ({
+      screen: 'spellcheck-result',
+      spellcheckState: 'loading',
+      spellcheckResult: null,
+      spellcheckError: '',
+      spellcheckTargetEpisode: episode,
+      viewingSpellcheckHistoryId: null,
+      spellcheckAppliedIssues: [],
+      spellcheckHoveredIssue: null,
+      spellcheckSelectionRange: selectionRange,
+      spellcheckVersion: s.spellcheckVersion + 1,
+    })),
+
+  finishSpellcheck: (result) => {
+    const { spellcheckTargetEpisode, spellcheckHistory, spellcheckVersion } = get();
+    if (spellcheckTargetEpisode) {
+      const entry: SpellcheckHistoryEntry = {
+        id: crypto.randomUUID(),
+        workId: spellcheckTargetEpisode.workId,
+        episode: spellcheckTargetEpisode,
+        result,
+        createdAt: Date.now(),
+      };
+      const sameWork = spellcheckHistory.filter((h) => h.workId === entry.workId);
+      const otherWork = spellcheckHistory.filter((h) => h.workId !== entry.workId);
+      const updated = [entry, ...sameWork].slice(0, MAX_HISTORY);
+      const all = [...updated, ...otherWork];
+      saveSpellcheckHistory(all);
+      set({
+        spellcheckState: 'done',
+        spellcheckResult: result,
+        spellcheckHistory: all,
+        spellcheckAppliedIssues: [],
+        spellcheckVersion: spellcheckVersion + 1,
+      });
+    } else {
+      set({
+        spellcheckState: 'done',
+        spellcheckResult: result,
+        spellcheckAppliedIssues: [],
+        spellcheckVersion: spellcheckVersion + 1,
+      });
+    }
+  },
+
+  failSpellcheck: (error) =>
+    set({ spellcheckState: 'error', spellcheckError: error }),
+
+  viewSpellcheckHistory: (id) => {
+    const entry = get().spellcheckHistory.find((h) => h.id === id);
+    if (!entry) return;
+    set((s) => ({
+      screen: 'spellcheck-history-view',
+      viewingSpellcheckHistoryId: id,
+      spellcheckResult: entry.result,
+      spellcheckState: 'done',
+      spellcheckError: '',
+      spellcheckTargetEpisode: entry.episode,
+      spellcheckAppliedIssues: [],
+      spellcheckHoveredIssue: null,
+      spellcheckSelectionRange: null,
+      spellcheckVersion: s.spellcheckVersion + 1,
+    }));
+  },
+
+  markSpellcheckIssueApplied: (index) =>
+    set((s) =>
+      s.spellcheckAppliedIssues.includes(index)
+        ? s
+        : {
+            spellcheckAppliedIssues: [...s.spellcheckAppliedIssues, index],
+            spellcheckVersion: s.spellcheckVersion + 1,
+          },
+    ),
+
+  setSpellcheckHoveredIssue: (index) =>
+    set((s) =>
+      s.spellcheckHoveredIssue === index
+        ? s
+        : { spellcheckHoveredIssue: index, spellcheckVersion: s.spellcheckVersion + 1 },
+    ),
+
+  deleteSpellcheckHistory: (id) => {
+    const updated = get().spellcheckHistory.filter((h) => h.id !== id);
+    saveSpellcheckHistory(updated);
+    set((s) => ({
+      spellcheckHistory: updated,
+      ...(s.viewingSpellcheckHistoryId === id
+        ? { screen: 'spellcheck-input' as const, viewingSpellcheckHistoryId: null }
         : {}),
     }));
   },

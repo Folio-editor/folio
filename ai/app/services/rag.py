@@ -1,21 +1,28 @@
 """RAG 컨텍스트 조립 엔진.
 
 입력: payload(클라이언트 평문 컨텍스트), work_id, writer_id, storyline, current_episode_num
-출력: 28,000 토큰 이하의 컨텍스트 문자열 (LLM 프롬프트에 삽입)
+출력: 40K 토큰 이하의 컨텍스트 문자열 (LLM 프롬프트에 삽입)
 
 수집 소스 및 토큰 예산:
 - 작품 메타데이터 (~500)            ← payload.work_meta
 - 설정집(인물/세계관) (~2,000~5,000)  ← payload.characters / payload.world_notes
 - 미회수 떡밥 (~500~1,000)          ← payload.foreshadows (review 모드만)
-- 최근 5~10화 요약 (~2,000~4,000)
-- 최근 1~2화 원문 샘플 (~10,000~15,000) ← payload.recent_episodes
+- 최근 1~4화 원문 샘플 (~10,000~15,000) ← payload.recent_episodes
 - 관련 과거 화 벡터 검색 (~1,500~3,000) ← episode_chunk DB SELECT (평문 예외)
 - 작가 스토리라인 (~500~1,000)        ← payload.plots
 
 PR5 — Plan C 옵션 1 보안 모델: 클라이언트가 KEK + work_key로 평문화한 컨텍스트를
 페이로드로 동봉하면, AI 서버는 더 이상 work/character/world_note/plot/foreshadow/
 character_note/character_custom_field/episode 의 v1: 암호문 컬럼을 SELECT하지 않는다.
-vector_search(episode_chunk + embedding)와 timeline은 평문 예외 영역이라 DB 직접 SELECT 유지.
+vector_search(episode_chunk + embedding) 만 평문 예외 영역으로 DB 직접 SELECT 유지.
+
+KMS 통합 작업(별도 plan)에서는 페이로드 의존 부분이 일부 서버 KMS 직접 SELECT 패턴으로
+재설계 가능. 현재는 페이로드 흐름 유지.
+
+Clean-up Phase (2026-05) 변경:
+- timeline 섹션 제거 — timeline_extractor 결정론 모듈 폐기와 함께 정리
+- RECENT_RAW_LIMIT/VECTOR_SEARCH_LIMIT 의 'draft' 하위호환 키 제거
+- _fetch_recent_summaries 빈 함수 제거 (Phase 1에서 episode_summary 활성화 시 신규 작성)
 """
 
 from __future__ import annotations
@@ -41,29 +48,26 @@ from app.services.chunker import count_tokens
 from app.services.providers import get_embedder
 from app.services.settings_loader import load_settings
 from app.services.text_extractor import extract_plain_text
-from app.services.timeline_extractor import build_timeline
 
 TOKEN_BUDGET = 40_000
 
 PRIORITY_1_LABEL = "recent_raw"
 
 
+# 호출처 (drafts.py·reviews.py) 가 명시하는 mode 만 지원.
+# 'draft' 하위호환 키는 Clean-up Phase (2026-05) 에서 제거됨.
 RECENT_RAW_LIMIT = {
-    "draft": 4,           # 하위 호환 기본값
     "draft_sonnet": 2,
     "draft_opus": 4,
     "review": 1,
 }
 VECTOR_SEARCH_LIMIT = {
-    "draft": 15,          # 하위 호환 기본값
     "draft_sonnet": 10,
     "draft_opus": 15,
     "review": 5,
 }
 # 복선(foreshadows)을 컨텍스트에 포함할지 여부 — 초안에서는 제거(작가 주도 영역)
 FORESHADOWS_MODES = {"review"}
-# 회차별 시간 표지(타임라인) 메타데이터를 prompt에 주입할지 — 검수의 시간 충돌 검출용
-TIMELINE_MODES = {"review"}
 
 # 캐릭터 서브노트(외형/성격/MBTI 등) 본문 문자 제한
 SUBNOTE_TRUNC = 150
@@ -107,10 +111,14 @@ async def assemble_context(
     writer_id: str,
     storyline: str,
     current_episode_num: int,
-    mode: str = "draft",
+    mode: str,
 ) -> str:
-    recent_raw_limit = RECENT_RAW_LIMIT.get(mode, RECENT_RAW_LIMIT["draft"])
-    vector_search_limit = VECTOR_SEARCH_LIMIT.get(mode, VECTOR_SEARCH_LIMIT["draft"])
+    if mode not in RECENT_RAW_LIMIT:
+        raise ValueError(
+            f"unknown rag mode: {mode}. expected one of {list(RECENT_RAW_LIMIT.keys())}"
+        )
+    recent_raw_limit = RECENT_RAW_LIMIT[mode]
+    vector_search_limit = VECTOR_SEARCH_LIMIT[mode]
     include_foreshadows = mode in FORESHADOWS_MODES
 
     async with async_session() as session:
@@ -126,13 +134,8 @@ async def assemble_context(
             sections["world_notes"] = settings_bundle["world_notes_text"]
         if include_foreshadows:
             sections["foreshadows"] = _format_foreshadows(payload.foreshadows)
-        if mode in TIMELINE_MODES:
-            # timeline은 episode.content에 의존하지만 v1: 암호문이면 markers 매칭이
-            # 빈 결과로 fallback된다. 페이로드로 옮기면 검수 대상 이전 모든 회차를
-            # 보내야 해서 페이로드가 폭발적으로 커지므로 PR5 범위에서는 DB 직접 유지.
-            sections["timeline"] = await build_timeline(
-                session, work_id, current_episode_num
-            )
+        # timeline 섹션은 Clean-up Phase (2026-05) 에서 폐기됨 (timeline_extractor 결정론 모듈과 함께).
+        # 회상·시간 흐름 검수는 LLM 이 본문 맥락에서 직접 판단한다.
         sections["storyline"] = _format_storyline(payload.plots)
         recent_raw_text, recent_raw_orders = _format_recent_raw(
             payload.recent_episodes, limit=recent_raw_limit
@@ -373,7 +376,6 @@ def _trim_to_budget(
         ("characters", "## 등장인물"),
         ("world_notes", "## 세계관 설정"),
         ("foreshadows", "## 복선/떡밥"),
-        ("timeline", "## 회차별 시간 흐름"),
         ("storyline", "## 스토리라인"),
         ("recent_raw", "## 최근 회차 원문"),
         ("vector_search", "## 관련 과거 장면"),

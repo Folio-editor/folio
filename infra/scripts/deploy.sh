@@ -53,6 +53,12 @@ sudo mkdir -p /opt/folio/data/{loki,grafana,promtail-positions}
 sudo chown -R 10001:10001 /opt/folio/data/loki
 sudo chown -R 472:472 /opt/folio/data/grafana
 
+# Vault 데이터 디렉토리 (curious-wiggling-thacker plan V-1).
+# 컨테이너는 root 로 실행되지만 데이터 디렉토리 권한 명시 (idempotent).
+# 최초 1회: bash infra/scripts/vault-init.sh 실행 후 출력 토큰을 Doppler 에 등록할 것.
+sudo mkdir -p /opt/folio/data/vault
+sudo chmod 700 /opt/folio/data/vault
+
 # ─── 2. Doppler에서 시크릿 다운로드 ─────────────────────────
 echo "[deploy] Downloading secrets from Doppler..."
 doppler secrets download --project folio --config prd --no-file --format env > .env
@@ -63,6 +69,21 @@ echo "[deploy] Pulling images for $NEXT..."
 docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env pull
 
 # ─── 4. 새 색상 컨테이너 기동 ────────────────────────────────
+# Vault 컨테이너는 base compose 에 정의되어 있어 자동 기동되지만,
+# 최초 기동 시 미초기화/봉인 상태 → backend (FOLIO_VAULT_ENABLED=true) 가 즉시 fail-fast.
+# 운영자가 vault-init.sh / vault-unseal.sh 를 먼저 실행해야 한다는 사실을 명시.
+echo "[deploy] Ensuring vault container is up..."
+docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env up -d vault < /dev/null
+sleep 3
+if ! bash "${SCRIPT_DIR}/vault-status.sh" folio-vault-prod; then
+  echo ""
+  echo "[deploy] ✗ Vault 가 준비되지 않음. backend 기동 중단."
+  echo "        최초 1회: ssh ec2 → bash /opt/folio/S14P31F203/infra/scripts/vault-init.sh"
+  echo "        재기동:   ssh ec2 → bash /opt/folio/S14P31F203/infra/scripts/vault-unseal.sh --interactive"
+  echo "        그 후 deploy 재시도."
+  exit 2
+fi
+
 echo "[deploy] Starting $NEXT containers..."
 docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env up -d
 

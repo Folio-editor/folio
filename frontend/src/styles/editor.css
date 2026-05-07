@@ -197,6 +197,40 @@
   border-radius: 2px;
 }
 
+/* ── 맞춤법 하이라이트 (Decoration.inline → 단어 단위) ──
+   카테고리별로 물결 밑줄 색상 분리 (typo 빨강 / spacing 주황 / punctuation 파랑).
+   적용 버튼 누르면 aiSessionStore 가 issue 인덱스를 applied 로 마크 → 그 issue 의
+   하이라이트는 자동 제거된다 (extension 의 buildDecorations 가 applied 를 skip). */
+.folio-editor .spellcheck-issue {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+  cursor: help;
+  transition: background-color 120ms ease;
+}
+.folio-editor .spellcheck-issue-typo {
+  text-decoration-color: #dc2626; /* red-600 */
+}
+.folio-editor .spellcheck-issue-spacing {
+  text-decoration-color: #ea580c; /* orange-600 */
+}
+.folio-editor .spellcheck-issue-punctuation {
+  text-decoration-color: #2563eb; /* blue-600 */
+}
+.folio-editor .spellcheck-issue-hovered {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+.folio-editor .spellcheck-issue-typo.spellcheck-issue-hovered {
+  background-color: rgba(220, 38, 38, 0.15);
+}
+.folio-editor .spellcheck-issue-spacing.spellcheck-issue-hovered {
+  background-color: rgba(234, 88, 12, 0.15);
+}
+.folio-editor .spellcheck-issue-punctuation.spellcheck-issue-hovered {
+  background-color: rgba(37, 99, 235, 0.15);
+}
+
 /* ── 검수 번호 배지 ── */
 .folio-editor [data-review-badge] {
   position: relative;

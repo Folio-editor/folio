@@ -126,6 +126,39 @@ services:
     networks:
       - folio-net
 
+  # ─── Vault (Transit Engine — envelope encryption) ──────────
+  # curious-wiggling-thacker plan V-1. AI 인덱싱이 server_encrypted_dek 를 wrap/unwrap 할 때 사용.
+  # 외부 통신 0 (folio-net 내부 전용). 외부 포트 노출 금지.
+  # 운영 절차:
+  #   - 최초 1회: bash /opt/folio/S14P31F203/infra/scripts/vault-init.sh
+  #              → 출력 VAULT_TOKEN 을 Doppler prd config 에 등록
+  #              → /opt/folio/data/vault/.init.secrets 를 EC2 외부로 이동
+  #   - 컨테이너 재기동 시: bash infra/scripts/vault-unseal.sh --interactive
+  #     (봉인 동안 AI 인덱싱만 정지, 클라이언트 R/W·기존 검수·초안 호출은 영향 0)
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: folio-vault-prod
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ../vault/config:/vault/config:ro
+      - /opt/folio/data/vault:/vault/data
+    # docker-entrypoint.sh 의 'server' shortcut 우회 (dev-listen-address 자동 추가로
+    # 포트 충돌 발생). raw vault 바이너리 직접 실행.
+    entrypoint: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    command: []
+    healthcheck:
+      # sealed (503) 도 살아있는 것으로 간주 — 운영자가 unseal 해야 동작
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--spider", "http://127.0.0.1:8200/v1/sys/health?sealedcode=200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+
   # ─── PowerSync ──────────────────────────────────────────────
   powersync:
     image: journeyapps/powersync-service:latest

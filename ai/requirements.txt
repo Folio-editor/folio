@@ -1,3 +1,5 @@
 tiktoken>=0.7.0
 openai>=1.0.0
 python-dotenv>=1.0.0
+prometheus-client>=0.20
+prometheus-fastapi-instrumentator>=7.0.0

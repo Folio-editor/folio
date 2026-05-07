@@ -1,12 +1,28 @@
 package com.storyzip.sync.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.storyzip.ai.client.AiClient;
+import com.storyzip.ai.client.dto.EpisodePipelineRequest;
+import com.storyzip.ai.client.dto.EpisodePipelineResponse;
+import com.storyzip.common.exception.AiException;
+import com.storyzip.payment.domain.SubscriptionStatus;
+import com.storyzip.payment.repository.SubscriptionRepository;
 import com.storyzip.sync.domain.*;
 import com.storyzip.sync.domain.Character;
 import com.storyzip.sync.dto.SyncUploadRequest;
 import com.storyzip.sync.repository.*;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.time.Duration;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -32,11 +48,11 @@ import java.util.function.Consumer;
  * updated_at은 항상 서버 시각으로 갱신한다.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class SyncService {
 
     private final WorkRepository workRepo;
-    private final PlanRepository planRepo;
     private final PlanNoteRepository planNoteRepo;
     private final WorldNoteRepository worldNoteRepo;
     private final CharacterRepository characterRepo;
@@ -50,7 +66,39 @@ public class SyncService {
     private final ForeshadowLinkRepository foreshadowLinkRepo;
     private final IdeaArchiveRepository ideaArchiveRepo;
 
-    @Transactional
+    /**
+     * Vault Transit 인덱싱 트리거 (curious-wiggling-thacker plan V-6).
+     * server_encrypted_dek 가 발급된 작품의 episode 가 변경되면 AI 인덱싱 자동 호출.
+     * AiClient 빈이 없는 환경 (test profile 등) 에서도 SyncService 가 기동되도록 ObjectProvider.
+     */
+    private final ObjectProvider<AiClient> aiClientProvider;
+
+    /**
+     * 프리미엄 구독 게이팅 (curious-wiggling-thacker R-9).
+     * episode_summary 자동 생성은 ACTIVE 구독자에 한해 발화. ObjectProvider 로 test profile 호환.
+     */
+    private final ObjectProvider<SubscriptionRepository> subscriptionRepoProvider;
+
+    /**
+     * 동일 episode 5초 내 재호출 무시 — 한 번의 sync batch 에 episode PUT + 다른 PATCH 가
+     * 같이 도착해도 인덱싱은 1회만 수행.
+     */
+    private Cache<UUID, Long> episodeIndexDebounce;
+
+    @PostConstruct
+    void initDebounce() {
+        episodeIndexDebounce = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(5))
+                .maximumSize(10_000)
+                .build();
+    }
+
+    /**
+     * entry 1건을 독립 트랜잭션으로 처리.
+     * REQUIRES_NEW로 격리하여 한 entry의 실패가 다른 entry에 영향을 주지 않도록 한다.
+     * SyncController는 DataIntegrityViolationException을 swallow하여 폭주를 방지한다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void process(SyncUploadRequest req, UUID writerId) {
         UUID id = UUID.fromString(req.id());
         String op = req.op();
@@ -59,18 +107,17 @@ public class SyncService {
 
         switch (table) {
             case "work" -> processWork(op, id, data, writerId);
-            case "plan" -> processPlan(op, id, data, writerId);
             case "plan_note" -> processPlanNote(op, id, data, writerId);
             case "world_note" -> processWorldNote(op, id, data, writerId);
             case "character" -> processCharacter(op, id, data, writerId);
             case "character_note" -> processCharacterNote(op, id, data, writerId);
-            case "character_custom_field" -> processCharacterCustomField(op, id, data);
-            case "character_tag" -> processCharacterTag(op, id, data);
+            case "character_custom_field" -> processCharacterCustomField(op, id, data, writerId);
+            case "character_tag" -> processCharacterTag(op, id, data, writerId);
             case "plot" -> processPlot(op, id, data, writerId);
             case "episode" -> processEpisode(op, id, data, writerId);
-            case "plot_episode_link" -> processPlotEpisodeLink(op, id, data);
+            case "plot_episode_link" -> processPlotEpisodeLink(op, id, data, writerId);
             case "foreshadow" -> processForeshadow(op, id, data, writerId);
-            case "foreshadow_link" -> processForeshadowLink(op, id, data);
+            case "foreshadow_link" -> processForeshadowLink(op, id, data, writerId);
             case "idea_archive" -> processIdeaArchive(op, id, data, writerId);
             default -> throw new IllegalArgumentException("Unknown sync table: " + table);
         }
@@ -78,8 +125,12 @@ public class SyncService {
 
     // ── work ────────────────────────────────────────────────────
     private void processWork(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { workRepo.deleteById(id); return; }
         Work e = workRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "work", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) workRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;  // PATCH 대상 없음 — 무시
             e = Work.builder().id(id).build();
@@ -90,8 +141,15 @@ public class SyncService {
         applyStr(data, "description",   e::setDescription);
         applyStr(data, "status",        e::setStatus);
         applyInt(data, "sort_order",    e::setSortOrder);
+        applyStr(data, "genres",        e::setGenres);
+        applyStr(data, "moods",         e::setMoods);
         applyDt(data,  "created_at",    e::setCreatedAt);
         applyBytea(data, "encrypted_dek", e::setEncryptedDek);
+        applyStr(data, "kind", e::setKind);
+        // server_encrypted_dek 는 클라이언트가 직접 만들지 않고 WorkServerDekController 에서
+        // VaultKmsService.encrypt() 로 발급. 그러나 PowerSync sync 페이로드에 포함되어
+        // 다중 디바이스 일관성을 유지하므로 그대로 통과.
+        applyBytea(data, "server_encrypted_dek", e::setServerEncryptedDek);
         e.setUpdatedAt(LocalDateTime.now());
         // 신규 insert인 경우 NOT NULL 기본값 보정
         if (e.getTitle() == null) e.setTitle("제목 없음");
@@ -101,38 +159,16 @@ public class SyncService {
         workRepo.save(e);
     }
 
-    // ── plan ────────────────────────────────────────────────────
-    private void processPlan(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { planRepo.deleteById(id); return; }
-        UUID workId = uuid(data, "work_id");
-        // 1:1 UNIQUE 제약 → work_id로 기존 entity 선 조회, 없으면 id로 조회
-        Plan e = null;
-        if (workId != null) {
-            e = planRepo.findByWorkId(workId).orElse(null);
-        }
-        if (e == null) {
-            e = planRepo.findById(id).orElse(null);
-        }
-        if (e == null) {
-            if ("PATCH".equals(op)) return;  // PATCH 대상 없음 — 무시
-            e = Plan.builder().id(id).build();
-        }
-        e.setWriterId(writerId);
-        applyUuid(data, "work_id", e::setWorkId);
-        applyStr(data,  "slogan",          e::setSlogan);
-        applyStr(data,  "genres",          e::setGenres);
-        applyStr(data,  "moods",           e::setMoods);
-        applyStr(data,  "target_audience", e::setTargetAudience);
-        applyDt(data,   "created_at",      e::setCreatedAt);
-        e.setUpdatedAt(LocalDateTime.now());
-        if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
-        planRepo.save(e);
-    }
-
     // ── plan_note ────────────────────────────────────────────────
+    // (구) plan 테이블·processPlan 은 ERD 정리 2단계로 폐기됨.
+    //   plan_note 가 work_id 를 직접 FK 로 가지고 있어 plan 행 자체가 불필요.
     private void processPlanNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { planNoteRepo.deleteById(id); return; }
         PlanNote e = planNoteRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "plan_note", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) planNoteRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = PlanNote.builder().id(id).build();
@@ -148,14 +184,21 @@ public class SyncService {
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         // FK 대상이 아직 동기화되지 않았으면 skip
-        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) return;
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("plan_note", id, "work_id", e.getWorkId());
+            return;
+        }
         planNoteRepo.save(e);
     }
 
     // ── world_note ───────────────────────────────────────────────
     private void processWorldNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { worldNoteRepo.deleteById(id); return; }
         WorldNote e = worldNoteRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "world_note", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) worldNoteRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = WorldNote.builder().id(id).build();
@@ -171,13 +214,25 @@ public class SyncService {
         if (e.getName() == null) e.setName("새 문서");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("world_note", id, "work_id", e.getWorkId());
+            return;
+        }
+        if (e.getParentId() != null && !worldNoteRepo.existsById(e.getParentId())) {
+            logFkSkip("world_note", id, "parent_id", e.getParentId());
+            return;
+        }
         worldNoteRepo.save(e);
     }
 
     // ── character ────────────────────────────────────────────────
     private void processCharacter(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { characterRepo.deleteById(id); return; }
         Character e = characterRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "character", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) characterRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = Character.builder().id(id).build();
@@ -196,13 +251,21 @@ public class SyncService {
         if (e.getAge() == null) e.setAge("");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("character", id, "work_id", e.getWorkId());
+            return;
+        }
         characterRepo.save(e);
     }
 
     // ── character_note ────────────────────────────────────────────
     private void processCharacterNote(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { characterNoteRepo.deleteById(id); return; }
         CharacterNote e = characterNoteRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "character_note", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) characterNoteRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = CharacterNote.builder().id(id).build();
@@ -220,14 +283,26 @@ public class SyncService {
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         // FK 대상이 아직 동기화되지 않았으면 skip
-        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) {
+            logFkSkip("character_note", id, "character_id", e.getCharacterId());
+            return;
+        }
         characterNoteRepo.save(e);
     }
 
     // ── character_custom_field ────────────────────────────────────
-    private void processCharacterCustomField(String op, UUID id, Map<String, Object> data) {
-        if ("DELETE".equals(op)) { charCustomFieldRepo.deleteById(id); return; }
+    private void processCharacterCustomField(String op, UUID id, Map<String, Object> data, UUID writerId) {
         CharacterCustomField e = charCustomFieldRepo.findById(id).orElse(null);
+        // writer_id 컬럼이 없으므로 부모 character의 writer_id로 소유권 검증
+        UUID parentCharacterId = e != null ? e.getCharacterId() : uuid(data, "character_id");
+        if (parentCharacterId != null) {
+            Character parent = characterRepo.findById(parentCharacterId).orElse(null);
+            if (parent != null && !ownsEntity(writerId, parent.getWriterId(), "character_custom_field", id)) return;
+        }
+        if ("DELETE".equals(op)) {
+            if (e != null) charCustomFieldRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = CharacterCustomField.builder().id(id).build();
@@ -242,14 +317,36 @@ public class SyncService {
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         // FK 대상이 아직 동기화되지 않았으면 skip
-        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) {
+            logFkSkip("character_custom_field", id, "character_id", e.getCharacterId());
+            return;
+        }
         charCustomFieldRepo.save(e);
     }
 
     // ── character_tag ─────────────────────────────────────────────
-    private void processCharacterTag(String op, UUID id, Map<String, Object> data) {
-        if ("DELETE".equals(op)) { charTagRepo.deleteById(id); return; }
-        CharacterTag e = charTagRepo.findById(id).orElse(null);
+    private void processCharacterTag(String op, UUID id, Map<String, Object> data, UUID writerId) {
+        // (character_id, world_note_id) 복합 UNIQUE 제약 → 같은 페어로 살아있는 row가 있으면
+        // id가 달라도 그것을 update 대상으로 재사용. processPlotEpisodeLink 동일 패턴.
+        UUID characterId = uuid(data, "character_id");
+        UUID worldNoteId = uuid(data, "world_note_id");
+        CharacterTag e = null;
+        if (characterId != null && worldNoteId != null) {
+            e = charTagRepo.findByCharacterIdAndWorldNoteId(characterId, worldNoteId).orElse(null);
+        }
+        if (e == null) {
+            e = charTagRepo.findById(id).orElse(null);
+        }
+        // writer_id 미보유 → 부모 character의 writer_id로 소유권 검증
+        UUID parentCharacterId = e != null ? e.getCharacterId() : characterId;
+        if (parentCharacterId != null) {
+            Character parent = characterRepo.findById(parentCharacterId).orElse(null);
+            if (parent != null && !ownsEntity(writerId, parent.getWriterId(), "character_tag", id)) return;
+        }
+        if ("DELETE".equals(op)) {
+            if (e != null) charTagRepo.deleteById(e.getId());
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = CharacterTag.builder().id(id).build();
@@ -259,14 +356,25 @@ public class SyncService {
         applyDt(data,   "created_at",    e::setCreatedAt);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         // FK 대상이 아직 동기화되지 않았으면 skip
-        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) return;
+        if (e.getCharacterId() != null && !characterRepo.existsById(e.getCharacterId())) {
+            logFkSkip("character_tag", id, "character_id", e.getCharacterId());
+            return;
+        }
+        if (e.getWorldNoteId() != null && !worldNoteRepo.existsById(e.getWorldNoteId())) {
+            logFkSkip("character_tag", id, "world_note_id", e.getWorldNoteId());
+            return;
+        }
         charTagRepo.save(e);
     }
 
     // ── plot ─────────────────────────────────────────────────────
     private void processPlot(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { plotRepo.deleteById(id); return; }
         Plot e = plotRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "plot", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) plotRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = Plot.builder().id(id).build();
@@ -283,13 +391,27 @@ public class SyncService {
         if (e.getTitle() == null) e.setTitle("제목 없음");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("plot", id, "work_id", e.getWorkId());
+            return;
+        }
+        if (e.getParentId() != null && !plotRepo.existsById(e.getParentId())) {
+            logFkSkip("plot", id, "parent_id", e.getParentId());
+            return;
+        }
         plotRepo.save(e);
     }
 
     // ── episode ───────────────────────────────────────────────────
     private void processEpisode(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { episodeRepo.deleteById(id); return; }
         Episode e = episodeRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "episode", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) episodeRepo.deleteById(id);
+            return;
+        }
+        // R-6 B-3: status 가 'completed' 로 *새로 진입* 한 경우만 요약 트리거. 매 PUT/PATCH 폭주 방지.
+        String prevStatus = (e != null) ? e.getStatus() : null;
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = Episode.builder().id(id).build();
@@ -309,17 +431,164 @@ public class SyncService {
         if (e.getWordCount() == null) e.setWordCount(0);
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("episode", id, "work_id", e.getWorkId());
+            return;
+        }
+        if (e.getParentId() != null && !episodeRepo.existsById(e.getParentId())) {
+            logFkSkip("episode", id, "parent_id", e.getParentId());
+            return;
+        }
         episodeRepo.save(e);
 
-        // Plan C: episode.content는 클라이언트가 work_key로 AES-GCM 암호화한 v1: 페이로드로 도착한다.
-        // 서버는 평문을 못 보므로 임베딩/인덱싱 트리거를 비활성화 — 클라이언트 측 인덱싱으로 이전 예정.
+        // Vault Transit 전환 (curious-wiggling-thacker plan V-6):
+        // server_encrypted_dek 가 발급된 작품에 한해 AI 인덱싱 파이프라인 자동 호출.
+        // - server_encrypted_dek NULL 인 작품 (오프라인 신규, pending) 은 skip → 발급 후 다음 sync 때 자동 동작
+        // - 본문은 ciphertext 로만 서버에 저장됨 → AI 서버가 internal API 로 평문 fetch (V-7)
+        // - 동일 episode 5초 내 재호출 디바운스 (PUT + PATCH 연속 도착 흡수)
+        log.info("[AI-TRACE] processEpisode saved episode={} prevStatus={} newStatus={} workId={} writerId={}",
+                id, prevStatus, e.getStatus(), e.getWorkId(), writerId);
+        triggerEpisodeIndexingAfterCommit(id, e.getWorkId(), writerId);
+        triggerEpisodeSummaryAfterCommit(id, e.getWorkId(), writerId, prevStatus, e.getStatus());
+    }
+
+    /**
+     * R-6 / R-9 — episode.status 가 'completed' 로 새로 진입한 경우만 episode_summary 발화.
+     * 가드:
+     *  - prev != 'completed' && new == 'completed' (status 변경 시점만)
+     *  - ACTIVE 구독자 (프리미엄 게이팅)
+     *  - server_encrypted_dek 발급 완료 (Vault 복호화 가능)
+     */
+    private void triggerEpisodeSummaryAfterCommit(
+            UUID episodeId, UUID workId, UUID writerId,
+            String prevStatus, String newStatus) {
+        if (workId == null) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=workId_null", episodeId);
+            return;
+        }
+        // 프론트 STATUS_OPTIONS (EpisodeEditScreen.tsx:39-44) 와 동일한 한글 값 사용:
+        //   미작성 / 초고 / 퇴고 / 완성  → '완성' 진입 시점 1회만 요약 트리거.
+        if (!"완성".equals(newStatus)) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=newStatus_not_완성 actual={}", episodeId, newStatus);
+            return;
+        }
+        if ("완성".equals(prevStatus)) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=already_완성", episodeId);
+            return;
+        }
+
+        AiClient aiClient = aiClientProvider.getIfAvailable();
+        if (aiClient == null) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=AiClient_bean_missing", episodeId);
+            return;
+        }
+
+        // 프리미엄 구독 체크 (R-9)
+        SubscriptionRepository subRepo = subscriptionRepoProvider.getIfAvailable();
+        if (subRepo == null) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=SubscriptionRepo_missing", episodeId);
+            return;
+        }
+        boolean active = subRepo.findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE).isPresent();
+        if (!active) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=subscription_inactive writer={}", episodeId, writerId);
+            return;
+        }
+
+        // server_encrypted_dek 발급 여부 (B-4)
+        Boolean ready = workRepo.findById(workId)
+                .map(w -> w.getServerEncryptedDek() != null)
+                .orElse(false);
+        if (!Boolean.TRUE.equals(ready)) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=server_encrypted_dek_null work={}", episodeId, workId);
+            return;
+        }
+        log.info("[AI-TRACE] pipeline=summary trigger episode={} workId={}", episodeId, workId);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { invokeAiSummary(aiClient, episodeId, workId, writerId); }
+            });
+        } else {
+            invokeAiSummary(aiClient, episodeId, workId, writerId);
+        }
+    }
+
+    private void invokeAiSummary(AiClient aiClient, UUID episodeId, UUID workId, UUID writerId) {
+        try {
+            // content 는 null — AI 서버가 internal decrypt API 로 평문 fetch
+            EpisodePipelineResponse resp = aiClient.triggerEpisodeSummary(new EpisodePipelineRequest(
+                    episodeId.toString(), workId.toString(), writerId.toString(), null));
+            log.info("[AI-TRACE] pipeline=summary {} episode={} taskId={} reason={}",
+                    "skipped".equals(resp.status()) ? "skipped" : "success",
+                    episodeId, resp.taskId(), resp.reason());
+        } catch (AiException e) {
+            log.warn("[AI-TRACE] pipeline=summary fail episode={} errType=AiException errMsg={}",
+                    episodeId, e.getMessage());
+        } catch (Exception e) {
+            log.warn("[AI-TRACE] pipeline=summary fail episode={} errType={} errMsg={}",
+                    episodeId, e.getClass().getSimpleName(), e.getMessage());
+        }
+    }
+
+    private void triggerEpisodeIndexingAfterCommit(UUID episodeId, UUID workId, UUID writerId) {
+        if (workId == null) {
+            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=workId_null", episodeId);
+            return;
+        }
+        AiClient aiClient = aiClientProvider.getIfAvailable();
+        if (aiClient == null) {
+            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=AiClient_bean_missing", episodeId);
+            return;
+        }
+        Long last = episodeIndexDebounce.getIfPresent(episodeId);
+        long now = System.currentTimeMillis();
+        if (last != null && (now - last) < 5_000) {
+            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=debounce_5s", episodeId);
+            return;
+        }
+        episodeIndexDebounce.put(episodeId, now);
+
+        // server_encrypted_dek 발급 여부 확인 (없으면 AI 서버가 본문 복호화 불가)
+        Boolean ready = workRepo.findById(workId)
+                .map(w -> w.getServerEncryptedDek() != null)
+                .orElse(false);
+        if (!Boolean.TRUE.equals(ready)) {
+            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=server_encrypted_dek_null work={}", episodeId, workId);
+            return;
+        }
+        log.info("[AI-TRACE] pipeline=indexing trigger episode={} workId={}", episodeId, workId);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { invokeAi(aiClient, episodeId, workId, writerId); }
+            });
+        } else {
+            invokeAi(aiClient, episodeId, workId, writerId);
+        }
+    }
+
+    private void invokeAi(AiClient aiClient, UUID episodeId, UUID workId, UUID writerId) {
+        try {
+            // content 는 null — AI 서버가 internal decrypt API 로 평문 fetch (V-7)
+            EpisodePipelineResponse resp = aiClient.triggerEpisodePipeline(new EpisodePipelineRequest(
+                    episodeId.toString(), workId.toString(), writerId.toString(), null));
+            log.info("[AI-TRACE] pipeline=indexing {} episode={} taskId={} reason={}",
+                    "skipped".equals(resp.status()) ? "skipped" : "success",
+                    episodeId, resp.taskId(), resp.reason());
+        } catch (AiException e) {
+            log.warn("[AI-TRACE] pipeline=indexing fail episode={} errType=AiException errMsg={}",
+                    episodeId, e.getMessage());
+        } catch (Exception e) {
+            log.warn("[AI-TRACE] pipeline=indexing fail episode={} errType={} errMsg={}",
+                    episodeId, e.getClass().getSimpleName(), e.getMessage());
+        }
     }
 
     // ── plot_episode_link ─────────────────────────────────────────
-    private void processPlotEpisodeLink(String op, UUID id, Map<String, Object> data) {
-        if ("DELETE".equals(op)) { plotEpisodeLinkRepo.deleteById(id); return; }
+    private void processPlotEpisodeLink(String op, UUID id, Map<String, Object> data, UUID writerId) {
         // plot_id, episode_id 모두 UNIQUE 제약 → 같은 plot/episode로 살아있는 row가 있으면
-        // id가 달라도 그것을 update 대상으로 재사용. processPlan과 동일 패턴.
+        // id가 달라도 그것을 update 대상으로 재사용. character_tag 와 동일 패턴.
         UUID plotId    = uuid(data, "plot_id");
         UUID episodeId = uuid(data, "episode_id");
         PlotEpisodeLink e = null;
@@ -332,6 +601,16 @@ public class SyncService {
         if (e == null) {
             e = plotEpisodeLinkRepo.findById(id).orElse(null);
         }
+        // writer_id 미보유 → 부모 plot의 writer_id로 소유권 검증
+        UUID parentPlotId = e != null ? e.getPlotId() : plotId;
+        if (parentPlotId != null) {
+            Plot parent = plotRepo.findById(parentPlotId).orElse(null);
+            if (parent != null && !ownsEntity(writerId, parent.getWriterId(), "plot_episode_link", id)) return;
+        }
+        if ("DELETE".equals(op)) {
+            if (e != null) plotEpisodeLinkRepo.deleteById(e.getId());
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = PlotEpisodeLink.builder().id(id).build();
@@ -341,15 +620,25 @@ public class SyncService {
         applyDt(data,   "created_at", e::setCreatedAt);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
         // FK 대상이 아직 동기화되지 않았으면 skip — 다음 sync 사이클에서 재시도
-        if (e.getPlotId() != null && !plotRepo.existsById(e.getPlotId())) return;
-        if (e.getEpisodeId() != null && !episodeRepo.existsById(e.getEpisodeId())) return;
+        if (e.getPlotId() != null && !plotRepo.existsById(e.getPlotId())) {
+            logFkSkip("plot_episode_link", id, "plot_id", e.getPlotId());
+            return;
+        }
+        if (e.getEpisodeId() != null && !episodeRepo.existsById(e.getEpisodeId())) {
+            logFkSkip("plot_episode_link", id, "episode_id", e.getEpisodeId());
+            return;
+        }
         plotEpisodeLinkRepo.save(e);
     }
 
     // ── foreshadow ────────────────────────────────────────────────
     private void processForeshadow(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { foreshadowRepo.deleteById(id); return; }
         Foreshadow e = foreshadowRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "foreshadow", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) foreshadowRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = Foreshadow.builder().id(id).build();
@@ -368,13 +657,26 @@ public class SyncService {
         if (e.getImportance() == null) e.setImportance("중");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("foreshadow", id, "work_id", e.getWorkId());
+            return;
+        }
         foreshadowRepo.save(e);
     }
 
     // ── foreshadow_link ───────────────────────────────────────────
-    private void processForeshadowLink(String op, UUID id, Map<String, Object> data) {
-        if ("DELETE".equals(op)) { foreshadowLinkRepo.deleteById(id); return; }
+    private void processForeshadowLink(String op, UUID id, Map<String, Object> data, UUID writerId) {
         ForeshadowLink e = foreshadowLinkRepo.findById(id).orElse(null);
+        // writer_id 미보유 → 부모 foreshadow의 writer_id로 소유권 검증
+        UUID parentForeshadowId = e != null ? e.getForeshadowId() : uuid(data, "foreshadow_id");
+        if (parentForeshadowId != null) {
+            Foreshadow parent = foreshadowRepo.findById(parentForeshadowId).orElse(null);
+            if (parent != null && !ownsEntity(writerId, parent.getWriterId(), "foreshadow_link", id)) return;
+        }
+        if ("DELETE".equals(op)) {
+            if (e != null) foreshadowLinkRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = ForeshadowLink.builder().id(id).build();
@@ -387,15 +689,30 @@ public class SyncService {
         applyDt(data,    "created_at",   e::setCreatedAt);
         if (e.getLinkType() == null) e.setLinkType("");
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
-        // FK 대상이 아직 동기화되지 않았으면 skip — 다음 sync 사이클에서 재시도
-        if (e.getForeshadowId() != null && !foreshadowRepo.existsById(e.getForeshadowId())) return;
+        // foreshadow_id는 NOT NULL FK — 미존재 시 skip
+        if (e.getForeshadowId() != null && !foreshadowRepo.existsById(e.getForeshadowId())) {
+            logFkSkip("foreshadow_link", id, "foreshadow_id", e.getForeshadowId());
+            return;
+        }
+        // episode_id/plot_id는 nullable + ON DELETE SET NULL — dangling 참조면 null로 정리.
+        // 둘 다 null이 되면 CHECK 제약 위반 → Controller에서 swallow됨 (의도된 동작).
+        if (e.getEpisodeId() != null && !episodeRepo.existsById(e.getEpisodeId())) {
+            e.setEpisodeId(null);
+        }
+        if (e.getPlotId() != null && !plotRepo.existsById(e.getPlotId())) {
+            e.setPlotId(null);
+        }
         foreshadowLinkRepo.save(e);
     }
 
     // ── idea_archive ──────────────────────────────────────────────
     private void processIdeaArchive(String op, UUID id, Map<String, Object> data, UUID writerId) {
-        if ("DELETE".equals(op)) { ideaArchiveRepo.deleteById(id); return; }
         IdeaArchive e = ideaArchiveRepo.findById(id).orElse(null);
+        if (!ownsEntity(writerId, e != null ? e.getWriterId() : null, "idea_archive", id)) return;
+        if ("DELETE".equals(op)) {
+            if (e != null) ideaArchiveRepo.deleteById(id);
+            return;
+        }
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = IdeaArchive.builder().id(id).build();
@@ -410,10 +727,36 @@ public class SyncService {
         if (e.getContent() == null) e.setContent("");
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+        if (e.getWorkId() != null && !workRepo.existsById(e.getWorkId())) {
+            logFkSkip("idea_archive", id, "work_id", e.getWorkId());
+            return;
+        }
         ideaArchiveRepo.save(e);
     }
 
-    // ── helpers ───────────────────────────────────────────────────
+    // ── ownership / FK helpers ────────────────────────────────────
+    /**
+     * 기존 row의 writer_id가 현재 요청자와 일치하는지 확인.
+     * actualOwner == null인 경우(신규 row)는 통과.
+     * 불일치 시 [SyncSecurity] WARN 로그 + false 반환 → 호출 측에서 silent skip.
+     * 응답으로 알리지 않음(id 열거 공격 방지).
+     */
+    private boolean ownsEntity(UUID currentWriter, UUID actualOwner, String table, UUID id) {
+        if (actualOwner == null) return true;
+        if (!currentWriter.equals(actualOwner)) {
+            log.warn("[SyncSecurity] forbidden cross-user update: writerId={} actualOwner={} table={} id={}",
+                    currentWriter, actualOwner, table, id);
+            return false;
+        }
+        return true;
+    }
+
+    /** [SyncFKSkip] 로그 prefix를 일관되게 출력. */
+    private void logFkSkip(String table, UUID id, String fk, UUID value) {
+        log.warn("[SyncFKSkip] missing parent: table={} id={} fk={} value={}", table, id, fk, value);
+    }
+
+    // ── data accessor helpers ─────────────────────────────────────
     // data에 key가 "존재할 때만" 설정 — PATCH에서 누락된 필드를 null로 덮어쓰는 것을 방지.
     private static void applyStr(Map<String, Object> data, String key, Consumer<String> setter) {
         if (data.containsKey(key)) {
@@ -469,7 +812,8 @@ public class SyncService {
         } catch (Exception e) { /* 값 유지 */ }
     }
 
-    // uuid() 헬퍼는 processPlan에서 work_id 조회 시 사용 (findByWorkId)
+    // uuid() 헬퍼: 복합 UNIQUE 제약 entity (character_tag, plot_episode_link 등) 에서
+    // data 의 컬럼 값으로 기존 entity 를 미리 조회할 때 사용.
     private UUID uuid(Map<String, Object> data, String key) {
         Object v = data.get(key);
         return v != null ? UUID.fromString(v.toString()) : null;

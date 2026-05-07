@@ -16,7 +16,6 @@ import type {
   Writer,
 } from '../../shared/types/auth';
 import { createWebExportApi } from './export/exportApi';
-import { webOpenBillingAuth, webOpenOneTime } from './payment/webCheckout';
 import {
   clearWebMaterial,
   loadWebMaterial,
@@ -271,14 +270,6 @@ export function createWebFolioApi(): FolioApi {
       saveMaterial: saveWebMaterial,
       loadMaterial: loadWebMaterial,
       clearMaterial: clearWebMaterial,
-    },
-    payment: {
-      // 웹은 별창을 띄울 수 없으므로 토스 SDK가 풀페이지 redirect로 진행한다.
-      // 결과는 /checkout/success | /checkout/fail 라우트가 받아 백엔드 confirm/create를
-      // 직접 호출한 뒤 원래 페이지로 location.replace + sessionStorage 결과 전달.
-      // → 본 함수의 Promise는 redirect로 끊기므로 정상 흐름에서는 resolve되지 않는다.
-      openOneTime: webOpenOneTime,
-      openBillingAuth: webOpenBillingAuth,
     },
     updater: {
       // 웹은 자동 업데이트 대상이 아님 — 브라우저가 알아서 새 버전을 로드.

@@ -11,6 +11,7 @@ import { TextStyle, FontFamily, FontSize } from '@tiptap/extension-text-style';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
 import { useEditorToolbarStore } from '../../stores/editorToolbarStore';
+import { registerEditor, unregisterEditor } from '../../lib/activeEditorRegistry';
 import SceneBreak from './extensions/SceneBreak';
 import KoreanPunctuation from './extensions/KoreanPunctuation';
 import AutoPairQuotes from './extensions/AutoPairQuotes';
@@ -20,13 +21,15 @@ import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
 import ReviewHighlight from './extensions/ReviewHighlight';
+import SpellcheckHighlight from './extensions/SpellcheckHighlight';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
+import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { UnifiedEditorToolbar } from './UnifiedEditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
 import EditorSettingsPanel from './EditorSettingsPanel';
 import EditorFindReplace from './EditorFindReplace';
-import EditorShortcutHelp from './EditorShortcutHelp';
+import { useHelpModalStore } from '../../stores/helpModalStore';
 import { analytics, charCountBucket, deltaCharCountBucket, editDurationBucket } from '../../lib/analytics';
 
 interface ContentEditorProps {
@@ -42,7 +45,9 @@ interface ContentEditorProps {
   onCharCountChange?: (count: number) => void;
 }
 
-const DEFAULT_DEBOUNCE_MS = 3000;
+// Plan C 결정 3 — onUpdate 디바운스 300~500ms 범위. 빠른 타이핑 시 매 키스트로크마다
+// AES-GCM 암호화 + db.execute(UPDATE) + PowerSync CRUD 큐 적재가 발생하므로 400ms로 일괄.
+const DEFAULT_DEBOUNCE_MS = 400;
 
 export function ContentEditor({
   itemId,
@@ -74,7 +79,7 @@ export function ContentEditor({
   const [sessionStartChars, setSessionStartChars] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
-  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const openShortcutHelp = useHelpModalStore((s) => s.openShortcutHelp);
   const editStartedRef = useRef(false);
   const editSessionStartRef = useRef<number | null>(null);
   const charCountRef = useRef(0);
@@ -124,6 +129,7 @@ export function ContentEditor({
         FocusMode.configure({ enabled: settings.focusMode }),
         FindReplace,
         ReviewHighlight,
+        SpellcheckHighlight,
       ],
       content: parseContent(initialContent),
       onUpdate: ({ editor: ed }) => {
@@ -300,6 +306,32 @@ export function ContentEditor({
     };
   }, []);
 
+  // 우측 패널(맞춤법 검사 등)에서 이 에디터에 명령을 보낼 수 있도록 itemId로 인스턴스 등록
+  useEffect(() => {
+    if (!editor) return;
+    registerEditor(itemId, editor);
+    return () => unregisterEditor(itemId, editor);
+  }, [editor, itemId]);
+
+  // SpellcheckHighlight extension에 현재 회차 id 주입.
+  // 이 에디터의 itemId가 spellcheckTargetEpisode.id와 일치할 때만 하이라이트가 그려진다.
+  useEffect(() => {
+    if (!editor) return;
+    editor.storage.spellcheckHighlight.itemId = itemId;
+    editor.commands.triggerSpellcheckHighlightRebuild();
+  }, [editor, itemId]);
+
+  // aiSessionStore의 spellcheckVersion이 바뀌면(결과 도착/적용/hover) 하이라이트 재계산 트리거.
+  useEffect(() => {
+    if (!editor) return;
+    const unsub = useAiSessionStore.subscribe((state, prev) => {
+      if (state.spellcheckVersion !== prev.spellcheckVersion) {
+        editor.commands.triggerSpellcheckHighlightRebuild();
+      }
+    });
+    return () => unsub();
+  }, [editor]);
+
   // Ctrl+F / Ctrl+H — FindReplace 패널 열기
   // FindReplace extension은 브라우저 기본 동작만 차단하므로 UI 토글은 여기서 직접 처리
   useEffect(() => {
@@ -352,7 +384,7 @@ export function ContentEditor({
             mode="single"
             editor={editor}
             onToggleFindReplace={() => setFindReplaceOpen((v) => !v)}
-            onToggleShortcutHelp={() => setShortcutHelpOpen(true)}
+            onToggleShortcutHelp={openShortcutHelp}
             onToggleSettings={() => setSettingsOpen((v) => !v)}
           />
 
@@ -401,8 +433,7 @@ export function ContentEditor({
         />
       )}
 
-      {/* 단축키 도움말 모달 */}
-      <EditorShortcutHelp open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      {/* 단축키 도움말 모달은 AuthenticatedApp 에서 한 번만 마운트 (글로벌 F1 공유) */}
     </div>
   );
 }

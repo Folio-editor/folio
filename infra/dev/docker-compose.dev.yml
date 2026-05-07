@@ -89,7 +89,7 @@ services:
       - ../powersync/powersync.yaml:/app/powersync.yaml:ro
       - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
     environment:
-      PS_DATA_SOURCE_URI: postgresql://folio_repl:storyzip_repl_dev@postgresql:5432/${DB_NAME:-storyzip}
+      PS_DATA_SOURCE_URI: postgresql://folio_repl:${PS_REPL_PASSWORD:-storyzip_repl_dev}@postgresql:5432/${DB_NAME:-storyzip}
       PS_MONGO_URI: mongodb://mongo:27017/powersync
       PS_JWT_K: ${PS_JWT_K}
     healthcheck:
@@ -104,7 +104,32 @@ services:
       retries: 10
     restart: unless-stopped
 
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: storyzip-vault-dev
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ../vault/config:/vault/config:ro
+      - storyzip-vault-dev:/vault/data
+    # docker-entrypoint.sh 가 'server' 인자를 보면 자동으로 -dev-listen-address=0.0.0.0:8200
+    # 와 -config=/vault/config 를 prepend → 우리 vault.hcl 의 listener 와 충돌
+    # (address already in use). entrypoint 를 우회하여 raw vault 바이너리 직접 실행.
+    entrypoint: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    command: []
+    healthcheck:
+      # 봉인 상태(503)도 살아있는 것으로 간주 — 운영자가 unseal 해야 동작
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--spider", "http://127.0.0.1:8200/v1/sys/health?sealedcode=200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
 volumes:
   storyzip-pgdata-dev:
   storyzip-redis-dev:
   storyzip-mongo-dev:
+  storyzip-vault-dev:

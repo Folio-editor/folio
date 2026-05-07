@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useDraggableRect } from '../../hooks/useDraggableRect';
+import {
+  FONT_SERIF,
+  FONT_MONO,
+  MODAL_SHADOW,
+  FADE_ANIMATION,
+} from '../../constants/folioModalTokens';
 
 interface EditorShortcutHelpProps {
   open: boolean;
@@ -16,6 +22,12 @@ interface ShortcutCategory {
   title: string;
   shortcuts: ShortcutEntry[];
 }
+
+const PERSIST_KEY = 'folio.editorShortcutHelp.rect.v1';
+const DEFAULT_W = 440;
+const DEFAULT_H = 520;
+const MIN_W = 380;
+const MIN_H = 360;
 
 const categories: ShortcutCategory[] = [
   {
@@ -72,7 +84,10 @@ const markdownEntries: MarkdownEntry[] = [
 
 function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="inline-flex h-5 items-center rounded border border-border bg-muted px-1.5 text-[11px] font-mono text-muted-foreground">
+    <kbd
+      className="inline-flex h-[20px] items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10.5px] text-[#111]"
+      style={{ fontFamily: FONT_MONO }}
+    >
       {children}
     </kbd>
   );
@@ -83,111 +98,215 @@ export default function EditorShortcutHelp({
   onClose,
 }: EditorShortcutHelpProps) {
   const [tab, setTab] = useState<'shortcut' | 'markdown'>('shortcut');
+  const drag = useDraggableRect({
+    active: open,
+    initialWidth: DEFAULT_W,
+    initialHeight: DEFAULT_H,
+    minWidth: MIN_W,
+    minHeight: MIN_H,
+    persistKey: PERSIST_KEY,
+  });
 
   useEffect(() => {
     if (!open) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === '1') {
+        e.preventDefault();
+        setTab('shortcut');
+      } else if (e.key === '2') {
+        e.preventDefault();
+        setTab('markdown');
+      }
     };
-
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !drag.rect) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="relative w-full max-w-lg rounded-lg bg-popover p-6 shadow-lg border border-border">
-        {/* Header */}
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">편집 도움말</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+    <div
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="folio-esh-title"
+      data-folio-dialog
+      className="fixed z-50 flex flex-col rounded-[12px] border border-[#d4d4d4] bg-[#fafaf7] text-[#111] overflow-hidden"
+      style={{
+        left: drag.rect.x,
+        top: drag.rect.y,
+        width: drag.rect.w,
+        height: drag.rect.h,
+        boxShadow: MODAL_SHADOW,
+        animation: FADE_ANIMATION,
+      }}
+      onPointerMove={drag.onPointerMove}
+      onPointerUp={drag.onPointerUp}
+      onPointerCancel={drag.onPointerUp}
+    >
+      <style>{`
+        @keyframes folioDialogFade {
+          from { opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [data-folio-dialog] { animation: none !important; }
+        }
+      `}</style>
+
+      {/* Header — 드래그 영역 */}
+      <div
+        className="flex items-start justify-between gap-3 px-7 pt-6 pb-3 cursor-move select-none flex-shrink-0"
+        onPointerDown={drag.startMove}
+      >
+        <div className="flex-1 min-w-0">
+          <div aria-hidden className="mb-2 h-px w-7 bg-[#111] opacity-45" />
+          <div className="mb-1 text-[10.5px] tracking-[0.32em] uppercase text-[#6b6b6b]">
+            Editor · Help
+          </div>
+          <h2
+            id="folio-esh-title"
+            className="m-0 text-[18px] font-semibold leading-[1.35] tracking-[-0.015em] text-[#111]"
+            style={{ fontFamily: FONT_SERIF }}
           >
-            <X size={16} />
-          </button>
+            편집 도움말
+          </h2>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="닫기"
+          className="ml-1 mt-1 px-1.5 py-1 text-[11px] uppercase tracking-[0.2em] text-[#6b6b6b] transition-colors hover:text-[#111]"
+        >
+          닫기 ✕
+        </button>
+      </div>
 
-        {/* Tabs */}
-        <div className="mb-4 flex gap-1 rounded-md border border-border p-0.5">
-          <button
-            type="button"
-            onClick={() => setTab('shortcut')}
-            className={cn(
-              'flex-1 rounded px-3 py-1 text-sm transition-colors',
-              tab === 'shortcut'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-accent/50',
-            )}
-          >
-            단축키
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('markdown')}
-            className={cn(
-              'flex-1 rounded px-3 py-1 text-sm transition-colors',
-              tab === 'markdown'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-accent/50',
-            )}
-          >
-            마크다운
-          </button>
-        </div>
+      {/* Tabs */}
+      <nav
+        role="tablist"
+        aria-label="도움말 분류"
+        className="flex items-center gap-[18px] border-b border-[#e5e5e2] px-7 flex-shrink-0"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'shortcut'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setTab('shortcut')}
+          className={cn(
+            'relative bg-transparent border-0 cursor-pointer px-0 pb-2 pt-1.5 text-[13px] font-medium transition-colors',
+            tab === 'shortcut'
+              ? 'text-[#111] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-[#111]'
+              : 'text-[#6b6b6b] hover:text-[#111]',
+          )}
+        >
+          단축키
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'markdown'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setTab('markdown')}
+          className={cn(
+            'relative bg-transparent border-0 cursor-pointer px-0 pb-2 pt-1.5 text-[13px] font-medium transition-colors',
+            tab === 'markdown'
+              ? 'text-[#111] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-[#111]'
+              : 'text-[#6b6b6b] hover:text-[#111]',
+          )}
+        >
+          마크다운
+        </button>
+        <span className="ml-auto pb-2 pt-1.5 text-[11px] text-[#6b6b6b]">
+          Esc 로 닫기
+        </span>
+      </nav>
 
-        {/* Content */}
-        <div className="max-h-96 space-y-4 overflow-y-auto">
-          {tab === 'shortcut' &&
-            categories.map((category) => (
-              <div key={category.title}>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  {category.title}
-                </h3>
-                <div className="space-y-1">
-                  {category.shortcuts.map((shortcut) => (
-                    <div
-                      key={shortcut.keys}
-                      className="flex items-center justify-between py-1"
-                    >
-                      <span className="text-sm">{shortcut.label}</span>
-                      <div className="flex gap-1">
-                        {shortcut.keys.split('+').map((key, i) => (
-                          <Kbd key={i}>{key}</Kbd>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-          {tab === 'markdown' && (
-            <div>
-              <p className="mb-3 text-xs text-muted-foreground">
-                줄 시작에 입력하면 자동으로 서식이 적용됩니다.
-              </p>
-              <div className="space-y-1">
-                {markdownEntries.map((entry) => (
+      {/* Content */}
+      <div
+        className="flex-1 overflow-y-auto px-7 pt-3 pb-3"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {tab === 'shortcut' &&
+          categories.map((category) => (
+            <div key={category.title} className="mb-4 last:mb-0">
+              <h3 className="m-0 mb-1.5 flex items-center gap-2.5 text-[10.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b]">
+                {category.title}
+                <span aria-hidden className="flex-1 h-px bg-[#e5e5e2]" />
+              </h3>
+              <div>
+                {category.shortcuts.map((shortcut) => (
                   <div
-                    key={entry.syntax}
-                    className="flex items-center justify-between py-1"
+                    key={shortcut.keys}
+                    className="flex items-center justify-between gap-3 py-1"
                   >
-                    <span className="text-sm">{entry.label}</span>
-                    <code className="rounded border border-border bg-muted px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
-                      {entry.syntax}
-                    </code>
+                    <span className="text-[12.5px] leading-[1.5] text-[#111]">
+                      {shortcut.label}
+                    </span>
+                    <span className="inline-flex gap-1">
+                      {shortcut.keys.split('+').map((key, i) => (
+                        <Kbd key={i}>{key}</Kbd>
+                      ))}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
-          )}
-        </div>
+          ))}
+
+        {tab === 'markdown' && (
+          <div>
+            <p
+              className="m-0 mb-2.5 pb-2.5 border-b border-dashed border-[#e5e5e2] text-[12.5px] italic leading-[1.6] text-[#6b6b6b]"
+              style={{ fontFamily: FONT_SERIF }}
+            >
+              줄 시작에 입력하면 자동으로 서식이 적용됩니다.
+            </p>
+            <div>
+              {markdownEntries.map((entry) => (
+                <div
+                  key={entry.syntax}
+                  className="flex items-center justify-between gap-3 py-1"
+                >
+                  <span className="text-[12.5px] leading-[1.5] text-[#111]">
+                    {entry.label}
+                  </span>
+                  <code
+                    className="rounded-[3px] border border-[#d4d4d4] bg-white px-2 py-0.5 text-[11px] text-[#111]"
+                    style={{
+                      fontFamily:
+                        'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    }}
+                  >
+                    {entry.syntax}
+                  </code>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Footer */}
+      <div className="px-7 py-3 border-t border-[#e5e5e2] text-center text-[11px] text-[#6b6b6b] flex-shrink-0">
+        <Kbd>Esc</Kbd> 닫기 · <Kbd>1</Kbd> 단축키 · <Kbd>2</Kbd> 마크다운
+      </div>
+
+      {/* Resize grip */}
+      <div
+        role="separator"
+        aria-label="크기 조절"
+        onPointerDown={drag.startResize}
+        className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
+        style={{
+          background:
+            'linear-gradient(135deg, transparent 50%, #6b6b6b 50%, #6b6b6b 60%, transparent 60%, transparent 70%, #6b6b6b 70%, #6b6b6b 80%, transparent 80%)',
+          opacity: 0.35,
+        }}
+      />
     </div>
   );
 }

@@ -10,7 +10,6 @@ interface ResolverState {
 
 const SYNC_TABLES = [
   'work',
-  'plan',
   'plan_note',
   'world_note',
   'character',

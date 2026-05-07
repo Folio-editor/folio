@@ -31,6 +31,13 @@ class Settings(BaseSettings):
 
     internal_api_key: str = Field(default="change-me", validation_alias="INTERNAL_API_KEY")
 
+    # curious-wiggling-thacker plan V-7 — backend 내부 복호화 API 호출용.
+    # backend 의 server.port + /internal prefix. AI 서버는 KMS/Vault 자격증명 미보유.
+    backend_internal_url: str = Field(
+        default="http://backend:8080",
+        validation_alias="BACKEND_INTERNAL_URL",
+    )
+
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     db_host: str | None = Field(default=None, validation_alias="DB_HOST")
     db_port: int = Field(default=5432, validation_alias="DB_PORT")

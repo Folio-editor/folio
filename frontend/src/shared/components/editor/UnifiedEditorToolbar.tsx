@@ -240,7 +240,7 @@ export function UnifiedEditorToolbar({
         </Btn>
       )}
       {onToggleShortcutHelp && (
-        <Btn onClick={onToggleShortcutHelp} title="단축키 / 마크다운 안내">
+        <Btn onClick={onToggleShortcutHelp} title="단축키 / 마크다운 안내 (F1)">
           <HelpCircle size={ICON} />
         </Btn>
       )}

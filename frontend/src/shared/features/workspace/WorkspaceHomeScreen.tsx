@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { useDecryptedWork } from '../../hooks/useDecryptedWork';
 import type { LucideIcon } from 'lucide-react';
@@ -41,6 +41,10 @@ interface WorkRow {
   author_name: string | null;
   description: string | null;
   status: string;
+  // 장르·분위기는 work 테이블 직속 (이전에는 plan에 있었음).
+  // PowerSync는 SQLite TEXT로 보관, 읽을 때 JSON.parse 필요.
+  genres: string | null;
+  moods: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -113,6 +117,8 @@ export function WorkspaceHomeScreen({
     author_name: decrypted.author_name,
     description: decrypted.description,
     status: decrypted.status,
+    genres: decrypted.genres ?? null,
+    moods: decrypted.moods ?? null,
     created_at: decrypted.created_at,
     updated_at: decrypted.updated_at,
   };
@@ -136,34 +142,17 @@ interface WorkspaceEditorProps {
 }
 
 function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: WorkspaceEditorProps) {
-  const { updateWork, deleteWork, ensurePlan, updatePlan } = useLocalWrite();
+  const { updateWork, deleteWork } = useLocalWrite();
   const { id } = work;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [tagModal, setTagModal] = useState<TagField | null>(null);
 
-  // 작품 단위 태그(장르·분위기)는 plan 테이블에 그대로 둔다 (서비스 보류 결정).
-  // 작품 허브에서는 plan 행을 직접 읽고 쓰는 형태로 노출.
-  // plan 행이 없으면 태그 첫 편집 시점에 ensurePlan 으로 생성.
-  const [planId, setPlanId] = useState<string | null>(null);
-  useEffect(() => {
-    let mounted = true;
-    void ensurePlan(id).then((pid) => {
-      if (mounted) setPlanId(pid);
-    });
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  const { data: planRows = [] } = useQuery<{ id: string; genres: string | null; moods: string | null }>(
-    `SELECT id, genres, moods FROM plan WHERE work_id = ? LIMIT 1`,
-    [id],
-  );
-  const planRow = planRows[0];
-  const genres = parseTags(planRow?.genres ?? null);
-  const moods = parseTags(planRow?.moods ?? null);
+  // 작품 단위 태그(장르·분위기)는 work 테이블 직속 컬럼.
+  // (이전엔 plan 테이블에 있었으나 ERD 정리로 work로 이전됨.)
+  // useDecryptedWork에서 받은 work.genres/moods 문자열(JSON)을 파싱해 사용.
+  const genres = parseTags(work.genres);
+  const moods = parseTags(work.moods);
 
   const title = useDeferredText(id, work.title, (v) => {
     const trimmed = v.trim();
@@ -194,17 +183,15 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
   };
 
   const handleTagsApply = (field: TagField) => (next: string[]) => {
-    if (!planId) return;
-    void updatePlan(planId, {
+    void updateWork(id, {
       [field]: next.length > 0 ? JSON.stringify(next) : null,
     });
   };
 
   const removeTag = (field: TagField, idx: number) => {
-    if (!planId) return;
     const current = field === 'genres' ? genres : moods;
     const next = current.filter((_, i) => i !== idx);
-    void updatePlan(planId, {
+    void updateWork(id, {
       [field]: next.length > 0 ? JSON.stringify(next) : null,
     });
   };
@@ -282,14 +269,14 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
           <TagSection
             label="장르"
             tags={genres}
-            disabled={!planId}
+            disabled={false}
             onAddClick={() => setTagModal('genres')}
             onRemove={(idx) => removeTag('genres', idx)}
           />
           <TagSection
             label="분위기"
             tags={moods}
-            disabled={!planId}
+            disabled={false}
             onAddClick={() => setTagModal('moods')}
             onRemove={(idx) => removeTag('moods', idx)}
           />

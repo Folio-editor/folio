@@ -11,16 +11,17 @@
 import { useEffect } from 'react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { PowerSyncContext } from '@powersync/react';
-import { Toaster, toast } from 'sonner';
+import { Toaster } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { AuthenticatedApp } from '../features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../components/ThemeProvider';
-import { db } from '../sync/db';
+import { db, ensureSchemaVersion } from '../sync/db';
+import { setOnWorkKeyCreatedHook } from '../crypto/workKey';
+import { issueServerDek, retryPendingServerDeks } from '../crypto/serverDek';
+import { reconcileMissingServerDeks } from '../crypto/serverDekReconciler';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
 import { analytics } from '../lib/analytics';
-import { consumeResult as consumeCheckoutResult } from '../../platform/web/payment/webCheckout';
-import { useWalletStore } from '../stores/walletStore';
 
 // 모듈 로드 시 1회 — online/offline 이벤트 바인딩
 initNetworkListener();
@@ -62,7 +63,28 @@ export function AppRoot({ router, basename }: AppRootProps) {
   }, []);
 
   useEffect(() => {
-    void restore();
+    // PowerSync 스키마 버전 체크 — 신규 컬럼이 schema.ts에 추가되었지만 기존 사용자
+    // SQLite엔 아직 없을 수 있으므로 1회 disconnectAndClear 후 재다운로드.
+    // restore() 보다 먼저 await 해야 connect 시점의 schema mismatch 를 방지한다.
+    void (async () => {
+      await ensureSchemaVersion();
+      // Vault Transit (plan V-5) — 신규 work_key 생성 직후 자동으로 server_encrypted_dek 발급.
+      // 게스트 모드 (미인증) 는 서버 sync 자체를 안 하므로 호출 skip → 401 노이즈 0.
+      setOnWorkKeyCreatedHook(async (workId, raw) => {
+        const { isAuthenticated } = useAuthStore.getState();
+        if (!isAuthenticated) return;
+        await issueServerDek(workId, raw);
+      });
+      await restore();
+      // 로그인 복원 후 1회 — 오프라인 시 누적된 pending server-dek 일괄 발급 시도
+      void retryPendingServerDeks();
+      // serverPlaintextReconciler 호출 제거 — sync down 이 server ciphertext 를 매번
+      // SQLite 에 덮어쓰는 흐름과 reconciler UPDATE 가 race → 무한 round-trip 위험.
+      // 표시 시점 메모리 복호화 (useDecrypted* hooks) 로 사용자 경험 평문 보장.
+      setTimeout(() => {
+        void reconcileMissingServerDeks();
+      }, 5000);
+    })();
   }, [restore]);
 
   // Main 프로세스(Electron) 또는 web FolioApi(브라우저)의 세션 만료 알림 수신
@@ -75,6 +97,12 @@ export function AppRoot({ router, basename }: AppRootProps) {
   //   - syncDecision이 결정되기 전(login 직후, null)에는 connect 금지 → 로컬 게스트 데이터가 의도치 않게 업로드되는 것을 막는다
   //   - 로그인 + 결정 완료 → connect (sync 양방향 활성)
   //   - 로그아웃/게스트 → disconnect
+  //
+  // ★ Plan C 결정 22: syncDecision !== null 게이트가 평문 백필 완료 보장의 핵심.
+  //   authStore.login() / resolveSyncDecision('use-local')은 PowerSync connect를 풀기 전에
+  //   await runBackfillForWriter()로 평문→ciphertext 변환을 동기 완료한 뒤에만
+  //   set({syncDecision: 'use-local'})을 호출한다. 따라서 이 useEffect가 발화되는 시점엔
+  //   이미 SQLite의 모든 게스트 평문이 'v1:' ciphertext로 변환되어 있어 race window가 없다.
   useEffect(() => {
     if (isAuthenticated && syncDecision !== null) {
       // use-server는 disconnectAndClear 직후라 SDK 내부 정리가 끝나야 connect 가능.
@@ -85,6 +113,15 @@ export function AppRoot({ router, basename }: AppRootProps) {
         } catch (e) {
           console.warn('[AppRoot] db.connect 실패 — 다음 렌더에서 재시도:', e);
         }
+        // 게스트 → 로그인 전환 직후 backfill 단계에서 401/409 로 pending 적재된
+        // server-dek 항목을 즉시 발급. PowerSync sync 가 work upload 완료 후
+        // 짧게 지연 (5초) 두어 backend 가 work 행 인식한 상태에서 retry.
+        setTimeout(() => {
+          void retryPendingServerDeks();
+          // pending 큐에 없지만 SQLite 의 work 중 server_encrypted_dek 가 비어있는
+          // 행 (이미 만든 stale 작품 포함) 도 자동 보강.
+          void reconcileMissingServerDeks();
+        }, 5000);
       })();
     } else if (!isAuthenticated) {
       void db.disconnect();
@@ -98,6 +135,10 @@ export function AppRoot({ router, basename }: AppRootProps) {
       db.connect(connector).catch((e) =>
         console.warn('[AppRoot] 온라인 복귀 reconnect 실패:', e),
       );
+      // Vault Transit (plan V-5/V-8) — 오프라인에서 누적된 server-dek pending 재시도
+      // + SQLite 의 stale work (server_encrypted_dek=NULL) 자동 보강
+      void retryPendingServerDeks();
+      void reconcileMissingServerDeks();
     }
     // isOnline 변경 시에만 트리거 (isAuthenticated/syncDecision은 위 effect가 담당)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,30 +153,6 @@ export function AppRoot({ router, basename }: AppRootProps) {
       entry_source: isAuthenticated ? 'restore_session' : 'unknown',
     });
   }, [isAuthenticated, isGuest]);
-
-  // 웹 결제 redirect 결과 소비 — CheckoutResolver가 sessionStorage에 적재한 결과를
-  // 인증 복원 직후 1회 토스트로 노출한다. Electron은 항상 null → no-op.
-  // PaymentSettings 화면을 띄우지 않은 상태로 복귀해도 사용자가 결과를 인지할 수 있도록
-  // AppRoot 레벨에서 처리. 지갑 store도 새 잔액으로 갱신.
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const result = consumeCheckoutResult();
-    if (!result) return;
-    if (result.kind === 'one-time-success') {
-      toast.success(result.message);
-      void useWalletStore.getState().refresh();
-    } else if (result.kind === 'billing-success') {
-      toast.success(result.message);
-      void useWalletStore.getState().refresh();
-    } else if (result.kind === 'fail') {
-      if (result.code === 'P011') {
-        toast.message('요청이 너무 빠르게 반복됐어요. 잠시 후 다시 시도해주세요.');
-      } else {
-        toast.error(result.message);
-      }
-    }
-    // user-closed는 침묵 처리
-  }, [isAuthenticated]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {

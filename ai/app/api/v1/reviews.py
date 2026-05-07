@@ -12,16 +12,7 @@ from app.middleware.auth import require_internal_api_key
 from app.schemas.ai_context_payload import AiContextPayload
 from app.services.providers import get_llm
 from app.services.rag import assemble_context
-from app.services.repetition_detector import detect_repetitions
-from app.services.structural_validators import detect_structural_issues
 from app.services.text_extractor import extract_numbered_text, extract_plain_text
-from app.services.timeline_extractor import find_retrospect_markers
-
-# 기존 MCP 기반 검수 경로는 비용 절감 작업 때문에 비활성화했다.
-# 나중에 설정집 크기 분기 시 다시 사용할 수 있으므로 삭제하지 않고 남겨둔다.
-#
-# from app.mcp.context import WriterContext
-# from app.mcp.registry import MCP_TOOLS, execute_tool
 
 router = APIRouter(
     prefix="/reviews",
@@ -197,6 +188,34 @@ REVIEW_SYSTEM_PROMPT = (
 - lines 필드에는 원고에 표시된 [N] 줄 번호를 정수 배열로 표기하라. 여러 줄에 걸치면 모든 해당 줄 번호를 포함하라.
 - location에는 문제가 되는 줄의 텍스트를 짧게 인용하라 (줄 번호 [N]은 제외).
 
+## 추가 검수 항목 (LLM 직접 판단 — 결정론 후처리 폐기로 전부 LLM 책임)
+
+다음 항목들은 별도 결정론 함수가 없으므로 본 시스템 프롬프트의 지시를 따라 LLM 이 직접 점검하라.
+
+### 동일 표현·문장 반복 (tone_conflict / info 또는 warning)
+- 동일하거나 거의 동일한 표현/문장이 한 화 안에서 3회 이상 등장하면 지적하라.
+- 짧은 반복(2~3 어절)은 의도된 강조일 수 있으니 4회 이상으로 임계 강화.
+- 같은 어구의 어미 변형(고개를 끄덕였다 / 고개를 끄덕이며)도 반복으로 본다. 한국어 형태소 차이는 무시.
+- 반복 카운트는 정확하지 않아도 되니 "여러 번 반복됨" 정도로 description 에 명시.
+
+### 메타 회차 참조 (narration_conflict / warning)
+- 본문이 자기 작품을 메타로 가리키는 표현 — "3화에서~", "5화 때~" 같은 회차 번호 직접 언급 — 은 디제틱 위반.
+- 단 본문에 등장하는 일반 단어 (예: "5화재", "10화학") 와 혼동하지 말고 "N화에서/에/때/의/쯤" 같은 명확한 메타 마커가 붙은 경우만 지적.
+
+### 날짜·요일 일관성 (narration_conflict / warning)
+- "2025년 5월 9일 금요일" 같이 날짜+요일이 함께 나오면 캘린더 일치를 자체 검증.
+- 작품 내 가상 달력은 검증 대상이 아니다 (작가가 명시하지 않은 한).
+
+### 회상·시간 흐름 모순 (time_conflict / warning)
+- 본문의 "한 달 전", "5년 전" 같은 회상 시간 표지가 이전 회차들의 누적 경과 시간과 모순되면 지적.
+- 정확한 누적 시간은 모를 수 있으니 컨텍스트의 회차 본문에서 자체 추정.
+
+## 점수 산정 (score 필드)
+- score 는 0~100 정수. 100점에서 issue severity 별로 차감:
+  - critical: -10 / warning: -5 / info: -2
+- 차감 합 적용 후 0 미만이면 0 으로 한정.
+- LLM 이 직접 계산하여 응답에 포함하라.
+
 ## 절대 지적하지 말 것 (모든 타입 공통)
 - **인물 시점 자유간접화법에서의 수치·단위 표현**: 인물이 머릿속으로 큰 숫자를 떠올리거나 충격받아 중얼거릴 때 단위 생략, 어림수, 축약은 의도된 문체다. 절대 어떤 type으로도 지적하지 마라.
 - **구어체 줄임·미완성 문장**: 짧은 호흡 문체에서 단어 생략, 말줄임, 호흡 끊김은 작가 의도다.
@@ -233,58 +252,8 @@ class ReviewRequest(BaseModel):
     context: AiContextPayload
 
 
-# 결정론적 점수 산정 가중치. LLM이 매기는 score는 호출마다 달라져 작가 신뢰도가 떨어지므로,
-# 최종 issues의 severity 카운트로 100점에서 차감해 일관된 점수를 돌려준다.
-_SCORE_PENALTIES = {"critical": 10, "warning": 5, "info": 2}
-_SCORE_FLOOR = 0
-
-
-def _compute_score(issues: list[dict[str, Any]]) -> int:
-    score = 100
-    for issue in issues:
-        sev = str(issue.get("severity") or "").lower()
-        score -= _SCORE_PENALTIES.get(sev, 0)
-    return max(_SCORE_FLOOR, score)
-
-
-def _looks_like_repetition_issue(issue: dict[str, Any]) -> bool:
-    """LLM이 보고한 issue가 '표현 반복'에 해당하는지 추정한다."""
-    desc = str(issue.get("description") or "")
-    return ("반복" in desc) or ("회 등장" in desc) or ("회 사용" in desc) or ("중복" in desc)
-
-
-def _merge_repetitions(
-    llm_issues: list[dict[str, Any]],
-    repetition_issues: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """LLM이 잡은 반복 이슈와 후처리 모듈 결과를 머지한다.
-
-    - LLM 이슈의 lines 집합이 후처리 이슈의 lines와 50% 이상 겹치고 description이
-      반복 관련이면, LLM 이슈를 제거하고 후처리 결과만 남긴다(카운트가 정확).
-    - 그 외 LLM 이슈는 그대로 유지한다.
-    """
-    rep_line_sets = [set(r.get("lines") or []) for r in repetition_issues]
-    kept: list[dict[str, Any]] = []
-    for issue in llm_issues:
-        if not _looks_like_repetition_issue(issue):
-            kept.append(issue)
-            continue
-        ll_lines = set(issue.get("lines") or [])
-        if not ll_lines:
-            kept.append(issue)
-            continue
-        replaced = False
-        for rep_lines in rep_line_sets:
-            if not rep_lines:
-                continue
-            overlap = len(ll_lines & rep_lines)
-            smaller = min(len(ll_lines), len(rep_lines))
-            if smaller and overlap / smaller >= 0.5:
-                replaced = True
-                break
-        if not replaced:
-            kept.append(issue)
-    return kept + repetition_issues
+# 결정론 후처리 (점수 산정·반복 머지) 는 Clean-up Phase (2026-05) 에서 폐기됨.
+# LLM 이 검수 시스템 프롬프트의 지시에 따라 직접 score 와 issues 를 산정한다.
 
 
 def _normalize_review_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -349,20 +318,8 @@ async def review_episode(req: ReviewRequest):
     )
     cleaned_content = extract_numbered_text(req.content)
 
-    # 본문에서 발견되는 회상/소급 시간 표지를 별도 섹션으로 노출한다.
-    # LLM이 회차 누적 경과 시간(타임라인 섹션)과 본문 진술의 충돌을 직접 비교 가능.
-    retrospect_markers = find_retrospect_markers(extract_plain_text(req.content))
-    retrospect_block = ""
-    if retrospect_markers:
-        bullets = "\n".join(f"- {m}" for m in retrospect_markers)
-        retrospect_block = (
-            "\n\n## 본문 시간 진술 (회차 누적 시간과 비교 필수)\n"
-            f"{bullets}\n"
-            "위 진술이 컨텍스트의 '회차별 시간 흐름'과 모순되면 time_conflict로 잡아라."
-        )
-
     user_prompt = (
-        f"## 작품 정보 / 설정 / 최근 맥락\n{context}{retrospect_block}\n\n"
+        f"## 작품 정보 / 설정 / 최근 맥락\n{context}\n\n"
         f"## 검수할 원고\n{cleaned_content}"
     )
 
@@ -377,41 +334,13 @@ async def review_episode(req: ReviewRequest):
     )
     normalized = _normalize_review_result(result)
 
-    # 결정론적 반복 표현 검출 결과를 LLM 결과에 머지한다.
-    # LLM은 한국어 문장/어절 빈도를 정확히 카운팅하지 못하므로 후처리 모듈로 분리.
-    # 같은 패턴을 LLM이 부정확한 카운트로 별도 보고했다면 후처리 결과로 대체한다.
-    repetition_issues = detect_repetitions(cleaned_content)
-    if repetition_issues:
-        normalized["issues"] = _merge_repetitions(
-            list(normalized.get("issues", [])), repetition_issues
-        )
-
-    # 구조적 결정론 검증 (메타 회차 참조, 날짜-요일 불일치).
-    # LLM의 attention 분산 한계를 우회한다.
-    structural_issues = detect_structural_issues(cleaned_content)
-    if structural_issues:
-        normalized["issues"] = list(normalized.get("issues", [])) + structural_issues
-
-    # LLM의 score는 호출마다 달라져 일관성이 없으므로 결정론 가중치로 덮어쓴다.
-    normalized["score"] = _compute_score(list(normalized.get("issues", [])))
-
+    # 결정론 후처리 (반복 검출·구조 검증·결정론 점수 산정) 와 MCP tool_use 경로는
+    # Clean-up Phase (2026-05) 에서 폐기됨. 이유:
+    #   - 한국어 형태소 부재로 false positive 양산
+    #   - 작가가 카드에 명시 안 한 디테일은 검수 대상이 아님 (작가 자유도)
+    #   - LLM 사고 권위화·확장성 부재
+    # 동일 표현 반복·메타 회차 참조·날짜-요일 일관성·회상 시간 흐름은 모두 LLM 이
+    # REVIEW_SYSTEM_PROMPT 의 지시에 따라 직접 판단한다.
     normalized["usage"] = llm.last_usage
-
-    # 기존 MCP 기반 검수 경로. 설정집 크기 분기 시 되살릴 수 있다.
-    #
-    # ctx = WriterContext(
-    #     writer_id=uuid.UUID(req.writer_id),
-    #     work_id=uuid.UUID(req.work_id),
-    # )
-    #
-    # async def tool_executor(name: str, inputs: dict):
-    #     return await execute_tool(name, inputs, session, ctx)
-    #
-    # result = await llm.generate_with_tools(
-    #     system=system_prompt,
-    #     user=user_prompt,
-    #     tools=MCP_TOOLS,
-    #     tool_executor=tool_executor,
-    # )
 
     return normalized

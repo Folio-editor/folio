@@ -15,6 +15,19 @@
 #   - EC2_HOST              (EC2 IP 또는 도메인)
 #   - EC2_USER              (ubuntu 또는 ec2-user)
 #   - DOPPLER_TOKEN_PRD     (Doppler prd 서비스 토큰)
+#
+# 필요한 Doppler prd Secrets (Vault Transit — plan V):
+#   - VAULT_TOKEN           (필수 — vault-init.sh 출력 토큰. 미설정 시 backend fail-fast)
+#   ※ 나머지 vault 설정 (enabled/url/transit-key/cache-ttl) 은 시크릿 아니므로
+#     application-{dev,prod}.yml 코드 default 에 hardcode. Doppler 등록 불필요.
+#
+# 운영 1회 절차 (Vault):
+#   1) 본 CI 가 EC2 에 코드·docker-compose 배포 (vault 컨테이너 기동되지만 미초기화)
+#   2) ssh ec2 → bash /opt/folio/S14P31F203/infra/scripts/vault-init.sh
+#      → 출력된 VAULT_TOKEN 을 Doppler prd 에 등록
+#      → /opt/folio/data/vault/.init.secrets 를 EC2 외부로 즉시 이동 (USB·운영자 노트북)
+#   3) GitLab 에서 deploy job 재실행 → 정상 배포
+#   재기동 시: bash infra/scripts/vault-unseal.sh --interactive (unseal key 3 개 입력)
 # ============================================================
 
 variables:
@@ -214,6 +227,11 @@ deploy-production:
         sudo chown -R 472:472 /opt/folio/data/grafana
         sudo chown -R 65534:65534 /opt/folio/data/prometheus  # Prometheus 컨테이너 user (nobody)
 
+        # 2.6. Vault 데이터 디렉토리 (curious-wiggling-thacker plan V-1).
+        # 최초 1회 운영자 SSH 접속 후 vault-init.sh 실행 → 토큰 Doppler 등록 필요.
+        sudo mkdir -p /opt/folio/data/vault
+        sudo chmod 700 /opt/folio/data/vault
+
         # 3. Docker 이미지 빌드
         cd /opt/folio/S14P31F203
         echo "[build] Building Docker images..."
@@ -246,7 +264,21 @@ deploy-production:
         if [ "\$CURRENT" = "blue" ]; then NEXT="green"; else NEXT="blue"; fi
         echo "Switching: \$CURRENT → \$NEXT"
 
-        # 5. 새 색상 컨테이너 기동
+        # 5. Vault 컨테이너 사전 기동 + 상태 점검
+        # backend (FOLIO_VAULT_ENABLED=true) 가 봉인된 Vault 에 대고 fail-fast 하지 않도록
+        # 먼저 vault 만 띄우고 unsealed/active 상태인지 확인. 미초기화/봉인 시 deploy 중단.
+        docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env up -d vault < /dev/null
+        sleep 3
+        if ! bash /opt/folio/S14P31F203/infra/scripts/vault-status.sh folio-vault-prod; then
+          echo ""
+          echo "[deploy] ✗ Vault 가 준비되지 않음 — backend 기동 중단."
+          echo "        최초 1회: bash /opt/folio/S14P31F203/infra/scripts/vault-init.sh"
+          echo "        재기동 시: bash /opt/folio/S14P31F203/infra/scripts/vault-unseal.sh --interactive"
+          echo "        그 후 GitLab 에서 deploy job 재실행."
+          exit 2
+        fi
+
+        # 6. 새 색상 컨테이너 기동
         # < /dev/null: heredoc stdin 소비 방어 (docker compose의 잠재적 stdin attach 회피)
         docker compose -f docker-compose.yml -f docker-compose.\${NEXT}.yml --env-file .env up -d < /dev/null
 
