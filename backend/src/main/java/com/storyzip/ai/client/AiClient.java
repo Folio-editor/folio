@@ -8,6 +8,7 @@ import com.storyzip.ai.client.dto.HealthResponse;
 import com.storyzip.ai.client.dto.PingEnqueuedResponse;
 import com.storyzip.ai.client.dto.PingResultResponse;
 import com.storyzip.ai.client.dto.ReviewRequest;
+import com.storyzip.ai.client.dto.SpellcheckRequest;
 import com.storyzip.common.exception.AiException;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.observability.ExternalCallLogger;
@@ -47,6 +48,7 @@ public class AiClient {
     private static final long AI_QUICK_SLA_MS = 2_000L;
     /** 리뷰는 LLM 한 번 호출이라 길다. 30초 넘으면 사용자 경험 망가지므로 WARN. */
     private static final long AI_REVIEW_SLA_MS = 30_000L;
+    private static final long AI_SPELLCHECK_SLA_MS = 20_000L;
     /** 초안 SSE 스트림 전체 — 5분이 한계 (timeout 설정과 동일). */
     private static final long AI_DRAFT_STREAM_SLA_MS = 60_000L;
 
@@ -305,6 +307,54 @@ public class AiClient {
             throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
         } catch (Exception e) {
             // measureChecked의 시그니처가 throws Exception이라 강제로 잡힘 — AiException으로 통일
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        }
+    }
+
+    /** 맞춤법 검사 FastAPI /v1/spellcheck 프록시(동기 JSON). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestSpellcheck(SpellcheckRequest request) {
+        try {
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestSpellcheck", AI_SPELLCHECK_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/spellcheck"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(2))
+                        .build();
+
+                HttpClient spellcheckClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<String> response = spellcheckClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    log.warn("AI spellcheck non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+
+                return mapper.readValue(response.body(), Map.class);
+            });
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
             throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
         }
     }

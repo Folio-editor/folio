@@ -51,6 +51,7 @@ import { useDecryptedEpisode } from '../../hooks/useDecryptedEpisode';
 import { useDecryptedIdeaArchiveList } from '../../hooks/useDecryptedIdeaArchive';
 import { useAiContextPayload } from '../../hooks/useAiContextPayload';
 import { apiClient, ApiError } from '../../lib/apiClient';
+import { getRegisteredEditor } from '../../lib/activeEditorRegistry';
 import { analytics, charCountBucket, durationBucket } from '../../lib/analytics';
 import { useNavigationStore } from '../../stores/navigationStore';
 
@@ -1022,6 +1023,9 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const startReview = useAiSessionStore((s) => s.startReview);
   const finishReview = useAiSessionStore((s) => s.finishReview);
   const failReview = useAiSessionStore((s) => s.failReview);
+  const startSpellcheck = useAiSessionStore((s) => s.startSpellcheck);
+  const finishSpellcheck = useAiSessionStore((s) => s.finishSpellcheck);
+  const failSpellcheck = useAiSessionStore((s) => s.failSpellcheck);
 
   const handleReview = useCallback(async () => {
     if (!pinnedEpisode) return;
@@ -1100,6 +1104,65 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       toast.error('검수 실패', { description: display });
     }
   }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+
+  const handleSpellcheck = useCallback(async () => {
+    if (!pinnedEpisode) return;
+    if (!decryptedContent || (decryptStatus !== 'plain' && decryptStatus !== 'decrypted')) {
+      toast.error('본문을 불러오지 못했습니다', {
+        description: decryptStatus === 'no-kek'
+          ? '복호화 정보가 없어 본문을 복호화할 수 없습니다. 다시 로그인한 뒤 시도해주세요.'
+          : '본문 복호화가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    if (aiContextLoading || !aiContextPayload) {
+      toast.error('AI 컨텍스트 준비 중', {
+        description: '본문과 설정 정보 준비가 끝난 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+    if (aiContextHasUndecrypted) {
+      toast.error('복호화된 자료를 준비하지 못했습니다', {
+        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요.',
+      });
+      return;
+    }
+
+    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
+      id: pinnedEpisode.id,
+      workId: pinnedEpisode.work_id,
+      title: pinnedEpisode.title,
+      sortOrder: pinnedEpisode.sort_order,
+    };
+
+    startSpellcheck(episode);
+
+    try {
+      const data = await apiClient.post<import('../../stores/aiSessionStore').SpellcheckResult>('/ai/spellcheck', {
+        workId: episode.workId,
+        episodeId: episode.id,
+        content: decryptedContent,
+        context: aiContextPayload,
+      });
+      const spellcheckResult = data ?? { issues: [], summary: '맞춤법 검사가 완료되었습니다.' };
+      finishSpellcheck(spellcheckResult);
+      refreshWalletAfterUsage();
+      const issueCount = spellcheckResult.issues.length;
+      toast.success(
+        issueCount === 0
+          ? '맞춤법 검사 완료 - 발견된 문제가 없어요'
+          : `맞춤법 검사 완료 - ${issueCount}건 발견`,
+      );
+    } catch (err) {
+      const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
+      failSpellcheck(message);
+      refreshWalletAfterUsage();
+      const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
+        ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
+        : message;
+      toast.error('맞춤법 검사 실패', { description: display });
+    }
+  }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startSpellcheck, finishSpellcheck, failSpellcheck, refreshWalletAfterUsage]);
 
   // 히스토리 뷰: 과거 생성 결과 열람
   if (screen === 'history-view') {
@@ -1189,6 +1252,32 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
 
   // 메뉴 화면
   return (
+    <>
+      {screen === 'spellcheck-history-view' && (
+        <SpellcheckResultScreen
+          onBack={() => setScreen('spellcheck-input')}
+          isHistoryView
+        />
+      )}
+      {screen === 'spellcheck-result' && (
+        <SpellcheckResultScreen
+          onBack={() => setScreen('spellcheck-input')}
+        />
+      )}
+      {screen === 'spellcheck-input' && (
+        <SpellcheckInputScreen
+          episode={pinnedEpisode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={isEpisode && !!mainItemId && mainItemId !== pinnedEpisodeId}
+          onClearPinned={clearPinnedEpisodeId}
+          onRegisterCurrent={() => {
+            if (mainItemId) setPinnedEpisodeId(mainItemId);
+          }}
+          selectedWorkId={selectedWorkId}
+          onStartSpellcheck={handleSpellcheck}
+        />
+      )}
+      {screen === 'menu' && (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <button
         type="button"
@@ -1217,7 +1306,23 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           </p>
         </div>
       </button>
+
+      <button
+        type="button"
+        onClick={() => setScreen('spellcheck-input')}
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+      >
+        <Check size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <div>
+          <p className="text-sm font-medium text-foreground">맞춤법 검사</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            맞춤법, 띄어쓰기, 오탈자, 문장부호만 따로 확인합니다.
+          </p>
+        </div>
+      </button>
     </div>
+      )}
+    </>
   );
 }
 
@@ -1703,6 +1808,108 @@ function ReviewInputScreen({
 
 /* ── 원고 검수: 결과 화면 (로딩/결과/에러 표시) ── */
 
+function SpellcheckInputScreen({
+  episode,
+  hasPinned,
+  canRegisterCurrent,
+  onClearPinned,
+  onRegisterCurrent,
+  selectedWorkId,
+  onStartSpellcheck,
+}: {
+  episode: EpisodeInfo | null;
+  hasPinned: boolean;
+  canRegisterCurrent: boolean;
+  onClearPinned: () => void;
+  onRegisterCurrent: () => void;
+  selectedWorkId: string | null;
+  onStartSpellcheck: () => void;
+}) {
+  const spellcheckHistory = useAiSessionStore((s) => s.spellcheckHistory);
+  const viewSpellcheckHistory = useAiSessionStore((s) => s.viewSpellcheckHistory);
+  const deleteSpellcheckHistory = useAiSessionStore((s) => s.deleteSpellcheckHistory);
+  const spellcheckState = useAiSessionStore((s) => s.spellcheckState);
+
+  const filteredHistory = selectedWorkId
+    ? spellcheckHistory.filter((h) => h.workId === selectedWorkId)
+    : [];
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <PinnedEpisodeBox
+          episode={episode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={canRegisterCurrent}
+          onClearPinned={onClearPinned}
+          onRegisterCurrent={onRegisterCurrent}
+        />
+
+        {hasPinned && episode && (
+          !episode.content ? (
+            <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+              원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onStartSpellcheck}
+              disabled={spellcheckState === 'loading'}
+              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Check size={13} strokeWidth={1.75} />
+              맞춤법 검사 시작
+            </button>
+          )
+        )}
+
+        {filteredHistory.length > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5">
+              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+              <span className="text-xs font-medium text-muted-foreground">맞춤법 검사 기록</span>
+              <span className="text-xs text-muted-foreground/60">{filteredHistory.length}/{10}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {filteredHistory.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+                >
+                  <button
+                    type="button"
+                    onClick={() => viewSpellcheckHistory(entry.id)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {entry.episode.sortOrder + 1}화 {entry.episode.title || '(제목 없음)'}
+                    </span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {formatHistoryTime(entry.createdAt)}
+                      </span>
+                      <span>이슈 {entry.result.issues.length}건</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteSpellcheckHistory(entry.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    title="삭제"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const CIRCLED_NUMBERS = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 function circledNumber(n: number): string {
   if (n >= 1 && n <= 20) return CIRCLED_NUMBERS[n - 1];
@@ -1874,6 +2081,177 @@ function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isH
         )}
 
         {reviewState === 'error' && error && (
+          <AiErrorBlock message={error} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const SPELLCHECK_TYPE_LABELS: Record<string, string> = {
+  typo: '오탈자',
+  spacing: '띄어쓰기',
+  punctuation: '문장부호',
+};
+
+function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
+  const spellcheckState = useAiSessionStore((s) => s.spellcheckState);
+  const result = useAiSessionStore((s) => s.spellcheckResult);
+  const error = useAiSessionStore((s) => s.spellcheckError);
+  const targetEpisode = useAiSessionStore((s) => s.spellcheckTargetEpisode);
+  const appliedIssues = useAiSessionStore((s) => s.spellcheckAppliedIssues);
+  const markApplied = useAiSessionStore((s) => s.markSpellcheckIssueApplied);
+  const progressMessage = useProgressMessage(spellcheckState === 'loading', [
+    { at: 0, message: '맞춤법을 확인하는 중...' },
+    { at: 5000, message: '고유명사를 보호하며 검사하는 중...' },
+    { at: 12000, message: '결과를 정리하는 중...' },
+  ]);
+
+  const handleApplyIssue = useCallback(
+    (index: number, issue: { line: number; original: string; suggestion: string }) => {
+      if (!targetEpisode) return;
+      const editor = getRegisteredEditor(targetEpisode.id);
+      if (!editor) {
+        toast.error('본문 에디터가 열려 있지 않습니다', {
+          description: '대상 회차를 본문에 열고 다시 시도해주세요.',
+        });
+        return;
+      }
+
+      // 문서의 N번째 블록(line)에서 original 텍스트의 첫 매치를 찾아 suggestion으로 교체
+      const doc = editor.state.doc;
+      let target: { from: number; to: number } | null = null;
+      let lineCount = 0;
+      doc.forEach((blockNode, blockOffset) => {
+        lineCount++;
+        if (lineCount !== issue.line || target) return;
+        blockNode.descendants((node, posInBlock) => {
+          if (target) return false;
+          if (node.isText && node.text) {
+            const idx = node.text.indexOf(issue.original);
+            if (idx !== -1) {
+              const from = blockOffset + 1 + posInBlock + idx;
+              target = { from, to: from + issue.original.length };
+              return false;
+            }
+          }
+        });
+      });
+
+      if (!target) {
+        toast.error('원문을 찾지 못했습니다', {
+          description: '본문이 변경되어 위치를 특정할 수 없습니다.',
+        });
+        return;
+      }
+
+      editor.chain().focus().insertContentAt(target, issue.suggestion).run();
+      markApplied(index);
+      toast.success('수정 적용 완료');
+    },
+    [targetEpisode, markApplied],
+  );
+
+  void onBack;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {targetEpisode && (
+          <div className="rounded-md bg-muted/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">대상 원고</span>
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {targetEpisode.sortOrder + 1}화 {targetEpisode.title || '(제목 없음)'}
+            </p>
+          </div>
+        )}
+
+        {spellcheckState === 'loading' && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-background p-3">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              <span className="text-xs text-muted-foreground">{progressMessage}</span>
+            </div>
+          </div>
+        )}
+
+        {spellcheckState === 'done' && result && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-md border border-border bg-background p-3">
+              <span className="text-xs font-medium text-muted-foreground">검사 요약</span>
+              <p className="mt-2 text-xs text-muted-foreground">{result.summary}</p>
+            </div>
+
+            {result.issues.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-3 text-sm text-success">
+                <Check size={16} strokeWidth={2} />
+                맞춤법 검사에서 발견된 문제가 없습니다.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  발견된 이슈 ({result.issues.length}건)
+                </span>
+                {result.issues.map((issue, i) => {
+                  const applied = appliedIssues.includes(i);
+                  return (
+                    <div
+                      key={`${issue.line}-${issue.original}-${i}`}
+                      className={cn(
+                        'rounded-md border border-border bg-background p-3 text-left transition-opacity',
+                        applied && 'opacity-50',
+                      )}
+                    >
+                      <div className="mb-2 flex items-center gap-1.5">
+                        <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                          {circledNumber(i + 1)}
+                        </span>
+                        <span className="text-xs font-semibold">{SPELLCHECK_TYPE_LABELS[issue.type] ?? issue.type}</span>
+                        <span className="text-xs text-muted-foreground">{issue.line}줄</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5 text-xs">
+                        <p>
+                          <span className="font-medium text-muted-foreground">원문:</span>{' '}
+                          <span className={cn('text-foreground', applied && 'line-through')}>{issue.original}</span>
+                        </p>
+                        <p>
+                          <span className="font-medium text-muted-foreground">제안:</span>{' '}
+                          <span className="text-primary">{issue.suggestion}</span>
+                        </p>
+                        {issue.reason && (
+                          <p className="text-muted-foreground">{issue.reason}</p>
+                        )}
+                      </div>
+                      {!isHistoryView && (
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyIssue(i, issue)}
+                            disabled={applied}
+                            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {applied ? '적용됨' : '적용'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {spellcheckState === 'error' && error && (
           <AiErrorBlock message={error} />
         )}
       </div>

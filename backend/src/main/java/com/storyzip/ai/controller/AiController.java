@@ -4,6 +4,7 @@ import com.storyzip.ai.client.AiClient;
 import com.storyzip.ai.client.dto.AiContextPayload;
 import com.storyzip.ai.client.dto.DraftRequest;
 import com.storyzip.ai.client.dto.ReviewRequest;
+import com.storyzip.ai.client.dto.SpellcheckRequest;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
 import com.storyzip.payment.dto.TokenWalletResponse;
@@ -43,6 +44,7 @@ public class AiController {
     private static final int DRAFT_SONNET_MIN_CREDITS = 38;
     private static final int DRAFT_OPUS_MIN_CREDITS   = 70;
     private static final int REVIEW_MIN_CREDITS       = 29;
+    private static final int SPELLCHECK_MIN_CREDITS   = 5;
 
     private final AiClient aiClient;
     private final TokenWalletService tokenWalletService;
@@ -64,6 +66,13 @@ public class AiController {
             String episodeId,
             String content,
             int episodeNumber,
+            AiContextPayload context
+    ) {}
+
+    public record SpellcheckClientRequest(
+            String workId,
+            String episodeId,
+            String content,
             AiContextPayload context
     ) {}
 
@@ -130,6 +139,38 @@ public class AiController {
             Map<String, Object> typed = (Map<String, Object>) usageMap;
             deductFromUsage(writerUuid, "sonnet", typed,
                     "AI_REVIEW_" + body.episodeId(),
+                    safeUuid(body.episodeId()));
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/spellcheck")
+    @Operation(summary = "AI 맞춤법 검사")
+    public ResponseEntity<Map<String, Object>> spellcheckEpisode(
+            @RequestBody SpellcheckClientRequest body,
+            Authentication authentication
+    ) {
+        String writerId = authentication.getName();
+        UUID writerUuid = UUID.fromString(writerId);
+
+        ensureBalance(writerUuid, SPELLCHECK_MIN_CREDITS);
+
+        SpellcheckRequest request = new SpellcheckRequest(
+                body.workId(),
+                writerId,
+                body.episodeId(),
+                body.content(),
+                body.context()
+        );
+
+        Map<String, Object> result = aiClient.requestSpellcheck(request);
+
+        Object usage = result.get("usage");
+        if (usage instanceof Map<?, ?> usageMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) usageMap;
+            deductFromUsage(writerUuid, "haiku", typed,
+                    "AI_SPELLCHECK_" + body.episodeId(),
                     safeUuid(body.episodeId()));
         }
         return ResponseEntity.ok(result);

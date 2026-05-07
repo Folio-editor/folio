@@ -20,7 +20,7 @@ _NOISY_SDK_LOGGERS = (
     "anthropic",
     "openai",
     "urllib3",
-    "uvicorn.access",
+    # "uvicorn.access",  # TEMP: 502 디버깅을 위해 액세스 로그 임시 활성화. 디버깅 끝나면 복원할 것.
 )
 
 
