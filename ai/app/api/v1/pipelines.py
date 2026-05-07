@@ -1,11 +1,19 @@
-"""POST /v1/pipelines/episode 인덱싱 파이프라인 트리거.
+"""POST /v1/pipelines/episode 인덱싱 + /episode-summary 요약 파이프라인 트리거.
 
-pipeline: chunk_and_embed
+pipelines:
+  - chunk_and_embed (모든 본문 변경)
+  - generate_summary (status='완성' 1회 + 폭주 가드)
+
+Phase 2 R-C 재설계 — 응답을 `PipelineResponse` 단일 모델로 통일.
+필드: task_id?, status, reason?, idempotency_key.
 """
 
 import hashlib
 import json
+import logging
 import uuid
+from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -13,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.episode_chunk import EpisodeChunk
+from app.db.models.episode_summary import EpisodeSummary
 from app.db.session import get_session
 from app.middleware.auth import require_internal_api_key
 from app.services.chunker import chunk_text
@@ -22,6 +31,13 @@ from app.services.work_key_resolver import (
     resolve_episode_plaintext,
 )
 from app.tasks.chunk_and_embed import chunk_and_embed_task
+from app.tasks.generate_summary import generate_summary_task
+
+logger = logging.getLogger(__name__)
+
+# 폭주 가드 임계 (R-2)
+SUMMARY_COOLDOWN_MINUTES = 30      # 마지막 호출 이후 cooldown
+SUMMARY_DAILY_LIMIT = 3            # 24h 내 동일 episode 재생성 횟수
 
 router = APIRouter(
     prefix="/pipelines",
@@ -30,20 +46,50 @@ router = APIRouter(
 )
 
 
+# ============================================================
+# 공용 모델 (Phase 2 R-C)
+# ============================================================
+
+
 class EpisodePipelineRequest(BaseModel):
     episode_id: str
     work_id: str
     writer_id: str
-    # Vault Transit 전환 (curious-wiggling-thacker plan V-7):
-    # backend SyncService 가 호출 시 content=None — 이 라우터에서 work_key_resolver 로
-    # 직접 평문 fetch. 레거시 호출자는 평문을 직접 보낼 수도 있음 (테스트 등).
+    # backend SyncService 호출 시 None — 라우터가 work_key_resolver 로 직접 평문 fetch
     content: str | None = None
 
 
-class EpisodePipelineResponse(BaseModel):
+class PipelineResponse(BaseModel):
+    """모든 AI 파이프라인 엔드포인트 공용 응답.
+
+    status:
+        - "accepted" — task 가 큐에 적재됨, task_id 존재
+        - "skipped"  — 폭주 가드/평문 미발급/콘텐츠 변경 0 등으로 skip, task_id null
+    reason:
+        skip 사유 코드 (e.g. "content_unchanged", "cooldown", "daily_limit",
+        "no_plaintext"). 디버깅·관측 용.
+    idempotency_key:
+        "<pipeline>:<episode_id>:<content_hash 16char>" 포맷.
+        backend 가 그대로 [AI-TRACE] 로그·ai_job 추적 키로 활용.
+    """
+
     task_id: str | None = None
-    status: str = "accepted"
+    status: Literal["accepted", "skipped"] = "accepted"
     reason: str | None = None
+    idempotency_key: str | None = None
+
+
+def _content_hash(plain: str) -> str:
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
+def _idempotency_key(pipeline: str, episode_id: str, content_hash: str) -> str:
+    return f"{pipeline}:{episode_id}:{content_hash[:16]}"
+
+
+# ============================================================
+# /episode — 청킹·임베딩 파이프라인
+# ============================================================
 
 
 def _build_chunk_signature(content: str) -> tuple[list[str], str]:
@@ -54,22 +100,32 @@ def _build_chunk_signature(content: str) -> tuple[list[str], str]:
     return chunks, digest
 
 
-@router.post("/episode", status_code=202, response_model=EpisodePipelineResponse)
+@router.post("/episode", status_code=202, response_model=PipelineResponse)
 async def trigger_episode_pipeline(
     req: EpisodePipelineRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    # Vault Transit 경로: content 가 None 이면 backend 내부 API 호출하여 평문 획득.
-    # 시그니처 비교 (idempotency) 를 위해 라우터에서 한 번 fetch — 큐 적재는 None 으로 하고
-    # task 가 다시 fetch 해도 되지만, 그러면 시그니처 비교가 안 되어 매번 재인덱싱 발생.
     plaintext = req.content
     if plaintext is None:
         try:
             plaintext = await resolve_episode_plaintext(req.episode_id, req.work_id)
         except WorkKeyResolverError as e:
-            return EpisodePipelineResponse(status="skipped", reason=f"no_plaintext: {e}")
+            ikey = _idempotency_key("indexing", req.episode_id, "no_plaintext")
+            logger.info(
+                "episode_indexing.skip",
+                extra={"episode_id": req.episode_id, "reason": "no_plaintext", "idempotency_key": ikey},
+            )
+            return PipelineResponse(
+                status="skipped",
+                reason=f"no_plaintext: {e}",
+                idempotency_key=ikey,
+            )
 
     args = (req.episode_id, req.work_id, req.writer_id, plaintext)
+    plain_for_hash = extract_plain_text(plaintext)
+    chash = _content_hash(plain_for_hash)
+    ikey = _idempotency_key("indexing", req.episode_id, chash)
+
     _, request_signature = _build_chunk_signature(plaintext)
 
     existing = await session.execute(
@@ -82,10 +138,94 @@ async def trigger_episode_pipeline(
         serialized = json.dumps(existing_chunks, ensure_ascii=False, separators=(",", ":"))
         existing_signature = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
         if existing_signature == request_signature:
-            return EpisodePipelineResponse(
+            logger.info(
+                "episode_indexing.skip",
+                extra={"episode_id": req.episode_id, "reason": "content_unchanged", "idempotency_key": ikey},
+            )
+            return PipelineResponse(
                 status="skipped",
-                reason="content unchanged",
+                reason="content_unchanged",
+                idempotency_key=ikey,
             )
 
     result = chunk_and_embed_task.apply_async(args=args)
-    return EpisodePipelineResponse(task_id=result.id)
+    logger.info(
+        "episode_indexing.accepted",
+        extra={"episode_id": req.episode_id, "task_id": result.id, "idempotency_key": ikey},
+    )
+    return PipelineResponse(task_id=result.id, idempotency_key=ikey)
+
+
+# ============================================================
+# /episode-summary — Haiku 메타 요약 파이프라인 (프리미엄)
+# ============================================================
+
+
+async def _should_skip_summary(
+    session: AsyncSession,
+    episode_id: str,
+    new_hash: str,
+) -> tuple[bool, str | None]:
+    """폭주 가드 — last summary row 조회 후 skip 사유 반환."""
+    row = (await session.execute(
+        select(
+            EpisodeSummary.content_hash,
+            EpisodeSummary.last_generated_at,
+            EpisodeSummary.generation_count,
+        ).where(EpisodeSummary.episode_id == uuid.UUID(episode_id))
+    )).first()
+    if row is None:
+        return False, None
+
+    last_hash, last_at, gen_count = row
+    if last_hash and last_hash == new_hash:
+        return True, "content_unchanged"
+    if last_at is not None:
+        if datetime.utcnow() - last_at < timedelta(minutes=SUMMARY_COOLDOWN_MINUTES):
+            return True, "cooldown"
+        # 24시간 내 일 limit — generation_count 누적치 단순 활용 (정확 일자 카운팅은 Phase 3)
+        if datetime.utcnow() - last_at < timedelta(hours=24) and gen_count >= SUMMARY_DAILY_LIMIT:
+            return True, "daily_limit"
+    return False, None
+
+
+@router.post("/episode-summary", status_code=202, response_model=PipelineResponse)
+async def trigger_episode_summary(
+    req: EpisodePipelineRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    plaintext = req.content
+    if plaintext is None:
+        try:
+            plaintext = await resolve_episode_plaintext(req.episode_id, req.work_id)
+        except WorkKeyResolverError as e:
+            ikey = _idempotency_key("summary", req.episode_id, "no_plaintext")
+            logger.info(
+                "episode_summary.skip",
+                extra={"episode_id": req.episode_id, "reason": "no_plaintext", "idempotency_key": ikey},
+            )
+            return PipelineResponse(
+                status="skipped",
+                reason=f"no_plaintext: {e}",
+                idempotency_key=ikey,
+            )
+
+    plain = extract_plain_text(plaintext)
+    new_hash = _content_hash(plain)
+    ikey = _idempotency_key("summary", req.episode_id, new_hash)
+
+    skip, reason = await _should_skip_summary(session, req.episode_id, new_hash)
+    if skip:
+        logger.info(
+            "episode_summary.skip",
+            extra={"episode_id": req.episode_id, "reason": reason, "idempotency_key": ikey},
+        )
+        return PipelineResponse(status="skipped", reason=reason, idempotency_key=ikey)
+
+    args = (req.episode_id, req.work_id, req.writer_id, plaintext)
+    result = generate_summary_task.apply_async(args=args)
+    logger.info(
+        "episode_summary.accepted",
+        extra={"episode_id": req.episode_id, "task_id": result.id, "idempotency_key": ikey},
+    )
+    return PipelineResponse(task_id=result.id, idempotency_key=ikey)

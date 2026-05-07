@@ -329,16 +329,43 @@ CREATE TABLE episode_chunk (
 );
 
 CREATE TABLE episode_summary (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    episode_id    UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
-    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
-    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    summary       TEXT NOT NULL,
-    is_confirmed  BOOLEAN NOT NULL DEFAULT false,
-    model_used    VARCHAR(50),
-    raw_result    TEXT,
-    created_at    TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMP NOT NULL DEFAULT now()
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id             UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
+    work_id                UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id              UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    -- 요약 본문
+    oneline_summary        TEXT,                    -- 한 줄 요약 (15~30자). 알파 NULL 허용, Phase 2 NOT NULL.
+    summary                TEXT NOT NULL,           -- 3~5 문장 줄거리
+    -- 회차 메타 (AI 탐색·검수·초안용)
+    pov_character          VARCHAR(100),
+    present_characters     JSONB,                   -- ["앤","마릴라"]
+    present_locations      JSONB,                   -- ["초록지붕집"]
+    key_events             JSONB,                   -- [{order,event}]
+    time_progression       VARCHAR(50),
+    tone                   VARCHAR(50),
+    cliffhanger            TEXT,
+    referenced_world_notes JSONB,                   -- world_note id[]
+    foreshadow_planted     JSONB,                   -- [{name,description}]
+    foreshadow_paid_off    JSONB,                   -- foreshadow id[]
+    keywords               JSONB,                   -- 검색 보조 키워드 5~10개
+    word_count             INTEGER,
+    -- 작가 승인
+    is_confirmed           BOOLEAN NOT NULL DEFAULT false,
+    -- 호출 메타 / 폭주 가드
+    model_used             VARCHAR(50),
+    raw_result             JSONB,                   -- LLM 원본 응답
+    content_hash           CHAR(64),                -- episode.content SHA256 — 동일 본문 skip
+    generation_count       INTEGER NOT NULL DEFAULT 0,
+    last_generated_at      TIMESTAMP,
+    created_at             TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMP NOT NULL DEFAULT now(),
+    -- FTS — 'simple' 토크나이저 (한국어 정확도 한계는 keywords JSONB + JSONB 컨테인 검색으로 보완)
+    summary_tsv            tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple',
+            coalesce(oneline_summary,'') || ' ' ||
+            coalesce(summary,'')         || ' ' ||
+            coalesce(keywords::text,''))
+    ) STORED
 );
 
 CREATE TABLE extraction_suggestion (
@@ -472,6 +499,12 @@ CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
 CREATE INDEX idx_episode_summary_work_confirmed
     ON episode_summary(work_id, is_confirmed);
 CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
+CREATE INDEX idx_episode_summary_tsv
+    ON episode_summary USING GIN (summary_tsv);
+CREATE INDEX idx_episode_summary_pov
+    ON episode_summary (work_id, pov_character);
+CREATE INDEX idx_episode_summary_episode_hash
+    ON episode_summary (episode_id, content_hash);
 CREATE INDEX idx_extraction_suggestion_work_status
     ON extraction_suggestion(work_id, status);
 CREATE INDEX idx_extraction_suggestion_writer  ON extraction_suggestion(writer_id);

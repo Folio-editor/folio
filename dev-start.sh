@@ -55,8 +55,14 @@ fi
 echo "[vault]    ✓ Vault unsealed"
 
 # --- 1. Spring Backend (port 8080) ---
+# Gradle daemon 은 첫 invocation 의 ENV 를 캐시한다 — Doppler 변경 / Vault 토큰 갱신 후에도
+# 옛 daemon 에 붙으면 stale ENV 로 부팅되어 INTERNAL_API_KEY 같은 시크릿이 default 로 빠지고
+# silent 401 이 발생한다. dev-start 마다 daemon 강제 종료 + --no-daemon 으로 fresh process.
+echo "[backend]  Stopping stale Gradle daemon (env cache 방지)..."
+(cd "$ROOT_DIR/backend" && cmd //c "gradlew.bat --stop" >/dev/null 2>&1) || true
+
 echo "[backend]  Starting Spring Backend..."
-(cd "$ROOT_DIR/backend" && doppler run -- cmd //c "gradlew.bat bootRun --args='--spring.profiles.active=dev'" 2>&1 | tee /tmp/backend.log | sed 's/^/[backend]  /') &
+(cd "$ROOT_DIR/backend" && doppler run -- cmd //c "gradlew.bat --no-daemon bootRun --args='--spring.profiles.active=dev'" 2>&1 | tee /tmp/backend.log | sed 's/^/[backend]  /') &
 PIDS+=($!)
 
 # --- 2. Landing Page (port 5174) ---
@@ -71,7 +77,7 @@ PIDS+=($!)
 
 # --- 4. Celery Worker ---
 echo "[celery]   Starting Celery Worker..."
-(cd "$ROOT_DIR/ai" && BACKEND_INTERNAL_URL=http://localhost:8080 doppler run -- .venv/Scripts/python -m celery -A app.celery_app worker --loglevel=info --pool=solo 2>&1 | sed 's/^/[celery]   /') &
+(cd "$ROOT_DIR/ai" && BACKEND_INTERNAL_URL=http://localhost:8080 doppler run -- .venv/Scripts/python -m celery -A app.celery_app worker --loglevel=info --pool=solo -Q indexing,celery -n dev-worker@%h 2>&1 | sed 's/^/[celery]   /') &
 PIDS+=($!)
 
 # --- 5. Web Editor (port 5173) — 브라우저용 ---

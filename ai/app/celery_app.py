@@ -9,6 +9,7 @@ celery_app = Celery(
     include=[
         "app.tasks._ping",
         "app.tasks.chunk_and_embed",
+        "app.tasks.generate_summary",
     ],
 )
 
@@ -35,5 +36,6 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.ping_task": {"queue": "indexing"},
         "app.tasks.chunk_and_embed": {"queue": "indexing"},
+        "app.tasks.generate_summary": {"queue": "indexing"},
     },
 )

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Folio Backend 로깅 설정
+  - dev/test: 텍스트 패턴 (사람이 읽기 편한 포맷)
+  - prod: JSON (LogstashEncoder) — Promtail/Loki 수집용 구조화 포맷
+  - stack trace 최대 2048자로 제한 (프롬프트/본문 유출 방어)
+-->
+<configuration>
+
+    <springProfile name="!prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <!-- traceId/userId가 있으면 메시지 앞에 표시 (없으면 빈 문자열) -->
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} [trace=%X{traceId:-} user=%X{userId:-}] - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE" />
+        </root>
+        <!-- 외부 호출 정상 응답은 dev에서만 DEBUG로 가시화 -->
+        <logger name="external" level="DEBUG" />
+    </springProfile>
+
+    <springProfile name="prod">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>userId</includeMdcKeyName>
+                <includeMdcKeyName>role</includeMdcKeyName>
+                <includeMdcKeyName>httpMethod</includeMdcKeyName>
+                <includeMdcKeyName>httpPath</includeMdcKeyName>
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <level>level</level>
+                    <message>message</message>
+                    <logger>logger_name</logger>
+                    <thread>thread</thread>
+                    <stackTrace>stack_trace</stackTrace>
+                </fieldNames>
+                <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                    <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                    <maxLength>2048</maxLength>
+                    <shortenedClassNameLength>36</shortenedClassNameLength>
+                    <rootCauseFirst>true</rootCauseFirst>
+                </throwableConverter>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON" />
+        </root>
+        <logger name="com.storyzip" level="INFO" />
+        <!-- 외부 호출 INFO 이상만 (정상 호출은 silent, SLA 초과/실패만 WARN) -->
+        <logger name="external" level="INFO" />
+        <logger name="org.hibernate.SQL" level="WARN" />
+        <logger name="org.springframework.security" level="WARN" />
+        <!--
+          Plan C 옵션 1 보안 모델 — AI 호출 경로의 평문 RAG 컨텍스트가 wire-level
+          DEBUG 로그로 흘러나오지 않도록 HTTP 클라이언트 본문 추적 패키지를 WARN으로 고정.
+          (DTO의 toString은 이미 마스킹되어 있지만, RestClient/JdkHttpClient가 raw body를
+          별도로 찍는 경로를 logback 레벨에서 한 번 더 차단한다.)
+        -->
+        <logger name="org.springframework.web.client.RestClient" level="WARN" />
+        <logger name="org.springframework.http.client" level="WARN" />
+        <logger name="jdk.internal.net.http" level="WARN" />
+        <logger name="jdk.httpclient" level="WARN" />
+    </springProfile>
+
+</configuration>
