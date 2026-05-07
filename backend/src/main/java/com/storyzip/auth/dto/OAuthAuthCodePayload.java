@@ -11,6 +11,7 @@ public record OAuthAuthCodePayload(
         String refreshToken,
         String deviceId,
         WriterDto writer,
-        boolean isNewUser
+        boolean isNewUser,
+        LoginResponse.EncryptionMaterial encryption
 ) {
 }
