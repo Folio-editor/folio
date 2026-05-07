@@ -1,0 +1,29 @@
+# 기본: 텍스트 파일은 정규화. 바이너리는 자동 감지에 위임.
+* text=auto
+
+# Linux 컨테이너로 마운트되어 직접 실행되는 파일들은 무조건 LF.
+# Windows 의 core.autocrlf=true 가 CRLF 로 바꾸면 shebang 이 #!/bin/bash\r 가 되어
+# "cannot execute: required file not found" 로 죽는다 (powersync-init.sh 등).
+*.sh           text eol=lf
+*.bash         text eol=lf
+
+# Docker / compose / kubernetes 매니페스트도 줄바꿈 sensitive 케이스가 있어 LF 고정.
+Dockerfile     text eol=lf
+*.Dockerfile   text eol=lf
+docker-entrypoint*.sh text eol=lf
+
+# Windows 전용 batch / powershell 은 CRLF 유지.
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# 흔한 바이너리 — 정규화 금지.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary

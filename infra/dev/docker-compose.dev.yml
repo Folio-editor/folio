@@ -89,7 +89,7 @@ services:
       - ../powersync/powersync.yaml:/app/powersync.yaml:ro
       - ../powersync/sync-rules.yaml:/app/sync-rules.yaml:ro
     environment:
-      PS_DATA_SOURCE_URI: postgresql://folio_repl:storyzip_repl_dev@postgresql:5432/${DB_NAME:-storyzip}
+      PS_DATA_SOURCE_URI: postgresql://folio_repl:${PS_REPL_PASSWORD:-storyzip_repl_dev}@postgresql:5432/${DB_NAME:-storyzip}
       PS_MONGO_URI: mongodb://mongo:27017/powersync
       PS_JWT_K: ${PS_JWT_K}
     healthcheck:
