@@ -16,14 +16,14 @@ import java.util.function.Supplier;
  *   <li>실패: WARN/ERROR — 호출자가 던지는 예외 유형에 위임. 여기선 elapsed만 기록.</li>
  * </ul>
  *
- * <p>로그 필드를 통일해 Loki에서 {@code system="toss"} / {@code op="confirmPayment"}로
+ * <p>로그 필드를 통일해 Loki에서 {@code system="portone"} / {@code op="getPayment"}로
  * 필터링 가능하도록 한다.
  */
 @Slf4j
 public final class ExternalCallLogger {
 
     /** 외부 시스템 식별자 — Loki/Grafana 라벨로 그대로 사용. */
-    public static final String SYSTEM_TOSS = "toss";
+    public static final String SYSTEM_PORTONE = "portone";
     public static final String SYSTEM_AI = "ai";
     public static final String SYSTEM_GOOGLE_OAUTH = "google_oauth";
 
@@ -32,7 +32,7 @@ public final class ExternalCallLogger {
     /**
      * 호출을 측정하고 로그를 남긴 후 결과를 반환한다.
      *
-     * @param system 외부 시스템명 (e.g. "toss", "ai")
+     * @param system 외부 시스템명 (e.g. "portone", "ai")
      * @param op 작업명 (e.g. "confirmPayment")
      * @param slaMs 이 작업의 SLA(ms). 초과 시 WARN.
      * @param action 실제 호출 람다

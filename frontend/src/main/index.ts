@@ -18,12 +18,6 @@ import {
   clearMaterial as clearEncryptionMaterial,
   type PersistedMaterial,
 } from './auth/encryptionMaterialStore';
-import {
-  openOneTimePayment,
-  openBillingAuth,
-  type OneTimePaymentParams,
-  type BillingAuthParams,
-} from './payment/checkoutWindow';
 import { registerUpdaterHandlers } from './updater';
 import { registerExportHandlers } from './export';
 
@@ -193,17 +187,6 @@ function registerWindowHandlers() {
   });
 }
 
-function registerPaymentHandlers() {
-  ipcMain.handle('payment:openOneTime', async (event, params: OneTimePaymentParams) => {
-    const parent = BrowserWindow.fromWebContents(event.sender);
-    return openOneTimePayment(parent, params);
-  });
-  ipcMain.handle('payment:openBillingAuth', async (event, params: BillingAuthParams) => {
-    const parent = BrowserWindow.fromWebContents(event.sender);
-    return openBillingAuth(parent, params);
-  });
-}
-
 function registerSpellcheckHandlers() {
   ipcMain.handle('spellcheck:syncWords', async (event, words: unknown) => {
     const session = event.sender.session as Electron.Session & {
@@ -242,7 +225,6 @@ function bindMaximizeEvents(win: BrowserWindow) {
 app.on('ready', () => {
   registerAuthHandlers();
   registerWindowHandlers();
-  registerPaymentHandlers();
   registerSpellcheckHandlers();
   registerCryptoHandlers();
   registerUpdaterHandlers();
