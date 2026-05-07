@@ -178,7 +178,25 @@ public class GlobalExceptionHandler {
     }
 
     // ============================================================
-    // 6. 최종 Fallback (500)
+    // 6. ResponseStatusException — Controller 가 명시한 status code 그대로 보존
+    //    (이게 없으면 아래 Exception.class fallback 이 모두 500 으로 변환)
+    // ============================================================
+
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(
+            org.springframework.web.server.ResponseStatusException e, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.valueOf(e.getStatusCode().value());
+        String traceId = newTraceId();
+        // 4xx 는 INFO/WARN, 5xx 는 ERROR 로 logByStatus 위임
+        logByStatus(status, traceId, e, "[ResponseStatusException] {} {}", status.value(), e.getReason());
+        return ResponseEntity.status(status)
+                .body(ErrorResponse.of(
+                        ErrorCode.INTERNAL_SERVER_ERROR, e.getReason(),
+                        request.getRequestURI(), traceId));
+    }
+
+    // ============================================================
+    // 7. 최종 Fallback (500)
     // ============================================================
 
     @ExceptionHandler(Exception.class)

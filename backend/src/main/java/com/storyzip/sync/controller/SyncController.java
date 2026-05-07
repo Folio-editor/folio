@@ -8,9 +8,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,12 +24,15 @@ import java.util.UUID;
 /**
  * PowerSync uploadData() 진입점.
  *
- * <p>한 번의 요청에 여러 CRUD 항목(트랜잭션 단위)을 묶어서 받는다.
+ * <p>한 번의 요청에 여러 CRUD 항목을 묶어서 받는다.
  * 클라이언트는 PowerSync {@code getNextCrudTransaction()}으로 얻은
- * 모든 entry를 한 번의 HTTP 호출로 전송하고, 200 OK를 받은 뒤에만
+ * 모든 entry를 한 번의 HTTP 호출로 전송하고, 2xx 응답을 받은 뒤에만
  * {@code transaction.complete()}를 호출해 큐에서 제거한다.
  *
- * <p>도중 1건이라도 실패하면 {@link Transactional} 롤백 — 부분 저장 방지.
+ * <p>각 entry는 SyncService 내부에서 독립 트랜잭션(REQUIRES_NEW)으로 처리되며,
+ * {@link DataIntegrityViolationException} 같은 결정론적 실패는 swallow하여
+ * 무한 재시도 폭주를 방지한다. 클라이언트는 다음 download sync 사이클에
+ * 서버 진실값으로 자동 정정된다 (server-authoritative 원칙).
  *
  * <p>요금제 용량 제한은 동기화 파이프라인에서 강제하지 않는다.
  * 오프라인 퍼스트 원칙에 따라 서버는 모든 CRUD를 수용하고,
@@ -38,6 +42,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/sync")
 @RequiredArgsConstructor
 @Validated
+@Slf4j
 @Tag(name = "Sync", description = "PowerSync CRUD 업로드 API")
 @SecurityRequirement(name = "bearerAuth")
 public class SyncController {
@@ -51,7 +56,6 @@ public class SyncController {
      */
     private static final Map<String, Integer> TABLE_DEPTH = Map.ofEntries(
             Map.entry("work", 0),
-            Map.entry("plan", 1),
             Map.entry("plan_note", 1),
             Map.entry("world_note", 1),
             Map.entry("character", 1),
@@ -67,7 +71,6 @@ public class SyncController {
     );
 
     @PostMapping("/upload")
-    @Transactional
     @Operation(
             summary = "CRUD 일괄 업로드",
             description = "PowerSync 클라이언트가 로컬 변경사항(여러 행)을 한 번에 업로드한다"
@@ -85,8 +88,23 @@ public class SyncController {
                 .comparingInt(SyncController::opPriority)      // PUT/PATCH 먼저, DELETE 나중
                 .thenComparingInt(SyncController::entryDepth)  // PUT: 얕은 테이블부터
         );
+        // 각 entry는 SyncService 내부에서 REQUIRES_NEW 트랜잭션으로 격리된다.
+        // 결정론적 제약 위반(UNIQUE/FK/NOT NULL)은 swallow — 재시도해도 결과 같음.
+        // 일시적 오류(락/네트워크/OOM)는 throw하여 PowerSync가 재시도하도록 한다.
         for (SyncUploadRequest entry : ordered) {
-            syncService.process(entry, writerId);
+            try {
+                syncService.process(entry, writerId);
+            } catch (DataIntegrityViolationException ex) {
+                // Permanent error — 클라이언트는 다음 download sync에서 서버 진실값으로 정정됨.
+                // payload 전체를 로그에 남겨 사후 분석/복구 가능하도록.
+                log.warn("[SyncQuarantine] writerId={} table={} op={} id={} cause={} payload={}",
+                        writerId,
+                        entry.table(),
+                        entry.op(),
+                        entry.id(),
+                        ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage(),
+                        entry.data());
+            }
         }
         return ResponseEntity.noContent().build();
     }

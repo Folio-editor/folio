@@ -130,22 +130,17 @@ CREATE TABLE work (
     description     TEXT,
     status          VARCHAR(20) NOT NULL,
     sort_order      INTEGER NOT NULL DEFAULT 0,
+    -- 장르·분위기 태그 (ERD 정리로 plan → work 로 이전됨, 평문 메타)
+    genres          JSONB DEFAULT '[]'::jsonb,
+    moods           JSONB DEFAULT '[]'::jsonb,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
-CREATE TABLE plan (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    work_id         UUID NOT NULL UNIQUE REFERENCES work(id) ON DELETE CASCADE,
-    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    slogan          TEXT,
-    genres          JSONB,
-    moods           JSONB,
-    target_audience VARCHAR(200),
-    content         TEXT,
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
-);
+-- (구) plan 테이블은 ERD 정리(2026-05) 2단계로 폐기됨.
+--   - 1단계: slogan/genres/moods/target_audience 컬럼이 work 로 이전·폐기 (빈 껍데기)
+--   - 2단계: plan 테이블 자체 폐기. plan_note 가 work_id 직접 FK 라 plan 행 불필요.
+-- 자유 기획 문서는 plan_note 단독 관리.
 
 CREATE TABLE world_note (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

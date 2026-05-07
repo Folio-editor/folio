@@ -22,7 +22,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     GRANT SELECT ON
         work,
-        plan,
         plan_note,
         world_note,
         "character",
@@ -39,7 +38,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     CREATE PUBLICATION powersync FOR TABLE
         work,
-        plan,
         plan_note,
         world_note,
         "character",

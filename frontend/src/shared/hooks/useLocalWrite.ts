@@ -7,9 +7,8 @@ import { analytics, charCountBucket } from '../lib/analytics';
 import { WORLD_NOTE_TEMPLATES } from '../constants/worldNoteTemplates';
 
 /**
- * Plan C: episode.content는 로그인 사용자에게는 평문 대신 'v1:' + base64(IV||CT||TAG) 형태로
- * 저장된다. 저장 시점에 KEK이 있으면 work_key를 ensureWorkKey로 확보 후 암호화하고,
- * KEK이 없으면(게스트, 미로그인) 평문 그대로 저장한다.
+ * Plan C: 작성 시점에 KEK 으로 ciphertext 변환 후 SQLite 저장. KEK 없으면 (게스트) 평문.
+ * 표시 시점에 useDecrypted* hook 이 KEK 으로 메모리 복호화.
  */
 const CIPHERTEXT_PREFIX = 'v1:';
 
@@ -27,9 +26,7 @@ export function useLocalWrite() {
   const db = usePowerSync();
   const writerId = useWriterId();
 
-  // PR2 — work 메타(title/author_name/description) 암호화 헬퍼.
-  // KEK이 있으면 ensureWorkKey로 work_key 확보 후 평문 → "v1:" + base64 암호화.
-  // KEK이 없으면(게스트/미로그인) 평문 그대로 — episode와 동일 폴백 정책.
+  // KEK 있으면 work_key 로 ciphertext, 없으면 (게스트) 평문 그대로.
   const encryptWorkField = async (
     workId: string,
     plain: string | null,
@@ -162,14 +159,16 @@ export function useLocalWrite() {
 
   return {
     // ── work ────────────────────────────────────────────────
-    createWork: async (title: string): Promise<string> => {
+    createWork: async (title: string, opts?: { kind?: string | null }): Promise<string> => {
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       // 먼저 평문으로 INSERT — work 행이 있어야 ensureWorkKey가 encrypted_dek를 UPDATE할 수 있다.
+      // genres/moods는 NULL로 시작 (작가가 워크스페이스 화면에서 태그 추가 시 채워짐).
+      // kind: null = 일반 사용자 작품, 'onboarding' = 신규 가이드 작품 (평문 식별자).
       await db.execute(
-        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, ?, ?)`,
-        [id, writerId, title, now, now],
+        `INSERT INTO work (id, writer_id, title, author_name, description, status, sort_order, genres, moods, kind, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, '연재중', 0, NULL, NULL, ?, ?, ?)`,
+        [id, writerId, title, opts?.kind ?? null, now, now],
       );
       // KEK이 있으면 즉시 title 암호화 — 평문 row가 동기화 큐에 잠시 머물 수 있으나
       // updated_at이 같은 시점이라 충돌 없이 단일 commit으로 백엔드에 도달한다.
@@ -190,6 +189,10 @@ export function useLocalWrite() {
         author_name: string | null;
         description: string | null;
         status: string;
+        // genres/moods는 JSON 직렬화된 string으로 받는다 (호출 측에서 JSON.stringify).
+        // SQLite TEXT 컬럼이며, 평문 유지 (필터·정렬·검색 메타).
+        genres: string | null;
+        moods: string | null;
       }>,
     ): Promise<void> => {
       const now = new Date().toISOString();
@@ -197,7 +200,7 @@ export function useLocalWrite() {
       if (fields.length === 0) return;
 
       const effective: Record<string, unknown> = { ...patch };
-      // title/author_name/description은 암호화 대상. status는 평문 유지(필터·정렬용).
+      // title/author_name/description은 암호화 대상. status·genres·moods는 평문 유지.
       if ('title' in patch && typeof patch.title === 'string') {
         effective.title = await encryptWorkField(id, patch.title, now);
       }
@@ -242,48 +245,10 @@ export function useLocalWrite() {
       );
     },
 
-    // ── plan (work당 1개) ────────────────────────────────────
-    /** 기존 plan 있으면 해당 id, 없으면 새로 생성 */
-    ensurePlan: async (workId: string): Promise<string> => {
-      const result = await db.execute(
-        `SELECT id FROM plan WHERE work_id = ? LIMIT 1`,
-        [workId],
-      );
-      const existing = (result.rows?._array as { id: string }[] | undefined)?.[0];
-      if (existing) return existing.id;
-
-      const id = crypto.randomUUID();
-      const now = new Date().toISOString();
-      await db.execute(
-        `INSERT INTO plan (id, work_id, writer_id, slogan, genres, moods, target_audience, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
-        [id, workId, writerId, now, now],
-      );
-      trackCreated('plan', 'auto');
-      return id;
-    },
-    updatePlan: async (
-      id: string,
-      patch: Partial<{
-        slogan: string | null;
-        genres: string | null;
-        moods: string | null;
-        target_audience: string | null;
-      }>,
-    ): Promise<void> => {
-      const now = new Date().toISOString();
-      const fields = Object.keys(patch);
-      if (fields.length === 0) return;
-      const setClause = fields.map((f) => `${f} = ?`).join(', ');
-      const values = fields.map((f) => patch[f as keyof typeof patch] ?? null);
-      await db.execute(
-        `UPDATE plan SET ${setClause}, updated_at = ? WHERE id = ?`,
-        [...values, now, id],
-      );
-      trackSaved('plan');
-    },
-
     // ── plan_note (work당 1:N 자유 문서) ────────────────────
+    // (구) plan 테이블·ensurePlan 은 ERD 정리 2단계로 폐기됨.
+    //   - 1단계: slogan/genres/moods/target_audience 컬럼이 work 로 이전·폐기
+    //   - 2단계: plan 테이블 자체 폐기 (plan_note 가 work_id 직접 FK)
     /**
      * @param content - 신규 문서 본문(TipTap JSON 직렬화 string). 템플릿 미리채우기 용도.
      *                  생략·null 시 빈 본문(NULL)으로 INSERT — 기존 동작 호환.
@@ -476,9 +441,8 @@ export function useLocalWrite() {
     },
     /**
      * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
-     *                복제 시 원본 콘텐츠 보존 용도. kind는 항상 'custom' — default kind
-     *                ('intro'/'appearance'/'personality')는 ensureCharacterNotes 가 한 번만 만들고
-     *                UNIQUE 보장하므로 사본은 자유 노트로 처리.
+     *                복제 시 원본 콘텐츠 보존 용도. kind는 항상 'custom' — default kind ('intro')는
+     *                ensureCharacterNotes 가 한 번만 만들고 UNIQUE 보장하므로 사본은 자유 노트로 처리.
      */
     createCharacterNote: async (
       workId: string,

@@ -229,13 +229,19 @@ data: {"type": "done", "episode_id": "uuid", "total_length": 6000, "usage": {...
 
 ## Celery 비동기 태스크
 
+> ⚠ **현재 상태 (2026-05)**: `chunk_and_embed_task` 호출 hook 끊김.
+> Plan C 옵션 1 적용으로 Spring 측 EpisodeIndexDebouncer 가 평문 못 봐서 Clean-up Phase 에서
+> 폐기됨. KMS 통합 작업에서 신규 트리거 hook 작성 + 자동 인덱싱 복원 예정.
+>
+> Clean-up Phase 에서 정리됨:
+> - `draft` / `review` 큐 라우팅 (정의된 task 없는 leftover) 제거
+> - `EpisodeIndexDebouncer.java` 통째 삭제
+
 ```
 Redis (Broker)
-  ├── indexing 큐
-  │   ├── chunk_and_embed_task   # 에피소드 청킹 + 벡터 임베딩
-  │   └── ping_task              # 개발용
-  ├── draft 큐 (미구현)
-  └── review 큐 (미구현)
+  └── indexing 큐
+      ├── chunk_and_embed_task   # 에피소드 청킹 + 벡터 임베딩 (호출 hook 끊김, KMS 통합 시 복원)
+      └── ping_task              # 개발용
 ```
 
 ### chunk_and_embed_task
@@ -248,6 +254,11 @@ Redis (Broker)
 ```
 
 ### generate_summary_task → extract_items_task (체인)
+
+> ❌ **현재 미동작.** Phase 1 (Agent 전환 plan) 에서 활성화 예정.
+> 코드는 `ai/app/tasks/generate_summary.py` · `extract_items.py` 에 정의되어 있으나
+> Celery `include` 미등록 + `pipelines.py` chain 호출 미연결 상태.
+> KMS 통합 + Phase 1 동시에 진행하면서 활성화.
 
 ```
 에피소드 원문 → Claude Haiku로 요약 생성

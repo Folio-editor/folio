@@ -27,27 +27,22 @@
 | description | TEXT | | 작품 설명/시놉시스 |
 | status | VARCHAR(20) | NOT NULL | 연재중/완결/휴재/trashed |
 | sort_order | INTEGER | NOT NULL | 목록 정렬 순서 |
+| genres | JSONB (PG) / TEXT (SQLite) | | 장르 태그 배열 (판타지, 로맨스 등). 평문 메타. (구) plan 테이블에서 이전됨 |
+| moods | JSONB (PG) / TEXT (SQLite) | | 분위기 태그 배열 (진지, 다크 등). 평문 메타. (구) plan 테이블에서 이전됨 |
 | created_at | TIMESTAMP | NOT NULL | |
 | updated_at | TIMESTAMP | NOT NULL | |
 
 ---
 
-### 1.2 Plan (기획)
+### 1.2 Plan (기획) — **폐기됨**
 
-작품의 방향성 정의. Work와 1:1 관계.
-
-| 컬럼 | 타입 | 제약 | 설명 |
-|------|------|------|------|
-| id | UUID | PK | |
-| work_id | UUID | FK → Work, UNIQUE | 워크스페이스당 1개 |
-| writer_id | UUID | FK → Writer | |
-| slogan | TEXT | | 슬로건 (작품 핵심 한 줄) |
-| genres | JSONB (PG) / TEXT (SQLite) | | 장르 태그 배열 (판타지, 로맨스 등). PostgreSQL에서 JSONB 인덱스 활용 |
-| moods | JSONB (PG) / TEXT (SQLite) | | 분위기 태그 배열 (진지, 다크 등). PostgreSQL에서 JSONB 인덱스 활용 |
-| target_audience | VARCHAR(200) | | 타겟 독자 |
-| content | TEXT | | TipTap JSON (자유 에디터 영역) |
-| created_at | TIMESTAMP | NOT NULL | |
-| updated_at | TIMESTAMP | NOT NULL | |
+> **변경 이력**: ERD 정리로 두 단계에 걸쳐 완전 폐기됨.
+> - 1단계: `slogan`, `genres`, `moods`, `target_audience` 컬럼 폐기
+>   - `genres`, `moods` → `work` 테이블로 이전 (1.1 참조)
+>   - `slogan`, `target_audience` → 사용처 없어 폐기
+> - 2단계: 빈 껍데기가 된 plan 테이블 자체 DROP. `plan_note` 가 `work_id` 를 직접 FK 로 가지므로 부모 행 불필요.
+>
+> 자유 기획 문서는 `plan_note` 단독으로 관리한다 (1.x 참조).
 
 ---
 

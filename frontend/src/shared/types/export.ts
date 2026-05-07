@@ -34,6 +34,9 @@ export interface WorkSnapshot {
   author_name: string | null;
   description: string | null;
   status: string;
+  /** SQLite TEXT(JSON) — 미리 파싱한 배열. ERD 정리로 plan에서 work로 이전됨. */
+  genres: string[] | null;
+  moods: string[] | null;
 }
 
 export interface EpisodeSnapshot {
@@ -46,13 +49,8 @@ export interface EpisodeSnapshot {
   sort_order: number;
 }
 
-export interface PlanSnapshot {
-  slogan: string | null;
-  /** SQLite에는 TEXT(JSON) — 미리 파싱한 배열 */
-  genres: string[] | null;
-  moods: string[] | null;
-  target_audience: string | null;
-}
+// (구) PlanSnapshot 은 ERD 정리 2단계로 폐기됨. plan 테이블 자체가 사라졌으므로
+// 스냅샷도 불필요. 자유 기획 문서는 PlanNoteSnapshot 으로 표현된다.
 
 export interface PlanNoteSnapshot {
   id: string;
@@ -137,7 +135,7 @@ export interface ExportPayload {
   /** 표지 작가명 — work.author_name 우선, 폴백으로 authStore의 nickname을 채워 보낸다 */
   author: { name: string };
   episodes?: EpisodeSnapshot[];
-  plan?: PlanSnapshot | null;
+  // (구) plan?: PlanSnapshot 필드는 ERD 정리 2단계로 폐기됨.
   planNotes?: PlanNoteSnapshot[];
   characters?: CharacterSnapshot[];
   characterNotes?: CharacterNoteSnapshot[];

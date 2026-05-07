@@ -52,7 +52,7 @@ import { IdeaArchiveEditScreen } from '../idea-archive/IdeaArchiveEditScreen';
 import { TrashScreen } from '../trash/TrashScreen';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { decryptWorkFieldOnce } from '../../crypto/fieldDecrypt';
-import { useBackfillEncryption } from '../../hooks/useBackfillEncryption';
+// useBackfillEncryption 폐기됨 — SQLite 항상 평문 정책 (옵션 A).
 import { useSyncResolver } from '../../hooks/useSyncResolver';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -101,8 +101,7 @@ const clamp = (v: number, min: number, max: number) =>
  */
 export function AuthenticatedApp() {
   const db = usePowerSync();
-  // PR2 이전 / 게스트에서 마이그레이션된 평문 row 자동 백필. KEK + writerId가 준비되면 한 번 실행.
-  useBackfillEncryption();
+  // 옵션 A: SQLite 평문 유지. backfill·암호화 hook 불필요.
   const [activity, setActivity] = useState<Activity>('home');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   // 메인 다중 탭 store — 작품별 탭 세트 분리 보존 모델.
@@ -264,7 +263,6 @@ export function AuthenticatedApp() {
     createWork,
     createWorldNote,
     createPlanNote,
-    ensureWorldNoteTemplates,
     placeWorldNote,
     placePlot,
     placePlanNote,
@@ -275,14 +273,6 @@ export function AuthenticatedApp() {
     placeCharacter,
     placeCharacterNote,
   } = useLocalWrite();
-
-  // 세계관 탭 진입 시 기본 템플릿 자동 생성
-  useEffect(() => {
-    if (activity === 'world-note' && selectedWorkId) {
-      void ensureWorldNoteTemplates(selectedWorkId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activity, selectedWorkId]);
 
   // ── 신규 사용자 온보딩 가이드 ─────────────────────────────────
   // 트리거 조건 (둘 다 만족):
@@ -296,11 +286,12 @@ export function AuthenticatedApp() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
 
+  // kind = 'onboarding' 매칭 (평문 컬럼이라 ciphertext 무관 안전)
   const { data: guideRows = [] } = useQuery<{ id: string }>(
     onboardingWriterId
-      ? `SELECT id FROM work WHERE writer_id = ? AND title = ? AND status != 'trashed' LIMIT 1`
+      ? `SELECT id FROM work WHERE writer_id = ? AND kind = 'onboarding' AND status != 'trashed' LIMIT 1`
       : `SELECT '' AS id WHERE 0`,
-    onboardingWriterId ? [onboardingWriterId, ONBOARDING_WORK.title] : [],
+    onboardingWriterId ? [onboardingWriterId] : [],
   );
   const hasGuideWork = guideRows.length > 0;
 

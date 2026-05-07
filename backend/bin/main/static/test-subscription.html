@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Folio 구독 테스트</title>
+    <script src="https://js.tosspayments.com/v1/payment"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #222; }
+        h1 { margin-bottom: 8px; }
+        p.lead { color: #666; margin-top: 0; }
+        section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        label { display: block; font-weight: 600; margin: 12px 0 4px; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+        button { background: #3182f6; color: white; border: 0; padding: 10px 16px; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 12px; margin-right: 8px; }
+        button.danger { background: #ef4444; }
+        button.secondary { background: #6b7280; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .log { background: #f9fafb; padding: 12px; border-radius: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+        .ok { color: #10b981; }
+        .err { color: #ef4444; }
+        small { color: #666; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+
+<h1>Folio 구독 테스트</h1>
+<p class="lead">
+    토스페이먼츠 빌링키 기반 정기결제 E2E 테스트.<br>
+    <small>dev 프로필 전용. 실결제 아님 — 카드번호 아무거나 입력 가능.</small>
+</p>
+
+<section>
+    <h3>1. 로그인 (dev JWT 발급)</h3>
+    <label>이메일</label>
+    <input id="email" value="test@storyzip.app">
+    <button onclick="devLogin()">로그인</button>
+    <div class="log" id="loginLog">아직 로그인 전</div>
+</section>
+
+<section>
+    <h3>2. 구독 신청 (빌링 인증 → 첫 결제)</h3>
+    <label>구독 플랜</label>
+    <select id="planCode">
+        <option value="PRO_MONTHLY">PRO_MONTHLY (월 9,900원 / 1,300 크레딧)</option>
+    </select>
+    <button id="subscribeBtn" onclick="startSubscribe()" disabled>카드 등록 후 구독 시작</button>
+    <div class="log" id="subscribeLog">로그인 먼저 하세요</div>
+</section>
+
+<section>
+    <h3>3. 구독 완료 후 자동 처리</h3>
+    <p><small>토스 빌링 인증창 성공 → 이 페이지로 돌아오면 자동으로 백엔드 구독 생성 API를 호출합니다.</small></p>
+    <div class="log" id="createLog">구독 대기 중…</div>
+</section>
+
+<section>
+    <h3>4. 구독 조회</h3>
+    <button onclick="fetchMine()" id="fetchBtn" disabled>내 구독 보기</button>
+    <div class="log" id="mineLog">—</div>
+</section>
+
+<section>
+    <h3>5. 해지 / 재개</h3>
+    <div class="row">
+        <button class="danger" onclick="cancelSub()" id="cancelBtn" disabled>해지 예약</button>
+        <button class="secondary" onclick="resumeSub()" id="resumeBtn" disabled>해지 철회</button>
+    </div>
+    <div class="log" id="changeLog">—</div>
+</section>
+
+<section>
+    <h3>5-1. 🧪 정기결제 즉시 실행 (dev 트리거)</h3>
+    <p><small>
+        새벽 4시 스케줄러를 기다리지 않고 지금 당장 정기결제 1회를 실행합니다.<br>
+        해지 예약 상태에서 누르면 → 만료(CANCELLED) 처리가 됩니다.
+    </small></p>
+    <button onclick="billNow()" id="billBtn" disabled>지금 정기결제 실행</button>
+    <div class="log" id="billLog">—</div>
+</section>
+
+<section>
+    <h3>6. 지갑 조회</h3>
+    <button onclick="fetchWallet()" id="walletBtn" disabled>내 토큰 잔액</button>
+    <div class="log" id="walletLog">—</div>
+</section>
+
+<script>
+    let TOSS_CLIENT_KEY = null;
+    const API_BASE = "http://localhost:8080";
+
+    // ============ 공통 ============
+    function loadToken() { return sessionStorage.getItem("accessToken"); }
+    function saveToken(t) { sessionStorage.setItem("accessToken", t); }
+    function log(id, text, cls) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = "log" + (cls ? " " + cls : "");
+    }
+    function authHeaders() {
+        return { "Content-Type": "application/json", "Authorization": "Bearer " + loadToken() };
+    }
+    function enableAfterLogin() {
+        document.getElementById("subscribeBtn").disabled = false;
+        document.getElementById("fetchBtn").disabled = false;
+        document.getElementById("cancelBtn").disabled = false;
+        document.getElementById("resumeBtn").disabled = false;
+        document.getElementById("billBtn").disabled = false;
+        document.getElementById("walletBtn").disabled = false;
+    }
+
+    // ============ 1. dev 로그인 ============
+    async function devLogin() {
+        const email = document.getElementById("email").value;
+        try {
+            const res = await fetch(API_BASE + "/api/v1/auth/dev/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email })
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
+            const data = await res.json();
+            saveToken(data.accessToken);
+            sessionStorage.setItem("writerId", data.writerId);
+            log("loginLog", "✅ JWT 발급 완료\nwriterId: " + data.writerId + "\ntoken: " + data.accessToken.substring(0, 40) + "...", "ok");
+            enableAfterLogin();
+        } catch (e) {
+            log("loginLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // ============ 2. 구독 신청: 빌링 인증 시작 ============
+    async function startSubscribe() {
+        const planCode = document.getElementById("planCode").value;
+        try {
+            // 2-1. 백엔드에서 customerKey + clientKey 받기
+            const prepRes = await fetch(API_BASE + "/api/v1/subscriptions/billing-auth", {
+                method: "POST",
+                headers: authHeaders()
+            });
+            if (!prepRes.ok) throw new Error("HTTP " + prepRes.status + " " + await prepRes.text());
+            const prep = await prepRes.json();
+            TOSS_CLIENT_KEY = prep.clientKey;
+
+            sessionStorage.setItem("pendingCustomerKey", prep.customerKey);
+            sessionStorage.setItem("pendingPlanCode", planCode);
+
+            log("subscribeLog", "✅ 빌링 인증 준비\ncustomerKey: " + prep.customerKey + "\n\n→ 토스 카드 등록창 열기…", "ok");
+
+            // 2-2. 토스 SDK로 빌링 인증창 열기
+            const tossPayments = TossPayments(TOSS_CLIENT_KEY);
+            await tossPayments.requestBillingAuth("카드", {
+                customerKey: prep.customerKey,
+                successUrl: window.location.origin + "/test-subscription.html?billing=success",
+                failUrl: window.location.origin + "/test-subscription.html?billing=fail"
+            });
+        } catch (e) {
+            const msg = (e && e.code ? e.code + ": " : "") + (e && e.message ? e.message : String(e));
+            log("subscribeLog", "❌ " + msg, "err");
+            console.error("Toss billing auth error:", e);
+        }
+    }
+
+    // ============ 3. 빌링 인증창에서 돌아온 후 자동 구독 생성 ============
+    async function handleRedirect() {
+        const params = new URLSearchParams(window.location.search);
+        const billing = params.get("billing");
+        if (!billing) return;
+
+        if (billing === "fail") {
+            log("createLog", "❌ 빌링 인증 실패\ncode: " + params.get("code") + "\nmessage: " + params.get("message"), "err");
+            return;
+        }
+
+        const authKey = params.get("authKey");
+        const customerKey = params.get("customerKey") || sessionStorage.getItem("pendingCustomerKey");
+        const planCode = sessionStorage.getItem("pendingPlanCode") || "PRO_MONTHLY";
+
+        log("createLog", "⏳ 백엔드 구독 생성 호출 중…\nauthKey: " + authKey + "\ncustomerKey: " + customerKey);
+
+        try {
+            const res = await fetch(API_BASE + "/api/v1/subscriptions", {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ planCode, authKey, customerKey })
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("createLog", "✅ 구독 생성 + 첫 결제 완료!\n" + JSON.stringify(JSON.parse(text), null, 2), "ok");
+            await fetchMine();
+            await fetchWallet();
+        } catch (e) {
+            log("createLog", "❌ 구독 생성 실패\n" + e.message, "err");
+        }
+    }
+
+    // ============ 4. 구독 조회 ============
+    async function fetchMine() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/subscriptions/me", { headers: authHeaders() });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("mineLog", JSON.stringify(JSON.parse(text), null, 2), "ok");
+        } catch (e) {
+            log("mineLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // ============ 5. 해지 / 재개 ============
+    async function cancelSub() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/subscriptions/cancel", {
+                method: "POST", headers: authHeaders()
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("changeLog", "✅ 해지 예약 완료 (현재 주기 종료 후 만료)\n" + JSON.stringify(JSON.parse(text), null, 2), "ok");
+        } catch (e) {
+            log("changeLog", "❌ " + e.message, "err");
+        }
+    }
+
+    async function resumeSub() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/subscriptions/resume", {
+                method: "POST", headers: authHeaders()
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("changeLog", "✅ 해지 예약 철회\n" + JSON.stringify(JSON.parse(text), null, 2), "ok");
+        } catch (e) {
+            log("changeLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // ============ 5-1. dev 트리거 — 정기결제 즉시 실행 ============
+    async function billNow() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/subscriptions/dev/bill-now", {
+                method: "POST", headers: authHeaders()
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error("HTTP " + res.status + "\n" + text);
+            log("billLog", "✅ 정기결제 1회 실행 완료\n" + JSON.stringify(JSON.parse(text), null, 2), "ok");
+            await fetchMine();
+            await fetchWallet();
+        } catch (e) {
+            log("billLog", "❌ " + e.message, "err");
+        }
+    }
+
+    // ============ 6. 지갑 조회 ============
+    async function fetchWallet() {
+        try {
+            const res = await fetch(API_BASE + "/api/v1/payments/wallet", { headers: authHeaders() });
+            if (!res.ok) throw new Error("HTTP " + res.status + " " + await res.text());
+            const wallet = await res.json();
+            log("walletLog", JSON.stringify(wallet, null, 2), "ok");
+        } catch (e) {
+            log("walletLog", "❌ " + e.message, "err");
+        }
+    }
+
+    window.addEventListener("load", () => {
+        if (loadToken()) {
+            log("loginLog", "♻️ 이전 세션 토큰 복원됨", "ok");
+            enableAfterLogin();
+            handleRedirect();
+        }
+    });
+</script>
+
+</body>
+</html>

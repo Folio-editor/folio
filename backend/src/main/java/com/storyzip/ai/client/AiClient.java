@@ -87,19 +87,34 @@ public class AiClient {
         });
     }
 
-    /** 회차 인덱싱 파이프라인 트리거 (청킹 + 임베딩 + 요약 + 추출). */
+    /** 회차 인덱싱 파이프라인 트리거 (청킹 + 임베딩). */
     public EpisodePipelineResponse triggerEpisodePipeline(EpisodePipelineRequest request) {
+        return invokeAiPipeline("triggerEpisodePipeline", "/v1/pipelines/episode", request);
+    }
+
+    /**
+     * AI 파이프라인 공용 호출 헬퍼 (Phase 2 R-B 통일).
+     *
+     * <p>응답 검증 규칙:
+     *  - body == null → invalid
+     *  - status="skipped" → 정상 (task_id 없음 허용)
+     *  - status="accepted" + task_id == null → invalid (이쪽만 옛 버그였음)
+     */
+    private EpisodePipelineResponse invokeAiPipeline(String op, String uri, EpisodePipelineRequest request) {
         return ExternalCallLogger.measure(
-                ExternalCallLogger.SYSTEM_AI, "triggerEpisodePipeline", AI_QUICK_SLA_MS, () -> {
+                ExternalCallLogger.SYSTEM_AI, op, AI_QUICK_SLA_MS, () -> {
             try {
                 EpisodePipelineResponse body = restClient.post()
-                        .uri("/v1/pipelines/episode")
+                        .uri(uri)
                         .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(request)
                         .retrieve()
                         .body(EpisodePipelineResponse.class);
-                if (body == null || body.taskId() == null) {
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                if ("accepted".equals(body.status()) && body.taskId() == null) {
                     throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
                 }
                 return body;
@@ -109,6 +124,11 @@ public class AiClient {
                 throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
             }
         });
+    }
+
+    /** 회차 요약 파이프라인 트리거 (Haiku, 프리미엄 전용). */
+    public EpisodePipelineResponse triggerEpisodeSummary(EpisodePipelineRequest request) {
+        return invokeAiPipeline("triggerEpisodeSummary", "/v1/pipelines/episode-summary", request);
     }
 
     /** Celery 태스크 적재 — dev 스모크 전용. */

@@ -561,7 +561,7 @@ worker: {
 
 - **`id` 컬럼은 자동 추가** (TEXT PK) — 직접 정의 금지.
 - **모든 컬럼 NULL 허용** (SQLite 기본값) — NOT NULL 제약은 백엔드에서만 검증.
-- JSONB 컬럼(`plan.genres`, `plan.moods`)은 `column.text`로 저장하고 클라이언트가 `JSON.stringify`/`JSON.parse`.
+- JSONB 컬럼(`work.genres`, `work.moods`)은 `column.text`로 저장하고 클라이언트가 `JSON.stringify`/`JSON.parse`.
 
 ```typescript
 const work = new Table({
@@ -691,8 +691,8 @@ export function WorkList() {
 ### 10.4 JSONB 컬럼 파싱
 
 ```typescript
-const genres: string[] = JSON.parse(plan.genres ?? '[]');
-const moods:  string[] = JSON.parse(plan.moods  ?? '[]');
+const genres: string[] = JSON.parse(work.genres ?? '[]');
+const moods:  string[] = JSON.parse(work.moods  ?? '[]');
 ```
 
 ---

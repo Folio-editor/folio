@@ -103,14 +103,20 @@ RAG 엔트리포인트: `assemble_context(work_id, writer_id, storyline, current
 - `recent_raw`: 최근 회차 원문
 - `vector_search`: 줄거리 임베딩 기반 유사 청크 검색
 
-### 모드별 제한
+### 모드별 제한 (2026-05 갱신, Clean-up Phase 후 코드와 일치)
 
-- `mode=draft`
-  - recent_raw limit: 4
-  - vector_search limit: 15
-- `mode=review`
-  - recent_raw limit: 2
-  - vector_search limit: 5
+| mode | recent_raw | vector_search | 비고 |
+|------|-------------|----------------|------|
+| `draft_sonnet` | 2 | 10 | drafts.py 의 model='sonnet' 시 |
+| `draft_opus` | 4 | 15 | drafts.py 의 model='opus' 시 |
+| `review` | 1 | 5 | reviews.py |
+
+> Clean-up Phase 에서 `mode='draft'` 하위호환 키 제거됨 (호출처가 모두 `draft_sonnet`/`draft_opus`/`review` 명시).
+
+### 섹션 변경 (2026-05)
+
+- ❌ **`timeline` 섹션 폐기** — `timeline_extractor` 결정론 모듈 폐기와 함께 정리됨.
+  회상·시간 흐름 검수는 LLM 이 본문 맥락에서 직접 판단.
 
 ### 설정집 크기 분기
 
@@ -125,7 +131,8 @@ RAG 엔트리포인트: `assemble_context(work_id, writer_id, storyline, current
 - 초과 시 절반 축소 -> 여전히 초과면 섹션 제거
 - `recent_raw`는 우선 보존되는 편(우선순위 높은 컨텍스트)
 
-참고: `_fetch_recent_summaries`는 현재 비어 있음(`return ""`), 즉 요약 섹션은 실제 미사용 상태.
+참고: `_fetch_recent_summaries` 빈 함수는 Clean-up Phase 에서 제거됨. Phase 1 (에이전트 전환) 의
+episode_summary 활성화 시 신규 함수로 작성 예정.
 
 ## 5. 임베딩/인덱싱 파이프라인
 

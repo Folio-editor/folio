@@ -14,7 +14,8 @@ interface WorldNoteInlineEditorProps {
   editable?: boolean;
 }
 
-const DEBOUNCE_MS = 800;
+// Plan C 결정 3 — 인라인 onUpdate 디바운스 400ms 통일.
+const DEBOUNCE_MS = 400;
 
 /**
  * 사전형 통합 뷰 전용 가벼운 인라인 에디터.

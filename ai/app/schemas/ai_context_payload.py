@@ -3,8 +3,11 @@
 클라이언트가 KEK + work_key로 복호화한 평문 컨텍스트를 AI 서버로 전달하기 위한 스키마.
 AI 서버는 평문을 메모리에서만 사용하고 절대 로깅·영속화하지 않는다.
 
-vector_search 청크와 timeline은 옵션 1 보안 모델의 평문 예외 영역이라
-페이로드에 포함하지 않고 AI 서버가 DB에서 직접 읽는다.
+vector_search 청크는 옵션 1 보안 모델의 평문 예외 영역이라 페이로드에 포함하지 않고
+AI 서버가 DB에서 직접 읽는다. (timeline 섹션은 Clean-up Phase 2026-05 에서 폐기됨.)
+
+KMS 통합 작업 (별도 plan) 에서 본 페이로드 흐름의 일부 필드는 서버 KMS 직접 SELECT
+패턴으로 전환 검토 예정. 현재는 클라이언트 → 페이로드 → AI 서버 메모리 흐름 유지.
 """
 
 from __future__ import annotations

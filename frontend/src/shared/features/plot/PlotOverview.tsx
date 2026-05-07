@@ -50,6 +50,11 @@ import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 import type { WorkspaceSection } from '../../types/workspace';
 
+// Plan C 결정 3 — 인라인 에디터 onUpdate 디바운스 400ms 통일.
+// 키스트로크 단위로 useLocalWrite.updatePlot이 호출되는 경로 4곳(actEditor, epEditor,
+// gridActEditor, gridEpEditor)에서 동일하게 사용한다.
+const INLINE_EDITOR_DEBOUNCE_MS = 400;
+
 interface PlotOverviewProps {
   workId: string;
   selectedItemId: string | null;
@@ -439,7 +444,7 @@ function ActSection({
           actPendingSaveRef.current?.();
           actPendingSaveRef.current = null;
           actDebounceRef.current = null;
-        }, 800);
+        }, INLINE_EDITOR_DEBOUNCE_MS);
       },
     },
     [],
@@ -726,7 +731,7 @@ function TimelineCard({
           epPendingSaveRef.current?.();
           epPendingSaveRef.current = null;
           epDebounceRef.current = null;
-        }, 800);
+        }, INLINE_EDITOR_DEBOUNCE_MS);
       },
     },
     [],
@@ -1008,7 +1013,7 @@ function ActGridSection({
         gridActDebounceRef.current = setTimeout(() => {
           const json = JSON.stringify(ed.getJSON());
           void gridActUpdateRef.current(act.id, { content: json });
-        }, 800);
+        }, INLINE_EDITOR_DEBOUNCE_MS);
       },
     },
     [],
@@ -1241,7 +1246,7 @@ function ActGridEpisodeContentEditor({
         gridEpDebounceRef.current = setTimeout(() => {
           const json = JSON.stringify(ed.getJSON());
           void gridEpUpdateRef.current(episode.id, { content: json });
-        }, 800);
+        }, INLINE_EDITOR_DEBOUNCE_MS);
       },
     },
     [],

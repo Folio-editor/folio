@@ -5,7 +5,7 @@ import { useUpdater } from '../../hooks/useUpdater';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
 import { useWriterId } from '../../hooks/useWriterId';
-import { ONBOARDING_WORK, ONBOARDING_MARKER } from '../../constants/onboardingContent';
+import { ONBOARDING_WORK } from '../../constants/onboardingContent';
 import { resetTabHelpShownFlags } from '../../constants/tabHelpContent';
 import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
@@ -52,16 +52,15 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
   const [restartConfirm, setRestartConfirm] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
 
-  // 가이드 작품 식별 — 제목 + description 마커가 모두 일치해야 자동 삭제 대상
-  // (사용자가 description 을 수정한 경우 보호)
-  const { data: guideRows = [] } = useQuery<{ id: string; description: string | null }>(
+  // 가이드 작품 식별 — kind = 'onboarding' 평문 컬럼 매칭 (ciphertext 무관 안전)
+  const { data: guideRows = [] } = useQuery<{ id: string }>(
     writerId
-      ? `SELECT id, description FROM work
-         WHERE writer_id = ? AND title = ? AND status != 'trashed' LIMIT 1`
-      : `SELECT '' AS id, '' AS description WHERE 0`,
-    writerId ? [writerId, ONBOARDING_WORK.title] : [],
+      ? `SELECT id FROM work
+         WHERE writer_id = ? AND kind = 'onboarding' AND status != 'trashed' LIMIT 1`
+      : `SELECT '' AS id WHERE 0`,
+    writerId ? [writerId] : [],
   );
-  const matchedGuide = guideRows.find((r) => r.description?.includes(ONBOARDING_MARKER));
+  const matchedGuide = guideRows[0];
   const hasMatchedGuide = matchedGuide !== undefined;
 
   const restartTutorial = async () => {

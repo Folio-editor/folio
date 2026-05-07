@@ -28,6 +28,9 @@ import { useFocusedEditorStore } from '../../stores/focusedEditorStore';
 import { WorldNoteInlineEditor } from '../world-note/WorldNoteInlineEditor';
 import { cn } from '../../lib/cn';
 
+// Plan C 결정 3 — 인라인 노트 onUpdate 디바운스 400ms 통일.
+const INLINE_EDITOR_DEBOUNCE_MS = 400;
+
 interface CharacterOverviewProps {
   characterId: string;
   onBack: () => void;
@@ -627,7 +630,7 @@ function InlineNoteItem({
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
           onUpdate(JSON.stringify(ed.getJSON()));
-        }, 800);
+        }, INLINE_EDITOR_DEBOUNCE_MS);
       },
     },
     [note.id],

@@ -13,6 +13,7 @@ import type {
 import { apiClient, ApiError } from '../lib/apiClient';
 import { useNetworkStore } from '../hooks/useNetworkStatus';
 import { analytics, countBucket } from '../lib/analytics';
+import { sanitizeCrudBatch } from './uploadSanitizer';
 
 // Windows Docker에서 localhost는 IPv6 우선 해석되는데 컨테이너는 IPv4 바인딩이라
 // CONNECTION_RESET이 난다. 기본값을 127.0.0.1로 고정.
@@ -98,6 +99,12 @@ export class FolioConnector implements PowerSyncBackendConnector {
     let batch = await database.getCrudBatch(BATCH_SIZE);
 
     while (batch) {
+      // ★ Plan C 결정 23 — 큐 entry 서버 전송 직전 sanitize.
+      // 게스트 시절 적재된 평문 PUT/PATCH op 의 본문 컬럼을 KEK + work_key로 ciphertext 교체.
+      // KEK 없으면(게스트/PepperProvider 비활성) 즉시 no-op. 멱등 + 개별 op 실패 격리.
+      // 백필(SQLite 측) + sanitize(큐 측) 이중 보호로 평문이 서버에 도달할 모든 경로를 차단.
+      await sanitizeCrudBatch(database, batch);
+
       const entries: SyncUploadEntry[] = batch.crud.map((entry) => ({
         table: entry.table,
         op: entry.op,
@@ -115,6 +122,22 @@ export class FolioConnector implements PowerSyncBackendConnector {
           event_count_bucket: countBucket(entries.length),
         });
         console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
+        // batch 안에 work PUT 이 있으면 서버에 work 행 도달 → server-dek 즉시 발급 가능.
+        // pending queue + SQLite 의 stale work (server_encrypted_dek=NULL) 둘 다 trigger.
+        // sanitize 의 issueServerDek 는 즉시 호출 안 하고 pending 만 적재 →
+        // 여기 trigger 가 진짜 발급. backend INSERT 커밋·트랜잭션 가시성 위해 짧은 delay.
+        const hasWorkPut = entries.some((e) => e.table === 'work' && e.op === 'PUT');
+        if (hasWorkPut) {
+          const { retryPendingServerDeks } = await import('../crypto/serverDek');
+          const { reconcileMissingServerDeks } = await import(
+            '../crypto/serverDekReconciler'
+          );
+          setTimeout(() => {
+            void retryPendingServerDeks();
+            void reconcileMissingServerDeks();
+          }, 500);
+        }
+        // reconcilePlaintextAll 호출 제거 — sync down 과 race 로 무한 round-trip 발생.
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 'network';
         void analytics.track('sync_failed', {

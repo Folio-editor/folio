@@ -1,11 +1,32 @@
 Plan C — 최종 기획안 (AWS Secrets Manager 채택, DB 마이그레이션 제외)
 ======================================================
 
+> ⚠ **상태 변경 (2026-05-05) — Vault Transit Engine 채택**
+> 본 Plan C 옵션 1 ("운영자도 본문 못 봄") 은 AI 자동 인덱싱·MCP·요약 등 AI 자동 백그라운드 처리와
+> 양립 불가능함이 확인되어 **envelope encryption 모델**로 전환.
+> AWS KMS 는 교육기관 EC2 외부 방화벽으로 도달 불가 → **HashiCorp Vault Transit Engine
+> (self-hosted, docker-compose 컨테이너)** 채택. 보안 모델은 KMS 와 동일.
+> 변경 사유:
+> - AI 인덱싱 트리거가 본질적으로 막힘 (서버는 평문 못 봄)
+> - 작가 명시 트리거는 UX 부담 (오프라인 퍼스트 정합 깨짐)
+> - 클라이언트 임베딩(Transformers.js) 은 알파 단계 인프라 부담 큼
+> - AWS KMS · Secrets Manager · API 전반: EC2 outbound 차단으로 사용 불가
+> 신규 모델 (Vault Transit):
+> - DB 는 ciphertext-only 유지 (외부 해커·DB 침해 보호)
+> - Folio 운영팀 (Vault unseal key 보유자) 은 AI 처리 시점에 한정 복호화 가능 (Notion·Google Docs 모델)
+> - 작가에게 개인정보처리방침에 명시
+> - **약속 변경**: 작품 생성 순간 raw work_key 가 서버 메모리를 한 번 통과 (envelope encryption 본질적 trade-off)
+> 본 문서의 클라이언트 KEK·work_key 흐름은 그대로 유지하고, 서버 측 별도 wrap 키
+> (`work.server_encrypted_dek` BYTEA, Vault Transit 으로 wrap) 만 추가.
+>
+> 상세: `docs/security/vault-integration.md`, `docs/ai-agent-transition-draft-v2.md`.
+
 전제 재확인:
 
 *   AWS Secrets Manager 사용 (결정 15: Secrets Manager 채택)
 *   DB 마이그레이션은 본 기획 범위 밖 (별도 진행)
 *   이전 하드닝안의 결함 4건 + 미세 3건 + Folio 환경 정합성 4건을 모두 반영한 단일 진실 문서
+*   **(2026-05 갱신) KMS 모델로 전환 — 위 박스 참조**
 
 * * *
 

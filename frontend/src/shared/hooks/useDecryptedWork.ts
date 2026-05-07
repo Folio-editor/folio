@@ -15,6 +15,9 @@ export interface DecryptedWorkRow {
   description: string | null;
   status: string;
   sort_order: number | null;
+  // 장르·분위기 — 평문 JSON 문자열 (SQLite TEXT). 호출 측에서 JSON.parse.
+  genres: string | null;
+  moods: string | null;
   created_at: string;
   updated_at: string;
   decryptStatus: DecryptStatus;
@@ -28,6 +31,8 @@ interface RawWorkRow {
   description: string | null;
   status: string;
   sort_order: number | null;
+  genres: string | null;
+  moods: string | null;
   created_at: string;
   updated_at: string;
   encrypted_dek: string | null;
@@ -55,6 +60,8 @@ async function decryptRow(
     writer_id: raw.writer_id,
     status: raw.status,
     sort_order: raw.sort_order,
+    genres: raw.genres,
+    moods: raw.moods,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
   };
@@ -105,6 +112,9 @@ async function decryptRow(
       decryptField(raw.author_name, workKey),
       decryptField(raw.description, workKey),
     ]);
+    // lazy reconcile 제거 — PowerSync sync down 이 server ciphertext 로 매번 덮어쓰므로
+    // SQLite 평문 UPDATE 가 즉시 다음 sync down 에 무력화 + ps_crud trigger 가 발화하면
+    // 무한 round-trip 위험. 표시 시점 메모리 복호화로 사용자 경험 평문 유지.
     return {
       ...base,
       title: title ?? '',
@@ -141,7 +151,7 @@ export function useDecryptedWork(workId: string): {
 } {
   const { data: rows = [] } = useQuery<RawWorkRow>(
     `SELECT id, writer_id, title, author_name, description, status,
-            sort_order, created_at, updated_at, encrypted_dek
+            sort_order, genres, moods, created_at, updated_at, encrypted_dek
        FROM work WHERE id = ?`,
     [workId],
   );

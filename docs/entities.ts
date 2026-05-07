@@ -18,23 +18,16 @@ export interface Work {
   description: string | null;    // 작품 설명/시놉시스
   status: string;                // 연재중/완결/휴재/trashed
   sort_order: number;            // 목록 정렬 순서
+  genres: string[] | null;       // 장르 태그 배열 (PG: JSONB / SQLite: TEXT JSON). (구) plan에서 이전됨
+  moods: string[] | null;        // 분위기 태그 배열 (PG: JSONB / SQLite: TEXT JSON). (구) plan에서 이전됨
   created_at: string;            // ISO timestamp
   updated_at: string;
 }
 
-/** 기획 (Work와 1:1) */
-export interface Plan {
-  id: string;
-  work_id: string;               // FK → Work (UNIQUE)
-  writer_id: string;
-  slogan: string | null;         // 슬로건 (작품 핵심 한 줄)
-  genres: string[] | null;       // 장르 태그 배열 (PG: JSONB / SQLite: TEXT JSON)
-  moods: string[] | null;        // 분위기 태그 배열 (PG: JSONB / SQLite: TEXT JSON)
-  target_audience: string | null; // 타겟 독자
-  content: string | null;        // TipTap JSON (자유 에디터)
-  created_at: string;
-  updated_at: string;
-}
+// (구) Plan 인터페이스는 ERD 정리 2단계로 폐기됨.
+//   - 1단계: slogan/genres/moods/target_audience 컬럼이 Work 로 이전·폐기
+//   - 2단계: plan 테이블 자체 폐기 (plan_note 가 work_id 직접 FK)
+// 자유 기획 문서는 PlanNote 인터페이스로 표현된다.
 
 /** 세계관 노트 (중첩 트리 구조) */
 export interface WorldNote {

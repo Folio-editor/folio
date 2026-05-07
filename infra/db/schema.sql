@@ -145,24 +145,26 @@ CREATE TABLE work (
     description     TEXT,
     status          VARCHAR(20) NOT NULL,
     sort_order      INTEGER NOT NULL DEFAULT 0,
+    genres          JSONB DEFAULT '[]'::jsonb,
+    moods           JSONB DEFAULT '[]'::jsonb,
     encrypted_dek   BYTEA,
+    -- 작품 종류 식별 (NULL = 일반 사용자 작품, 'onboarding' = 신규 사용자 가이드).
+    -- ciphertext 무관 평문 컬럼이라 SELECT WHERE 매칭 안전. 향후 'novel'/'short_story' 등
+    -- 확장 여지. 기본 NULL → 기존 데이터 영향 0.
+    kind            VARCHAR(20),
+    -- Vault Transit envelope encryption: work_key 를 Vault 로 추가 wrap 한 결과.
+    -- 작품 생성 시 클라이언트가 raw work_key 를 한 번 TLS 로 서버 전송 → VaultKmsService.encrypt()
+    -- → 이 컬럼 채움. 오프라인 신규 작품은 NULL 허용 (온라인 복귀 시 발급).
+    -- 서버는 이 컬럼 → Vault decrypt → work_key 평문 → AI 인덱싱·검수에 사용.
+    server_encrypted_dek BYTEA,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
     updated_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
-CREATE TABLE plan (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    work_id         UUID NOT NULL UNIQUE REFERENCES work(id) ON DELETE CASCADE,
-    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    slogan          TEXT,
-    genres          JSONB,
-    moods           JSONB,
-    target_audience VARCHAR(200),
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
-);
-
--- 기획서 하위 문서 (1:N) — slogan/genres/moods 는 plan 에, 자유 문서는 여기에.
+-- (구) plan 테이블은 ERD 정리(2026-05) 2단계로 폐기됨.
+--   - 1단계: slogan/genres/moods/target_audience 컬럼이 work 로 이전·폐기되어 빈 껍데기가 됨
+--   - 2단계: plan_note 가 work_id 를 직접 FK 로 참조하므로 plan 행 자체가 불필요 → DROP
+-- 기획서 하위 자유 문서는 plan_note 가 단독으로 관리한다.
 CREATE TABLE plan_note (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     work_id         UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
@@ -327,16 +329,43 @@ CREATE TABLE episode_chunk (
 );
 
 CREATE TABLE episode_summary (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    episode_id    UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
-    work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
-    writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    summary       TEXT NOT NULL,
-    is_confirmed  BOOLEAN NOT NULL DEFAULT false,
-    model_used    VARCHAR(50),
-    raw_result    TEXT,
-    created_at    TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMP NOT NULL DEFAULT now()
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    episode_id             UUID NOT NULL UNIQUE REFERENCES episode(id) ON DELETE CASCADE,
+    work_id                UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id              UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    -- 요약 본문
+    oneline_summary        TEXT,                    -- 한 줄 요약 (15~30자). 알파 NULL 허용, Phase 2 NOT NULL.
+    summary                TEXT NOT NULL,           -- 3~5 문장 줄거리
+    -- 회차 메타 (AI 탐색·검수·초안용)
+    pov_character          VARCHAR(100),
+    present_characters     JSONB,                   -- ["앤","마릴라"]
+    present_locations      JSONB,                   -- ["초록지붕집"]
+    key_events             JSONB,                   -- [{order,event}]
+    time_progression       VARCHAR(50),
+    tone                   VARCHAR(50),
+    cliffhanger            TEXT,
+    referenced_world_notes JSONB,                   -- world_note id[]
+    foreshadow_planted     JSONB,                   -- [{name,description}]
+    foreshadow_paid_off    JSONB,                   -- foreshadow id[]
+    keywords               JSONB,                   -- 검색 보조 키워드 5~10개
+    word_count             INTEGER,
+    -- 작가 승인
+    is_confirmed           BOOLEAN NOT NULL DEFAULT false,
+    -- 호출 메타 / 폭주 가드
+    model_used             VARCHAR(50),
+    raw_result             JSONB,                   -- LLM 원본 응답
+    content_hash           CHAR(64),                -- episode.content SHA256 — 동일 본문 skip
+    generation_count       INTEGER NOT NULL DEFAULT 0,
+    last_generated_at      TIMESTAMP,
+    created_at             TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMP NOT NULL DEFAULT now(),
+    -- FTS — 'simple' 토크나이저 (한국어 정확도 한계는 keywords JSONB + JSONB 컨테인 검색으로 보완)
+    summary_tsv            tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple',
+            coalesce(oneline_summary,'') || ' ' ||
+            coalesce(summary,'')         || ' ' ||
+            coalesce(keywords::text,''))
+    ) STORED
 );
 
 CREATE TABLE extraction_suggestion (
@@ -415,7 +444,7 @@ CREATE TABLE export (
 
 -- 동기화 필터링 (PowerSync RLS)
 CREATE INDEX idx_work_writer ON work(writer_id);
-CREATE INDEX idx_plan_writer ON plan(writer_id);
+-- (구) idx_plan_writer 는 plan 테이블 폐기로 함께 제거됨 (ERD 정리 2단계).
 CREATE INDEX idx_plan_note_writer ON plan_note(writer_id);
 CREATE INDEX idx_plan_note_work   ON plan_note(work_id);
 CREATE INDEX idx_world_note_writer ON world_note(writer_id);
@@ -456,9 +485,9 @@ CREATE INDEX idx_token_wallet_bonus_expires
 CREATE INDEX idx_ai_analysis_episode ON ai_analysis(episode_id);
 CREATE INDEX idx_export_writer ON export(writer_id);
 
--- JSONB 인덱스
-CREATE INDEX idx_plan_genres ON plan USING GIN (genres);
-CREATE INDEX idx_plan_moods ON plan USING GIN (moods);
+-- JSONB 인덱스 (genres/moods 는 ERD 정리 1단계로 plan → work 이전됨)
+CREATE INDEX idx_work_genres ON work USING GIN (genres);
+CREATE INDEX idx_work_moods ON work USING GIN (moods);
 
 -- AI 전용
 CREATE INDEX idx_episode_chunk_embedding
@@ -470,6 +499,12 @@ CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
 CREATE INDEX idx_episode_summary_work_confirmed
     ON episode_summary(work_id, is_confirmed);
 CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
+CREATE INDEX idx_episode_summary_tsv
+    ON episode_summary USING GIN (summary_tsv);
+CREATE INDEX idx_episode_summary_pov
+    ON episode_summary (work_id, pov_character);
+CREATE INDEX idx_episode_summary_episode_hash
+    ON episode_summary (episode_id, content_hash);
 CREATE INDEX idx_extraction_suggestion_work_status
     ON extraction_suggestion(work_id, status);
 CREATE INDEX idx_extraction_suggestion_writer  ON extraction_suggestion(writer_id);
