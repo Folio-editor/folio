@@ -315,7 +315,13 @@ export function AuthenticatedApp() {
     if (hasGuideWork && onboardingOpen) setOnboardingOpen(false);
   }, [hasGuideWork, onboardingOpen]);
 
+  // setState 는 비동기라 setOnboardingBusy(true) 만으론 동시 재진입을 막지 못함.
+  // Enter 키가 keydown 리스너 + 포커스된 button 의 합성 click 을 둘 다 발사하는 케이스에서
+  // 시드가 두 번 실행되어 작품·캐릭터·플롯이 통째로 두 세트 들어가던 버그 차단.
+  const onboardingSeedingRef = useRef(false);
   const handleOnboardingAccept = useCallback(async () => {
+    if (onboardingSeedingRef.current) return;
+    onboardingSeedingRef.current = true;
     setOnboardingBusy(true);
     try {
       const newWorkId = await seedOnboarding();
@@ -326,6 +332,7 @@ export function AuthenticatedApp() {
       // 기능 안내는 각 활동 탭의 ? 버튼 + 첫 진입 시 자동 노출되는 FloatingHelpCard 가 담당
     } finally {
       setOnboardingBusy(false);
+      onboardingSeedingRef.current = false;
     }
   }, [seedOnboarding]);
 
