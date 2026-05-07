@@ -62,6 +62,9 @@ app:
 ai:
   client:
     base-url: http://fastapi-test:8000
+    # CI 에서 INTERNAL_API_KEY ENV 없을 때 부팅 실패 방지용 dummy.
+    # 실제 호출은 안 일어나며 (AI 서버 없음), InternalDecryptController 도 Vault 비활성으로 미생성.
+    internal-api-key: ${INTERNAL_API_KEY:test-internal-api-key}
 
 # Vault 는 단위·통합 테스트에서 띄우지 않음 → 비활성. testcontainers 기반 vault
 # 통합 테스트는 별도 @ActiveProfiles 또는 @TestPropertySource 로 enabled=true override.
