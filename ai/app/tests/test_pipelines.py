@@ -66,7 +66,11 @@ def test_episode_pipeline_enqueues_chunk_and_embed_only(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 202
-    assert response.json() == {"task_id": "task-123", "status": "accepted", "reason": None}
+    body = response.json()
+    assert body["task_id"] == "task-123"
+    assert body["status"] == "accepted"
+    assert body["reason"] is None
+    assert body["idempotency_key"].startswith("indexing:11111111-")
     assert captured["args"] == (
         "11111111-1111-1111-1111-111111111111",
         "22222222-2222-2222-2222-222222222222",
@@ -116,9 +120,9 @@ def test_episode_pipeline_skips_when_content_unchanged(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 202
-    assert response.json() == {
-        "task_id": None,
-        "status": "skipped",
-        "reason": "content unchanged",
-    }
+    body = response.json()
+    assert body["task_id"] is None
+    assert body["status"] == "skipped"
+    assert body["reason"] == "content_unchanged"
+    assert body["idempotency_key"].startswith("indexing:11111111-")
     assert called["apply_async"] is False
