@@ -33,21 +33,6 @@ SPELLCHECK_SYSTEM_PROMPT = """당신은 한국어 웹소설 원고의 맞춤법 
 
 원고를 처음부터 끝까지 줄 단위로 빠짐없이 훑어, 아래 빈출 패턴을 **모든 줄에서 반드시 점검**하십시오. 일부 줄만 검사하고 끝내지 마십시오.
 
-[띄어쓰기 — 한국어에서 가장 자주 놓치는 영역]
-1. 합성동사·보조용언 결합: "돌아 봤다 → 돌아봤다", "짊어 지려고 → 짊어지려고", "가까워 지고 → 가까워지고"
-2. 조사 붙여쓰기: "지금 부터 → 지금부터", "그들 편 → 그들편" 류는 명사+조사이므로 붙임. 단, 조사가 아닌 의존명사 '편/곳/때'는 띄움.
-3. 의존명사 띄어쓰기: "정해야할 → 정해야 할", "할수있을까 → 할 수 있을까", "해야하는걸까 → 해야 하는 걸까", "이번 만큼은 → 이번만큼은"
-4. 부정어 '안/못' 띄어쓰기: "흐르지않고 → 흐르지 않고", "안되 → 안 돼", "못해 → 못 해"
-5. 부사·관형사 띄어쓰기: "더이상 → 더 이상", "다시한번 → 다시 한 번", "하나 둘 → 하나둘"
-6. 명사+동사 결합 오류: "문을열었고 → 문을 열었고", "탑앞에서 → 탑 앞에서"
-7. 명령·종결형: "그러지마 → 그러지 마"
-
-[오탈자 — 자주 틀리는 어미/받침]
-- 과거형 어미: "햇다 → 했다", "엿다 → 였다", "있엇다 → 있었다", "잡엇다 → 잡았다", "골랏다 → 골랐다", "그랫어 → 그랬어", "그래왓어 → 그래왔어"
-- 받침/연철: "괜찬아 → 괜찮아", "떠낫다 → 떠났다", "물엇다 → 물었다", "두려웟다 → 두려웠다"
-- 어미 통일: "아니였다 → 아니었다", "되엿다 → 되었다"
-- 자주 혼동: 되/돼 (안되→안 돼, 됬다→됐다), 데/대(전언), 던지/든지(선택), 이/히 부사, 사이시옷
-
 [문장부호]
 - 마침표·물음표·쉼표 앞 공백 제거: "말했다 . → 말했다.", "끄덕엿다 . → 끄덕였다."
 - 전각 부호 → 반각: "있엇다。 → 있었다.", "왜그래？ → 왜 그래?"
@@ -123,7 +108,6 @@ class SpellcheckIssue(BaseModel):
 
 def _normalize_spellcheck_result(result: dict[str, Any]) -> dict[str, Any]:
     raw_issues = result.get("issues", [])
-    summary = result.get("summary", "맞춤법 검사 결과입니다.")
 
     issues: list[dict[str, Any]] = []
     seen: set[tuple[str, int, str, str]] = set()
@@ -161,8 +145,23 @@ def _normalize_spellcheck_result(result: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "issues": issues,
-        "summary": summary if isinstance(summary, str) else "맞춤법 검사 결과입니다.",
+        "summary": _build_summary(issues),
     }
+
+
+_TYPE_LABEL = {"spacing": "띄어쓰기", "typo": "오탈자", "punctuation": "문장부호"}
+
+
+def _build_summary(issues: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        counts[issue["type"]] = counts.get(issue["type"], 0) + 1
+    parts = [
+        f"{label} {counts[key]}건"
+        for key, label in _TYPE_LABEL.items()
+        if counts.get(key)
+    ]
+    return ", ".join(parts) if parts else "맞춤법 오류 없음"
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -199,7 +198,7 @@ async def spellcheck_episode(req: SpellcheckRequest):
         system=SPELLCHECK_SYSTEM_PROMPT,
         user=user_prompt,
         schema_hint=SPELLCHECK_SCHEMA_HINT,
-        model_override=settings.claude_haiku_model,
+        model_override=settings.claude_sonnet_model,
         max_tokens=3000,
     )
 
@@ -208,5 +207,7 @@ async def spellcheck_episode(req: SpellcheckRequest):
         list(normalized.get("issues", [])),
         whitelist,
     )
+    # whitelist 필터까지 끝난 최종 issues 기준으로 summary 재계산 — 카드 수와 항상 일치.
+    normalized["summary"] = _build_summary(normalized["issues"])
     normalized["usage"] = llm.last_usage
     return normalized

@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { decryptString } from '../crypto/cipher';
 import { getCurrentKek } from '../crypto/lifecycle';
 import { ensureWorkKey } from '../crypto/workKey';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * Plan C — episode 본문/제목을 KEK + work_key로 복호화하여 반환하는 훅.
@@ -80,6 +81,7 @@ export function useDecryptedEpisode(episodeId: string): {
     [raw?.work_id ?? ''],
   );
   const encryptedDek = workRows[0]?.encrypted_dek ?? null;
+  const kekVersion = useAuthStore((s) => s.kekVersion);
 
   const [row, setRow] = useState<DecryptedEpisodeRow | null>(null);
 
@@ -156,7 +158,8 @@ export function useDecryptedEpisode(episodeId: string): {
     return () => {
       cancelled = true;
     };
-  }, [raw, encryptedDek]);
+    // kekVersion: KEK 도출/회전 직후 재복호화 (no-kek 굳음 방지).
+  }, [raw, encryptedDek, kekVersion]);
 
   if (!raw) return { data: null, isLoading: true };
   if (!row) return { data: null, isLoading: true };
@@ -276,6 +279,7 @@ export function useDecryptedEpisodeList(rawRows: RawEpisodeListRow[]): {
   data: DecryptedEpisodeListRow[];
   isLoading: boolean;
 } {
+  const kekVersion = useAuthStore((s) => s.kekVersion);
   const [decrypted, setDecrypted] = useState<DecryptedEpisodeListRow[] | null>(null);
   const signature = rawRows
     .map((r) => `${r.id}:${r.updated_at}:${r.encrypted_dek ?? ''}`)
@@ -291,8 +295,9 @@ export function useDecryptedEpisodeList(rawRows: RawEpisodeListRow[]): {
     return () => {
       cancelled = true;
     };
+    // kekVersion: KEK 도출/회전 직후 재복호화 (no-kek 굳음 방지).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+  }, [signature, kekVersion]);
 
   if (decrypted == null) return { data: [], isLoading: true };
   return { data: decrypted, isLoading: false };

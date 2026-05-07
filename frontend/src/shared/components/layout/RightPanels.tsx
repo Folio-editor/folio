@@ -2150,6 +2150,45 @@ const SPELLCHECK_TYPE_LABELS: Record<string, string> = {
   punctuation: '문장부호',
 };
 
+/**
+ * 블록별로 내부 text node 들을 한 문자열로 평탄화한 뒤 search.
+ * mark 로 인한 text node 분할과 LLM 의 잘못된 line 번호를 동시에 흡수.
+ * normalizeWhitespace=true 면 양쪽 모두 NBSP/전각공백 등 모든 whitespace 를 일반 공백으로 환산.
+ */
+function findFlattenedInDoc(
+  doc: import('@tiptap/pm/model').Node,
+  term: string,
+  normalizeWhitespace: boolean,
+): { from: number; to: number } | null {
+  if (!term) return null;
+  const needle = normalizeWhitespace ? term.replace(/\s/g, ' ') : term;
+  let result: { from: number; to: number } | null = null;
+
+  doc.forEach((blockNode, blockOffset) => {
+    if (result) return;
+    const positions: number[] = [];
+    let flat = '';
+    blockNode.descendants((node, posInBlock) => {
+      if (node.isText && node.text) {
+        for (let i = 0; i < node.text.length; i++) {
+          const ch = node.text[i];
+          flat += normalizeWhitespace && /\s/.test(ch) ? ' ' : ch;
+          positions.push(blockOffset + 1 + posInBlock + i);
+        }
+      }
+    });
+    const idx = flat.indexOf(needle);
+    if (idx !== -1) {
+      result = {
+        from: positions[idx],
+        to: positions[idx + needle.length - 1] + 1,
+      };
+    }
+  });
+
+  return result;
+}
+
 function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
   const spellcheckState = useAiSessionStore((s) => s.spellcheckState);
   const result = useAiSessionStore((s) => s.spellcheckResult);
@@ -2199,7 +2238,7 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
           }
         });
       } else {
-        // 회차 전체 모드: N번째 블록에서 original 첫 매치
+        // Tier 1: N번째 블록 안의 단일 text node 에서 정확 매치 (가장 정밀)
         let lineCount = 0;
         doc.forEach((blockNode, blockOffset) => {
           lineCount++;
@@ -2216,6 +2255,19 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
             }
           });
         });
+
+        // Tier 2: 모든 블록을 순회하면서 블록 내부 텍스트를 평탄화해 검색.
+        // - LLM 의 line 번호 오류 (잘못된 paragraph 지목) 흡수
+        // - inline mark 로 인한 text node 분할 (e.g. "한 " | "꺼번에") 흡수
+        if (!target) {
+          target = findFlattenedInDoc(doc, issue.original, false);
+        }
+
+        // Tier 3: whitespace 정규화 (NBSP/전각공백 → 일반공백) 후 재검색.
+        // LLM 이 보낸 original 의 공백과 본문 공백이 다른 경우.
+        if (!target) {
+          target = findFlattenedInDoc(doc, issue.original, true);
+        }
       }
 
       if (!target) {
@@ -2227,7 +2279,6 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
 
       editor.chain().focus().insertContentAt(target, issue.suggestion).run();
       markApplied(index);
-      toast.success('수정 적용 완료');
     },
     [targetEpisode, markApplied],
   );
