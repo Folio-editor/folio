@@ -4,10 +4,8 @@ import com.storyzip.auth.domain.Writer;
 import com.storyzip.auth.repository.WriterRepository;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
-import com.storyzip.payment.client.TossBillingAuthResponse;
-import com.storyzip.payment.client.TossConfirmResponse;
-import com.storyzip.payment.client.TossPaymentsClient;
-import com.storyzip.payment.config.TossPaymentsProperties;
+import com.storyzip.payment.client.PortOneClient;
+import com.storyzip.payment.client.PortOnePaymentResponse;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
 import com.storyzip.payment.domain.Subscription;
@@ -30,13 +28,15 @@ import java.util.UUID;
 /**
  * 프로 구독(정기결제) 서비스.
  *
- * <p>플로우:
+ * <p>플로우 (PortOne V2):
  * <ol>
- *   <li>{@link #prepareBillingAuth} — customerKey 발급 + clientKey 제공 (프론트가 SDK 호출용)</li>
- *   <li>프론트가 토스 SDK로 카드 등록 → authKey 획득</li>
- *   <li>{@link #create} — authKey → billingKey 교환 → 첫 달 즉시 결제 → Subscription ACTIVE</li>
+ *   <li>{@link #prepareBillingAuth} — customerKey 발급 (프론트가 SDK 호출용)</li>
+ *   <li>프론트가 PortOne SDK로 카드 등록 → billingKey를 직접 받아 서버로 전달</li>
+ *   <li>{@link #create} — billingKey로 첫 달 즉시 결제 → Subscription ACTIVE</li>
  *   <li>매월 {@code BillingScheduler}가 {@link #processBilling} 호출해 정기 결제</li>
  * </ol>
+ *
+ * <p>토스 대비 차이: authKey → billingKey 교환 단계 없음 (SDK가 직접 billingKey 반환).
  *
  * <p>해지 정책: 즉시 종료 아닌 "현재 주기 종료 후 만료".
  * {@link #cancel}은 cancelledAt만 기록하고 ACTIVE 유지 — 이미 결제한 기간은 혜택 유지.
@@ -49,9 +49,8 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final PaymentRepository paymentRepository;
     private final WriterRepository writerRepository;
-    private final TossPaymentsClient tossPaymentsClient;
+    private final PortOneClient portOneClient;
     private final TokenWalletService tokenWalletService;
-    private final TossPaymentsProperties tossProperties;
 
     @Transactional
     public BillingAuthPrepareResponse prepareBillingAuth(UUID writerId) {
@@ -62,7 +61,7 @@ public class SubscriptionService {
                 .ifPresent(s -> { throw new PaymentException(ErrorCode.SUBSCRIPTION_ALREADY_ACTIVE); });
 
         String customerKey = "ck_" + UUID.randomUUID().toString().replace("-", "");
-        return new BillingAuthPrepareResponse(customerKey, tossProperties.clientKey());
+        return new BillingAuthPrepareResponse(customerKey);
     }
 
     @Transactional
@@ -75,13 +74,10 @@ public class SubscriptionService {
 
         SubscriptionPlan plan = SubscriptionPlan.fromCode(request.planCode());
 
-        TossBillingAuthResponse auth = tossPaymentsClient.issueBillingKey(
-                request.authKey(), request.customerKey());
-
         Subscription subscription = subscriptionRepository.save(Subscription.builder()
                 .writer(writer)
-                .customerKey(auth.customerKey())
-                .billingKey(auth.billingKey())
+                .customerKey(request.customerKey())
+                .billingKey(request.billingKey())
                 .plan(plan.getCode())
                 .monthlyTokens(plan.getMonthlyTokens())
                 .monthlyAmount(plan.getAmount())
@@ -148,9 +144,6 @@ public class SubscriptionService {
         try {
             chargeAndApply(subscription, plan, subscription.getWriter(), "PRO 구독 정기 결제");
         } catch (PaymentException e) {
-            // 정기 결제 실패는 Subscription 상태 업데이트(retryCount++ 또는 PAYMENT_FAILED)만 유지하고
-            // 트랜잭션은 커밋되도록 예외를 삼킨다. 결제 Payment는 FAILED로 기록되어 감사에 남는다.
-            // 누적 실패가 임계치를 넘어 PAYMENT_FAILED로 종결되었는지, 다음 주기에 재시도가 남았는지에 따라 별도 prefix.
             boolean terminated = subscription.getStatus() == SubscriptionStatus.PAYMENT_FAILED;
             String prefix = terminated
                     ? "[SUBSCRIPTION_BILLING_TERMINATED]"
@@ -163,67 +156,67 @@ public class SubscriptionService {
     }
 
     private void chargeAndApply(Subscription subscription, SubscriptionPlan plan, Writer writer, String orderNameSuffix) {
-        String orderId = generateOrderId();
+        String paymentId = generatePaymentId();
         String orderName = plan.getDisplayName() + " - " + orderNameSuffix;
 
         Payment payment = paymentRepository.save(Payment.builder()
                 .writer(writer)
-                .orderId(orderId)
+                .orderId(paymentId)
                 .amount(plan.getAmount())
                 .tokenQty(plan.getMonthlyTokens())
                 .build());
         payment.markInProgress();
 
         try {
-            TossConfirmResponse confirmed = tossPaymentsClient.chargeBilling(
+            PortOnePaymentResponse charged = portOneClient.chargeBilling(
+                    paymentId,
                     subscription.getBillingKey(),
-                    subscription.getCustomerKey(),
-                    orderId,
                     orderName,
                     plan.getAmount(),
+                    subscription.getCustomerKey(),
                     writer.getEmail()
             );
 
             LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-            LocalDateTime approvedAt = confirmed.approvedAt() != null
-                    ? confirmed.approvedAt().atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime()
+            LocalDateTime paidAt = charged.paidAt() != null
+                    ? charged.paidAt().atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime()
                     : now;
-            payment.markDone(confirmed.paymentKey(), parseMethod(confirmed.method()), approvedAt);
+            payment.markDone(charged.id(), parseMethod(charged.method()), paidAt);
 
             subscription.recordPaymentSuccess(now, now.plusMonths(1));
 
             tokenWalletService.chargeSubscription(
                     writer.getId(),
                     plan.getMonthlyTokens(),
-                    "SUBSCRIPTION_" + orderId,
+                    "SUBSCRIPTION_" + paymentId,
                     payment.getId()
             );
-            log.info("[SUBSCRIPTION_BILLING_SUCCESS] writerId={} subscriptionId={} orderId={} amount={} tokenQty={}",
-                    writer.getId(), subscription.getId(), orderId, plan.getAmount(), plan.getMonthlyTokens());
+            log.info("[SUBSCRIPTION_BILLING_SUCCESS] writerId={} subscriptionId={} paymentId={} amount={} tokenQty={}",
+                    writer.getId(), subscription.getId(), paymentId, plan.getAmount(), plan.getMonthlyTokens());
         } catch (PaymentException e) {
             payment.markFailed(e.getMessage());
             subscription.recordPaymentFailure(LocalDateTime.now(ZoneOffset.UTC));
-            log.warn("[SUBSCRIPTION_BILLING_FAILED] writerId={} subscriptionId={} orderId={} retryCount={} status={} errCode={} reason={}",
-                    writer.getId(), subscription.getId(), orderId,
+            log.warn("[SUBSCRIPTION_BILLING_FAILED] writerId={} subscriptionId={} paymentId={} retryCount={} status={} errCode={} reason={}",
+                    writer.getId(), subscription.getId(), paymentId,
                     subscription.getRetryCount(), subscription.getStatus(),
                     e.getErrorCode().getCode(), e.getMessage());
             throw e;
         }
     }
 
-    private String generateOrderId() {
+    private String generatePaymentId() {
         return "SUB-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
     }
 
-    private PaymentMethod parseMethod(String raw) {
-        if (raw == null) return null;
-        return switch (raw) {
-            case "카드" -> PaymentMethod.CARD;
-            case "가상계좌" -> PaymentMethod.VIRTUAL_ACCOUNT;
-            case "간편결제" -> PaymentMethod.EASY_PAY;
-            case "계좌이체" -> PaymentMethod.TRANSFER;
-            case "휴대폰" -> PaymentMethod.MOBILE_PHONE;
-            case "문화상품권" -> PaymentMethod.CULTURE_GIFT_CERTIFICATE;
+    private PaymentMethod parseMethod(PortOnePaymentResponse.Method method) {
+        if (method == null || method.type() == null) return null;
+        return switch (method.type()) {
+            case "PaymentMethodCard" -> PaymentMethod.CARD;
+            case "PaymentMethodVirtualAccount" -> PaymentMethod.VIRTUAL_ACCOUNT;
+            case "PaymentMethodEasyPay" -> PaymentMethod.EASY_PAY;
+            case "PaymentMethodTransfer" -> PaymentMethod.TRANSFER;
+            case "PaymentMethodMobile" -> PaymentMethod.MOBILE_PHONE;
+            case "PaymentMethodGiftCertificate" -> PaymentMethod.CULTURE_GIFT_CERTIFICATE;
             default -> null;
         };
     }

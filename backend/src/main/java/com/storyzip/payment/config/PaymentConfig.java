@@ -10,11 +10,11 @@ import java.time.Duration;
 
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties(TossPaymentsProperties.class)
+@EnableConfigurationProperties(PortOneProperties.class)
 public class PaymentConfig {
 
     @Bean
-    RestClient tossPaymentsRestClient(TossPaymentsProperties props) {
+    RestClient portOneRestClient(PortOneProperties props) {
         return RestClient.builder()
                 .baseUrl(props.apiBaseUrl())
                 .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory() {{

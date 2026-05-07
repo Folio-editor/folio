@@ -4,6 +4,10 @@ import { Button } from '../../components/ui/Button';
 import { ApiError } from '../../lib/apiClient';
 import { parseServerDate } from '../../lib/dateTime';
 import { paymentApi, subscriptionApi } from '../../lib/paymentApi';
+import {
+  openBillingAuthCheckout,
+  openOneTimeCheckout,
+} from '../../lib/paymentCheckout';
 import { useAuthStore } from '../../stores/authStore';
 import { useWalletStore } from '../../stores/walletStore';
 import {
@@ -15,11 +19,30 @@ import {
 } from '../../types/payment';
 
 /**
- * Electron 내부에서 토스 결제 + 3버킷 지갑 + 구독 흐름을 한번에 테스트하는 개발자 화면.
- * - 1회성 결제: createPayment → window.folio.payment.openOneTime → confirmPayment
- * - 구독: prepareBillingAuth → openBillingAuth → create
- * - 환불: 최근 PaymentResponse.orderId 기준
+ * Electron 내부에서 PortOne(카카오페이) 결제 + 3버킷 지갑 + 구독 흐름을 한번에 테스트하는 개발자 화면.
+ * - 1회성 결제: createPayment → openOneTimeCheckout → confirmPayment
+ * - 구독: prepareBillingAuth → openBillingAuthCheckout → create
+ * - 환불: 최근 PaymentResponse.orderId 기준 (orderId == PortOne paymentId)
  */
+
+/**
+ * PortOne 클라이언트 식별자는 renderer의 import.meta.env에서만 읽고, IPC 호출 시 함께 전달한다.
+ * (Electron main이 별도로 env를 읽지 않도록 — 단일 소스).
+ * 1회성/빌링키는 PG 채널이 분리되어 있으므로 channelKey도 두 가지를 둔다.
+ */
+function readPortOneEnv() {
+  const storeId = (import.meta.env.VITE_PORTONE_STORE_ID as string | undefined) ?? '';
+  const channelKeyOneTime =
+    (import.meta.env.VITE_PORTONE_CHANNEL_KEY_ONETIME as string | undefined) ?? '';
+  const channelKeyBilling =
+    (import.meta.env.VITE_PORTONE_CHANNEL_KEY_BILLING as string | undefined) ?? '';
+  if (!storeId || !channelKeyOneTime || !channelKeyBilling) {
+    throw new Error(
+      'PortOne 환경변수가 설정되지 않았습니다 (VITE_PORTONE_STORE_ID / VITE_PORTONE_CHANNEL_KEY_ONETIME / VITE_PORTONE_CHANNEL_KEY_BILLING).',
+    );
+  }
+  return { storeId, channelKeyOneTime, channelKeyBilling };
+}
 export function PaymentSettings() {
   const writer = useAuthStore((s) => s.writer);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -66,18 +89,18 @@ export function PaymentSettings() {
     setInfo(null);
     setBusyPackage(code);
     try {
+      const env = readPortOneEnv();
       const created = await paymentApi.createPayment(code);
-      const checkout = await window.folio.payment.openOneTime({
-        clientKey: created.clientKey,
+      const checkout = await openOneTimeCheckout({
+        storeId: env.storeId,
+        channelKey: env.channelKeyOneTime,
+        paymentId: created.paymentId,
         amount: created.amount,
-        orderId: created.orderId,
         orderName: created.orderName,
         customerKey: writer.id,
       });
       const confirmed = await paymentApi.confirmPayment({
-        paymentKey: checkout.paymentKey,
-        orderId: checkout.orderId,
-        amount: checkout.amount,
+        paymentId: checkout.paymentId,
       });
       setLastPayment(confirmed);
       setInfo(`${created.tokenQty.toLocaleString()} 크레딧 충전 완료`);
@@ -95,14 +118,16 @@ export function PaymentSettings() {
     setInfo(null);
     setBusySubscription('subscribe');
     try {
+      const env = readPortOneEnv();
       const prep = await subscriptionApi.prepareBillingAuth();
-      const auth = await window.folio.payment.openBillingAuth({
-        clientKey: prep.clientKey,
+      const auth = await openBillingAuthCheckout({
+        storeId: env.storeId,
+        channelKey: env.channelKeyBilling,
         customerKey: prep.customerKey,
       });
       const sub = await subscriptionApi.create({
         planCode: 'PRO_MONTHLY',
-        authKey: auth.authKey,
+        billingKey: auth.billingKey,
         customerKey: auth.customerKey,
       });
       setSubscription(sub);
@@ -190,7 +215,7 @@ export function PaymentSettings() {
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-6">
         <h2 className="text-sm font-semibold text-foreground">결제 / 구독</h2>
         <span className="text-[10px] text-muted-foreground">
-          토스 테스트 결제 (실제 결제 아님)
+          PortOne 테스트 결제 (실제 결제 아님)
         </span>
       </div>
 

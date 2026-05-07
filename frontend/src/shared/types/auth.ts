@@ -80,37 +80,33 @@ export interface FolioWindowApi {
   platform: 'win32' | 'darwin' | 'linux' | 'web';
 }
 
+/**
+ * PortOne SDK 호출 파라미터 — paymentId는 백엔드가 발급해 응답으로 내려준 값을 그대로 사용한다.
+ * storeId/channelKey는 클라이언트 환경변수(VITE_PORTONE_*)를 renderer에서 읽어 함께 전달한다.
+ * (Electron main이 직접 env를 읽지 않도록 — env 주입 책임을 renderer 한쪽으로 단일화)
+ */
 export interface FolioOneTimePaymentParams {
-  clientKey: string;
+  storeId: string;
+  channelKey: string;
+  paymentId: string;
   amount: number;
-  orderId: string;
   orderName: string;
   customerKey: string;
 }
 
 export interface FolioOneTimePaymentResult {
-  paymentKey: string;
-  orderId: string;
-  amount: number;
+  paymentId: string;
 }
 
 export interface FolioBillingAuthParams {
-  clientKey: string;
+  storeId: string;
+  channelKey: string;
   customerKey: string;
 }
 
 export interface FolioBillingAuthResult {
-  authKey: string;
+  billingKey: string;
   customerKey: string;
-}
-
-export interface FolioPaymentApi {
-  openOneTime: (
-    params: FolioOneTimePaymentParams,
-  ) => Promise<FolioOneTimePaymentResult>;
-  openBillingAuth: (
-    params: FolioBillingAuthParams,
-  ) => Promise<FolioBillingAuthResult>;
 }
 
 /** OS spellchecker 사전 동기화 — 렌더러가 사용자 추가 단어 set을 main에 푸시 */
@@ -188,7 +184,6 @@ export interface FolioApi {
   auth: FolioAuthApi;
   window: FolioWindowApi;
   spellcheck: FolioSpellcheckApi;
-  payment: FolioPaymentApi;
   updater: FolioUpdaterApi;
   crypto: FolioCryptoApi;
   export: import('./export').FolioExportApi;

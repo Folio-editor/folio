@@ -26,14 +26,14 @@ public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
 
-    /** 빌링 인증 준비 — 프론트가 토스 SDK {@code requestBillingAuth}에 넘길 값을 내려준다. */
+    /** 빌링 인증 준비 — 프론트가 PortOne SDK {@code requestIssueBillingKey}에 넘길 customerKey를 내려준다. */
     @PostMapping("/billing-auth")
     public ResponseEntity<BillingAuthPrepareResponse> prepareBillingAuth(Authentication authentication) {
         UUID writerId = requireWriterId(authentication);
         return ResponseEntity.ok(subscriptionService.prepareBillingAuth(writerId));
     }
 
-    /** 구독 신청 — authKey → billingKey 교환 + 첫 달 즉시 결제. */
+    /** 구독 신청 — SDK가 돌려준 billingKey로 즉시 첫 달 결제 + 구독 ACTIVE 처리. */
     @PostMapping
     public ResponseEntity<SubscriptionResponse> create(
             Authentication authentication,

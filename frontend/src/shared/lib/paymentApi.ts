@@ -15,21 +15,23 @@ export const paymentApi = {
   createPayment: (packageCode: TokenPackageCode) =>
     apiClient.post<CreatePaymentResponse>('/payments', { packageCode }),
 
-  confirmPayment: (body: { paymentKey: string; orderId: string; amount: number }) =>
+  /** PortOne SDK 결제 완료 후 paymentId만 보내 서버 검증 트리거. */
+  confirmPayment: (body: { paymentId: string }) =>
     apiClient.post<PaymentResponse>('/payments/confirm', body),
 
-  refund: (orderId: string) =>
-    apiClient.post<RefundResponse>(`/payments/${orderId}/refund`),
+  refund: (paymentId: string) =>
+    apiClient.post<RefundResponse>(`/payments/${paymentId}/refund`),
 
-  getPayment: (orderId: string) =>
-    apiClient.get<PaymentResponse>(`/payments/${orderId}`),
+  getPayment: (paymentId: string) =>
+    apiClient.get<PaymentResponse>(`/payments/${paymentId}`),
 };
 
 export const subscriptionApi = {
   prepareBillingAuth: () =>
     apiClient.post<BillingAuthPrepareResponse>('/subscriptions/billing-auth'),
 
-  create: (body: { planCode: string; authKey: string; customerKey: string }) =>
+  /** SDK가 직접 발급한 billingKey와 prepare 단계의 customerKey를 함께 전달. */
+  create: (body: { planCode: string; billingKey: string; customerKey: string }) =>
     apiClient.post<SubscriptionResponse>('/subscriptions', body),
 
   getMine: () => apiClient.get<SubscriptionResponse>('/subscriptions/me'),
