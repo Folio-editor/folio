@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { decryptString } from '../crypto/cipher';
 import { getCurrentKek } from '../crypto/lifecycle';
 import { ensureWorkKey } from '../crypto/workKey';
+import { useAuthStore } from '../stores/authStore';
 import type { DecryptStatus } from './useDecryptedEpisode';
 
 const PREFIX = 'v1:';
@@ -156,6 +157,7 @@ export function useDecryptedWork(workId: string): {
     [workId],
   );
   const raw = rows[0] ?? null;
+  const kekVersion = useAuthStore((s) => s.kekVersion);
   const [decrypted, setDecrypted] = useState<DecryptedWorkRow | null>(null);
 
   useEffect(() => {
@@ -172,7 +174,10 @@ export function useDecryptedWork(workId: string): {
     return () => {
       cancelled = true;
     };
-  }, [raw]);
+    // kekVersion 을 deps 에 추가하여 KEK 도출/회전 (lifecycle.initKekFromLogin·rotateKek·
+    // restoreKek) 직후 재복호화. 첫 마운트 시 KEK 가 비동기 도출 중이라 'no-kek' 으로
+    // 굳어 ciphertext 가 그대로 노출되던 회귀 (prd 빌드 전용) 방지.
+  }, [raw, kekVersion]);
 
   if (!raw) return { data: null, isLoading: true };
   if (!decrypted) return { data: null, isLoading: true };
@@ -192,6 +197,7 @@ export function useDecryptedWorkList(rawRows: RawWorkRow[]): {
   data: DecryptedWorkRow[];
   isLoading: boolean;
 } {
+  const kekVersion = useAuthStore((s) => s.kekVersion);
   const [decrypted, setDecrypted] = useState<DecryptedWorkRow[] | null>(null);
   const signature = rawRows
     .map((r) => `${r.id}:${r.updated_at}:${r.encrypted_dek ?? ''}`)
@@ -207,9 +213,10 @@ export function useDecryptedWorkList(rawRows: RawWorkRow[]): {
     return () => {
       cancelled = true;
     };
-    // signature가 같으면 rawRows 배열 인스턴스가 달라도 재실행 안 됨.
+    // signature 가 같으면 rawRows 배열 인스턴스가 달라도 재실행 안 됨.
+    // kekVersion: KEK 도출/회전 직후 재복호화 (no-kek 굳음 방지).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+  }, [signature, kekVersion]);
 
   if (decrypted == null) return { data: [], isLoading: true };
   return { data: decrypted, isLoading: false };
