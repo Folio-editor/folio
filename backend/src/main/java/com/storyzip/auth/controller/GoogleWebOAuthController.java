@@ -164,7 +164,8 @@ public class GoogleWebOAuthController {
                 login.refreshToken(),
                 deviceId,
                 login.writer(),
-                login.isNewUser()
+                login.isNewUser(),
+                login.encryption()
         );
         oauthAuthCodeRedisService.saveCode(authCode, payload);
 
