@@ -61,6 +61,8 @@ import { useQuery } from '@powersync/react';
 import { ONBOARDING_WORK } from '../../constants/onboardingContent';
 import { OnboardingGuideDialog } from './OnboardingGuideDialog';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
+import EditorShortcutHelp from '../../components/editor/EditorShortcutHelp';
+import { useHelpModalStore } from '../../stores/helpModalStore';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -229,6 +231,21 @@ export function AuthenticatedApp() {
   const [settingsMode, setSettingsMode] = useState(false);
   const [selectedSettingsItem, setSelectedSettingsItem] = useState<SettingsItemId | null>(null);
   const resolver = useSyncResolver();
+
+  // ── 글로벌 F1 단축키 — 어떤 화면에서도 편집 도움말 열기 ──
+  const shortcutHelpOpen = useHelpModalStore((s) => s.shortcutHelpOpen);
+  const openShortcutHelp = useHelpModalStore((s) => s.openShortcutHelp);
+  const closeShortcutHelp = useHelpModalStore((s) => s.closeShortcutHelp);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        openShortcutHelp();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openShortcutHelp]);
 
   // 외부 컴포넌트(AI 402 등)에서 설정 화면으로 깊은 링크
   const pendingSettingsItem = useNavigationStore((s) => s.pendingSettingsItem);
@@ -1356,6 +1373,9 @@ export function AuthenticatedApp() {
         onAccept={() => void handleOnboardingAccept()}
         onSkip={handleOnboardingSkip}
       />
+
+      {/* 글로벌 편집 도움말 — F1 또는 에디터 툴바 ? 버튼으로 열림 */}
+      <EditorShortcutHelp open={shortcutHelpOpen} onClose={closeShortcutHelp} />
 
       <DragOverlay dropAnimation={null}>
         {activeDrag ? (

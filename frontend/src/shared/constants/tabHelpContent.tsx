@@ -9,17 +9,23 @@ interface TabHelp {
   steps: HelpStep[];
 }
 
-// ── 인라인 헬퍼 — 자주 쓰는 강조 패턴 ─────────────────────────
+// ── 인라인 헬퍼 — Folio 모달 공통 토큰 ────────────────────────
 function K({ children }: { children: ReactNode }) {
   return (
-    <kbd className="inline-flex items-center rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+    <kbd
+      className="inline-flex items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10px] text-[#111] mx-[1px]"
+      style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        height: '18px',
+      }}
+    >
       {children}
     </kbd>
   );
 }
 
 function H({ children }: { children: ReactNode }) {
-  return <strong className="font-semibold text-foreground">{children}</strong>;
+  return <strong className="font-semibold text-[#111]">{children}</strong>;
 }
 
 function GuideBox({
@@ -30,11 +36,12 @@ function GuideBox({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-3 rounded-md border border-border/80 bg-muted/30 px-3 py-2.5">
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="mt-3 rounded-[6px] border border-[#d4d4d4] bg-white px-3.5 py-2.5">
+      <p className="m-0 mb-1.5 flex items-center gap-2 text-[9.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b]">
         {label}
+        <span aria-hidden className="flex-1 h-px bg-[#e5e5e2]" />
       </p>
-      <div className="text-[13px] leading-6 text-foreground/90">{children}</div>
+      <div className="text-[12px] leading-[1.7] text-[#111]">{children}</div>
     </div>
   );
 }

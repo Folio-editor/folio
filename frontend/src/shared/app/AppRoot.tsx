@@ -11,7 +11,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { PowerSyncContext } from '@powersync/react';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { useAuthStore } from '../stores/authStore';
 import { AuthenticatedApp } from '../features/auth/AuthenticatedApp';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -22,6 +22,8 @@ import { reconcileMissingServerDeks } from '../crypto/serverDekReconciler';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
 import { analytics } from '../lib/analytics';
+import { consumeResult as consumeCheckoutResult } from '../../platform/web/payment/webCheckout';
+import { useWalletStore } from '../stores/walletStore';
 
 // 모듈 로드 시 1회 — online/offline 이벤트 바인딩
 initNetworkListener();
@@ -153,6 +155,30 @@ export function AppRoot({ router, basename }: AppRootProps) {
       entry_source: isAuthenticated ? 'restore_session' : 'unknown',
     });
   }, [isAuthenticated, isGuest]);
+
+  // 웹 결제 redirect 결과 소비 — CheckoutResolver가 sessionStorage에 적재한 결과를
+  // 인증 복원 직후 1회 토스트로 노출한다. Electron은 항상 null → no-op.
+  // PaymentSettings 화면을 띄우지 않은 상태로 복귀해도 사용자가 결과를 인지할 수 있도록
+  // AppRoot 레벨에서 처리. 지갑 store도 새 잔액으로 갱신.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const result = consumeCheckoutResult();
+    if (!result) return;
+    if (result.kind === 'one-time-success') {
+      toast.success(result.message);
+      void useWalletStore.getState().refresh();
+    } else if (result.kind === 'billing-success') {
+      toast.success(result.message);
+      void useWalletStore.getState().refresh();
+    } else if (result.kind === 'fail') {
+      if (result.code === 'P011') {
+        toast.message('요청이 너무 빠르게 반복됐어요. 잠시 후 다시 시도해주세요.');
+      } else {
+        toast.error(result.message);
+      }
+    }
+    // user-closed는 침묵 처리
+  }, [isAuthenticated]);
 
   // 앱 시작 시 세션 복원 중 (짧은 로딩)
   if (isRestoring) {

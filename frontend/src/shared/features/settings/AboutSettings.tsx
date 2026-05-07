@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw } from 'lucide-react';
 import { useUpdater } from '../../hooks/useUpdater';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -232,28 +232,62 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
 
           {/* 도움말 — 튜토리얼 가이드 다시 시작 */}
           <Section title="도움말">
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
-                <Sparkles size={14} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.75} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    Folio 첫 사용자 가이드
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {hasMatchedGuide
-                      ? '기존 샘플 작품을 휴지통으로 옮기고 새 샘플로 즉시 이동합니다.'
-                      : '샘플 작품을 만들고 즉시 이동해 각 탭 도움말을 다시 보여드립니다.'}
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div>
+                <div
+                  aria-hidden
+                  className="mb-2 h-px w-7 bg-[#111] opacity-45"
+                />
+                <p
+                  className="m-0 text-[15px] font-semibold leading-[1.4] tracking-[-0.01em] text-[#111]"
+                  style={{
+                    fontFamily:
+                      "'Noto Serif KR', 'Nanum Myeongjo', Georgia, serif",
+                  }}
+                >
+                  Folio 첫 사용자 가이드
+                </p>
+                <p
+                  className="m-0 mt-1.5 text-[12.5px] leading-[1.6] text-[#6b6b6b]"
+                  style={{
+                    fontFamily:
+                      "'Noto Serif KR', 'Nanum Myeongjo', Georgia, serif",
+                  }}
+                >
+                  {hasMatchedGuide
+                    ? '기존 샘플 작품을 휴지통으로 옮기고 새 샘플로 즉시 이동합니다.'
+                    : '샘플 작품을 만들고 즉시 이동해 각 탭 도움말을 다시 보여드립니다.'}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={handleRestartClick}
                 disabled={restartBusy}
-                className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-[6px] border border-[#d4d4d4] bg-white px-4 py-1.5 text-[12.5px] font-medium text-[#111] transition-[border-color,background-color] duration-150 hover:border-[#111] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {restartBusy ? '처리 중…' : '튜토리얼 가이드 다시 시작'}
+                {restartBusy ? (
+                  <>
+                    <span
+                      className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+                      aria-hidden
+                    />
+                    처리 중…
+                  </>
+                ) : (
+                  <>
+                    튜토리얼 가이드 다시 시작
+                    <span aria-hidden>→</span>
+                  </>
+                )}
               </button>
+
+              <div className="mt-2 pt-3 border-t border-[#e5e5e2] flex items-center gap-2 text-[11.5px] text-[#6b6b6b]">
+                <span>편집 단축키 / 마크다운 안내는 언제든</span>
+                <kbd className="inline-flex h-[18px] items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10px] text-[#111]" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                  F1
+                </kbd>
+                <span>키로 열 수 있어요.</span>
+              </div>
             </div>
           </Section>
 
