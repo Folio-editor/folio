@@ -1105,7 +1105,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     }
   }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startReview, finishReview, failReview, refreshWalletAfterUsage]);
 
-  const handleSpellcheck = useCallback(async () => {
+  const handleSpellcheck = useCallback(async (mode: 'episode' | 'selection' = 'episode') => {
     if (!pinnedEpisode) return;
     if (!decryptedContent || (decryptStatus !== 'plain' && decryptStatus !== 'decrypted')) {
       toast.error('본문을 불러오지 못했습니다', {
@@ -1128,6 +1128,34 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       return;
     }
 
+    // 선택 영역 모드: 등록된 에디터에서 현재 선택을 추출
+    let selectionRange: { from: number; to: number } | null = null;
+    let contentToSend: string = decryptedContent;
+    if (mode === 'selection') {
+      const editor = getRegisteredEditor(pinnedEpisode.id);
+      if (!editor) {
+        toast.error('본문 에디터가 열려 있지 않습니다', {
+          description: '대상 회차를 본문에 열고 영역을 선택한 뒤 시도해주세요.',
+        });
+        return;
+      }
+      const sel = editor.state.selection;
+      if (sel.empty) {
+        toast.error('선택된 영역이 없습니다', {
+          description: '본문에서 검사할 텍스트를 드래그로 선택해주세요.',
+        });
+        return;
+      }
+      // PM doc 위치 → 평문(블록 사이 \n)으로 추출. spellcheck.py 의 plain text 폴백 경로가 처리.
+      const selectedText = editor.state.doc.textBetween(sel.from, sel.to, '\n', '\n');
+      if (!selectedText.trim()) {
+        toast.error('선택된 영역에 텍스트가 없습니다');
+        return;
+      }
+      selectionRange = { from: sel.from, to: sel.to };
+      contentToSend = selectedText;
+    }
+
     const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
       id: pinnedEpisode.id,
       workId: pinnedEpisode.work_id,
@@ -1135,24 +1163,18 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       sortOrder: pinnedEpisode.sort_order,
     };
 
-    startSpellcheck(episode);
+    startSpellcheck(episode, selectionRange);
 
     try {
       const data = await apiClient.post<import('../../stores/aiSessionStore').SpellcheckResult>('/ai/spellcheck', {
         workId: episode.workId,
         episodeId: episode.id,
-        content: decryptedContent,
+        content: contentToSend,
         context: aiContextPayload,
       });
       const spellcheckResult = data ?? { issues: [], summary: '맞춤법 검사가 완료되었습니다.' };
       finishSpellcheck(spellcheckResult);
       refreshWalletAfterUsage();
-      const issueCount = spellcheckResult.issues.length;
-      toast.success(
-        issueCount === 0
-          ? '맞춤법 검사 완료 - 발견된 문제가 없어요'
-          : `맞춤법 검사 완료 - ${issueCount}건 발견`,
-      );
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSpellcheck(message);
@@ -1823,12 +1845,34 @@ function SpellcheckInputScreen({
   onClearPinned: () => void;
   onRegisterCurrent: () => void;
   selectedWorkId: string | null;
-  onStartSpellcheck: () => void;
+  onStartSpellcheck: (mode?: 'episode' | 'selection') => void;
 }) {
   const spellcheckHistory = useAiSessionStore((s) => s.spellcheckHistory);
   const viewSpellcheckHistory = useAiSessionStore((s) => s.viewSpellcheckHistory);
   const deleteSpellcheckHistory = useAiSessionStore((s) => s.deleteSpellcheckHistory);
   const spellcheckState = useAiSessionStore((s) => s.spellcheckState);
+
+  // 등록된 에디터의 선택 상태를 구독 — 비어있지 않은 영역이 선택돼 있을 때만 '선택 영역 검사' 버튼 활성화
+  const [hasNonEmptySelection, setHasNonEmptySelection] = useState(false);
+  useEffect(() => {
+    if (!episode) {
+      setHasNonEmptySelection(false);
+      return;
+    }
+    const editor = getRegisteredEditor(episode.id);
+    if (!editor) {
+      setHasNonEmptySelection(false);
+      return;
+    }
+    const update = () => setHasNonEmptySelection(!editor.state.selection.empty);
+    update();
+    editor.on('selectionUpdate', update);
+    editor.on('transaction', update);
+    return () => {
+      editor.off('selectionUpdate', update);
+      editor.off('transaction', update);
+    };
+  }, [episode]);
 
   const filteredHistory = selectedWorkId
     ? spellcheckHistory.filter((h) => h.workId === selectedWorkId)
@@ -1851,15 +1895,27 @@ function SpellcheckInputScreen({
               원고 내용이 없습니다. 먼저 원고를 작성해주세요.
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={onStartSpellcheck}
-              disabled={spellcheckState === 'loading'}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Check size={13} strokeWidth={1.75} />
-              맞춤법 검사 시작
-            </button>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => onStartSpellcheck('episode')}
+                disabled={spellcheckState === 'loading'}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                <Check size={13} strokeWidth={1.75} />
+                회차 전체 맞춤법 검사
+              </button>
+              <button
+                type="button"
+                onClick={() => onStartSpellcheck('selection')}
+                disabled={spellcheckState === 'loading' || !hasNonEmptySelection}
+                title={hasNonEmptySelection ? '선택한 영역만 검사' : '본문에서 검사할 텍스트를 드래그로 선택하세요'}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Check size={13} strokeWidth={1.75} />
+                {hasNonEmptySelection ? '선택 영역만 검사' : '선택 영역만 검사 (드래그 필요)'}
+              </button>
+            </div>
           )
         )}
 
@@ -2101,6 +2157,7 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
   const targetEpisode = useAiSessionStore((s) => s.spellcheckTargetEpisode);
   const appliedIssues = useAiSessionStore((s) => s.spellcheckAppliedIssues);
   const markApplied = useAiSessionStore((s) => s.markSpellcheckIssueApplied);
+  const setHovered = useAiSessionStore((s) => s.setSpellcheckHoveredIssue);
   const progressMessage = useProgressMessage(spellcheckState === 'loading', [
     { at: 0, message: '맞춤법을 확인하는 중...' },
     { at: 5000, message: '고유명사를 보호하며 검사하는 중...' },
@@ -2118,25 +2175,48 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
         return;
       }
 
-      // 문서의 N번째 블록(line)에서 original 텍스트의 첫 매치를 찾아 suggestion으로 교체
       const doc = editor.state.doc;
+      const selRange = useAiSessionStore.getState().spellcheckSelectionRange;
       let target: { from: number; to: number } | null = null;
-      let lineCount = 0;
-      doc.forEach((blockNode, blockOffset) => {
-        lineCount++;
-        if (lineCount !== issue.line || target) return;
-        blockNode.descendants((node, posInBlock) => {
+
+      if (selRange) {
+        // 선택 영역 모드: 그 범위 안에서 original 첫 매치만 검색 (line 무시)
+        doc.nodesBetween(selRange.from, selRange.to, (node, pos) => {
           if (target) return false;
           if (node.isText && node.text) {
-            const idx = node.text.indexOf(issue.original);
+            const nodeStart = pos;
+            const nodeEnd = pos + node.text.length;
+            const sliceStart = Math.max(selRange.from, nodeStart) - nodeStart;
+            const sliceEnd = Math.min(selRange.to, nodeEnd) - nodeStart;
+            if (sliceStart >= sliceEnd) return;
+            const slice = node.text.slice(sliceStart, sliceEnd);
+            const idx = slice.indexOf(issue.original);
             if (idx !== -1) {
-              const from = blockOffset + 1 + posInBlock + idx;
+              const from = nodeStart + sliceStart + idx;
               target = { from, to: from + issue.original.length };
               return false;
             }
           }
         });
-      });
+      } else {
+        // 회차 전체 모드: N번째 블록에서 original 첫 매치
+        let lineCount = 0;
+        doc.forEach((blockNode, blockOffset) => {
+          lineCount++;
+          if (lineCount !== issue.line || target) return;
+          blockNode.descendants((node, posInBlock) => {
+            if (target) return false;
+            if (node.isText && node.text) {
+              const idx = node.text.indexOf(issue.original);
+              if (idx !== -1) {
+                const from = blockOffset + 1 + posInBlock + idx;
+                target = { from, to: from + issue.original.length };
+                return false;
+              }
+            }
+          });
+        });
+      }
 
       if (!target) {
         toast.error('원문을 찾지 못했습니다', {
@@ -2161,7 +2241,7 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
           <div className="rounded-md bg-muted/50 px-3 py-2">
             <span className="text-xs text-muted-foreground">대상 원고</span>
             <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-              {targetEpisode.sortOrder + 1}화 {targetEpisode.title || '(제목 없음)'}
+              {targetEpisode.title || `${targetEpisode.sortOrder + 1}화`}
             </p>
           </div>
         )}
@@ -2206,6 +2286,8 @@ function SpellcheckResultScreen({ onBack, isHistoryView }: { onBack: () => void;
                   return (
                     <div
                       key={`${issue.line}-${issue.original}-${i}`}
+                      onMouseEnter={() => !applied && setHovered(i)}
+                      onMouseLeave={() => setHovered(null)}
                       className={cn(
                         'rounded-md border border-border bg-background p-3 text-left transition-opacity',
                         applied && 'opacity-50',

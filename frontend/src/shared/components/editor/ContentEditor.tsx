@@ -21,7 +21,9 @@ import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
 import ReviewHighlight from './extensions/ReviewHighlight';
+import SpellcheckHighlight from './extensions/SpellcheckHighlight';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
+import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { UnifiedEditorToolbar } from './UnifiedEditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
@@ -127,6 +129,7 @@ export function ContentEditor({
         FocusMode.configure({ enabled: settings.focusMode }),
         FindReplace,
         ReviewHighlight,
+        SpellcheckHighlight,
       ],
       content: parseContent(initialContent),
       onUpdate: ({ editor: ed }) => {
@@ -309,6 +312,25 @@ export function ContentEditor({
     registerEditor(itemId, editor);
     return () => unregisterEditor(itemId, editor);
   }, [editor, itemId]);
+
+  // SpellcheckHighlight extension에 현재 회차 id 주입.
+  // 이 에디터의 itemId가 spellcheckTargetEpisode.id와 일치할 때만 하이라이트가 그려진다.
+  useEffect(() => {
+    if (!editor) return;
+    editor.storage.spellcheckHighlight.itemId = itemId;
+    editor.commands.triggerSpellcheckHighlightRebuild();
+  }, [editor, itemId]);
+
+  // aiSessionStore의 spellcheckVersion이 바뀌면(결과 도착/적용/hover) 하이라이트 재계산 트리거.
+  useEffect(() => {
+    if (!editor) return;
+    const unsub = useAiSessionStore.subscribe((state, prev) => {
+      if (state.spellcheckVersion !== prev.spellcheckVersion) {
+        editor.commands.triggerSpellcheckHighlightRebuild();
+      }
+    });
+    return () => unsub();
+  }, [editor]);
 
   // Ctrl+F / Ctrl+H — FindReplace 패널 열기
   // FindReplace extension은 브라우저 기본 동작만 차단하므로 UI 토글은 여기서 직접 처리
