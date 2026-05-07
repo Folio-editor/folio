@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { decryptString } from '../crypto/cipher';
 import { getCurrentKek } from '../crypto/lifecycle';
 import { ensureWorkKey } from '../crypto/workKey';
+import { useAuthStore } from '../stores/authStore';
 import type { DecryptStatus } from './useDecryptedEpisode';
 
 const PREFIX = 'v1:';
@@ -120,6 +121,7 @@ export function useDecryptedWorldNoteList(rawRows: RawWorldNoteRow[]): {
   data: DecryptedWorldNoteRow[];
   isLoading: boolean;
 } {
+  const kekVersion = useAuthStore((s) => s.kekVersion);
   const [decrypted, setDecrypted] = useState<DecryptedWorldNoteRow[] | null>(null);
   const signature = rawRows
     .map((r) => `${r.id}:${r.updated_at}:${r.encrypted_dek ?? ''}`)
@@ -135,8 +137,9 @@ export function useDecryptedWorldNoteList(rawRows: RawWorldNoteRow[]): {
     return () => {
       cancelled = true;
     };
+    // kekVersion: KEK 도출/회전 직후 재복호화 (no-kek 굳음 방지).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+  }, [signature, kekVersion]);
 
   if (decrypted == null) return { data: [], isLoading: true };
   return { data: decrypted, isLoading: false };
