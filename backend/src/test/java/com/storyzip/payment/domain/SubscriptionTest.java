@@ -19,7 +19,7 @@ class SubscriptionTest {
                 .billingKey("bk_1")
                 .plan("PRO_MONTHLY")
                 .monthlyTokens(25_000)
-                .monthlyAmount(9_900)
+                .monthlyAmount(990)
                 .nextBillingAt(LocalDateTime.now().plusDays(30))
                 .build();
     }
