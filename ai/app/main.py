@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.api.v1 import _dev_ping, drafts, extract_settings, health, pipelines, reviews
+from app.api.v1 import _dev_ping, drafts, extract_settings, health, pipelines, reviews, spellcheck
 from app.config import settings
 from app.core.logging import configure_logging
 from app.middleware.auth import require_internal_api_key
@@ -76,6 +76,7 @@ app.include_router(health.router, prefix="/v1")
 app.include_router(pipelines.router, prefix="/v1")
 app.include_router(drafts.router, prefix="/v1")
 app.include_router(reviews.router, prefix="/v1")
+app.include_router(spellcheck.router, prefix="/v1")
 app.include_router(extract_settings.router, prefix="/v1")
 
 # Dev 전용

@@ -11,6 +11,7 @@ import { TextStyle, FontFamily, FontSize } from '@tiptap/extension-text-style';
 import { cn } from '../../lib/cn';
 import { useEditorSettings } from '../../stores/editorSettingsStore';
 import { useEditorToolbarStore } from '../../stores/editorToolbarStore';
+import { registerEditor, unregisterEditor } from '../../lib/activeEditorRegistry';
 import SceneBreak from './extensions/SceneBreak';
 import KoreanPunctuation from './extensions/KoreanPunctuation';
 import AutoPairQuotes from './extensions/AutoPairQuotes';
@@ -301,6 +302,13 @@ export function ContentEditor({
       }
     };
   }, []);
+
+  // 우측 패널(맞춤법 검사 등)에서 이 에디터에 명령을 보낼 수 있도록 itemId로 인스턴스 등록
+  useEffect(() => {
+    if (!editor) return;
+    registerEditor(itemId, editor);
+    return () => unregisterEditor(itemId, editor);
+  }, [editor, itemId]);
 
   // Ctrl+F / Ctrl+H — FindReplace 패널 열기
   // FindReplace extension은 브라우저 기본 동작만 차단하므로 UI 토글은 여기서 직접 처리

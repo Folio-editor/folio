@@ -79,7 +79,7 @@ app:
 ai:
   client:
     # dev-start.sh가 AI 서버를 8001에 띄움 (line 48). 도플러 AI_SERVER_URL 있으면 우선.
-    base-url: ${AI_SERVER_URL:http://localhost:8001}
+    base-url: ${AI_SERVER_URL:http://127.0.0.1:8001}
 
 # Plan C — dev 에서도 KEK 흐름 켬. SERVER_PEPPER 는 Doppler dev config 에서 주입.
 folio:
