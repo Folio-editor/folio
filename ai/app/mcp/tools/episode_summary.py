@@ -1,6 +1,6 @@
 """MCP 도구: episode_summary 기반 회차 메타 탐색.
 
-3 도구 — list / get / search.
+4 도구 — list_all / list / get / search.
 모든 도구는 ctx.work_id + ctx.writer_id 격리 조건을 SQL WHERE 에 강제.
 episode 테이블의 sort_order 를 조인하여 회차 순서대로 정렬.
 """
@@ -13,6 +13,42 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+
+
+# ============================================================
+# 0) list_all_oneline_summaries — 작품 전체 흐름 1회 호출 (Phase 3 R-J)
+# ============================================================
+
+
+async def list_all_oneline_summaries(
+    session: AsyncSession,
+    ctx: WriterContext,
+) -> list[dict[str, Any]]:
+    """작품 전체 회차의 oneline_summary 만 sort_order 순서로 반환.
+
+    토큰 효율: 회차당 ~45 tok × 300화 = ~13.5K tok (agent context 1회 진입에 충분).
+    상세 필요 시 list_episode_summaries / get_episode_summary 로 drill-down.
+    """
+    sql = (
+        "SELECT ep.sort_order, es.oneline_summary, es.pov_character, es.tone "
+        "FROM episode_summary es "
+        "JOIN episode ep ON ep.id = es.episode_id "
+        "WHERE es.work_id = :wid AND es.writer_id = :wr "
+        "ORDER BY ep.sort_order ASC"
+    )
+    r = await session.execute(
+        sa_text(sql),
+        {"wid": ctx.work_id, "wr": ctx.writer_id},
+    )
+    return [
+        {
+            "sort_order": row[0],
+            "oneline_summary": row[1],
+            "pov_character": row[2],
+            "tone": row[3],
+        }
+        for row in r.fetchall()
+    ]
 
 
 # ============================================================

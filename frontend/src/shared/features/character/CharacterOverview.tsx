@@ -713,8 +713,27 @@ function parseNoteContent(raw: string | null): object | string {
   try {
     return JSON.parse(raw) as object;
   } catch {
-    return '';
+    // Plain text fallback — agent 가 평문으로 저장했거나 마이그레이션 잔재일 때.
+    // tiptap doc 으로 래핑해서 에디터가 빈 화면 보이지 않도록.
+    return wrapPlainTextAsTiptapDoc(raw);
   }
+}
+
+function wrapPlainTextAsTiptapDoc(text: string): object {
+  const paragraphs = text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paragraphs.length === 0) {
+    return { type: 'doc', content: [{ type: 'paragraph' }] };
+  }
+  return {
+    type: 'doc',
+    content: paragraphs.map((p) => ({
+      type: 'paragraph',
+      content: [{ type: 'text', text: p }],
+    })),
+  };
 }
 
 function flattenTiptapText(node: unknown): string {
