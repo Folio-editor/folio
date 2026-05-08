@@ -20,9 +20,27 @@ import { clear as clearWorkKeyCache } from './keyCache';
 import { kekStorage } from './kekStorage';
 import type { ImportKeyMaterial } from './kekStorage.types';
 
-let currentKek: CryptoKey | null = null;
-let currentMaterial: ImportKeyMaterial | null = null;
-let lastActivityMs: number = Date.now();
+// KEK 상태는 globalThis 에 저장한다.
+// 이전엔 module-scope let 변수를 썼으나, prd 빌드에서 vite/rollup chunk splitting
+// 으로 lifecycle 모듈이 두 인스턴스로 번들되는 케이스가 발생 → restoreKek() 가
+// 한 인스턴스에 currentKek 을 set 해도 hook 의 getCurrentKek() 가 다른 인스턴스
+// 를 보고 null 을 반환하는 회귀가 있었다. globalThis 는 인스턴스 무관 단일 슬롯.
+interface KekGlobal {
+  currentKek: CryptoKey | null;
+  currentMaterial: ImportKeyMaterial | null;
+  lastActivityMs: number;
+}
+
+const KEK_STATE_KEY = '__folio_kek_state__';
+const _g = globalThis as unknown as Record<string, KekGlobal | undefined>;
+if (!_g[KEK_STATE_KEY]) {
+  _g[KEK_STATE_KEY] = {
+    currentKek: null,
+    currentMaterial: null,
+    lastActivityMs: Date.now(),
+  };
+}
+const state: KekGlobal = _g[KEK_STATE_KEY]!;
 
 const INACTIVITY_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30일
 
@@ -38,14 +56,14 @@ export interface InitKekParams {
  * 이미 다른 사용자의 KEK가 있다면 자동 폐기된다 (사용자 전환).
  */
 export async function initKekFromLogin(params: InitKekParams): Promise<CryptoKey> {
-  if (currentMaterial && currentMaterial.sub !== params.sub) {
+  if (state.currentMaterial && state.currentMaterial.sub !== params.sub) {
     await clearKek();
   }
   await kekStorage.save(params);
-  currentMaterial = { ...params };
-  currentKek = await deriveKek(params);
+  state.currentMaterial = { ...params };
+  state.currentKek = await deriveKek(params);
   touchActivity();
-  return currentKek;
+  return state.currentKek;
 }
 
 /**
@@ -55,36 +73,36 @@ export async function initKekFromLogin(params: InitKekParams): Promise<CryptoKey
 export async function restoreKek(): Promise<CryptoKey | null> {
   const m = await kekStorage.load();
   if (!m) {
-    currentKek = null;
-    currentMaterial = null;
+    state.currentKek = null;
+    state.currentMaterial = null;
     return null;
   }
-  currentMaterial = m;
-  currentKek = await deriveKek(m);
+  state.currentMaterial = m;
+  state.currentKek = await deriveKek(m);
   touchActivity();
-  return currentKek;
+  return state.currentKek;
 }
 
 /** 메모리에 보관된 현재 KEK. 없으면 null. raw bytes 반환은 결정 13으로 금지된다. */
 export function getCurrentKek(): CryptoKey | null {
-  if (!currentKek) return null;
-  if (Date.now() - lastActivityMs > INACTIVITY_TIMEOUT_MS) {
+  if (!state.currentKek) return null;
+  if (Date.now() - state.lastActivityMs > INACTIVITY_TIMEOUT_MS) {
     void clearKek();
     return null;
   }
-  return currentKek;
+  return state.currentKek;
 }
 
 export function getCurrentMaterial(): ImportKeyMaterial | null {
-  return currentMaterial ? { ...currentMaterial } : null;
+  return state.currentMaterial ? { ...state.currentMaterial } : null;
 }
 
 /**
  * 로그아웃 / 30일 비활성 / 사용자 전환 시. 메모리 + 디스크 모두 폐기 + work key 캐시 비움.
  */
 export async function clearKek(): Promise<void> {
-  currentKek = null;
-  currentMaterial = null;
+  state.currentKek = null;
+  state.currentMaterial = null;
   clearWorkKeyCache();
   try {
     await kekStorage.clear();
@@ -100,10 +118,10 @@ export async function clearKek(): Promise<void> {
 export async function rotateKek(next: InitKekParams): Promise<CryptoKey> {
   clearWorkKeyCache();
   await kekStorage.save(next);
-  currentMaterial = { ...next };
-  currentKek = await deriveKek(next);
+  state.currentMaterial = { ...next };
+  state.currentKek = await deriveKek(next);
   touchActivity();
-  return currentKek;
+  return state.currentKek;
 }
 
 /**
@@ -112,30 +130,30 @@ export async function rotateKek(next: InitKekParams): Promise<CryptoKey> {
  */
 export async function ensureKekVersion(latest: InitKekParams): Promise<CryptoKey> {
   if (
-    !currentMaterial ||
-    currentMaterial.pepperVersion !== latest.pepperVersion ||
-    currentMaterial.pepperUserBase64 !== latest.pepperUserBase64 ||
-    currentMaterial.saltBase64 !== latest.saltBase64 ||
-    currentMaterial.sub !== latest.sub
+    !state.currentMaterial ||
+    state.currentMaterial.pepperVersion !== latest.pepperVersion ||
+    state.currentMaterial.pepperUserBase64 !== latest.pepperUserBase64 ||
+    state.currentMaterial.saltBase64 !== latest.saltBase64 ||
+    state.currentMaterial.sub !== latest.sub
   ) {
     return rotateKek(latest);
   }
-  if (!currentKek) {
-    currentKek = await deriveKek(latest);
+  if (!state.currentKek) {
+    state.currentKek = await deriveKek(latest);
   }
   touchActivity();
-  return currentKek;
+  return state.currentKek;
 }
 
 /** 사용자 활동(편집/저장/네트워크) 발생 시 hook이 호출. 30일 카운터 리셋. */
 export function touchActivity(): void {
-  lastActivityMs = Date.now();
+  state.lastActivityMs = Date.now();
 }
 
 /** 테스트 / dev 도구 전용. prod 분기에서 호출 금지. */
 export function __resetForTests(): void {
-  currentKek = null;
-  currentMaterial = null;
-  lastActivityMs = Date.now();
+  state.currentKek = null;
+  state.currentMaterial = null;
+  state.lastActivityMs = Date.now();
   clearWorkKeyCache();
 }
