@@ -78,7 +78,7 @@ public class TokenWalletService {
                 writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
-    /** 신규 가입 시 보너스 300 크레딧 지급 (90일 만료). */
+    /** 신규 가입 시 보너스 3,000 크레딧 지급 (90일 만료). */
     @Transactional
     public void grantSignupBonus(UUID writerId) {
         TokenWallet wallet = lockOrCreate(writerId);
