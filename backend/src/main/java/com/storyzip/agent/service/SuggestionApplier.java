@@ -1,5 +1,6 @@
 package com.storyzip.agent.service;
 
+import com.storyzip.ai.client.EpisodeIndexingTrigger;
 import com.storyzip.security.AesGcmCipher;
 import com.storyzip.security.WorkKeyService;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class SuggestionApplier {
 
     private final JdbcTemplate jdbc;
     private final WorkKeyService workKeyService;
+    private final EpisodeIndexingTrigger episodeIndexingTrigger;
 
     /**
      * 승인된 suggestion 을 실제 테이블에 적용. 반환: 생성/갱신된 row 의 id (있으면).
@@ -150,6 +152,9 @@ public class SuggestionApplier {
                 id, workId, writerId, parentId, title, content, wordCount, sortOrder
         );
         log.info("[SUGGESTION-APPLY] episode INSERT id={} work={} parent={} status=작성중", id, workId, parentId);
+        // AI 제안 승인으로 신규 회차 INSERT — chunk_and_embed 파이프라인 트리거 (afterCommit).
+        // status='작성중' 신규 행이라 summary 트리거 조건(완성 진입) 미충족 → fireIndexing 만.
+        episodeIndexingTrigger.fireIndexing(id, workId, writerId);
         return id;
     }
 
@@ -286,11 +291,13 @@ public class SuggestionApplier {
         if (epId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "episode_id required");
         }
-        Integer match = jdbc.queryForObject(
-                "SELECT count(*) FROM episode WHERE id = ? AND work_id = ? AND writer_id = ?",
-                Integer.class, epId, workId, writerId
+        // ownership 검증 + prevStatus 읽기 (status '완성' 신규 진입 시 summary 트리거 판단용)
+        String prevStatus = jdbc.query(
+                "SELECT status FROM episode WHERE id = ? AND work_id = ? AND writer_id = ?",
+                rs -> rs.next() ? rs.getString(1) : null,
+                epId, workId, writerId
         );
-        if (match == null || match == 0) {
+        if (prevStatus == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "episode not found in work");
         }
         String newTitle = asString(p.get("title"));
@@ -324,6 +331,13 @@ public class SuggestionApplier {
         jdbc.update(sql.toString(), args.toArray());
         log.info("[SUGGESTION-APPLY] episode UPDATE id={} (title={} content={} status={})",
                 epId, newTitle != null, newContent != null, newStatus);
+        // 본문 변경 시 chunk_and_embed 재인덱싱. status '완성' 신규 진입 시 episode_summary 트리거.
+        if (newContent != null) {
+            episodeIndexingTrigger.fireIndexing(epId, workId, writerId);
+        }
+        if (newStatus != null) {
+            episodeIndexingTrigger.fireSummary(epId, workId, writerId, prevStatus, newStatus);
+        }
         return epId;
     }
 

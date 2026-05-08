@@ -1,4 +1,4 @@
-"""MCP 도구: 에피소드 청크 벡터 유사도 검색 + Haiku 합성."""
+"""MCP 도구: 에피소드 청크 벡터 유사도 검색 + Haiku 합성 + 회차-기준 관련성 탐색."""
 
 from __future__ import annotations
 
@@ -8,7 +8,157 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.decrypt_resolver import DecryptResolverError, decrypt_rows
 from app.services.providers import get_embedder, get_llm
+
+
+async def _decrypt_chunk_content(work_id, rows: list[dict]) -> list[dict]:
+    """chunk content 일괄 복호화. 실패 시 placeholder."""
+    if not rows:
+        return rows
+    try:
+        return await decrypt_rows(work_id, rows, ["content"])
+    except DecryptResolverError:
+        for r in rows:
+            v = r.get("content")
+            if isinstance(v, str) and v.startswith("v1:"):
+                r["content"] = "(암호화 미해제)"
+        return rows
+
+
+async def find_relevant_episodes(
+    session: AsyncSession,
+    ctx: WriterContext,
+    *,
+    reference_sort_order: int,
+    k: int = 5,
+    exclude_self: bool = True,
+) -> dict[str, Any]:
+    """기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k 반환.
+
+    chunk_and_embed_task 가 회차마다 자동 임베딩한 벡터를 재사용 — 추가 임베딩 0회.
+    회차별 max-similarity (가장 가까운 chunk 1개의 유사도) 와 avg-similarity 집계.
+    DB-only — Haiku 호출 X. ~1 크레딧 수준.
+
+    반환: {reference_sort_order, top: [{sort_order, title, max_sim, avg_sim, chunk_count}]}
+    """
+    capped_k = min(max(int(k), 1), 20)
+
+    # 사전 진단 — ref episode 의 chunk 수 / 다른 회차 의 chunk 수 별도 점검 (오진단 차단)
+    diag_sql = (
+        "SELECT "
+        "  (SELECT COUNT(*) FROM episode_chunk ec "
+        "     JOIN episode ep ON ep.id = ec.episode_id "
+        "     WHERE ec.work_id = :wid AND ec.writer_id = :wr AND ep.sort_order = :ref) AS ref_chunks, "
+        "  (SELECT COUNT(*) FROM episode_chunk ec "
+        "     JOIN episode ep ON ep.id = ec.episode_id "
+        "     WHERE ec.work_id = :wid AND ec.writer_id = :wr "
+        "       AND (NOT :excl OR ep.sort_order <> :ref)) AS other_chunks, "
+        "  (SELECT MAX(ep.sort_order) FROM episode_chunk ec "
+        "     JOIN episode ep ON ep.id = ec.episode_id "
+        "     WHERE ec.work_id = :wid AND ec.writer_id = :wr "
+        "       AND ep.sort_order < :ref) AS prev_with_chunks"
+    )
+    diag = (await session.execute(
+        sa_text(diag_sql),
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "ref": reference_sort_order, "excl": exclude_self},
+    )).fetchone()
+    ref_chunks, other_chunks, prev_with_chunks = (
+        int(diag[0] or 0), int(diag[1] or 0),
+        int(diag[2]) if diag[2] is not None else None,
+    )
+
+    if ref_chunks == 0:
+        # 기준 회차에 chunk 없음 — 본문 비어있거나 임베딩 미생성. agent 가 다른 reference 골라야.
+        return {
+            "reference_sort_order": reference_sort_order,
+            "top": [],
+            "ref_chunks": 0,
+            "other_chunks": other_chunks,
+            "suggested_reference": prev_with_chunks,
+            "message": (
+                f"기준 회차 sort_order={reference_sort_order} 본문이 비어있거나 임베딩 미생성. "
+                + (
+                    f"이전 임베딩된 회차 sort_order={prev_with_chunks} 로 다시 호출하세요. "
+                    if prev_with_chunks is not None
+                    else "다른 회차들도 본문이 비어있습니다 — list_episodes 의 word_count>0 회차로 reference 변경. "
+                )
+                + f"(다른 회차 chunk 총 {other_chunks}개 존재)"
+            ),
+        }
+    if other_chunks == 0:
+        return {
+            "reference_sort_order": reference_sort_order,
+            "top": [],
+            "ref_chunks": ref_chunks,
+            "other_chunks": 0,
+            "message": (
+                f"기준 회차는 chunk {ref_chunks}개 있지만 다른 회차들은 모두 본문 없음. "
+                "비교 대상 부재 — list_episodes 로 작성된 회차 확인."
+            ),
+        }
+
+    sql = (
+        "WITH ref AS ("
+        "  SELECT ec.embedding FROM episode_chunk ec "
+        "  JOIN episode ep ON ep.id = ec.episode_id "
+        "  WHERE ec.work_id = :wid AND ec.writer_id = :wr "
+        "    AND ep.sort_order = :ref"
+        "), other AS ("
+        "  SELECT ep.id AS episode_id, ep.sort_order, ep.title, "
+        "         1 - (ec.embedding <=> ref.embedding) AS sim "
+        "  FROM episode_chunk ec "
+        "  JOIN episode ep ON ep.id = ec.episode_id "
+        "  CROSS JOIN ref "
+        "  WHERE ec.work_id = :wid AND ec.writer_id = :wr "
+        "    AND (NOT :excl OR ep.sort_order <> :ref)"
+        ") "
+        "SELECT sort_order, title, "
+        "       MAX(sim) AS max_sim, "
+        "       AVG(sim) AS avg_sim, "
+        "       COUNT(*) AS chunk_count "
+        "FROM other "
+        "GROUP BY episode_id, sort_order, title "
+        "ORDER BY max_sim DESC "
+        "LIMIT :k"
+    )
+    r = await session.execute(
+        sa_text(sql),
+        {
+            "wid": ctx.work_id,
+            "wr": ctx.writer_id,
+            "ref": reference_sort_order,
+            "excl": exclude_self,
+            "k": capped_k,
+        },
+    )
+    rows = r.fetchall()
+    if not rows:
+        # diag 통과했는데 결과 없음 — 이론상 도달 불가지만 안전 fallback
+        return {
+            "reference_sort_order": reference_sort_order,
+            "top": [],
+            "ref_chunks": ref_chunks,
+            "other_chunks": other_chunks,
+            "message": "쿼리 결과 0 — 데이터 정합성 의심.",
+        }
+    # title 복호화는 list_episodes 와 같은 패턴 — 여기선 sort_order 만으로 충분하므로 평문이면 노출, v1: 면 placeholder
+    top = []
+    for row in rows:
+        title = row[1]
+        if isinstance(title, str) and title.startswith("v1:"):
+            title = "(제목 암호화 — 회차 식별은 sort_order 사용)"
+        top.append({
+            "sort_order": row[0],
+            "title": title,
+            "max_sim": round(float(row[2]), 4),
+            "avg_sim": round(float(row[3]), 4),
+            "chunk_count": int(row[4]),
+        })
+    return {
+        "reference_sort_order": reference_sort_order,
+        "top": top,
+    }
 
 
 async def search_episode_chunks(
@@ -35,10 +185,11 @@ async def search_episode_chunks(
         ),
         {"vec": vec_str, "wid": ctx.work_id, "wr": ctx.writer_id, "k": k},
     )
-    return [
+    rows = [
         {"content": row[0], "similarity": round(float(row[1]), 4)}
         for row in r.fetchall()
     ]
+    return await _decrypt_chunk_content(ctx.work_id, rows)
 
 
 _QUERY_SYSTEM = (
@@ -125,6 +276,8 @@ async def query_episodes_by_chunks(
         }
         for row in rows
     ]
+    # Phase 4.6: chunk content 일괄 복호화 (Haiku 합성 입력은 평문 필수)
+    matched_chunks = await _decrypt_chunk_content(ctx.work_id, matched_chunks)
     episodes = sorted({c["sort_order"] for c in matched_chunks})
 
     # Haiku 합성

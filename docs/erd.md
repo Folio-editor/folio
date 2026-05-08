@@ -151,7 +151,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 | writer_id | UUID | FK → Writer | |
 | parent_id | UUID | FK → Episode, NULL | NULL이면 최상위 |
 | title | VARCHAR(200) | NOT NULL | 회차 제목 |
-| status | VARCHAR(20) | NOT NULL | 미작성/초고/퇴고/완성/trashed |
+| status | VARCHAR(20) | NOT NULL | 예정/초고/퇴고/완성/trashed |
 | content | TEXT | | TipTap JSON 원고 본문 |
 | word_count | INTEGER | NOT NULL DEFAULT 0 | 자동 계산 글자수 |
 | sort_order | INTEGER | NOT NULL | |

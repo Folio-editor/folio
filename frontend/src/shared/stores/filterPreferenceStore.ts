@@ -2,7 +2,7 @@
 // filterPreferenceStore — 사이드바 패널별 필터 (다중 선택)
 // ============================================================
 // 패널별 가능한 필드:
-//   episode      → status (미작성/초고/퇴고/완성)
+//   episode      → status (예정/초고/퇴고/완성)
 //   plot         → status (예정/작성중/완료)  *회차 자식만 status 보유*
 //   character    → gender (male/female/other)
 //   foreshadow   → priority (상/중/하)

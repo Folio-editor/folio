@@ -37,7 +37,7 @@ interface UnlinkedPlotRow {
 }
 
 const STATUS_OPTIONS: StatusPillOption[] = [
-  { value: '미작성', label: '미작성', tone: 'slate' },
+  { value: '예정', label: '예정', tone: 'slate' },
   { value: '초고', label: '초고', tone: 'amber' },
   { value: '퇴고', label: '퇴고', tone: 'blue' },
   { value: '완성', label: '완성', tone: 'emerald' },
@@ -101,7 +101,7 @@ function EpisodeEditor({
               {item.word_count.toLocaleString()}자
             </span>
             <StatusPillDropdown
-              value={STATUS_OPTIONS.some((o) => o.value === item.status) ? item.status : '미작성'}
+              value={STATUS_OPTIONS.some((o) => o.value === item.status) ? item.status : '예정'}
               options={STATUS_OPTIONS}
               ariaLabel="원고 상태"
               onChange={(status) => void updateEpisode(id, { status })}
@@ -160,6 +160,9 @@ function EpisodeEditor({
           placeholder="본문을 작성하세요…"
           onUpdate={(content) => void updateEpisode(id, { content })}
           onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
+          // DB 의 stale word_count 와 실제 chars 가 다를 때만 mount 시 1회 보정 emit.
+          // 일치하면 emit 안 해서 단순 회차 전환에 의한 sync 트리거 회귀 차단.
+          storedWordCount={item.word_count}
         />
       )}
     </div>

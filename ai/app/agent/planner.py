@@ -135,7 +135,8 @@ async def run_planner_loop(
                     system=system_blocks,
                     tools=tools,
                     messages=history,
-                    temperature=0.4,
+                    # Sonnet 4 의 XML hallucination 빈도 감소 + tool 결정 안정성 ↑
+                    temperature=0.2,
                 ) as stream:
                     async for ev in stream:
                         if getattr(ev, "type", None) == "content_block_delta":
@@ -206,6 +207,27 @@ async def run_planner_loop(
         # 보내는 경우가 있어, 단순히 stop_reason 만 보면 tool 호출이 누락된다.
         if not tool_uses:
             final_text = _content_to_text(content)
+            # Sonnet 4 가 가끔 tool_use 블록 대신 옛 XML 포맷 (<invoke name="..."><parameter>)
+            # 을 텍스트로 출력하는 회귀를 감지. 사용자 채팅엔 무의미한 XML 만 노출되므로
+            # 한 번 user 메시지로 나무라서 재시도 (1회만).
+            if (
+                "<invoke name=" in final_text
+                or "<parameter name=" in final_text
+            ):
+                logger.warning(
+                    "planner.xml_tool_hallucination scenario=%s — retry once with explicit reminder",
+                    scenario_name,
+                )
+                history.append({
+                    "role": "user",
+                    "content": (
+                        "방금 응답에서 <invoke> XML 텍스트로 도구 호출을 시도했는데, "
+                        "그건 실제 호출이 아닙니다. tool_use 블록으로 다시 호출해주세요. "
+                        "혹은 도구가 필요 없으면 일반 답변을 해주세요."
+                    ),
+                })
+                final_text = None
+                continue
             break
         if stop_reason and stop_reason != "tool_use":
             logger.warning(
@@ -252,9 +274,19 @@ async def run_planner_loop(
             except Exception as e:
                 logger.exception("planner.tool_failed name=%s", name)
                 result = {"error": "tool_failed", "message": str(e)[:200]}
-            # 내부에서 Haiku 를 호출하는 도구들은 result.usage 를 budget 에 반영
-            # (invoke_haiku_worker / analyze_episode — Phase 4.5 §C-1)
-            if name in ("invoke_haiku_worker", "analyze_episode") and isinstance(result, dict):
+            # 내부에서 Haiku 를 호출하는 도구들은 result.usage 를 budget 에 반영해
+            # 사용자 영수증에 청구된다 (Phase 4.5 §C-1, Phase 4.6 후속).
+            #   - invoke_haiku_worker      : 명시적 Haiku sub-task 위임
+            #   - analyze_episode          : 단건 자유 task 추출
+            #   - summarize_episode        : 12-필드 양식 요약 + episode_summary UPSERT 부산물
+            #   - query_episodes_by_chunks : 벡터 검색 + Haiku 합성
+            # cache hit 경로는 usage={input:0, output:0} 라 record 해도 0 누적 — 안전.
+            if name in (
+                "invoke_haiku_worker",
+                "analyze_episode",
+                "summarize_episode",
+                "query_episodes_by_chunks",
+            ) and isinstance(result, dict):
                 worker_usage = result.get("usage")
                 if isinstance(worker_usage, dict):
                     try:

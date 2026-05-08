@@ -17,15 +17,20 @@ from app.mcp.tools.episode_plaintext import (
     analyze_episode,
     fetch_episode_plaintext,
     list_episodes,
+    summarize_episode,
 )
-from app.mcp.tools.episode_search import query_episodes_by_chunks, search_episode_chunks
+from app.mcp.tools.episode_search import (
+    find_relevant_episodes,
+    query_episodes_by_chunks,
+    search_episode_chunks,
+)
 from app.mcp.tools.episode_summary import (
     get_episode_summary,
     list_all_oneline_summaries,
     list_episode_summaries,
     search_episode_summaries,
 )
-from app.mcp.tools.plot import get_plot
+from app.mcp.tools.plot import get_plot, list_plots
 from app.mcp.tools.proposals import (
     propose_character,
     propose_character_delete,
@@ -50,26 +55,42 @@ from app.mcp.tools.world_note import get_world_note, list_world_notes
 
 MCP_TOOLS: list[dict[str, Any]] = [
     {
+        "name": "list_plots",
+        "description": (
+            "**peek 용** — 작품의 모든 플롯 제목·상태·parent_id 만 (본문 X). "
+            "여러 플롯 중 관련 있는 것만 추리는 첫 단계. 본문은 get_plot(title) 단건으로 drill."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
         "name": "get_plot",
-        "description": "작품의 전체 플롯(줄거리) 목록을 조회합니다.",
+        "description": (
+            "**drill 용** — 단건 플롯 본문 fetch. peek (list_plots) 후 관련 있는 제목만 호출. "
+            "title 또는 plot_id 중 하나 지정. 인자 없이 호출 시 list_plots 와 동일 (호환)."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "title": {"type": "string", "description": "(옵션) 조회할 플롯 제목"},
+                "plot_id": {"type": "string", "description": "(옵션) 조회할 플롯 id"},
+            },
             "required": [],
         },
     },
     {
         "name": "list_characters",
-        "description": "등장인물 목록을 조회합니다. 이름, 성별, 나이, 성격만 포함된 간략 목록입니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
+        "description": (
+            "**peek 용** — 등장 인물 이름·성별·나이만 (간략 목록). "
+            "인물 중복·기존 페르소나 점검 시 첫 단계. 상세 프로필은 get_character(name) 단건."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "get_character",
-        "description": "특정 등장인물의 상세 프로필을 조회합니다. 외모, MBTI, 커스텀 필드 등 전체 정보를 포함합니다.",
+        "description": (
+            "**drill 용** — 단건 인물 풀 프로필 (외모·성격·MBTI·custom_fields 등). "
+            "peek (list_characters) 후 관련 있는 인물만 호출."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -83,16 +104,18 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "list_world_notes",
-        "description": "세계관 설정 노트 목록을 조회합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
+        "description": (
+            "**peek 용** — 세계관 노트 제목·parent_id 만 (본문 X). "
+            "신규 세계관 자료 등록 전 중복 점검 / 관련 노트 식별의 첫 단계. "
+            "본문은 get_world_note(name) 단건."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "get_world_note",
-        "description": "특정 세계관 노트의 전체 내용을 조회합니다.",
+        "description": (
+            "**drill 용** — 단건 세계관 노트 본문 fetch. peek (list_world_notes) 후 관련 있는 제목만 호출."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -107,11 +130,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "query_episodes_by_chunks",
         "description": (
-            "벡터 검색 + Haiku 합성으로 회차별 fetch 없이 query 답변. "
-            "300화 같은 대량 작품에서 회차마다 fetch_episode_plaintext / analyze_episode 반복 대신 사용. "
-            "chunk_and_embed_task 가 자동 임베딩한 청크에서 query 와 유사한 top-k 추출 → Haiku 합성. "
-            "비용 ~10 크레딧/호출 (회차 수와 무관). "
-            "예시 query: '서진우의 가족 관계 묘사', '한중 이주 결정 장면', '복선 — 편지의 비밀'."
+            "**자유 텍스트 질의** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
+            "고정 ~10 크레딧, 회차 수 무관. 예: '주인공의 트라우마 묘사', '한중 이주 장면'. "
+            "기준 회차에서 출발하는 관련성 탐색은 find_relevant_episodes (~1 크레딧)."
         ),
         "input_schema": {
             "type": "object",
@@ -176,8 +197,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_episode_summary",
         "description": (
-            "특정 회차(sort_order) 의 상세 요약을 조회합니다. "
-            "줄거리·시점·등장 인물/장소·핵심 사건·톤·복선·키워드 등 모든 메타 필드를 반환."
+            "**캐시 hit 용** — episode_summary 행 존재 시 (list_episodes 의 has_summary=True) "
+            "단건 12-필드 메타 반환 (Haiku 0회). 행 없으면 null → summarize_episode 호출 필요."
         ),
         "input_schema": {
             "type": "object",
@@ -190,9 +211,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_episode_summaries",
         "description": (
-            "회차 요약 텍스트를 키워드로 검색합니다. "
-            "scope 로 인물/장소/톤 차원 필터링 가능: "
-            "'all' (기본), 'character:<이름>', 'location:<장소>', 'tone:<톤>'."
+            "회차 요약 키워드 검색 (Option A — 평문 일괄 복호화 + Python substring). "
+            "PostgreSQL FTS 대신 application-side 매칭이라 어형 변화 (예: '발견'으로 '발견하다' hit) 잡음. "
+            "scope 차원 필터: 'all' (기본), 'character:<이름>', 'location:<장소>', 'tone:<톤>'. "
+            "300화 기준 ~100~200ms. 의미적 유사 검색은 query_episodes_by_chunks (벡터)."
         ),
         "input_schema": {
             "type": "object",
@@ -258,20 +280,61 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_episodes",
         "description": (
-            "작품의 모든 회차 메타 목록을 episode 테이블에서 직접 조회 (요약 유무 무관). "
+            "**peek 용** — 회차 존재·has_summary 확인. 모든 회차 작업의 첫 단계. "
             "각 행: {sort_order, title, status, word_count, has_summary}. "
-            "회차 존재 여부 확인 / status='완성' 필터링 / 요약 미생성 회차 식별에 사용."
+            "drill: has_summary=True 면 get_episode_summary, False 면 summarize_episode."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    # ───────── Phase 4.6: 회차-기준 관련성 탐색 ─────────
+    {
+        "name": "find_relevant_episodes",
+        "description": (
+            "**peek 용** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
+            "DB-only ~1 크레딧 (Haiku·임베딩 호출 0회). 다음 화 초안 시 직전 화 기준으로 호출 → "
+            "관련 있는 회차만 골라 summarize_episode/get_episode_summary 로 drill. "
+            "**전제: reference_sort_order 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
+            "list_episodes 결과의 word_count 또는 has_summary 로 사전 확인. "
+            "본문 비어있는 회차를 reference 로 주면 결과 0 + suggested_reference 반환 — 그걸로 재호출."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reference_sort_order": {"type": "integer", "description": "기준 회차 sort_order"},
+                "k": {"type": "integer", "description": "top-k (기본 5, 상한 20)", "default": 5},
+                "exclude_self": {"type": "boolean", "description": "기준 회차 자기 자신 제외 (기본 true)", "default": True},
+            },
+            "required": ["reference_sort_order"],
+        },
+    },
     # ───────── Phase 4: 평문 fetch ─────────
+    {
+        "name": "summarize_episode",
+        "description": (
+            "**drill 용** — 단건 회차 12-필드 양식 요약 (oneline·summary·POV·인물·장소·핵심 사건·tone·"
+            "복선 planted/paid_off·키워드). 결과는 episode_summary 에 자동 UPSERT — "
+            "다음 호출 시 캐시 hit (Haiku 0회). 표준 회차 흡수에 우선 사용. "
+            "자유 task (양식 외 분석) 는 analyze_episode."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "force_regenerate": {
+                    "type": "boolean",
+                    "description": "캐시 무시하고 재생성 (기본 false)",
+                    "default": False,
+                },
+            },
+            "required": ["sort_order"],
+        },
+    },
     {
         "name": "analyze_episode",
         "description": (
-            "회차 본문 fetch + Haiku 가 task 별 핵심 추출. Sonnet 비용 ~70% 절감 "
-            "(Sonnet 은 raw 본문 대신 Haiku 압축본만 받음). "
-            "task 예시: '등장 인물별 페르소나 추출' / '핵심 사건 시간순' / '복선 추출'. "
-            "재작성·인용처럼 본문 그대로 필요한 경우는 fetch_episode_plaintext 사용."
+            "**drill 용 (자유 task)** — 단건 회차 본문에서 task 별 추출. "
+            "12-필드 표준 요약은 summarize_episode 사용. 본 도구는 양식 외 분석 (예: '복선 회차별 추적', "
+            "'특정 인물 대사만 추출') 에 한정. Haiku 결과 1회성 — episode_summary 적재 X."
         ),
         "input_schema": {
             "type": "object",
@@ -288,10 +351,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "fetch_episode_plaintext",
         "description": (
-            "특정 회차(sort_order) 의 평문 본문을 Vault Transit 경유로 fetch. "
-            "본문 그대로 필요한 경우 (재작성·인용·정확한 문장 분석) 만 사용. "
-            "정보 추출 / 분석이 목적이면 analyze_episode 가 ~70% 저렴. "
-            "토큰 비용 큼 — 호출 횟수 제한적."
+            "**drill 용 (raw)** — 회차 평문 그대로 fetch (Vault Transit). "
+            "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode 또는 "
+            "analyze_episode 가 ~70% 저렴. 토큰 비용 큼 — 호출 제한적."
         ),
         "input_schema": {
             "type": "object",
@@ -305,11 +367,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "request_episode_summary_backfill",
         "description": (
-            "미요약 회차들의 요약 task 를 background Celery 큐에 적재. "
-            "agent 자신의 토큰 안 씀 — backend worker 가 회차당 Haiku 1회씩 비동기 처리. "
-            "300화 같은 대량 미요약 작품의 입구 비용 0. "
-            "완료 후 list_all_oneline_summaries 로 결과 확인 (회차당 30~60초). "
-            "기존 요약 행은 건너뜀 (idempotent)."
+            "**사용자 명시 요청 + 확답 후만** — status='완성' + 미요약/stale 회차들의 요약 task 를 "
+            "Celery 큐에 적재. 작가에게 회차당 Haiku 비용 청구되므로 임의 트리거 X. "
+            "단발 회차 요약은 summarize_episode (agent run 내 처리) 가 더 가벼움. "
+            "300화 일괄 백필처럼 명시적 요청에만 사용."
         ),
         "input_schema": {
             "type": "object",
@@ -580,11 +641,13 @@ ToolHandler = Callable[..., Coroutine[Any, Any, Any]]
 _HANDLER_MAP: dict[str, ToolHandler] = {
     "get_character": get_character,
     "get_plot": get_plot,
+    "list_plots": list_plots,
     "list_characters": list_characters,
     "list_world_notes": list_world_notes,
     "get_world_note": get_world_note,
     "search_episode_chunks": search_episode_chunks,
     "query_episodes_by_chunks": query_episodes_by_chunks,
+    "find_relevant_episodes": find_relevant_episodes,
     "list_all_oneline_summaries": list_all_oneline_summaries,
     "list_episode_summaries": list_episode_summaries,
     "get_episode_summary": get_episode_summary,
@@ -596,6 +659,7 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "list_episodes": list_episodes,
     "fetch_episode_plaintext": fetch_episode_plaintext,
     "analyze_episode": analyze_episode,
+    "summarize_episode": summarize_episode,
     "request_episode_summary_backfill": request_episode_summary_backfill,
     "invoke_haiku_worker": invoke_haiku_worker,
     "propose_character": propose_character,
@@ -617,6 +681,7 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
 # 도구 카테고리 (BudgetTracker Tier 2 키 분류)
 TOOL_CATEGORY: dict[str, str] = {
     "get_plot": "read_summary",
+    "list_plots": "read_summary",
     "list_characters": "read_summary",
     "get_character": "read_summary",
     "list_world_notes": "read_summary",
@@ -627,9 +692,11 @@ TOOL_CATEGORY: dict[str, str] = {
     "search_episode_summaries": "read_summary",
     "search_episode_chunks": "read_vector",
     "query_episodes_by_chunks": "sub_agent",      # Haiku 호출 — sub_agent budget
+    "find_relevant_episodes": "read_vector",      # DB-only 벡터 SQL, Haiku 0회
     "list_episodes": "read_summary",
     "fetch_episode_plaintext": "read_plaintext",
     "analyze_episode": "sub_agent",      # Haiku 호출 — sub_agent 카테고리로 분류
+    "summarize_episode": "sub_agent",    # Haiku 호출 + episode_summary UPSERT
     "request_episode_summary_backfill": "read_summary",   # Celery enqueue 만, 토큰 0
     "track_foreshadow": "analytics",
     "character_arc": "analytics",
