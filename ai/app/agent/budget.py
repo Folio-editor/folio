@@ -15,8 +15,9 @@ from app.mcp.registry import TOOL_CATEGORY
 
 
 # Anthropic 가격 (per 1M tokens, USD) — 2026-05 기준.
-# 프로젝트 표준 정책 = backend/.../payment/pricing/CreditCalculator.java
-#   1 credit = 8원, 차감 = round(USD * 1450 * 1.3 / 8)
+# 프로젝트 표준 정책 = backend/.../payment/pricing/CreditCalculator.java (단일 진실 출처).
+#   1 credit = 0.8원 (10000원 / 13000 credits)
+#   차감 = round(USD * USD_TO_KRW * MARGIN_RATIO / CREDIT_VALUE_KRW)
 # prompt caching: cache_read = 0.1× input, cache_create = 1.25× input.
 _PRICE_USD_PER_M = {
     "sonnet": {"in": 3.0,  "out": 15.0, "cache_read": 0.3,  "cache_create": 3.75},
@@ -24,7 +25,9 @@ _PRICE_USD_PER_M = {
 }
 USD_TO_KRW = 1450.0
 MARGIN_RATIO = 1.3
-CREDIT_VALUE_KRW = 8.0
+# Phase: 결제 단위 재구성 (10000원 = 1300 → 13000 credits).
+# backend CreditCalculator.CREDIT_VALUE_KRW 와 항상 동일 유지 — 한쪽만 바꾸면 청구 mismatch.
+CREDIT_VALUE_KRW = 0.8
 
 
 class BudgetExceeded(Exception):
@@ -37,9 +40,9 @@ def _convert(model: str, usage: dict[str, int]) -> int:
     """LLM raw 토큰 → 사용자 크레딧 (KRW 환산 + 마진).
 
     CreditCalculator (backend) 와 동일 공식:
-        cost_krw = USD * 1450
-        charged  = cost_krw * 1.3
-        credits  = round(charged / 8)
+        cost_krw = USD * 1450      # 환율
+        charged  = cost_krw * 1.3   # 마진
+        credits  = round(charged / 0.8)   # 1 크레딧 = 0.8 원 (10000원 = 13000 credits)
     """
     p = _PRICE_USD_PER_M.get(model, _PRICE_USD_PER_M["sonnet"])
     in_tok = int(usage.get("input_tokens", 0) or 0)
