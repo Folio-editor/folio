@@ -18,7 +18,7 @@ from app.mcp.tools.episode_plaintext import (
     fetch_episode_plaintext,
     list_episodes,
 )
-from app.mcp.tools.episode_search import search_episode_chunks
+from app.mcp.tools.episode_search import query_episodes_by_chunks, search_episode_chunks
 from app.mcp.tools.episode_summary import (
     get_episode_summary,
     list_all_oneline_summaries,
@@ -42,6 +42,7 @@ from app.mcp.tools.proposals import (
     propose_world_note_update,
 )
 from app.mcp.tools.sub_agent import invoke_haiku_worker
+from app.mcp.tools.summary_backfill import request_episode_summary_backfill
 from app.mcp.tools.world_note import get_world_note, list_world_notes
 
 # (구) get_plan 도구는 ERD 정리 2단계로 plan 테이블이 폐기되어 함께 제거됨.
@@ -104,8 +105,31 @@ MCP_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "query_episodes_by_chunks",
+        "description": (
+            "벡터 검색 + Haiku 합성으로 회차별 fetch 없이 query 답변. "
+            "300화 같은 대량 작품에서 회차마다 fetch_episode_plaintext / analyze_episode 반복 대신 사용. "
+            "chunk_and_embed_task 가 자동 임베딩한 청크에서 query 와 유사한 top-k 추출 → Haiku 합성. "
+            "비용 ~10 크레딧/호출 (회차 수와 무관). "
+            "예시 query: '서진우의 가족 관계 묘사', '한중 이주 결정 장면', '복선 — 편지의 비밀'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "검색 + 합성 질의 (한국어)"},
+                "k": {"type": "integer", "description": "검색 chunk 수 (기본 10, 상한 30)", "default": 10},
+                "sort_order_min": {"type": "integer", "description": "(옵션) 회차 범위 시작"},
+                "sort_order_max": {"type": "integer", "description": "(옵션) 회차 범위 끝"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_episode_chunks",
-        "description": "과거 에피소드에서 의미적으로 유사한 장면을 벡터 검색합니다.",
+        "description": (
+            "(저수준) 벡터 유사도 top-k chunks 만 raw 반환 — Haiku 합성 안 함. "
+            "보통은 query_episodes_by_chunks 가 더 효율적이며 이 도구는 chunk 자체를 보고 싶을 때만."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -275,6 +299,30 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
             },
             "required": ["sort_order"],
+        },
+    },
+    # ───────── Phase 4.5: 요약 일괄 백필 ─────────
+    {
+        "name": "request_episode_summary_backfill",
+        "description": (
+            "미요약 회차들의 요약 task 를 background Celery 큐에 적재. "
+            "agent 자신의 토큰 안 씀 — backend worker 가 회차당 Haiku 1회씩 비동기 처리. "
+            "300화 같은 대량 미요약 작품의 입구 비용 0. "
+            "완료 후 list_all_oneline_summaries 로 결과 확인 (회차당 30~60초). "
+            "기존 요약 행은 건너뜀 (idempotent)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start_sort": {"type": "integer", "description": "(옵션) 시작 sort_order (포함)"},
+                "end_sort": {"type": "integer", "description": "(옵션) 끝 sort_order (포함)"},
+                "limit": {
+                    "type": "integer",
+                    "description": "한 번에 적재 max (기본 50, 상한 200)",
+                    "default": 50,
+                },
+            },
+            "required": [],
         },
     },
     # ───────── Phase 4: sub-agent ─────────
@@ -536,6 +584,7 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "list_world_notes": list_world_notes,
     "get_world_note": get_world_note,
     "search_episode_chunks": search_episode_chunks,
+    "query_episodes_by_chunks": query_episodes_by_chunks,
     "list_all_oneline_summaries": list_all_oneline_summaries,
     "list_episode_summaries": list_episode_summaries,
     "get_episode_summary": get_episode_summary,
@@ -547,6 +596,7 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "list_episodes": list_episodes,
     "fetch_episode_plaintext": fetch_episode_plaintext,
     "analyze_episode": analyze_episode,
+    "request_episode_summary_backfill": request_episode_summary_backfill,
     "invoke_haiku_worker": invoke_haiku_worker,
     "propose_character": propose_character,
     "propose_world_note": propose_world_note,
@@ -576,9 +626,11 @@ TOOL_CATEGORY: dict[str, str] = {
     "get_episode_summary": "read_summary",
     "search_episode_summaries": "read_summary",
     "search_episode_chunks": "read_vector",
+    "query_episodes_by_chunks": "sub_agent",      # Haiku 호출 — sub_agent budget
     "list_episodes": "read_summary",
     "fetch_episode_plaintext": "read_plaintext",
     "analyze_episode": "sub_agent",      # Haiku 호출 — sub_agent 카테고리로 분류
+    "request_episode_summary_backfill": "read_summary",   # Celery enqueue 만, 토큰 0
     "track_foreshadow": "analytics",
     "character_arc": "analytics",
     "timeline_scan": "analytics",

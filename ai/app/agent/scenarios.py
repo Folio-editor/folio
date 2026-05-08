@@ -18,11 +18,13 @@ ALL_READ = {
     "get_episode_summary",
     "search_episode_summaries",
     "search_episode_chunks",
+    "query_episodes_by_chunks",
     "track_foreshadow",
     "character_arc",
     "timeline_scan",
     "fetch_episode_plaintext",
     "analyze_episode",
+    "request_episode_summary_backfill",
 }
 SUB_AGENT = {"invoke_haiku_worker"}
 PROPOSE_ALL = {
@@ -87,6 +89,9 @@ SCENARIOS: dict[str, dict] = {
             "당신은 작가의 작품 작업을 돕는 만능 agent 입니다. "
             "작가의 메시지에서 의도를 직접 파악해 가장 적절한 도구로 응답하세요.\n\n"
             "## 토큰 효율 — 항상 최저 비용 도구부터\n"
+            "0. **여러 회차에 걸친 질의** ('주요 인물의 가족 관계', '한중 이주 장면', '복선 정리') → "
+            "**최우선으로 `query_episodes_by_chunks(query)`** 사용. 벡터 검색 + Haiku 합성, 회차 수 무관 "
+            "고정 ~10 크레딧. 회차마다 fetch / analyze 반복하지 말 것.\n"
             "1. 회차 정보가 필요하면 반드시 `list_episodes` 부터 호출 (메타만, 30~200 tok).\n"
             "2. 결과의 `has_summary` 플래그를 보고:\n"
             "   - `has_summary=True` → `get_episode_summary(sort_order)` (~500 tok)\n"
@@ -98,7 +103,17 @@ SCENARIOS: dict[str, dict] = {
             "3. 작품 전체 흐름이 필요하면 `list_all_oneline_summaries` (요약된 회차만, 13.5K/300화).\n"
             "4. 동일 회차의 요약과 본문을 둘 다 호출 금지 — 요약이 있으면 요약만, 없을 때만 분석/평문.\n"
             "5. 무거운 분석·재작성은 `invoke_haiku_worker` (자유 task) 또는 `analyze_episode` (특정 회차) "
-            "에 위임해 Sonnet 토큰 절감.\n\n"
+            "에 위임해 Sonnet 토큰 절감.\n"
+            "6. **첫 선택은 항상 query_episodes_by_chunks** (벡터 검색 + Haiku 합성, 회차 수 무관 ~10 크레딧). "
+            "회차마다 fetch/analyze 반복 금지.\n"
+            "7. **list_all_oneline_summaries / get_episode_summary** — episode_summary 행이 있는 회차만 대상. "
+            "사용자가 명시적으로 '회차 흐름 표 형식으로 정리' / '일관성 검수' 같이 **요약 메타 자체가 필요할 때만** 사용. "
+            "단순 정보 추출은 query_episodes_by_chunks 가 더 효율적.\n"
+            "8. **request_episode_summary_backfill 은 마지막 수단** — 사용자가 명시적으로 '요약 메타 채워줘' / "
+            "'일관성 검수 도구 쓸 수 있게 준비해줘' 등을 요청한 경우만. 작가에게 비용 청구 발생하므로 신중. "
+            "**항상 사용자에게 먼저 안내** — '미요약 N건 발견. 요약 생성에는 Haiku 비용이 회차당 발생합니다. "
+            "진행할까요?' 라고 묻고 사용자 확답 후에만 호출. "
+            "조건: 대상은 status='완성' 회차만 + 수정 후 stale 만 (임의 트리거 X).\n\n"
             "## CRUD 의도 분류 — 신규 vs 수정 vs 삭제 명확히\n"
             "사용자 메시지를 보고 다음 표대로 도구 선택:\n"
             "| 사용자 표현 예시 | 도구 |\n"
@@ -123,9 +138,11 @@ SCENARIOS: dict[str, dict] = {
             "   track_foreshadow + character_arc + timeline_scan → 보고서. propose_* 금지.\n"
             "3) 신규 인물·세계관 추출 (예: '최근 회차 본문에서 신규 설정 뽑아줘',\n"
             "   '1~3화 등장 인물 페르소나 정리') →\n"
-            "   list_episodes → **analyze_episode(sort_order, task='인물 페르소나 추출')** 를 회차별로\n"
-            "   (Sonnet 비용 ~70% 절감) → 기존 list_characters / list_world_notes 와 비교 → propose_*.\n"
-            "   ⚠ fetch_episode_plaintext 로 raw 본문 받으면 토큰 폭주 위험 — 추출이 목적이면 analyze_episode.\n"
+            "   - 광범위한 회차 (예: 전체 또는 5화 이상): **`query_episodes_by_chunks(query='주요 인물 페르소나')`** 1회 호출 (~10 크레딧)\n"
+            "   - 좁은 범위 (1~3화): `query_episodes_by_chunks(query, sort_order_min=0, sort_order_max=2)`\n"
+            "   - 특정 회차의 디테일이 더 필요하면 `analyze_episode(sort_order, task)` 추가 1~2회\n"
+            "   - 결과를 list_characters 와 비교 → propose_character / propose_character_update.\n"
+            "   ⚠ 회차별 fetch_episode_plaintext × N 또는 analyze_episode × N 반복 금지 — quota 차단됨.\n"
             "4) 다음 회차 초안 (예: '다음 화 초안 짜줘') →\n"
             "   ① list_episodes 로 마지막 회차 sort_order 확인\n"
             "   ② 최근 1~3개 회차의 컨텍스트 흡수:\n"

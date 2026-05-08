@@ -181,6 +181,12 @@ public class AuthService {
         String newRefresh = jwtProvider.createRefreshToken();
         refreshTokenRedisService.save(writer.getId(), deviceId, newRefresh, jwtProvider.getRefreshExpirySeconds());
 
-        return new AccessTokenResponse(newAccess, newRefresh);
+        // 웹 refresh 경로의 자가 복원용 — IndexedDB가 비워졌거나 pepper 회전이 일어난 경우에도
+        // 새로고침만으로 KEK 재료를 다시 받을 수 있도록 매번 응답에 포함한다.
+        // Pepper Provider 비활성 시 null. issueTokens과 달리 readOnly 트랜잭션이라 백필이 발생하면
+        // ensureSalt 내부에서 추가 트랜잭션으로 영속됨(LoginEncryptionMaterializer 정책 그대로).
+        LoginResponse.EncryptionMaterial encryption = encryptionMaterializer.materialize(writer);
+
+        return new AccessTokenResponse(newAccess, newRefresh, encryption);
     }
 }

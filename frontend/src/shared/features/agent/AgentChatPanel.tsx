@@ -9,6 +9,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, MessageSquarePlus, Send } from 'lucide-react';
+import { useQuery } from '@powersync/react';
+
+import { decryptWorkFieldOnce, isCipher } from '../../crypto/fieldDecrypt';
 
 import {
   createAgentThread,
@@ -55,6 +58,7 @@ export function AgentChatPanel({ workId }: Props) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [lastResponse, setLastResponse] = useState<AgentRunResponse | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamSteps, setStreamSteps] = useState<AgentStreamStepEvent[]>([]);
   // text_delta 실시간 누적 — 현재 진행 중 assistant 응답 (assistant_start 마다 새 string 추가)
@@ -162,6 +166,13 @@ export function AgentChatPanel({ workId }: Props) {
       }
       const refreshed = await getAgentThread(activeThreadId);
       setThread(refreshed);
+      // 첫 메시지 후 자동 title 부여를 반영하기 위해 thread 목록 재조회
+      try {
+        const list = await listAgentThreads(workId);
+        setThreads(workId, list);
+      } catch {
+        /* 무시 */
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`전송 실패: ${msg}`);
@@ -206,43 +217,63 @@ export function AgentChatPanel({ workId }: Props) {
     );
   }
 
+  const activeThread = threads.find((t) => t.thread_id === activeThreadId) ?? null;
+  const activeTitle = activeThread?.title || (activeThreadId ? `대화 · ${activeThreadId.slice(0, 6)}` : null);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더 — 시나리오 자동 분류, 사용자는 새 스레드만 만들 수 있다 */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-        <span className="flex-1 text-[11px] text-muted-foreground">
-          Agent 자동 모드 — 메시지 의도를 직접 파악합니다
-        </span>
+      {/* 헤더 — 현재 thread 제목 + 히스토리 드롭다운 + 새 스레드 */}
+      <div className="relative flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <button
           type="button"
-          onClick={handleNewThread}
-          className="flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs hover:bg-accent"
+          onClick={() => setHistoryOpen((v) => !v)}
+          disabled={threads.length === 0}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-left text-xs hover:border-border hover:bg-accent disabled:opacity-60"
+          title="대화 히스토리"
+        >
+          <span className="truncate font-medium">
+            {activeTitle ?? '대화를 시작해주세요'}
+          </span>
+          {threads.length > 0 && (
+            historyOpen
+              ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+              : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setHistoryOpen(false); void handleNewThread(); }}
+          className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs hover:bg-accent"
           title="새 스레드"
         >
           <MessageSquarePlus size={14} />
           새 스레드
         </button>
+        {historyOpen && threads.length > 0 && (
+          <div className="absolute left-3 top-full z-20 mt-1 w-[calc(100%-1.5rem)] max-h-72 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+            {threads.map((t) => (
+              <button
+                key={t.thread_id}
+                type="button"
+                onClick={() => {
+                  setActiveThread(workId, t.thread_id);
+                  setHistoryOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent ${
+                  t.thread_id === activeThreadId ? 'bg-accent/60 font-medium' : ''
+                }`}
+              >
+                <span className="truncate flex-1">
+                  {t.title || `대화 · ${t.thread_id.slice(0, 6)}`}
+                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {t.last_activity_at ? new Date(t.last_activity_at).toLocaleDateString() : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* 스레드 셀렉터 */}
-      {threads.length > 0 && (
-        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/40 bg-muted/30 p-1">
-          {threads.slice(0, 8).map((t) => (
-            <button
-              key={t.thread_id}
-              onClick={() => setActiveThread(workId, t.thread_id)}
-              className={`shrink-0 rounded px-2 py-1 text-xs ${
-                t.thread_id === activeThreadId
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background text-muted-foreground hover:bg-accent'
-              }`}
-              title={t.thread_id}
-            >
-              {t.title || `대화 · ${t.thread_id.slice(0, 6)}`}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* 진행 trace — collapsible 헤더 (streaming 동안 표시) */}
       {streaming && <ProgressHeader steps={streamSteps} />}
@@ -279,7 +310,7 @@ export function AgentChatPanel({ workId }: Props) {
             ) : null,
           )}
         {lastResponse && (
-          <ResponseFooter resp={lastResponse} />
+          <ResponseFooter resp={lastResponse} workId={workId} />
         )}
         {error && <div className="rounded bg-red-500/10 p-2 text-xs text-red-500">{error}</div>}
       </div>
@@ -406,7 +437,7 @@ function labelStep(l: AgentStreamStepEvent): string {
 
 // (구) StreamProgress — ProgressHeader 로 대체됨. 미사용 코드 제거.
 
-function ResponseFooter({ resp }: { resp: AgentRunResponse }) {
+function ResponseFooter({ resp, workId }: { resp: AgentRunResponse; workId: string }) {
   const aborted = resp.budget?.abort;
   const charged = resp.receipt?.charged ?? 0;
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -479,6 +510,7 @@ function ResponseFooter({ resp }: { resp: AgentRunResponse }) {
             <SuggestionPreview
               key={s.id}
               s={s}
+              workId={workId}
               busy={busyId === s.id}
               onApprove={() => approve(s.id)}
               onReject={() => reject(s.id)}
@@ -490,18 +522,74 @@ function ResponseFooter({ resp }: { resp: AgentRunResponse }) {
   );
 }
 
+/**
+ * Suggestion payload 안의 v1: ciphertext 문자열을 재귀적으로 복호화.
+ * payload 구조가 다양하므로(plot_tree.root/children, character.* 평면, episode.title/content)
+ * 객체/배열/문자열을 deep-walk 하며 v1: 만 골라 복호화한다.
+ *
+ * 폴백: KEK 부재 / encrypted_dek 부재 / 복호화 실패 → ciphertext 그대로 두어 UI 깨짐 방지.
+ */
+function useDecryptedSuggestionPayload(
+  workId: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { data: workRows = [] } = useQuery<{ encrypted_dek: string | null }>(
+    `SELECT encrypted_dek FROM work WHERE id = ?`,
+    [workId],
+  );
+  const encryptedDek = workRows[0]?.encrypted_dek ?? null;
+
+  const [decrypted, setDecrypted] = useState<Record<string, unknown>>(payload);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function walk(value: unknown): Promise<unknown> {
+      if (typeof value === 'string') {
+        if (!isCipher(value)) return value;
+        return await decryptWorkFieldOnce({ workId, encryptedDek, value });
+      }
+      if (Array.isArray(value)) {
+        return await Promise.all(value.map(walk));
+      }
+      if (value && typeof value === 'object') {
+        const entries = await Promise.all(
+          Object.entries(value as Record<string, unknown>).map(
+            async ([k, v]) => [k, await walk(v)] as const,
+          ),
+        );
+        return Object.fromEntries(entries);
+      }
+      return value;
+    }
+
+    (async () => {
+      const next = (await walk(payload)) as Record<string, unknown>;
+      if (!cancelled) setDecrypted(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [payload, workId, encryptedDek]);
+
+  return decrypted;
+}
+
 function SuggestionPreview({
   s,
+  workId,
   busy,
   onApprove,
   onReject,
 }: {
   s: AgentSuggestion;
+  workId: string;
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
 }) {
-  const p = s.payload as Record<string, unknown>;
+  const p = useDecryptedSuggestionPayload(workId, s.payload);
   const labels: Record<string, string> = {
     character: '인물 추가',
     character_update: '인물 수정',

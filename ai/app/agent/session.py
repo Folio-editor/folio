@@ -72,7 +72,12 @@ async def save_session_messages(
     thread_id: uuid.UUID,
     messages: list[dict],
     summary_so_far: str | None,
+    auto_title: str | None = None,
 ) -> None:
+    """messages + summary 갱신. auto_title 이 주어지면 title 이 NULL 일 때만 설정 (COALESCE).
+
+    auto_title 은 첫 사용자 메시지를 truncate 한 값 — 사용자가 빈 thread 에 처음 보낸 메시지를 thread 이름으로.
+    """
     import json
 
     await session.execute(
@@ -80,6 +85,7 @@ async def save_session_messages(
             "UPDATE agent_session SET "
             "  messages = CAST(:msg AS jsonb), "
             "  summary_so_far = :sm, "
+            "  title = COALESCE(title, :auto_title), "
             "  last_activity_at = now() "
             "WHERE thread_id = :tid"
         ),
@@ -87,6 +93,7 @@ async def save_session_messages(
             "tid": thread_id,
             "msg": json.dumps(messages, ensure_ascii=False),
             "sm": summary_so_far,
+            "auto_title": auto_title,
         },
     )
     await session.commit()

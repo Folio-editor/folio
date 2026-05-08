@@ -184,6 +184,7 @@ export function createWebFolioApi(): FolioApi {
           const body = (await res.json()) as {
             accessToken: string;
             refreshToken: string;
+            encryption?: LoginEncryptionMaterial | null;
           };
           accessToken = body.accessToken;
           localStorage.setItem(RT_KEY, body.refreshToken); // RT rotation
@@ -194,7 +195,14 @@ export function createWebFolioApi(): FolioApi {
             clearAuthStorage();
             return null;
           }
-          return { accessToken: body.accessToken, writer, isNewUser: false };
+          // 백엔드 refresh 응답에 encryption이 포함된 경우 그대로 전파.
+          // authStore.restore가 IndexedDB가 비어 있어도 deriveKekFromLogin으로 자가 복원한다.
+          return {
+            accessToken: body.accessToken,
+            writer,
+            isNewUser: false,
+            encryption: body.encryption ?? null,
+          };
         } catch (e) {
           console.warn('[web/folioApi] tryRestore 네트워크 에러:', e);
           return null;

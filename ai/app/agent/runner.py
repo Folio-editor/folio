@@ -48,6 +48,10 @@ async def run_agent(
         return {"error": "thread_closed"}
 
     scenario = sess["scenario"]
+    # 빈 thread 에 처음 보내는 메시지 → 자동 title (truncate)
+    auto_title = None
+    if sess.get("title") is None and not sess.get("messages"):
+        auto_title = (user_message or "").strip()[:50] or None
     ctx = WriterContext(
         writer_id=sess["writer_id"],
         work_id=sess["work_id"],
@@ -161,12 +165,12 @@ async def run_agent(
 
     # session 저장 (압축 결과 포함). 트랜잭션이 aborted 상태면 먼저 rollback.
     try:
-        await save_session_messages(db_session, thread_id, messages, summary_so_far)
+        await save_session_messages(db_session, thread_id, messages, summary_so_far, auto_title=auto_title)
     except Exception:
         logger.exception("agent.save_session_failed_first_attempt thread=%s", thread_id)
         try:
             await db_session.rollback()
-            await save_session_messages(db_session, thread_id, messages, summary_so_far)
+            await save_session_messages(db_session, thread_id, messages, summary_so_far, auto_title=auto_title)
         except Exception:
             logger.exception("agent.save_session_failed_after_rollback thread=%s", thread_id)
 

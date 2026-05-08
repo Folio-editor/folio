@@ -168,14 +168,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // use-server는 로컬이 비어 있을 때만 clear이고, restore 경로에선
         // App.tsx가 syncDecision만 보고 connect하므로 disconnectAndClear는 호출되지 않는다.
         //
-        // KEK 복원: 백엔드 /auth/me는 EncryptionMaterial을 내려주지 않으므로,
-        // 이전 로그인에서 영속 저장된 재료(safeStorage / IndexedDB)에서 재도출한다.
-        // 영속 재료가 없거나(앱 첫 설치 후 자동 로그인 불가) pepper 회전 등으로
-        // 재도출 실패하면 KEK는 null로 남고 사용자는 다음 명시 로그인에서 새로 받아야 한다.
-        try {
-          await restoreKek();
-        } catch (e) {
-          console.warn('[auth] restoreKek 실패:', e);
+        // KEK 복원 우선순위:
+        // 1) tryRestore가 encryption 재료를 함께 내려줬다면(웹의 auth_code 교환 경로 —
+        //    풀페이지 redirect 방식이라 OAuth가 login() 액션이 아닌 restore() 경로로
+        //    완료된다), 이를 즉시 영속 저장 + KEK 도출. 이걸 빠뜨리면 IndexedDB가
+        //    비어 있는 첫 로그인 직후부터 모든 v1: 필드가 복호화되지 않고 ciphertext가
+        //    그대로 노출된다.
+        // 2) encryption이 없으면(Electron tryRestore 또는 웹 RT-refresh 경로) 영속
+        //    저장된 재료(safeStorage / IndexedDB)에서 재도출. 영속 재료가 없거나
+        //    pepper 회전 등으로 재도출 실패하면 KEK는 null로 남고 사용자는 다음 명시
+        //    로그인에서 새로 받아야 한다.
+        if (result.encryption) {
+          await deriveKekFromLogin(result.encryption);
+        } else {
+          try {
+            await restoreKek();
+          } catch (e) {
+            console.warn('[auth] restoreKek 실패:', e);
+          }
         }
         set((s) => ({
           writer: result.writer,
