@@ -242,15 +242,17 @@ deploy-production:
         # PortOne storeId/channelKey 는 Doppler 에서 .env 로 source 된 환경변수 참조 (line 222
         # set -a 로 export 됨). storeId/channelKey 도 클라이언트 SDK 가 사용하므로 public
         # 이지만 알파/라이브 키 분리를 위해 CI hardcode 대신 Doppler 단일 진실 출처 사용.
+        # PortOne 변수는 --build-arg KEY (값 생략) 형태로 현재 shell env 에서 직접 끌어
+        # 온다. "\$VAR" 인라인 expansion 시 trailing 탭/공백이 끼어들 수 있어 회피.
         docker build -f infra/dockerfiles/Dockerfile.web \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
           --build-arg VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
           --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
           --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
-          --build-arg VITE_PORTONE_STORE_ID="\$VITE_PORTONE_STORE_ID" \
-          --build-arg VITE_PORTONE_CHANNEL_KEY_ONETIME="\$VITE_PORTONE_CHANNEL_KEY_ONETIME" \
-          --build-arg VITE_PORTONE_CHANNEL_KEY_BILLING="\$VITE_PORTONE_CHANNEL_KEY_BILLING" \
+          --build-arg VITE_PORTONE_STORE_ID \
+          --build-arg VITE_PORTONE_CHANNEL_KEY_ONETIME \
+          --build-arg VITE_PORTONE_CHANNEL_KEY_BILLING \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
         # 랜딩 빌드: VITE_API_URL + VITE_EDITOR_URL 추가 (이전 누락 정정)
         docker build -f infra/dockerfiles/Dockerfile.landing \
