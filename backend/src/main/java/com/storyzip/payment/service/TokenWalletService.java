@@ -32,7 +32,7 @@ import java.util.UUID;
 public class TokenWalletService {
 
     private static final int BONUS_VALIDITY_DAYS = 90;
-    private static final int SIGNUP_BONUS_AMOUNT = 300;
+    private static final int SIGNUP_BONUS_AMOUNT = 3_000;
 
     private final TokenWalletRepository walletRepository;
     private final TokenTransactionRepository transactionRepository;

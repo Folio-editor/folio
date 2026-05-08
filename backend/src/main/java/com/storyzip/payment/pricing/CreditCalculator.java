@@ -7,19 +7,24 @@ import java.util.Map;
 /**
  * 토큰 사용량 → 크레딧 차감량 변환.
  *
- * <p>정책 (docs/credit-policy.md 2026-04-24):
+ * <p>정책 (2026-05-08 업데이트 — 크레딧 단위 10× 세분화):
  * <ul>
- *   <li>1 크레딧 = 8원 (고정)</li>
- *   <li>차감 = ROUND(API 원가 × 1.3 ÷ 8)</li>
+ *   <li>1 크레딧 = 0.8원 (이전 8원에서 1/10 로 세분화)</li>
+ *   <li>차감 = ROUND(API 원가 × 1.3 ÷ 0.8)</li>
  *   <li>USD → KRW = 1,450</li>
  * </ul>
+ *
+ * <p>변경 이유: 8원 단위에서는 작은 호출(예: 0.2 크레딧 상당)이 ROUND 후 0 으로
+ * 떨어져 무료 처리되던 문제 해소. 0.8원 단위로 바꾸면 같은 호출이 2 크레딧으로
+ * 차감되어 사용량을 더 정밀하게 반영. 결제 패키지·구독·보너스의 토큰 수량은
+ * 모두 ×10 으로 함께 조정 (실 가치 동일).
  */
 @Component
 public class CreditCalculator {
 
     public static final double USD_TO_KRW = 1_450d;
     public static final double MARGIN_RATIO = 1.3d;
-    public static final double CREDIT_VALUE_KRW = 8d;
+    public static final double CREDIT_VALUE_KRW = 0.8d;
 
     /** 모델별 1M 토큰당 USD 단가. */
     private static final Map<String, Pricing> PRICING_USD_PER_1M = Map.of(
