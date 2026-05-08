@@ -13,20 +13,20 @@ class TokenPackageTest {
     @Test
     @DisplayName("패키지 코드로 상품을 조회하면 서버가 정한 금액/수량이 반환된다")
     void fromCode_returnsFixedAmountAndQty() {
-        assertThat(TokenPackage.fromCode("TOKEN_300"))
+        assertThat(TokenPackage.fromCode("TOKEN_3000"))
                 .satisfies(p -> {
                     assertThat(p.getAmount()).isEqualTo(300);
-                    assertThat(p.getTokenQty()).isEqualTo(300);
+                    assertThat(p.getTokenQty()).isEqualTo(3_000);
                 });
-        assertThat(TokenPackage.fromCode("TOKEN_550"))
+        assertThat(TokenPackage.fromCode("TOKEN_5500"))
                 .satisfies(p -> {
                     assertThat(p.getAmount()).isEqualTo(500);
-                    assertThat(p.getTokenQty()).isEqualTo(550);
+                    assertThat(p.getTokenQty()).isEqualTo(5_500);
                 });
-        assertThat(TokenPackage.fromCode("TOKEN_1200"))
+        assertThat(TokenPackage.fromCode("TOKEN_12000"))
                 .satisfies(p -> {
                     assertThat(p.getAmount()).isEqualTo(1_000);
-                    assertThat(p.getTokenQty()).isEqualTo(1_200);
+                    assertThat(p.getTokenQty()).isEqualTo(12_000);
                 });
     }
 

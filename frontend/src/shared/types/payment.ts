@@ -13,7 +13,7 @@ export interface TokenWalletResponse {
   totalUsed: number;
 }
 
-export type TokenPackageCode = 'TOKEN_300' | 'TOKEN_550' | 'TOKEN_1200';
+export type TokenPackageCode = 'TOKEN_3000' | 'TOKEN_5500' | 'TOKEN_12000';
 
 export interface TokenPackageInfo {
   code: TokenPackageCode;
@@ -23,9 +23,9 @@ export interface TokenPackageInfo {
 }
 
 export const TOKEN_PACKAGES: TokenPackageInfo[] = [
-  { code: 'TOKEN_300', amount: 300, tokenQty: 300, label: '300 크레딧' },
-  { code: 'TOKEN_550', amount: 500, tokenQty: 550, label: '550 크레딧' },
-  { code: 'TOKEN_1200', amount: 1_000, tokenQty: 1_200, label: '1,200 크레딧' },
+  { code: 'TOKEN_3000', amount: 300, tokenQty: 3_000, label: '3,000 크레딧' },
+  { code: 'TOKEN_5500', amount: 500, tokenQty: 5_500, label: '5,500 크레딧' },
+  { code: 'TOKEN_12000', amount: 1_000, tokenQty: 12_000, label: '12,000 크레딧' },
 ];
 
 export interface CreatePaymentResponse {
@@ -71,7 +71,7 @@ export interface SubscriptionPlanInfo {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlanInfo[] = [
-  { code: 'PRO_MONTHLY', amount: 990, monthlyTokens: 1_300, displayName: 'Folio Pro 월간' },
+  { code: 'PRO_MONTHLY', amount: 990, monthlyTokens: 13_000, displayName: 'Folio Pro 월간' },
 ];
 
 export interface BillingAuthPrepareResponse {

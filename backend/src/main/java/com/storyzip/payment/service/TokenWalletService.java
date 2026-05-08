@@ -32,7 +32,7 @@ import java.util.UUID;
 public class TokenWalletService {
 
     private static final int BONUS_VALIDITY_DAYS = 90;
-    private static final int SIGNUP_BONUS_AMOUNT = 300;
+    private static final int SIGNUP_BONUS_AMOUNT = 3_000;
 
     private final TokenWalletRepository walletRepository;
     private final TokenTransactionRepository transactionRepository;
@@ -78,7 +78,7 @@ public class TokenWalletService {
                 writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
-    /** 신규 가입 시 보너스 300 크레딧 지급 (90일 만료). */
+    /** 신규 가입 시 보너스 3,000 크레딧 지급 (90일 만료). */
     @Transactional
     public void grantSignupBonus(UUID writerId) {
         TokenWallet wallet = lockOrCreate(writerId);
