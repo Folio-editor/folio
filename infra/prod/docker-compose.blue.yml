@@ -52,6 +52,11 @@ services:
       SERVER_PEPPER: ${SERVER_PEPPER:?SERVER_PEPPER must be set in Doppler}
       FOLIO_PEPPER_ENABLED: ${FOLIO_PEPPER_ENABLED:-true}
       FOLIO_VAULT_ENABLED: ${FOLIO_VAULT_ENABLED:-true}
+      # PortOne V2 API — backend → PortOne 서버 호출용 (Authorization: PortOne {apiSecret}).
+      # 누락 시 빈 secret 으로 호출되어 PortOne 이 INVALID_REQUEST 응답.
+      PORTONE_API_SECRET: ${PORTONE_API_SECRET:?PORTONE_API_SECRET must be set in Doppler}
+      PORTONE_API_BASE_URL: ${PORTONE_API_BASE_URL:-https://api.portone.io}
+      PORTONE_WEBHOOK_SECRET: ${PORTONE_WEBHOOK_SECRET:-}
       TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
       TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
       TOSS_API_BASE_URL: ${TOSS_API_BASE_URL:-https://api.tosspayments.com}
