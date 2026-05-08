@@ -227,6 +227,7 @@ function AuthenticatedView() {
                 src={writer.profileImageUrl}
                 alt=""
                 className="h-10 w-10 shrink-0 rounded-full object-cover"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ring/20 text-sm font-medium text-ring">
@@ -632,6 +633,7 @@ function OfflineNoCacheView({
                 src={writer.profileImageUrl}
                 alt=""
                 className="h-10 w-10 shrink-0 rounded-full object-cover"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ring/20 text-sm font-medium text-ring">

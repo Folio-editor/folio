@@ -25,8 +25,7 @@ Spring Boot에서 분리된 AI 전용 서버.
 
 ```
 ai/
-├── pyproject.toml
-├── requirements.txt
+├── pyproject.toml          # 의존성 단일 진실 출처 (base + [db] + [llm] + [dev] 옵셔널 그룹)
 ├── app/
 │   ├── main.py           # FastAPI 진입점
 │   ├── config.py          # 환경변수 설정
@@ -57,24 +56,23 @@ docker compose -f infra/dev/docker-compose.dev.yml up -d
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 의존성 설치
-pip install -r requirements.txt
+# 의존성 설치 — pyproject.toml 의 base + 옵셔널 그룹 [db] [llm] [dev] 까지 한 번에
+pip install -e ".[llm,db,dev]"
 
 # FastAPI 서버 실행
 uvicorn app.main:app --reload --port 8000
 ```
 
-## requirements.txt 예시
+## 의존성 그룹 — pyproject.toml
 
-```
-fastapi
-uvicorn[standard]
-celery[redis]
-redis
-httpx
-python-dotenv
-pydantic-settings
-```
+| 그룹 | 패키지 | 필요 시점 |
+|------|--------|-----------|
+| base | anthropic, fastapi, uvicorn, pydantic, celery, redis, httpx, structlog, prometheus | 항상 |
+| [db] | sqlalchemy[asyncio], asyncpg, **pgvector**, alembic | DB · 벡터 검색 도구 사용 시 (사실상 항상) |
+| [llm] | openai, tiktoken, tenacity | 임베딩 / OpenAI 호출 시 |
+| [dev] | pytest, pytest-asyncio, ruff, mypy | 테스트 / 린트 |
+
+기본 `pip install -e .` 만 하면 옵셔널 그룹이 빠져 import 실패합니다. 항상 `[llm,db]` 이상으로 설치하세요.
 
 ## 환경변수
 

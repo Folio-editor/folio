@@ -9,7 +9,6 @@ Phase 2 R-C 재설계 — 응답을 `PipelineResponse` 단일 모델로 통일.
 """
 
 import hashlib
-import json
 import logging
 import uuid
 from datetime import datetime, timedelta
@@ -24,7 +23,6 @@ from app.db.models.episode_chunk import EpisodeChunk
 from app.db.models.episode_summary import EpisodeSummary
 from app.db.session import get_session
 from app.middleware.auth import require_internal_api_key
-from app.services.chunker import chunk_text
 from app.services.text_extractor import extract_plain_text
 from app.services.work_key_resolver import (
     WorkKeyResolverError,
@@ -92,14 +90,6 @@ def _idempotency_key(pipeline: str, episode_id: str, content_hash: str) -> str:
 # ============================================================
 
 
-def _build_chunk_signature(content: str) -> tuple[list[str], str]:
-    plain_text = extract_plain_text(content)
-    chunks = chunk_text(plain_text)
-    serialized = json.dumps(chunks, ensure_ascii=False, separators=(",", ":"))
-    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-    return chunks, digest
-
-
 @router.post("/episode", status_code=202, response_model=PipelineResponse)
 async def trigger_episode_pipeline(
     req: EpisodePipelineRequest,
@@ -126,27 +116,24 @@ async def trigger_episode_pipeline(
     chash = _content_hash(plain_for_hash)
     ikey = _idempotency_key("indexing", req.episode_id, chash)
 
-    _, request_signature = _build_chunk_signature(plaintext)
-
-    existing = await session.execute(
-        select(EpisodeChunk.content)
+    # Phase 4.6: chunk content ciphertext 적재 후 idempotency 체크는 episode_chunk.content_hash
+    # 컬럼으로 1 query 결정 (이전엔 chunks 본문 hash 비교 — ciphertext 변환 후 항상 mismatch).
+    existing_hash = (await session.execute(
+        select(EpisodeChunk.content_hash)
         .where(EpisodeChunk.episode_id == uuid.UUID(req.episode_id))
-        .order_by(EpisodeChunk.chunk_index)
-    )
-    existing_chunks = existing.scalars().all()
-    if existing_chunks:
-        serialized = json.dumps(existing_chunks, ensure_ascii=False, separators=(",", ":"))
-        existing_signature = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-        if existing_signature == request_signature:
-            logger.info(
-                "episode_indexing.skip",
-                extra={"episode_id": req.episode_id, "reason": "content_unchanged", "idempotency_key": ikey},
-            )
-            return PipelineResponse(
-                status="skipped",
-                reason="content_unchanged",
-                idempotency_key=ikey,
-            )
+        .limit(1)
+    )).scalar_one_or_none()
+    if existing_hash and existing_hash == chash:
+        logger.info(
+            "episode_indexing.skip",
+            extra={"episode_id": req.episode_id, "reason": "content_unchanged",
+                   "idempotency_key": ikey},
+        )
+        return PipelineResponse(
+            status="skipped",
+            reason="content_unchanged",
+            idempotency_key=ikey,
+        )
 
     result = chunk_and_embed_task.apply_async(args=args)
     logger.info(

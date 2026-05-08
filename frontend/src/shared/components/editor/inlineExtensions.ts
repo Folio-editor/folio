@@ -20,6 +20,7 @@ import Color from '@tiptap/extension-color';
 import { TextStyle, FontFamily, FontSize } from '@tiptap/extension-text-style';
 import AuthorNote from './extensions/AuthorNote';
 import FindReplace from './extensions/FindReplace';
+import SceneBreak from './extensions/SceneBreak';
 import type { Extensions } from '@tiptap/react';
 
 export interface InlineExtensionsOptions {
@@ -32,8 +33,12 @@ export interface InlineExtensionsOptions {
  * AuthorNote, Highlight를 모두 포함한다.
  *
  * Underline 은 StarterKit v3.x 부터 기본 포함이므로 별도 등록 시 'Duplicate extension names' 경고.
- * SceneBreak/CharacterCount/FindReplace/ReviewHighlight 등 본문 전용 또는 데코레이션
- * 전용 extension은 인라인 환경에 부적절하므로 제외한다(메인 ContentEditor에만 등록).
+ *
+ * 노드 타입(SceneBreak/AuthorNote)은 반드시 포함 — 메인 ContentEditor 가 저장한 episode
+ * 본문 JSON 에 이런 노드가 들어 있으면 TipTap v3 의 strict content check 가
+ * 알 수 없는 노드를 발견했을 때 doc 전체를 빈 paragraph 로 떨어뜨려 본문이 비어 보임.
+ * 데코레이션 전용 (ReviewHighlight/SpellcheckHighlight/TypewriterMode/FocusMode) 과
+ * 입력 룰만 가진 (KoreanPunctuation/AutoPairQuotes/TabIndent) 은 인라인 환경에서 불필요.
  */
 export function createInlineExtensions(
   options: InlineExtensionsOptions = {},
@@ -51,6 +56,7 @@ export function createInlineExtensions(
     FontFamily.configure({ types: ['textStyle'] }),
     FontSize.configure({ types: ['textStyle'] }),
     AuthorNote,
+    SceneBreak,
     FindReplace,
   ];
 }

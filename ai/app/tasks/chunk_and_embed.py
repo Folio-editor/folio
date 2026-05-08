@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
 
@@ -14,6 +15,7 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.db.models.episode_chunk import EpisodeChunk
 from app.services.chunker import chunk_text, count_tokens
+from app.services.encrypt_resolver import EncryptResolverError, encrypt_fields
 from app.services.providers import get_embedder
 from app.services.text_extractor import extract_plain_text
 from app.services.work_key_resolver import (
@@ -42,8 +44,29 @@ async def _run(episode_id: str, work_id: str, writer_id: str, content: str | Non
             return 0
     # 본문이 비었거나(작가가 전체 삭제) 청킹 결과가 0이면 기존 청크는 무조건
     # 제거해야 한다. 그렇지 않으면 옛 본문 임베딩이 RAG에 계속 끌려온다.
-    chunks = chunk_text(extract_plain_text(content))
+    plain_for_hash = extract_plain_text(content)
+    content_hash = hashlib.sha256(plain_for_hash.encode("utf-8")).hexdigest()
+    chunks = chunk_text(plain_for_hash)
     vectors = await get_embedder().embed_batch(chunks) if chunks else []
+
+    # Phase 4.6: chunk content 암호화 (사용자 원고 기반 정보).
+    # 임베딩 vector 는 평문 기반 의미 공간 — 암호화 X (검색 동작 유지).
+    # token_count 도 평문 기준이지만 운영 메타라 평문 유지.
+    encrypted_chunks: list[str] = []
+    if chunks:
+        try:
+            payload = {f"c{i}": chunks[i] for i in range(len(chunks))}
+            enc = await encrypt_fields(work_id, payload)
+            encrypted_chunks = [enc.get(f"c{i}") or "" for i in range(len(chunks))]
+            if any(not v or not v.startswith("v1:") for v in encrypted_chunks):
+                # 모두 암호화돼 있어야 정상 — 평문 잔존 시 즉시 fail (DB 평문 적재 차단)
+                raise EncryptResolverError("일부 chunk 암호화 누락 — 평문 적재 거부")
+        except EncryptResolverError as e:
+            logger.warning(
+                "chunk_embed.skip_no_encrypt",
+                extra={"episode_id": episode_id, "reason": str(e)},
+            )
+            return 0
 
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
@@ -60,9 +83,10 @@ async def _run(episode_id: str, work_id: str, writer_id: str, content: str | Non
                             "work_id": uuid.UUID(work_id),
                             "writer_id": uuid.UUID(writer_id),
                             "chunk_index": i,
-                            "content": text,
+                            "content": encrypted_chunks[i],
                             "embedding": vec,
                             "token_count": count_tokens(text),
+                            "content_hash": content_hash,    # 평문 본문 SHA256 (idempotency)
                         }
                         for i, (text, vec) in enumerate(zip(chunks, vectors, strict=True))
                     ]

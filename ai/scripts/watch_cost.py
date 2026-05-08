@@ -12,9 +12,10 @@ import time
 from pathlib import Path
 
 # === 크레딧 정책 파라미터 (docs/ai-credit-policy.md 기준) ===
+# backend CreditCalculator.CREDIT_VALUE_KRW + ai budget.CREDIT_VALUE_KRW 와 동기화 필수.
 USD_TO_KRW = 1450
 MARGIN_RATIO = 1.3
-CREDIT_VALUE = 8  # 1크레딧 = 8원
+CREDIT_VALUE = 0.8  # 1크레딧 = 0.8원 (10000원 = 13000 credits)
 
 # Anthropic 공개 가격 (USD per 1M tokens)
 PRICING = {
