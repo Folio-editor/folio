@@ -81,13 +81,13 @@ folio:
       connect-timeout-ms: 2000
       read-timeout-ms: 5000
 
-# 토스페이먼츠
-toss:
-  payments:
-    client-key: ${TOSS_CLIENT_KEY:test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
-    secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
-    api-base-url: ${TOSS_API_BASE_URL:https://api.tosspayments.com}
-    webhook-secret: ${TOSS_WEBHOOK_SECRET:}
+# PortOne (포트원) V2
+# storeId/channelKey는 클라이언트 전용 — 서버 yml에는 두지 않는다.
+# 백엔드는 apiSecret만 필요 (REST 호출용 Authorization 헤더).
+portone:
+  api-secret: ${PORTONE_API_SECRET:}
+  api-base-url: ${PORTONE_API_BASE_URL:https://api.portone.io}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
 
 # Google Analytics 4 Measurement Protocol
 ga4:

@@ -121,6 +121,38 @@ public class TokenWalletService {
     }
 
     /**
+     * Phase 4 — agent / 영수증 차감용. 잔액 부족이어도 가진 만큼만 차감.
+     * 반환: 실제 차감된 양. (요청 - 반환) = balance_exhausted shortfall.
+     *
+     * <p>3버킷 (SUBSCRIPTION → BONUS → PURCHASE) 우선순위는 use() 와 동일.
+     */
+    @Transactional
+    public int useBestEffort(UUID writerId, int amount, String reason, UUID referenceId) {
+        if (amount <= 0) return 0;
+        TokenWallet wallet = lockOrCreate(writerId);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        int total = wallet.totalBalance(now);
+        int actual = Math.min(amount, total);
+        if (actual <= 0) return 0;
+        TokenWallet.DeductResult result = wallet.deductForUsage(actual, now);
+        if (result.fromSubscription() > 0) {
+            recordTx(writerId, TokenBucket.SUBSCRIPTION, -result.fromSubscription(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        if (result.fromBonus() > 0) {
+            recordTx(writerId, TokenBucket.BONUS, -result.fromBonus(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        if (result.fromPurchase() > 0) {
+            recordTx(writerId, TokenBucket.PURCHASE, -result.fromPurchase(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        log.info("[TOKEN_USAGE_BEST_EFFORT] writerId={} requested={} actual={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, actual, wallet.totalBalance(now), reason, referenceId);
+        return actual;
+    }
+
+    /**
      * 환불로 인한 회수 — 종량제 버킷에서만 차감.
      * 이미 사용한 유저도 환불 가능해야 하므로 잔액 부족 시 에러 없이 가진 만큼만 차감.
      */
