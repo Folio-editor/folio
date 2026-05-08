@@ -50,6 +50,7 @@ class LLMProvider(ABC):
         *,
         model_override: str | None = None,
         max_tokens: int = 2000,
+        temperature: float | None = None,
     ) -> dict: ...
 
     @abstractmethod
@@ -90,6 +91,7 @@ class FakeLLM(LLMProvider):
         *,
         model_override: str | None = None,
         max_tokens: int = 2000,
+        temperature: float | None = None,
     ) -> dict:
         self._last_usage = _empty_usage()
         blob = f"{system}\n{user}\n{schema_hint}".lower()
@@ -188,6 +190,7 @@ class AnthropicLLM(LLMProvider):
         *,
         model_override: str | None = None,
         max_tokens: int = 2000,
+        temperature: float | None = None,
     ) -> dict:
         system_prompt = (
             f"{system.rstrip()}\n\n"
@@ -202,7 +205,7 @@ class AnthropicLLM(LLMProvider):
             "messages": [{"role": "user", "content": user}],
         }
         if "opus-4-7" not in model:
-            create_kwargs["temperature"] = 0.2
+            create_kwargs["temperature"] = temperature if temperature is not None else 0.2
         response = await self._client.messages.create(**create_kwargs)
         self._last_usage = _usage_dict(getattr(response, "usage", None))
         logger.info(

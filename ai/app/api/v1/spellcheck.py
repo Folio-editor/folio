@@ -25,27 +25,47 @@ router = APIRouter(
 
 SPELLCHECK_SYSTEM_PROMPT = """당신은 한국어 웹소설 원고의 맞춤법 검사 AI입니다.
 
-검사 범위는 다음 네 가지뿐입니다.
-- 맞춤법
-- 띄어쓰기
-- 오탈자
-- 문장부호
+[검사 범위]
+맞춤법·띄어쓰기·오탈자·문장부호 네 가지만 점검합니다.
+원고를 처음부터 끝까지 줄 단위로 빠짐없이 훑어 모든 줄에서 점검하십시오.
 
-금지 사항:
-- 설정 충돌, 맥락 충돌, 복선 충돌, 개연성, 문체, 표현 취향을 평가하지 마십시오.
+[문장부호]
+- 마침표·물음표·쉼표 앞 공백 제거: "말했다 . → 말했다."
+- 전각 부호 → 반각: "있엇다。 → 있었다.", "왜그래？ → 왜 그래?"
+- 큰따옴표·작은따옴표 짝 맞추기
+
+[금지 사항]
+- 설정·맥락·복선 충돌, 개연성, 문체, 표현 취향은 평가하지 마십시오.
 - 문장을 더 문학적으로 고치거나 윤문하지 마십시오.
-- 등장인물/세계관 고유명사를 맞춤법 오류로 잡지 마십시오.
-- 고유명사에 조사가 붙은 형태도 오류로 잡지 마십시오.
+- 등장인물/세계관 고유명사 및 그것에 조사가 붙은 형태는 오류로 잡지 마십시오.
 
-original / suggestion 작성 규칙:
-- original에는 본문에 실제로 등장하는 잘못된 표기를 그대로 복사해 넣으십시오.
-- suggestion에는 그 자리를 대체할 올바른 표기를 넣으십시오.
-- 띄어쓰기 issue의 경우, 띄어쓰기 차이가 드러나도록 양쪽에 공백/붙임이 명확히 다른 텍스트여야 합니다 (예: original "지금 부터", suggestion "지금부터").
-- original과 suggestion이 동일하면 그 issue는 만들지 마십시오 — 실제 수정이 없는 항목은 보고하지 않습니다.
+[original / suggestion 작성 규칙]
+- original: 본문에 등장하는 문자열을 한 글자도 빠뜨리거나 더하지 말고 그대로 복사 (축약 금지).
+- suggestion: original 자리를 그대로 대체할 올바른 문자열 (띄어쓰기·문장부호 차이까지 정확히 반영).
+- original ≠ suggestion. 동일하면 issue를 만들지 마십시오.
+- 한 issue에는 한 가지 수정만. 같은 줄에 여러 오류가 있으면 각각 별개 issue로 분리하십시오.
 
-입력 원고는 각 줄 앞에 [N] 형태의 줄 번호가 붙어 있습니다.
-문제가 있는 경우 line에는 해당 [N] 번호를 정수로 넣으십시오.
-문제가 없으면 issues는 빈 배열로 반환하십시오."""
+[입출력]
+- 입력 원고는 각 줄 앞에 [N] 형태의 줄 번호가 붙어 있습니다.
+- 문제가 있는 줄은 line 필드에 [N] 번호를 정수로 넣으십시오.
+- 문제가 없으면 issues는 빈 배열로 반환하십시오.
+
+[모범 응답 예시]
+입력:
+[1] 그는 문을열었고 안되 . 라고 중얼거렷다。
+[2] 다시한번 생각 보다 깊은 침묵 이였다.
+
+기대 출력:
+{
+  "issues": [
+    {"type": "spacing", "line": 1, "original": "문을열었고", "suggestion": "문을 열었고", "reason": "명사·동사 사이 띄어쓰기"},
+    {"type": "spacing", "line": 1, "original": "안되 .", "suggestion": "안 돼.", "reason": "'안 되다' 띄어쓰기 + 마침표 앞 공백 제거"},
+    {"type": "punctuation", "line": 1, "original": "중얼거렷다。", "suggestion": "중얼거렸다.", "reason": "전각 마침표 → 반각, 과거형 어미 오탈자"},
+    {"type": "spacing", "line": 2, "original": "다시한번", "suggestion": "다시 한 번", "reason": "부사 띄어쓰기"},
+    {"type": "spacing", "line": 2, "original": "생각 보다", "suggestion": "생각보다", "reason": "조사 '보다'는 앞 명사에 붙여 씀"},
+    {"type": "typo", "line": 2, "original": "침묵 이였다", "suggestion": "침묵이었다", "reason": "조사 '이' 붙여쓰기 + 어미 '였→었'"}
+  ]
+}"""
 
 SPELLCHECK_SCHEMA_HINT = """{
   "issues": [
@@ -56,8 +76,7 @@ SPELLCHECK_SCHEMA_HINT = """{
       "suggestion": "됐다",
       "reason": "오탈자"
     }
-  ],
-  "summary": "맞춤법 검사 결과 요약"
+  ]
 }"""
 
 _ALLOWED_TYPES = {"typo", "spacing", "punctuation"}
@@ -81,7 +100,6 @@ class SpellcheckIssue(BaseModel):
 
 def _normalize_spellcheck_result(result: dict[str, Any]) -> dict[str, Any]:
     raw_issues = result.get("issues", [])
-    summary = result.get("summary", "맞춤법 검사 결과입니다.")
 
     issues: list[dict[str, Any]] = []
     seen: set[tuple[str, int, str, str]] = set()
@@ -119,8 +137,23 @@ def _normalize_spellcheck_result(result: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "issues": issues,
-        "summary": summary if isinstance(summary, str) else "맞춤법 검사 결과입니다.",
+        "summary": _build_summary(issues),
     }
+
+
+_TYPE_LABEL = {"spacing": "띄어쓰기", "typo": "오탈자", "punctuation": "문장부호"}
+
+
+def _build_summary(issues: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        counts[issue["type"]] = counts.get(issue["type"], 0) + 1
+    parts = [
+        f"{label} {counts[key]}건"
+        for key, label in _TYPE_LABEL.items()
+        if counts.get(key)
+    ]
+    return ", ".join(parts) if parts else "맞춤법 오류 없음"
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -166,5 +199,7 @@ async def spellcheck_episode(req: SpellcheckRequest):
         list(normalized.get("issues", [])),
         whitelist,
     )
+    # whitelist 필터까지 끝난 최종 issues 기준으로 summary 재계산 — 카드 수와 항상 일치.
+    normalized["summary"] = _build_summary(normalized["issues"])
     normalized["usage"] = llm.last_usage
     return normalized

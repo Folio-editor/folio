@@ -46,6 +46,12 @@ services:
       # enabled / url / transit-key / cache-ttl 은 application-prod.yml 의 코드 default 사용.
       # **VAULT_TOKEN 만 시크릿** — vault-init.sh 출력값을 Doppler 에 등록.
       VAULT_TOKEN: ${VAULT_TOKEN:?VAULT_TOKEN must be set in Doppler — bash infra/scripts/vault-init.sh 로 발급}
+      # Plan C 결정 6/15/16 — server_pepper 직접 주입.
+      # AWS Secrets Manager 폐기 후 Doppler ENV 단일 채널로 통일 (EC2 외부 차단 환경 호환).
+      # 누락 시 PepperProvider 가 IllegalStateException 으로 fail-fast → context init 실패.
+      SERVER_PEPPER: ${SERVER_PEPPER:?SERVER_PEPPER must be set in Doppler}
+      FOLIO_PEPPER_ENABLED: ${FOLIO_PEPPER_ENABLED:-true}
+      FOLIO_VAULT_ENABLED: ${FOLIO_VAULT_ENABLED:-true}
       TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm}
       TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
       TOSS_API_BASE_URL: ${TOSS_API_BASE_URL:-https://api.tosspayments.com}

@@ -2,7 +2,7 @@ package com.storyzip.payment.service;
 
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
-import com.storyzip.payment.client.TossPaymentsClient;
+import com.storyzip.payment.client.PortOneClient;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentStatus;
 import com.storyzip.payment.domain.TokenTransactionType;
@@ -38,14 +38,14 @@ public class RefundService {
     private static final long FULL_REFUND_HOURS = 24;
 
     private final PaymentRepository paymentRepository;
-    private final TossPaymentsClient tossPaymentsClient;
+    private final PortOneClient portOneClient;
     private final TokenWalletService tokenWalletService;
 
     @Transactional
-    public RefundResponse refund(UUID writerId, String orderId) {
-        // 행 잠금 조회 — 동일 orderId로 환불이 동시 호출되어도 한 번만 처리되도록.
+    public RefundResponse refund(UUID writerId, String paymentId) {
+        // 행 잠금 조회 — 동일 paymentId로 환불이 동시 호출되어도 한 번만 처리되도록.
         // 두 번째 트랜잭션은 첫 번째가 status=CANCELED로 commit한 뒤 진입해 즉시 거절된다.
-        Payment payment = paymentRepository.findWithLockByOrderId(orderId)
+        Payment payment = paymentRepository.findWithLockByOrderId(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_NOT_FOUND));
 
         if (!payment.getWriter().getId().equals(writerId)) {
@@ -86,7 +86,7 @@ public class RefundService {
         }
 
         Integer cancelAmount = refundType.equals("FULL") ? null : refundAmount;
-        tossPaymentsClient.cancelPayment(payment.getPaymentKey(),
+        portOneClient.cancelPayment(payment.getOrderId(),
                 refundType.equals("FULL") ? "24시간 이내 전액 환불" : "잔여 기간 비례 부분 환불",
                 cancelAmount);
 
@@ -96,14 +96,14 @@ public class RefundService {
         if (tokenDeduct > 0) {
             tokenWalletService.deductForRefund(
                     writerId, tokenDeduct,
-                    "REFUND_" + orderId, payment.getId());
+                    "REFUND_" + paymentId, payment.getId());
         }
 
-        log.info("[REFUND_PROCESSED] writerId={} orderId={} type={} originalAmount={} refundAmount={} tokenDeduct={} hoursElapsed={}",
-                writerId, orderId, refundType, payment.getAmount(), refundAmount, tokenDeduct, hoursElapsed);
+        log.info("[REFUND_PROCESSED] writerId={} paymentId={} type={} originalAmount={} refundAmount={} tokenDeduct={} hoursElapsed={}",
+                writerId, paymentId, refundType, payment.getAmount(), refundAmount, tokenDeduct, hoursElapsed);
 
         return new RefundResponse(
-                payment.getId(), orderId,
+                payment.getId(), paymentId,
                 payment.getAmount(), refundAmount,
                 tokenDeduct, refundType);
     }

@@ -28,7 +28,7 @@ public class PaymentController {
     private final RefundService refundService;
     private final TokenWalletService tokenWalletService;
 
-    /** 결제 요청 생성 — 프론트가 이 응답의 orderId/amount로 토스 결제창을 연다. */
+    /** 결제 요청 생성 — 프론트가 이 응답의 paymentId/amount로 PortOne SDK 결제창을 연다. */
     @PostMapping
     public ResponseEntity<CreatePaymentResponse> createPayment(
             Authentication authentication,
@@ -37,7 +37,7 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.createPayment(writerId, request));
     }
 
-    /** 결제 승인 — 프론트가 토스 결제창에서 받은 paymentKey/orderId/amount로 호출. */
+    /** 결제 검증 — 프론트가 PortOne SDK 결제 완료 후 paymentId로 호출. */
     @PostMapping("/confirm")
     public ResponseEntity<PaymentResponse> confirm(
             Authentication authentication,
@@ -46,21 +46,21 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.confirmPayment(writerId, request));
     }
 
-    @GetMapping("/{orderId}")
-    public ResponseEntity<PaymentResponse> getByOrderId(
+    @GetMapping("/{paymentId}")
+    public ResponseEntity<PaymentResponse> getByPaymentId(
             Authentication authentication,
-            @PathVariable String orderId) {
+            @PathVariable String paymentId) {
         UUID writerId = requireWriterId(authentication);
-        return ResponseEntity.ok(paymentService.getByOrderId(writerId, orderId));
+        return ResponseEntity.ok(paymentService.getByOrderId(writerId, paymentId));
     }
 
     /** 환불 — 24시간 이내 전액, 이후 잔여 일수 비례 부분 환불. */
-    @PostMapping("/{orderId}/refund")
+    @PostMapping("/{paymentId}/refund")
     public ResponseEntity<RefundResponse> refund(
             Authentication authentication,
-            @PathVariable String orderId) {
+            @PathVariable String paymentId) {
         UUID writerId = requireWriterId(authentication);
-        return ResponseEntity.ok(refundService.refund(writerId, orderId));
+        return ResponseEntity.ok(refundService.refund(writerId, paymentId));
     }
 
     @GetMapping("/wallet")

@@ -23,18 +23,17 @@ export interface TokenPackageInfo {
 }
 
 export const TOKEN_PACKAGES: TokenPackageInfo[] = [
-  { code: 'TOKEN_300', amount: 3_000, tokenQty: 300, label: '300 크레딧' },
-  { code: 'TOKEN_550', amount: 5_000, tokenQty: 550, label: '550 크레딧' },
-  { code: 'TOKEN_1200', amount: 10_000, tokenQty: 1_200, label: '1,200 크레딧' },
+  { code: 'TOKEN_300', amount: 300, tokenQty: 300, label: '300 크레딧' },
+  { code: 'TOKEN_550', amount: 500, tokenQty: 550, label: '550 크레딧' },
+  { code: 'TOKEN_1200', amount: 1_000, tokenQty: 1_200, label: '1,200 크레딧' },
 ];
 
 export interface CreatePaymentResponse {
-  orderId: string;
+  /** PortOne paymentId — SDK requestPayment에 그대로 전달. */
+  paymentId: string;
   orderName: string;
   amount: number;
   tokenQty: number;
-  /** Toss SDK 초기화에 사용. 백엔드가 prepare 응답에 함께 내려준다. */
-  clientKey: string;
 }
 
 export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
@@ -72,12 +71,11 @@ export interface SubscriptionPlanInfo {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlanInfo[] = [
-  { code: 'PRO_MONTHLY', amount: 9_900, monthlyTokens: 1_300, displayName: 'Folio Pro 월간' },
+  { code: 'PRO_MONTHLY', amount: 990, monthlyTokens: 1_300, displayName: 'Folio Pro 월간' },
 ];
 
 export interface BillingAuthPrepareResponse {
   customerKey: string;
-  clientKey: string;
 }
 
 export interface SubscriptionResponse {
@@ -94,16 +92,14 @@ export interface SubscriptionResponse {
 }
 
 export interface CheckoutParams {
+  paymentId: string;
   amount: number;
-  orderId: string;
   orderName: string;
   customerKey: string;
 }
 
 export interface CheckoutResult {
-  paymentKey: string;
-  orderId: string;
-  amount: number;
+  paymentId: string;
 }
 
 export interface BillingAuthParams {
@@ -111,6 +107,6 @@ export interface BillingAuthParams {
 }
 
 export interface BillingAuthResult {
-  authKey: string;
+  billingKey: string;
   customerKey: string;
 }

@@ -198,6 +198,15 @@ interface AiSessionStore {
   spellcheckHistory: SpellcheckHistoryEntry[];
   viewingSpellcheckHistoryId: string | null;
   spellcheckAppliedIssues: number[];
+  /** 본문 하이라이트 extension 의 캐시 무효화용 카운터. result/applied/hover 변경 시 increment. */
+  spellcheckVersion: number;
+  /** 카드 ↔ 본문 hover 동기화 — 사용자가 카드에 hover 한 issue 인덱스. */
+  spellcheckHoveredIssue: number | null;
+  /**
+   * '선택 영역만 검사' 모드일 때 사용자가 드래그한 PM doc 위치 범위.
+   * null = 회차 전체 검사 모드. 적용 핸들러와 하이라이트가 이 범위로 검색 scope 를 좁힌다.
+   */
+  spellcheckSelectionRange: { from: number; to: number } | null;
 
   // 액션
   setScreen: (screen: AiScreen) => void;
@@ -226,12 +235,13 @@ interface AiSessionStore {
   failReview: (error: string) => void;
   viewReviewHistory: (id: string) => void;
   deleteReviewHistory: (id: string) => void;
-  startSpellcheck: (episode: DraftEpisodeInfo) => void;
+  startSpellcheck: (episode: DraftEpisodeInfo, selectionRange?: { from: number; to: number } | null) => void;
   finishSpellcheck: (result: SpellcheckResult) => void;
   failSpellcheck: (error: string) => void;
   viewSpellcheckHistory: (id: string) => void;
   deleteSpellcheckHistory: (id: string) => void;
   markSpellcheckIssueApplied: (index: number) => void;
+  setSpellcheckHoveredIssue: (index: number | null) => void;
 }
 
 export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
@@ -263,6 +273,9 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   spellcheckHistory: loadSpellcheckHistory(),
   viewingSpellcheckHistoryId: null,
   spellcheckAppliedIssues: [],
+  spellcheckVersion: 0,
+  spellcheckHoveredIssue: null,
+  spellcheckSelectionRange: null,
 
   setScreen: (screen) => set({ screen, viewingHistoryId: null, viewingReviewHistoryId: null, viewingSpellcheckHistoryId: null }),
   setStoryline: (storyline) => set({ storyline }),
@@ -454,8 +467,8 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
     }));
   },
 
-  startSpellcheck: (episode) =>
-    set({
+  startSpellcheck: (episode, selectionRange = null) =>
+    set((s) => ({
       screen: 'spellcheck-result',
       spellcheckState: 'loading',
       spellcheckResult: null,
@@ -463,10 +476,13 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       spellcheckTargetEpisode: episode,
       viewingSpellcheckHistoryId: null,
       spellcheckAppliedIssues: [],
-    }),
+      spellcheckHoveredIssue: null,
+      spellcheckSelectionRange: selectionRange,
+      spellcheckVersion: s.spellcheckVersion + 1,
+    })),
 
   finishSpellcheck: (result) => {
-    const { spellcheckTargetEpisode, spellcheckHistory } = get();
+    const { spellcheckTargetEpisode, spellcheckHistory, spellcheckVersion } = get();
     if (spellcheckTargetEpisode) {
       const entry: SpellcheckHistoryEntry = {
         id: crypto.randomUUID(),
@@ -480,9 +496,20 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       const updated = [entry, ...sameWork].slice(0, MAX_HISTORY);
       const all = [...updated, ...otherWork];
       saveSpellcheckHistory(all);
-      set({ spellcheckState: 'done', spellcheckResult: result, spellcheckHistory: all, spellcheckAppliedIssues: [] });
+      set({
+        spellcheckState: 'done',
+        spellcheckResult: result,
+        spellcheckHistory: all,
+        spellcheckAppliedIssues: [],
+        spellcheckVersion: spellcheckVersion + 1,
+      });
     } else {
-      set({ spellcheckState: 'done', spellcheckResult: result, spellcheckAppliedIssues: [] });
+      set({
+        spellcheckState: 'done',
+        spellcheckResult: result,
+        spellcheckAppliedIssues: [],
+        spellcheckVersion: spellcheckVersion + 1,
+      });
     }
   },
 
@@ -492,7 +519,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   viewSpellcheckHistory: (id) => {
     const entry = get().spellcheckHistory.find((h) => h.id === id);
     if (!entry) return;
-    set({
+    set((s) => ({
       screen: 'spellcheck-history-view',
       viewingSpellcheckHistoryId: id,
       spellcheckResult: entry.result,
@@ -500,14 +527,27 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       spellcheckError: '',
       spellcheckTargetEpisode: entry.episode,
       spellcheckAppliedIssues: [],
-    });
+      spellcheckHoveredIssue: null,
+      spellcheckSelectionRange: null,
+      spellcheckVersion: s.spellcheckVersion + 1,
+    }));
   },
 
   markSpellcheckIssueApplied: (index) =>
     set((s) =>
       s.spellcheckAppliedIssues.includes(index)
         ? s
-        : { spellcheckAppliedIssues: [...s.spellcheckAppliedIssues, index] },
+        : {
+            spellcheckAppliedIssues: [...s.spellcheckAppliedIssues, index],
+            spellcheckVersion: s.spellcheckVersion + 1,
+          },
+    ),
+
+  setSpellcheckHoveredIssue: (index) =>
+    set((s) =>
+      s.spellcheckHoveredIssue === index
+        ? s
+        : { spellcheckHoveredIssue: index, spellcheckVersion: s.spellcheckVersion + 1 },
     ),
 
   deleteSpellcheckHistory: (id) => {
