@@ -216,9 +216,9 @@ export type CreditPack = {
 };
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { price: '3,000원', credit: '300 CR', bonus: '검수 10회' },
-  { price: '5,000원', credit: '550 CR', bonus: '검수 18회' },
-  { price: '10,000원', credit: '1,200 CR', bonus: '검수 41회' },
+  { price: '3,000원', credit: '3,000 CR', bonus: '검수 10회' },
+  { price: '5,000원', credit: '5,500 CR', bonus: '검수 18회' },
+  { price: '10,000원', credit: '12,000 CR', bonus: '검수 41회' },
 ];
 
 export type FAQItem = {
