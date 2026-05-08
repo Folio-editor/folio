@@ -43,6 +43,12 @@ interface ContentEditorProps {
   /** 컴팩트 모드 — 툴바/설정/찾기 숨김, 단축키 전용 편집 (우측 사이드바용) */
   compact?: boolean;
   onCharCountChange?: (count: number) => void;
+  /**
+   * DB 에 저장된 현재 word_count. mount 시 실제 chars 와 다를 때만 onCharCountChange 호출
+   * (시드/템플릿이 word_count 0 으로 적재한 stale 행 자동 보정 + 일치 시 무용한 sync 차단).
+   * 미지정 시 mount emit 자체를 안 함 — 사용자 입력만 sync 발생.
+   */
+  storedWordCount?: number | null;
 }
 
 // Plan C 결정 3 — onUpdate 디바운스 300~500ms 범위. 빠른 타이핑 시 매 키스트로크마다
@@ -59,6 +65,7 @@ export function ContentEditor({
   showStatusBar = true,
   compact = false,
   onCharCountChange,
+  storedWordCount,
 }: ContentEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const charCountDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -222,14 +229,17 @@ export function ContentEditor({
     charCountRef.current = chars;
     editStartedRef.current = false;
     editSessionStartRef.current = null;
-    // mount/itemId 전환 시 DB 의 stale word_count 와 실제 본문 사이 mismatch 자동 보정.
-    // 시드/템플릿 등으로 본문은 채워졌지만 word_count=0 인 행이 들어 있으면 사용자가
-    // 입력하지 않아도 mount 만으로 정확한 char count 를 emit → AI agent 가 word_count 로
-    // 본문 작성 여부 판단할 때 거짓 0 으로 오판하는 회귀 차단.
-    if (chars > 0) {
+    // mount/itemId 전환 시 DB stale word_count 보정.
+    // **DB 값과 다를 때만** emit — 일치 시 무용한 UPDATE → PowerSync sync 트리거 회피.
+    // storedWordCount 미지정이면 emit 자체 skip (호출처가 명시적 opt-in 필요).
+    // 시드/템플릿이 word_count=0 또는 placeholder 1 로 적재한 stale 행만 자연스럽게 보정.
+    if (
+      storedWordCount != null
+      && chars !== storedWordCount
+    ) {
       onCharCountChangeRef.current?.(chars);
     }
-  }, [editor, itemId]);
+  }, [editor, itemId, storedWordCount]);
 
   // 검수 하이라이트 스토어 구독 → 데코레이션 리빌드
   useEffect(() => {

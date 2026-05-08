@@ -160,6 +160,9 @@ function EpisodeEditor({
           placeholder="본문을 작성하세요…"
           onUpdate={(content) => void updateEpisode(id, { content })}
           onCharCountChange={(count) => void updateEpisode(id, { word_count: count })}
+          // DB 의 stale word_count 와 실제 chars 가 다를 때만 mount 시 1회 보정 emit.
+          // 일치하면 emit 안 해서 단순 회차 전환에 의한 sync 트리거 회귀 차단.
+          storedWordCount={item.word_count}
         />
       )}
     </div>
