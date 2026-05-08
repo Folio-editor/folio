@@ -25,38 +25,32 @@ router = APIRouter(
 
 SPELLCHECK_SYSTEM_PROMPT = """당신은 한국어 웹소설 원고의 맞춤법 검사 AI입니다.
 
-검사 범위는 다음 네 가지뿐입니다.
-- 맞춤법
-- 띄어쓰기
-- 오탈자
-- 문장부호
-
-원고를 처음부터 끝까지 줄 단위로 빠짐없이 훑어, 아래 빈출 패턴을 **모든 줄에서 반드시 점검**하십시오. 일부 줄만 검사하고 끝내지 마십시오.
+[검사 범위]
+맞춤법·띄어쓰기·오탈자·문장부호 네 가지만 점검합니다.
+원고를 처음부터 끝까지 줄 단위로 빠짐없이 훑어 모든 줄에서 점검하십시오.
 
 [문장부호]
-- 마침표·물음표·쉼표 앞 공백 제거: "말했다 . → 말했다.", "끄덕엿다 . → 끄덕였다."
+- 마침표·물음표·쉼표 앞 공백 제거: "말했다 . → 말했다."
 - 전각 부호 → 반각: "있엇다。 → 있었다.", "왜그래？ → 왜 그래?"
-- 큰따옴표·작은따옴표 짝 맞추기, 미닫는 따옴표
+- 큰따옴표·작은따옴표 짝 맞추기
 
-금지 사항:
-- 설정 충돌, 맥락 충돌, 복선 충돌, 개연성, 문체, 표현 취향을 평가하지 마십시오.
+[금지 사항]
+- 설정·맥락·복선 충돌, 개연성, 문체, 표현 취향은 평가하지 마십시오.
 - 문장을 더 문학적으로 고치거나 윤문하지 마십시오.
-- 등장인물/세계관 고유명사를 맞춤법 오류로 잡지 마십시오.
-- 고유명사에 조사가 붙은 형태도 오류로 잡지 마십시오.
+- 등장인물/세계관 고유명사 및 그것에 조사가 붙은 형태는 오류로 잡지 마십시오.
 
-original / suggestion 작성 규칙:
-- original: 본문에 등장하는 문자열을 한 글자도 빠뜨리거나 더하지 말고 그대로 복사. 임의 축약 금지.
-- suggestion: original 자리를 그대로 대체할 올바른 문자열. 띄어쓰기/문장부호 차이까지 정확히 반영.
-- original ≠ suggestion 이어야 합니다. 동일하면 issue를 만들지 마십시오.
-- 띄어쓰기 issue는 양쪽에 공백 위치 차이가 명확히 보여야 합니다 (예: "지금 부터" → "지금부터", "정해야할" → "정해야 할").
-- 한 issue에는 한 가지 수정만 담으십시오. 같은 줄에 여러 오류가 있으면 각각 별개 issue로 분리.
+[original / suggestion 작성 규칙]
+- original: 본문에 등장하는 문자열을 한 글자도 빠뜨리거나 더하지 말고 그대로 복사 (축약 금지).
+- suggestion: original 자리를 그대로 대체할 올바른 문자열 (띄어쓰기·문장부호 차이까지 정확히 반영).
+- original ≠ suggestion. 동일하면 issue를 만들지 마십시오.
+- 한 issue에는 한 가지 수정만. 같은 줄에 여러 오류가 있으면 각각 별개 issue로 분리하십시오.
 
-입력 원고는 각 줄 앞에 [N] 형태의 줄 번호가 붙어 있습니다.
-문제가 있는 경우 line에는 해당 [N] 번호를 정수로 넣으십시오.
-문제가 없으면 issues는 빈 배열로 반환하십시오.
+[입출력]
+- 입력 원고는 각 줄 앞에 [N] 형태의 줄 번호가 붙어 있습니다.
+- 문제가 있는 줄은 line 필드에 [N] 번호를 정수로 넣으십시오.
+- 문제가 없으면 issues는 빈 배열로 반환하십시오.
 
-다음은 모범 응답 예시입니다 (형식 준수에 참고).
-
+[모범 응답 예시]
 입력:
 [1] 그는 문을열었고 안되 . 라고 중얼거렷다。
 [2] 다시한번 생각 보다 깊은 침묵 이였다.
@@ -64,14 +58,13 @@ original / suggestion 작성 규칙:
 기대 출력:
 {
   "issues": [
-    {"type": "spacing", "line": 1, "original": "문을열었고", "suggestion": "문을 열었고", "reason": "명사 '문을'과 동사 '열었고' 사이 띄어쓰기"},
+    {"type": "spacing", "line": 1, "original": "문을열었고", "suggestion": "문을 열었고", "reason": "명사·동사 사이 띄어쓰기"},
     {"type": "spacing", "line": 1, "original": "안되 .", "suggestion": "안 돼.", "reason": "'안 되다' 띄어쓰기 + 마침표 앞 공백 제거"},
-    {"type": "punctuation", "line": 1, "original": "중얼거렷다。", "suggestion": "중얼거렸다.", "reason": "전각 마침표 → 반각, 과거형 어미 오탈자 함께 수정"},
+    {"type": "punctuation", "line": 1, "original": "중얼거렷다。", "suggestion": "중얼거렸다.", "reason": "전각 마침표 → 반각, 과거형 어미 오탈자"},
     {"type": "spacing", "line": 2, "original": "다시한번", "suggestion": "다시 한 번", "reason": "부사 띄어쓰기"},
     {"type": "spacing", "line": 2, "original": "생각 보다", "suggestion": "생각보다", "reason": "조사 '보다'는 앞 명사에 붙여 씀"},
-    {"type": "spacing", "line": 2, "original": "침묵 이였다", "suggestion": "침묵이었다", "reason": "조사 '이' 붙여쓰기 + 어미 '였→었' 오탈자"}
-  ],
-  "summary": "띄어쓰기 4건, 문장부호 1건, 오탈자 1건"
+    {"type": "typo", "line": 2, "original": "침묵 이였다", "suggestion": "침묵이었다", "reason": "조사 '이' 붙여쓰기 + 어미 '였→었'"}
+  ]
 }"""
 
 SPELLCHECK_SCHEMA_HINT = """{
@@ -83,8 +76,7 @@ SPELLCHECK_SCHEMA_HINT = """{
       "suggestion": "됐다",
       "reason": "오탈자"
     }
-  ],
-  "summary": "맞춤법 검사 결과 요약"
+  ]
 }"""
 
 _ALLOWED_TYPES = {"typo", "spacing", "punctuation"}
@@ -198,7 +190,7 @@ async def spellcheck_episode(req: SpellcheckRequest):
         system=SPELLCHECK_SYSTEM_PROMPT,
         user=user_prompt,
         schema_hint=SPELLCHECK_SCHEMA_HINT,
-        model_override=settings.claude_sonnet_model,
+        model_override=settings.claude_haiku_model,
         max_tokens=3000,
     )
 
