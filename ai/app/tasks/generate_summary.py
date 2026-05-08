@@ -23,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.celery_app import celery_app
 from app.config import settings
 from app.db.models.episode_summary import EpisodeSummary
+from app.services.encrypt_resolver import (
+    EncryptResolverError,
+    encrypt_summary_text_fields,
+)
 from app.services.providers import get_llm
 from app.services.text_extractor import extract_plain_text
 from app.services.work_key_resolver import (
@@ -107,6 +111,22 @@ async def _run(
     wr_uuid = uuid.UUID(writer_id)
     now = datetime.utcnow()
 
+    # Phase 4.6: 자유형 서사 텍스트만 암호화. pov_character / tone 은 SQL 매칭 의존 → 평문.
+    plain_text_fields = {
+        "oneline_summary": _extract_field(result, "oneline_summary"),
+        "summary": summary_text,
+        "time_progression": _extract_field(result, "time_progression"),
+        "cliffhanger": _extract_field(result, "cliffhanger"),
+    }
+    try:
+        enc_text = await encrypt_summary_text_fields(work_id, plain_text_fields)
+    except EncryptResolverError as e:
+        logger.warning(
+            "generate_summary.skip_no_encrypt",
+            extra={"episode_id": episode_id, "reason": str(e)},
+        )
+        return {"episode_id": episode_id, "status": "skipped", "reason": "no_encrypt"}
+
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
         async with AsyncSession(engine) as session:
@@ -115,22 +135,22 @@ async def _run(
                     "episode_id": ep_uuid,
                     "work_id": wk_uuid,
                     "writer_id": wr_uuid,
-                    "oneline_summary": _extract_field(result, "oneline_summary"),
-                    "summary": summary_text,
-                    "pov_character": _extract_field(result, "pov_character"),
+                    "oneline_summary": enc_text.get("oneline_summary"),
+                    "summary": enc_text.get("summary"),
+                    "pov_character": _extract_field(result, "pov_character"),  # 평문
                     "present_characters": _extract_field(result, "present_characters"),
                     "present_locations": _extract_field(result, "present_locations"),
                     "key_events": _extract_field(result, "key_events"),
-                    "time_progression": _extract_field(result, "time_progression"),
-                    "tone": _extract_field(result, "tone"),
-                    "cliffhanger": _extract_field(result, "cliffhanger"),
+                    "time_progression": enc_text.get("time_progression"),
+                    "tone": _extract_field(result, "tone"),                    # 평문
+                    "cliffhanger": enc_text.get("cliffhanger"),
                     "foreshadow_planted": _extract_field(result, "foreshadow_planted"),
                     "foreshadow_paid_off": _extract_field(result, "foreshadow_paid_off"),
                     "referenced_world_notes": _extract_field(result, "referenced_world_notes"),
                     "keywords": _extract_field(result, "keywords"),
                     "word_count": word_count,
                     "model_used": type(llm).__name__,
-                    "raw_result": result,
+                    "raw_result": None,    # Phase 4.6: 평문 dict 저장 금지
                     "content_hash": content_hash,
                     "generation_count": 1,
                     "last_generated_at": now,

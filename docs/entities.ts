@@ -100,7 +100,7 @@ export interface Episode {
   writer_id: string;
   parent_id: string | null;      // FK → Episode (self), NULL = 최상위
   title: string;                 // 회차 제목
-  status: string;                // 미작성/초고/퇴고/완성/trashed
+  status: string;                // 예정/초고/퇴고/완성/trashed
   content: string | null;        // TipTap JSON 원고 본문
   word_count: number;            // 자동 계산 글자수
   sort_order: number;

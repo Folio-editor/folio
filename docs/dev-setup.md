@@ -241,7 +241,7 @@ cd backend
 cd ai
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[llm,db,dev]"   # pyproject.toml base + 옵셔널 그룹
 uvicorn app.main:app --reload --port 8000
 # → http://localhost:8000
 ```

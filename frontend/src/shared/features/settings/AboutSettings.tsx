@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw } from 'lucide-react';
 import { useUpdater } from '../../hooks/useUpdater';
@@ -63,7 +63,13 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
   const matchedGuide = guideRows[0];
   const hasMatchedGuide = matchedGuide !== undefined;
 
+  // setRestartBusy 만으론 동기 재진입 차단 불가 (setState async). useRef 로 즉시 락 — Enter spam /
+  // 더블 클릭 / 동시 IPC 호출 등에서 시드가 2회 실행되어 가이드 작품이 통째로 두 세트 생성되는
+  // 회귀 차단. AuthenticatedApp 의 onboardingSeedingRef 와 동일 패턴.
+  const restartingRef = useRef(false);
   const restartTutorial = async () => {
+    if (restartingRef.current) return;
+    restartingRef.current = true;
     setRestartBusy(true);
     try {
       // 기존 가이드 작품(매칭된 경우)을 휴지통으로 이동 — description 마커 없는 사용자 작품은 보존
@@ -81,6 +87,7 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
       onTutorialReset?.(newWorkId);
     } finally {
       setRestartBusy(false);
+      restartingRef.current = false;
     }
   };
 

@@ -16,6 +16,22 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.context import WriterContext
+from app.services.decrypt_resolver import DecryptResolverError, decrypt_rows
+
+
+async def _decrypt_summary_text(work_id, rows: list[dict], fields: list[str]) -> list[dict]:
+    """summary 텍스트 필드 일괄 복호화. 실패 시 placeholder."""
+    if not rows or not fields:
+        return rows
+    try:
+        return await decrypt_rows(work_id, rows, fields)
+    except DecryptResolverError:
+        for r in rows:
+            for f in fields:
+                v = r.get(f)
+                if isinstance(v, str) and v.startswith("v1:"):
+                    r[f] = "(암호화 미해제)"
+        return rows
 
 
 async def track_foreshadow(
@@ -104,7 +120,7 @@ async def character_arc(
         "ORDER BY ep.sort_order ASC"
     )
     r = await session.execute(sa_text(sql), params)
-    return [
+    rows = [
         {
             "sort_order": row[0],
             "oneline_summary": row[1],
@@ -115,6 +131,8 @@ async def character_arc(
         }
         for row in r.fetchall()
     ]
+    # tone 평문 / oneline_summary, cliffhanger 암호화 → 후자만 복호화
+    return await _decrypt_summary_text(ctx.work_id, rows, ["oneline_summary", "cliffhanger"])
 
 
 async def timeline_scan(
@@ -142,7 +160,7 @@ async def timeline_scan(
         "ORDER BY ep.sort_order ASC"
     )
     r = await session.execute(sa_text(sql), params)
-    return [
+    rows = [
         {
             "sort_order": row[0],
             "oneline_summary": row[1],
@@ -151,3 +169,6 @@ async def timeline_scan(
         }
         for row in r.fetchall()
     ]
+    return await _decrypt_summary_text(
+        ctx.work_id, rows, ["oneline_summary", "time_progression", "cliffhanger"]
+    )

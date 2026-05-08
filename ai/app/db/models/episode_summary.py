@@ -28,7 +28,8 @@ class EpisodeSummary(Base):
     present_characters: Mapped[Any | None] = mapped_column(JSONB)
     present_locations: Mapped[Any | None] = mapped_column(JSONB)
     key_events: Mapped[Any | None] = mapped_column(JSONB)
-    time_progression: Mapped[str | None] = mapped_column(String(50))
+    # Phase 4.6: 자유형 텍스트 암호화 대상 — ciphertext 가 항상 50자 초과 → TEXT 필수
+    time_progression: Mapped[str | None] = mapped_column(Text)
     tone: Mapped[str | None] = mapped_column(String(50))
     cliffhanger: Mapped[str | None] = mapped_column(Text)
     referenced_world_notes: Mapped[Any | None] = mapped_column(JSONB)

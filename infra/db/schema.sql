@@ -321,9 +321,10 @@ CREATE TABLE episode_chunk (
     work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
     writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
     chunk_index   INTEGER NOT NULL,
-    content       TEXT NOT NULL,
+    content       TEXT NOT NULL,                  -- v1: ciphertext (Phase 4.6)
     embedding     VECTOR(1536) NOT NULL,
     token_count   INTEGER NOT NULL,
+    content_hash  CHAR(64),                       -- 평문 본문 SHA256 (Phase 4.6 idempotency)
     created_at    TIMESTAMP NOT NULL DEFAULT now(),
     UNIQUE (episode_id, chunk_index)
 );
@@ -341,7 +342,8 @@ CREATE TABLE episode_summary (
     present_characters     JSONB,                   -- ["앤","마릴라"]
     present_locations      JSONB,                   -- ["초록지붕집"]
     key_events             JSONB,                   -- [{order,event}]
-    time_progression       VARCHAR(50),
+    -- Phase 4.6: 자유형 텍스트 암호화 대상 — ciphertext 가 항상 50자 초과 → TEXT 필수
+    time_progression       TEXT,
     tone                   VARCHAR(50),
     cliffhanger            TEXT,
     referenced_world_notes JSONB,                   -- world_note id[]
@@ -358,14 +360,10 @@ CREATE TABLE episode_summary (
     generation_count       INTEGER NOT NULL DEFAULT 0,
     last_generated_at      TIMESTAMP,
     created_at             TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at             TIMESTAMP NOT NULL DEFAULT now(),
-    -- FTS — 'simple' 토크나이저 (한국어 정확도 한계는 keywords JSONB + JSONB 컨테인 검색으로 보완)
-    summary_tsv            tsvector GENERATED ALWAYS AS (
-        to_tsvector('simple',
-            coalesce(oneline_summary,'') || ' ' ||
-            coalesce(summary,'')         || ' ' ||
-            coalesce(keywords::text,''))
-    ) STORED
+    updated_at             TIMESTAMP NOT NULL DEFAULT now()
+    -- Phase 4.6: summary_tsv GENERATED 컬럼 제거. oneline_summary/summary 가 v1: ciphertext
+    -- 로 적재되면서 tsvector 가 무의미해짐. search_episode_summaries 는 Option A
+    -- (평문 일괄 복호화 + Python substring) 로 동작.
 );
 
 -- Phase 4 확장: agent 가 제안하는 작가 승인 큐.
@@ -573,11 +571,12 @@ CREATE INDEX idx_episode_chunk_embedding
 CREATE INDEX idx_episode_chunk_work     ON episode_chunk(work_id);
 CREATE INDEX idx_episode_chunk_writer   ON episode_chunk(writer_id);
 CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
+CREATE INDEX idx_episode_chunk_episode_hash
+    ON episode_chunk(episode_id, content_hash);    -- Phase 4.6 idempotency skip
 CREATE INDEX idx_episode_summary_work_confirmed
     ON episode_summary(work_id, is_confirmed);
 CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
-CREATE INDEX idx_episode_summary_tsv
-    ON episode_summary USING GIN (summary_tsv);
+-- Phase 4.6: idx_episode_summary_tsv 제거 (summary_tsv 컬럼 드롭과 함께)
 CREATE INDEX idx_episode_summary_pov
     ON episode_summary (work_id, pov_character);
 CREATE INDEX idx_episode_summary_episode_hash

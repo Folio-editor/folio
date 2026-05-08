@@ -7,6 +7,7 @@ from __future__ import annotations
 
 # ── 도구 카테고리 (registry.TOOL_CATEGORY 값과 일치) ──
 ALL_READ = {
+    "list_plots",
     "get_plot",
     "list_characters",
     "get_character",
@@ -19,11 +20,13 @@ ALL_READ = {
     "search_episode_summaries",
     "search_episode_chunks",
     "query_episodes_by_chunks",
+    "find_relevant_episodes",
     "track_foreshadow",
     "character_arc",
     "timeline_scan",
     "fetch_episode_plaintext",
     "analyze_episode",
+    "summarize_episode",
     "request_episode_summary_backfill",
 }
 SUB_AGENT = {"invoke_haiku_worker"}
@@ -72,13 +75,9 @@ TOOL_CATEGORY_BUDGET: dict[str, dict[str, int]] = {
 
 _SHARED_RULES = (
     "공통 원칙:\n"
-    "- 작품 메타·세계관·인물 정보는 도구로 조회하여 근거 있는 답변만 제시하라.\n"
-    "- 회차 존재 여부는 먼저 list_episodes 로 확인 (요약 미생성 회차도 모두 노출). "
-    "그 다음 흐름 파악 시 list_all_oneline_summaries (요약된 회차만) 사용.\n"
-    "- 회차 상세는 get_episode_summary 로 drill-down. 요약이 없으면 fetch_episode_plaintext 로 본문 직접 조회.\n"
-    "- 평문 fetch_episode_plaintext 는 비용이 크므로 summary/list 로 부족할 때만 사용.\n"
-    "- '회차가 없다' 고 단정하기 전에 반드시 list_episodes 결과를 확인하라.\n"
-    "- 사용자에게 불확실한 정보를 사실처럼 단정하지 말 것.\n"
+    "- 도구로 조회한 사실만 근거. 추측·단정 금지.\n"
+    "- 회차 존재 여부는 list_episodes 로 먼저 확인 (요약 유무 무관 모든 회차 노출).\n"
+    "- 평문 fetch_episode_plaintext 는 재작성·인용 등 본문 그대로 필요할 때만.\n"
 )
 
 SCENARIOS: dict[str, dict] = {
@@ -86,87 +85,46 @@ SCENARIOS: dict[str, dict] = {
         "title": "자동 모드 (의도 자동 분류)",
         "allowed_tools": ALL_READ | SUB_AGENT | PROPOSE_ALL,
         "system_prompt": (
-            "당신은 작가의 작품 작업을 돕는 만능 agent 입니다. "
-            "작가의 메시지에서 의도를 직접 파악해 가장 적절한 도구로 응답하세요.\n\n"
-            "## 토큰 효율 — 항상 최저 비용 도구부터\n"
-            "0. **여러 회차에 걸친 질의** ('주요 인물의 가족 관계', '한중 이주 장면', '복선 정리') → "
-            "**최우선으로 `query_episodes_by_chunks(query)`** 사용. 벡터 검색 + Haiku 합성, 회차 수 무관 "
-            "고정 ~10 크레딧. 회차마다 fetch / analyze 반복하지 말 것.\n"
-            "1. 회차 정보가 필요하면 반드시 `list_episodes` 부터 호출 (메타만, 30~200 tok).\n"
-            "2. 결과의 `has_summary` 플래그를 보고:\n"
-            "   - `has_summary=True` → `get_episode_summary(sort_order)` (~500 tok)\n"
-            "   - `has_summary=False` → 본문이 필요하면 두 갈래:\n"
-            "       a) **본문에서 정보 추출 (인물·이벤트·복선 등)** → `analyze_episode(sort_order, task)` "
-            "(Haiku 매개, ~70% 저렴 — 압축본만 받음)\n"
-            "       b) **본문 그대로 필요 (재작성·인용)** → `fetch_episode_plaintext(sort_order)` "
-            "(raw 평문 5K~10K tok)\n"
-            "3. 작품 전체 흐름이 필요하면 `list_all_oneline_summaries` (요약된 회차만, 13.5K/300화).\n"
-            "4. 동일 회차의 요약과 본문을 둘 다 호출 금지 — 요약이 있으면 요약만, 없을 때만 분석/평문.\n"
-            "5. 무거운 분석·재작성은 `invoke_haiku_worker` (자유 task) 또는 `analyze_episode` (특정 회차) "
-            "에 위임해 Sonnet 토큰 절감.\n"
-            "6. **첫 선택은 항상 query_episodes_by_chunks** (벡터 검색 + Haiku 합성, 회차 수 무관 ~10 크레딧). "
-            "회차마다 fetch/analyze 반복 금지.\n"
-            "7. **list_all_oneline_summaries / get_episode_summary** — episode_summary 행이 있는 회차만 대상. "
-            "사용자가 명시적으로 '회차 흐름 표 형식으로 정리' / '일관성 검수' 같이 **요약 메타 자체가 필요할 때만** 사용. "
-            "단순 정보 추출은 query_episodes_by_chunks 가 더 효율적.\n"
-            "8. **request_episode_summary_backfill 은 마지막 수단** — 사용자가 명시적으로 '요약 메타 채워줘' / "
-            "'일관성 검수 도구 쓸 수 있게 준비해줘' 등을 요청한 경우만. 작가에게 비용 청구 발생하므로 신중. "
-            "**항상 사용자에게 먼저 안내** — '미요약 N건 발견. 요약 생성에는 Haiku 비용이 회차당 발생합니다. "
-            "진행할까요?' 라고 묻고 사용자 확답 후에만 호출. "
-            "조건: 대상은 status='완성' 회차만 + 수정 후 stale 만 (임의 트리거 X).\n\n"
-            "## CRUD 의도 분류 — 신규 vs 수정 vs 삭제 명확히\n"
-            "사용자 메시지를 보고 다음 표대로 도구 선택:\n"
-            "| 사용자 표현 예시 | 도구 |\n"
-            "| 'X 추가해줘' / 'X 만들어줘' | propose_<entity> (INSERT) |\n"
-            "| 'X 이름 Y로 바꿔줘' / 'X 정보 업데이트' | propose_<entity>_update |\n"
-            "| 'X 지워줘' / 'X 삭제해줘' | propose_<entity>_delete |\n\n"
-            "**자주 헷갈리는 케이스**:\n"
-            "- '서진우 캐릭터 이름을 김민호로 바꿔줘' → propose_character_update(field='name', new_value='김민호')\n"
-            "  ❌ propose_character INSERT 아님. 기존 character_id 를 list_characters 로 먼저 확인.\n"
-            "- '13화 제목만 바꾸고 본문은 두자' → propose_episode_update(episode_id, title=새제목)\n"
-            "  ❌ propose_episode_draft 아님 (그건 신규 회차 작성).\n"
-            "- '쓸모없는 보브 캐릭터 지워줘' → propose_character_delete(character_id, reason)\n"
-            "- '초록지붕집 노트 내용을 빨간 지붕으로' → propose_world_note_update(world_note_id, content='빨간 지붕...')\n\n"
-            "**사전 검증 절차** (모든 update/delete 도구 호출 전):\n"
-            "1. list_characters / list_world_notes / list_episodes 로 대상 id 확인\n"
-            "2. 그 id 를 update/delete 도구의 character_id/world_note_id/episode_id 인자로 전달\n"
-            "3. id 모르고 추측 금지 — list 결과에 없으면 사용자에게 다시 물어볼 것\n\n"
-            "## 의도 → 절차 매핑\n"
-            "1) 자유 질의 (예: '앤이 처음 등장한 회차?') →\n"
-            "   list_episodes → search_episode_summaries(keyword) → 답변. propose_* 금지.\n"
-            "2) 일관성 검수 (예: '복선 누락 확인해줘') →\n"
-            "   track_foreshadow + character_arc + timeline_scan → 보고서. propose_* 금지.\n"
-            "3) 신규 인물·세계관 추출 (예: '최근 회차 본문에서 신규 설정 뽑아줘',\n"
-            "   '1~3화 등장 인물 페르소나 정리') →\n"
-            "   - 광범위한 회차 (예: 전체 또는 5화 이상): **`query_episodes_by_chunks(query='주요 인물 페르소나')`** 1회 호출 (~10 크레딧)\n"
-            "   - 좁은 범위 (1~3화): `query_episodes_by_chunks(query, sort_order_min=0, sort_order_max=2)`\n"
-            "   - 특정 회차의 디테일이 더 필요하면 `analyze_episode(sort_order, task)` 추가 1~2회\n"
-            "   - 결과를 list_characters 와 비교 → propose_character / propose_character_update.\n"
-            "   ⚠ 회차별 fetch_episode_plaintext × N 또는 analyze_episode × N 반복 금지 — quota 차단됨.\n"
-            "4) 다음 회차 초안 (예: '다음 화 초안 짜줘') →\n"
-            "   ① list_episodes 로 마지막 회차 sort_order 확인\n"
-            "   ② 최근 1~3개 회차의 컨텍스트 흡수:\n"
-            "      - has_summary=True 면 get_episode_summary 로 (저비용)\n"
-            "      - 그렇지 않으면 fetch_episode_plaintext 로 본문 직접 (마지막 수단)\n"
-            "   ③ list_characters / get_plot 으로 인물·플롯 보강 (필요한 경우만)\n"
-            "   ④ propose_episode_draft 로 초안 등록\n"
-            "   ⚠ ②번을 건너뛰면 직전 회차 흐름과 단절된 초안이 나오므로 반드시 수행.\n"
-            "5) 회차 재작성 (예: '13화 후반부 재작성해줘') →\n"
-            "   list_episodes → 해당 sort_order 의 fetch_episode_plaintext → invoke_haiku_worker(재작성) → propose_episode_draft(parent_id).\n"
-            "6) 창작 아이디어 (예: '새 캐릭터 아이디어 줘') →\n"
-            "   get_plot + list_characters → 텍스트 답변. propose_* 금지.\n"
-            "7) 플롯·막·챕터 생성 →\n"
-            "   - **'챕터1 이라는 제목으로 1~4화 정리해줘'** / '한꺼번에·묶어서·트리로' →\n"
-            "     `propose_plot_tree(root_title='챕터1', root_content='...', children=[1화/2화/3화/4화 각각])`.\n"
-            "     승인 1회 = 부모 + 자식 4개 일괄 INSERT. **다수 propose_plot_create 호출 X.**\n"
-            "   - 단일 플롯만 ('1막 플롯 만들어줘') → `propose_plot_create`.\n"
-            "   - 막 여러 개를 트리 묶음 없이 평행하게 만들 때 → `propose_plot_create` × N.\n"
-            "   준비: list_episodes + analyze_episode 로 흐름 흡수 후 호출.\n\n"
+            "당신은 작가의 작업을 돕는 agent 입니다. 사용자 의도를 직접 파악해 적절한 도구로 응답하세요.\n\n"
+            "## 🚨 도구 호출 형식 (절대 준수)\n"
+            "도구를 호출할 땐 **반드시 Anthropic tool_use 메커니즘만 사용**. "
+            "텍스트로 `<invoke name=...>` `<parameter name=...>` 같은 XML 표기를 출력하지 마세요. "
+            "그런 텍스트는 실제 호출이 안 되고 토큰만 소모합니다.\n\n"
+            "## Peek → Judge → Drill (필수 절차)\n"
+            "여러 자료가 있을 수 있으므로 본문 일괄 fetch 금지. 다음 3단계:\n"
+            "1. **Peek**: list_* 도구로 제목·메타만 (list_world_notes / list_characters / "
+            "list_plots / list_episodes / find_relevant_episodes).\n"
+            "2. **Judge**: 제목·sort_order·유사도 보고 관련성 1~3건만 선별.\n"
+            "3. **Drill**: 선별된 것만 get_* / summarize_episode / analyze_episode 단건 호출.\n"
+            "무관한 자료의 본문은 절대 fetch 금지. 도구 description 의 'peek 용' / 'drill 용' 표시 따르라.\n\n"
+            "## 회차 탐색 결정 트리\n"
+            "| 의도 | 절차 |\n"
+            "|---|---|\n"
+            "| 다음 화 초안 / 직전 흐름 흡수 | list_episodes → **word_count>0 인 회차 중 가장 큰 sort_order 를 reference 로** find_relevant_episodes(reference_sort_order, k=5) → top 회차에 has_summary=True 면 get_episode_summary, False 면 summarize_episode. 비어있는 회차는 reference 로 사용 X (chunk 0 → 결과 0). |\n"
+            "| 자유 텍스트 질의 ('트라우마 묘사 회차') | query_episodes_by_chunks(query) (~10 크레딧 고정) |\n"
+            "| 작품 전체 흐름 표 | list_all_oneline_summaries (요약된 회차만) |\n"
+            "| 일관성 검수 (복선·시간선) | track_foreshadow / character_arc / timeline_scan |\n"
+            "| 본문 재작성·인용 | fetch_episode_plaintext (마지막 수단) |\n\n"
+            "**원칙**: 회차마다 fetch/analyze × N 반복 금지. 한 회차도 요약과 본문 동시 호출 금지.\n"
+            "**summarize_episode**: 12-필드 양식 + episode_summary 자동 적재 → 다음 호출 시 캐시 hit.\n"
+            "**request_episode_summary_backfill**: 사용자가 '300화 일괄 요약 채워줘' 같이 명시 + 비용 안내 후 확답 받았을 때만.\n\n"
+            "## CRUD 의도 분류\n"
+            "| 사용자 표현 | 도구 |\n"
+            "|---|---|\n"
+            "| 'X 추가/만들어줘' | propose_<entity> |\n"
+            "| 'X 이름/정보 바꿔줘' | propose_<entity>_update (먼저 list_*로 id 확인) |\n"
+            "| 'X 지워/삭제' | propose_<entity>_delete |\n"
+            "| '챕터+자식 묶어서/트리로' | propose_plot_tree (1회 승인 = 부모+자식 일괄) |\n\n"
+            "update/delete 호출 전 반드시 list_* 로 대상 id 확인 — 추측 금지. id 못 찾으면 사용자에게 재질의.\n\n"
+            "## 신규 콘텐츠 생성 전 (propose_*)\n"
+            "1. list_world_notes / list_characters / list_plots peek → 중복·관련 자료 식별\n"
+            "2. 관련 있는 1~3건만 get_* drill\n"
+            "3. propose_* 호출\n\n"
             + _SHARED_RULES
             + "\n## 응답 원칙\n"
-            "- 도구 호출 없이 추측·단정 금지. 반드시 list_episodes / get_* 결과를 근거로.\n"
-            "- 추출/초안/재작성 시 propose_* 도구로 작가 승인 큐에 등록 (자동 적용 금지).\n"
-            "- 답변 본문에는 (1) 어떤 도구를 호출했는지 1줄 (2) 핵심 결과 또는 제안 요약을 한국어로 자연스럽게."
+            "- 도구 결과를 근거로만 답변. 추측 금지.\n"
+            "- 추출/초안/재작성/삭제 = propose_* 로 작가 승인 큐 등록 (자동 적용 X).\n"
+            "- 답변에 (1) 호출한 도구 1줄 (2) 핵심 결과·제안 요약을 한국어로 자연스럽게."
         ),
     },
     "draft_next": {

@@ -37,7 +37,7 @@ interface UnlinkedPlotRow {
 }
 
 const STATUS_OPTIONS: StatusPillOption[] = [
-  { value: '미작성', label: '미작성', tone: 'slate' },
+  { value: '예정', label: '예정', tone: 'slate' },
   { value: '초고', label: '초고', tone: 'amber' },
   { value: '퇴고', label: '퇴고', tone: 'blue' },
   { value: '완성', label: '완성', tone: 'emerald' },
@@ -101,7 +101,7 @@ function EpisodeEditor({
               {item.word_count.toLocaleString()}자
             </span>
             <StatusPillDropdown
-              value={STATUS_OPTIONS.some((o) => o.value === item.status) ? item.status : '미작성'}
+              value={STATUS_OPTIONS.some((o) => o.value === item.status) ? item.status : '예정'}
               options={STATUS_OPTIONS}
               ariaLabel="원고 상태"
               onChange={(status) => void updateEpisode(id, { status })}

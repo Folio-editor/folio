@@ -48,7 +48,7 @@ const ACTIVITY_FILTER_SPEC: Partial<Record<Activity, ActivityFilterSpec[]>> = {
       panelKey: 'episode',
       groupLabel: '진행 상태',
       options: [
-        { value: '미작성', label: '미작성' },
+        { value: '예정', label: '예정' },
         { value: '초고', label: '초고' },
         { value: '퇴고', label: '퇴고' },
         { value: '완성', label: '완성' },

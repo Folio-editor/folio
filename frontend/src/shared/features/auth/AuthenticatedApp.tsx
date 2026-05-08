@@ -525,36 +525,69 @@ export function AuthenticatedApp() {
         }
       }
 
-      // character — 노트면 "캐릭터 / 노트" 합성
+      // character — 노트면 "캐릭터 / 노트" 합성. character.name 과 character_note.title 모두
+      // v1: ciphertext (Plan C). 우측 사이드바 헤더가 ciphertext 그대로 노출되던 회귀를 막기 위해
+      // work.encrypted_dek 를 조인해 단발 복호화 — 다른 entity (plot / episode 등) 와 동일 패턴.
       if (section === 'character') {
         try {
           if (itemId.startsWith('cnote:')) {
             const noteId = itemId.slice(6);
             const result = await db.execute(
-              `SELECT cn.title AS title, c.name AS character_name
+              `SELECT cn.title AS title, c.name AS character_name,
+                      c.work_id AS work_id, w.encrypted_dek AS encrypted_dek
                FROM character_note cn
                LEFT JOIN character c ON c.id = cn.character_id
+               LEFT JOIN work w ON w.id = c.work_id
                WHERE cn.id = ? LIMIT 1`,
               [noteId],
             );
             const row = (result.rows?._array as {
-              title: string;
+              title: string | null;
               character_name: string | null;
+              work_id: string | null;
+              encrypted_dek: string | null;
             }[])?.[0];
             if (!row) return '';
-            const own = row.title?.trim() || '(제목 없음)';
-            if (row.character_name) {
-              return `${row.character_name.trim() || '(이름 없음)'} / ${own}`;
+            const [titlePlain, namePlain] = await Promise.all([
+              decryptWorkFieldOnce({
+                workId: row.work_id ?? '',
+                encryptedDek: row.encrypted_dek,
+                value: row.title,
+              }),
+              decryptWorkFieldOnce({
+                workId: row.work_id ?? '',
+                encryptedDek: row.encrypted_dek,
+                value: row.character_name,
+              }),
+            ]);
+            const own = titlePlain?.trim() || '(제목 없음)';
+            if (namePlain != null) {
+              return `${namePlain.trim() || '(이름 없음)'} / ${own}`;
             }
             return own;
           }
           if (itemId.startsWith('char:')) {
             const charId = itemId.slice(5);
             const result = await db.execute(
-              'SELECT name AS title FROM character WHERE id = ? LIMIT 1',
+              `SELECT c.name AS title, c.work_id AS work_id,
+                      w.encrypted_dek AS encrypted_dek
+               FROM character c
+               LEFT JOIN work w ON w.id = c.work_id
+               WHERE c.id = ? LIMIT 1`,
               [charId],
             );
-            return (result.rows?._array as { title: string }[])?.[0]?.title ?? '';
+            const row = (result.rows?._array as {
+              title: string | null;
+              work_id: string;
+              encrypted_dek: string | null;
+            }[])?.[0];
+            if (!row) return '';
+            const plain = await decryptWorkFieldOnce({
+              workId: row.work_id,
+              encryptedDek: row.encrypted_dek,
+              value: row.title,
+            });
+            return plain ?? '';
           }
           return '';
         } catch {

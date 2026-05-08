@@ -222,6 +222,13 @@ export function ContentEditor({
     charCountRef.current = chars;
     editStartedRef.current = false;
     editSessionStartRef.current = null;
+    // mount/itemId 전환 시 DB 의 stale word_count 와 실제 본문 사이 mismatch 자동 보정.
+    // 시드/템플릿 등으로 본문은 채워졌지만 word_count=0 인 행이 들어 있으면 사용자가
+    // 입력하지 않아도 mount 만으로 정확한 char count 를 emit → AI agent 가 word_count 로
+    // 본문 작성 여부 판단할 때 거짓 0 으로 오판하는 회귀 차단.
+    if (chars > 0) {
+      onCharCountChangeRef.current?.(chars);
+    }
   }, [editor, itemId]);
 
   // 검수 하이라이트 스토어 구독 → 데코레이션 리빌드
