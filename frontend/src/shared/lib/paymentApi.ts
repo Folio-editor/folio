@@ -3,6 +3,7 @@ import {
   REFUND_POLICY_VERSION,
   type BillingAuthPrepareResponse,
   type CreatePaymentResponse,
+  type PageResponse,
   type PaymentResponse,
   type RefundRequest,
   type RefundResponse,
@@ -40,8 +41,19 @@ export const paymentApi = {
   getPayment: (paymentId: string) =>
     apiClient.get<PaymentResponse>(`/payments/${paymentId}`),
 
-  /** 결제 이력 — 최근 순. 각 행에 latestRefund 포함. */
-  listMyPayments: () => apiClient.get<PaymentResponse[]>('/payments/me'),
+  /**
+   * 결제 이력 페이지 — 최근 순. 각 행에 latestRefund 포함.
+   * page 0-based, size 1~50 (기본 10).
+   */
+  listMyPayments: (params: { page?: number; size?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.page !== undefined) search.set('page', String(params.page));
+    if (params.size !== undefined) search.set('size', String(params.size));
+    const qs = search.toString();
+    return apiClient.get<PageResponse<PaymentResponse>>(
+      qs ? `/payments/me?${qs}` : '/payments/me',
+    );
+  },
 };
 
 export const subscriptionApi = {

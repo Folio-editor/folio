@@ -28,6 +28,12 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
     /** 결제 1건의 모든 환불 이력 (재신청 포함, 시간순). */
     List<Refund> findAllByPayment_IdOrderByCreatedAtAsc(UUID paymentId);
 
+    /**
+     * 여러 결제의 환불 이력을 한 번에 batch 조회 — 결제 이력 페이지에서 N+1 회피용.
+     * 시간순 정렬 — 호출자가 paymentId 별로 grouping 해 latest 추출.
+     */
+    List<Refund> findAllByPayment_IdInOrderByCreatedAtAsc(java.util.Collection<UUID> paymentIds);
+
     /** 작가 환불 이력 — 결제 이력 화면에서 함께 표시. */
     @Query("""
            select r from Refund r

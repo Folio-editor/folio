@@ -218,7 +218,8 @@ class RefundServiceTest {
         Payment payment = doneOnetime(5_000, 550, hoursAgo(24));
         given(paymentRepository.findWithLockByOrderId("SZ-1")).willReturn(Optional.of(payment));
         given(refundRepository.findActiveByPaymentId(any())).willReturn(Optional.empty());
-        given(refundRepository.countByPayment_IdAndStatus(any(), eq(RefundStatus.REJECTED))).willReturn(1L);
+        // 거절 2회 누적 → 3번째 신청은 차단되어야 함
+        given(refundRepository.countByPayment_IdAndStatus(any(), eq(RefundStatus.REJECTED))).willReturn(2L);
 
         assertThatThrownBy(() -> refundService.requestRefund(writerId, "SZ-1",
                 new RefundRequest(RefundReason.CUSTOMER_CHANGE_OF_MIND, null)))

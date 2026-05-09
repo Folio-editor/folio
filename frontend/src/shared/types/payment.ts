@@ -3,6 +3,19 @@
  * 백엔드 DTO (com.storyzip.payment.dto.*) 와 1:1 대응.
  */
 
+/**
+ * 페이지네이션 응답 — 백엔드 {@code com.storyzip.common.dto.PageResponse} 와 1:1.
+ * page 는 0-based.
+ */
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}
+
 export interface TokenWalletResponse {
   balance: number;
   subscriptionBalance: number;

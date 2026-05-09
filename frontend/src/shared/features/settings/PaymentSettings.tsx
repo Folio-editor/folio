@@ -72,6 +72,10 @@ export function PaymentSettings() {
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsHasNext, setPaymentsHasNext] = useState(false);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
+  const [paymentsLoadingMore, setPaymentsLoadingMore] = useState(false);
+  const PAYMENTS_PAGE_SIZE = 10;
 
   const [busyPackage, setBusyPackage] = useState<TokenPackageCode | null>(null);
   const [busySubscription, setBusySubscription] = useState<
@@ -106,14 +110,43 @@ export function PaymentSettings() {
     if (!canUse) return;
     setPaymentsLoading(true);
     try {
-      const list = await paymentApi.listMyPayments();
-      setPayments(list);
+      const page = await paymentApi.listMyPayments({ page: 0, size: PAYMENTS_PAGE_SIZE });
+      setPayments(page.content);
+      setPaymentsHasNext(page.hasNext);
+      setPaymentsTotal(page.totalElements);
     } catch (e) {
       setError(toErrorMessage(e, '결제 이력 조회 실패'));
     } finally {
       setPaymentsLoading(false);
     }
   }, [canUse]);
+
+  const loadMorePayments = useCallback(async () => {
+    if (!canUse || paymentsLoadingMore || !paymentsHasNext) return;
+    setPaymentsLoadingMore(true);
+    try {
+      const nextPage = Math.floor(payments.length / PAYMENTS_PAGE_SIZE);
+      const page = await paymentApi.listMyPayments({
+        page: nextPage,
+        size: PAYMENTS_PAGE_SIZE,
+      });
+      // 새 결제가 들어와 페이지가 밀린 경우 중복 가능 — orderId 기준 dedupe
+      setPayments((prev) => {
+        const seen = new Set(prev.map((p) => p.orderId));
+        const merged = [...prev];
+        for (const item of page.content) {
+          if (!seen.has(item.orderId)) merged.push(item);
+        }
+        return merged;
+      });
+      setPaymentsHasNext(page.hasNext);
+      setPaymentsTotal(page.totalElements);
+    } catch (e) {
+      setError(toErrorMessage(e, '결제 이력 추가 조회 실패'));
+    } finally {
+      setPaymentsLoadingMore(false);
+    }
+  }, [canUse, paymentsLoadingMore, paymentsHasNext, payments.length]);
 
   useEffect(() => {
     if (!canUse) return;
@@ -483,6 +516,11 @@ export function PaymentSettings() {
               <h3 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                 <History size={14} strokeWidth={1.75} />
                 결제 이력
+                {paymentsTotal > 0 && (
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    · 총 {paymentsTotal.toLocaleString()}건
+                  </span>
+                )}
               </h3>
               <button
                 type="button"
@@ -508,6 +546,23 @@ export function PaymentSettings() {
                     onCancelRefundClick={(refundId) => void cancelRefundRequest(refundId)}
                   />
                 ))}
+                {paymentsHasNext && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMorePayments()}
+                    disabled={paymentsLoadingMore}
+                    className="mt-1 rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground hover:bg-muted/30 hover:text-foreground disabled:opacity-50"
+                  >
+                    {paymentsLoadingMore ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Loader2 size={11} className="animate-spin" />
+                        불러오는 중…
+                      </span>
+                    ) : (
+                      `더 보기 (${(paymentsTotal - payments.length).toLocaleString()}건 남음)`
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </section>

@@ -83,9 +83,9 @@ public class RefundService {
             throw new PaymentException(ErrorCode.REFUND_ALREADY_REQUESTED);
         });
 
-        // 거절 후 재신청 1회 제한.
+        // 거절 후 재신청 1회 제한 — 거절 1회까지는 재신청 허용, 2회 이상이면 차단.
         long rejectedCount = refundRepository.countByPayment_IdAndStatus(payment.getId(), RefundStatus.REJECTED);
-        if (rejectedCount >= MAX_REJECTED_RETRIES) {
+        if (rejectedCount > MAX_REJECTED_RETRIES) {
             throw new PaymentException(ErrorCode.REFUND_RETRY_LIMIT_EXCEEDED,
                     "거절 후 1회 재신청만 가능합니다");
         }
