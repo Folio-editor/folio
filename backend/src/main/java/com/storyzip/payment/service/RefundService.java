@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -123,6 +124,17 @@ public class RefundService {
         return toResponse(payment, refund);
     }
 
+    /**
+     * 운영자 화면용 — 특정 status 의 환불 목록 조회.
+     * 보통 {@link RefundStatus#REQUESTED} 로 호출해 검토 대기 큐 확인.
+     */
+    @Transactional(readOnly = true)
+    public List<RefundResponse> listByStatus(RefundStatus status) {
+        return refundRepository.findAllByStatusOrderByRequestedAtAsc(status).stream()
+                .map(refund -> toResponse(refund.getPayment(), refund))
+                .toList();
+    }
+
     @Transactional
     public RefundResponse cancelRequest(UUID writerId, UUID refundId) {
         Refund refund = refundRepository.findById(refundId)
@@ -143,6 +155,15 @@ public class RefundService {
     /**
      * 운영자 승인 — PortOne 취소 호출 + 토큰 회수/보상 + Payment 상태 변경.
      * COMPANY_FAULT 종량제는 현금 환불 없이 크레딧 보상.
+     *
+     * <p><b>외부 호출 순서</b>: PortOne {@code cancelPayment} 를 트랜잭션 마지막에 호출한다.
+     * <ul>
+     *   <li>중간 단계(토큰 회수/Payment 상태/refund.approve) 실패 시 PortOne 호출 전이므로
+     *       전체 롤백되어 DB-PG 일관성 유지.</li>
+     *   <li>PortOne 호출 자체가 실패하면 트랜잭션 롤백 → 모든 DB 변경 원복 → 운영자 재시도 가능.</li>
+     *   <li>PortOne 호출 성공 후 commit 직전 사고는 여전히 가능 (확률 낮음). 별도 불일치 감지
+     *       스케줄러로 5분 주기 검증 (Phase B). 운영 모니터링은 {@code [REFUND_APPROVED]} 로그.</li>
+     * </ul>
      */
     @Transactional
     public RefundResponse approveRefund(UUID refundId, String adminNote) {
@@ -158,25 +179,29 @@ public class RefundService {
 
         if (refund.getRefundType() == RefundType.COMPANY_FAULT_CREDIT) {
             // 회사 귀책 보상 — PortOne 호출 없이 결제 시 받은 크레딧을 다시 채워준다.
+            // (외부 호출 없으므로 순서 신경 쓸 필요 없음)
             tokenWalletService.chargePurchase(
                     writerId, refund.getTokenDeducted(),
                     "REFUND_COMPENSATION_" + payment.getOrderId(), payment.getId());
-            // 결제는 CANCELED 처리하지 않는다 — 현금 환불이 아니므로 trail은 NOTE만 남김.
+            refund.approve(adminNote);
         } else {
-            // 현금 환불 — PortOne cancel + 토큰 회수.
-            Integer cancelAmount = isFullCash(refund) ? null : refund.getRefundAmount();
-            portOneClient.cancelPayment(payment.getOrderId(),
-                    "환불 승인: " + refund.getRefundType() + " — " + (adminNote == null ? "" : adminNote),
-                    cancelAmount);
+            // 현금 환불 — DB 먼저 변경, PortOne 호출은 트랜잭션 마지막.
+            // 1) refund 승인 도장
+            refund.approve(adminNote);
+            // 2) Payment 상태 변경
             payment.markCanceled("환불 승인 (" + refund.getRefundAmount() + "원) [" + refund.getReason() + "]");
+            // 3) 토큰 회수 (TokenWallet + TokenTransaction 원장)
             if (refund.getTokenDeducted() > 0) {
                 tokenWalletService.deductForRefund(
                         writerId, refund.getTokenDeducted(),
                         "REFUND_" + payment.getOrderId(), payment.getId());
             }
+            // 4) PortOne 취소 — 마지막. 실패 시 위 1~3번 롤백되어 DB 깨끗하게 복원.
+            Integer cancelAmount = isFullCash(refund) ? null : refund.getRefundAmount();
+            portOneClient.cancelPayment(payment.getOrderId(),
+                    "환불 승인: " + refund.getRefundType() + " — " + (adminNote == null ? "" : adminNote),
+                    cancelAmount);
         }
-
-        refund.approve(adminNote);
 
         log.info("[REFUND_APPROVED] writerId={} paymentId={} refundId={} type={} amount={} tokenDeduct={} adminNote={}",
                 writerId, payment.getOrderId(), refund.getId(), refund.getRefundType(),

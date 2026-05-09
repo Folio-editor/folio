@@ -41,4 +41,16 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
 
     /** 운영자 화면용 — REQUESTED 신청 목록. */
     List<Refund> findAllByStatusOrderByRequestedAtAsc(RefundStatus status);
+
+    /**
+     * 불일치 감지 스케줄러용 — 최근 N시간 내 APPROVED 처리된 환불 중 현금 환불 케이스만.
+     * COMPANY_FAULT_CREDIT 은 PortOne 호출 안 하므로 제외.
+     */
+    @Query("""
+           select r from Refund r
+            where r.status = com.storyzip.payment.domain.RefundStatus.APPROVED
+              and r.processedAt >= :since
+              and r.refundType <> com.storyzip.payment.domain.RefundType.COMPANY_FAULT_CREDIT
+           """)
+    List<Refund> findRecentApprovedCashRefunds(@Param("since") java.time.LocalDateTime since);
 }
