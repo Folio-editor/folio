@@ -6,6 +6,51 @@
 
 `X-Admin-Token` 단일 토큰이 노출되면 누구든 환불 승인/거절 가능 → **사업적 손실 직접 발생**.
 
+## 운영자 페이지 사용법
+
+운영자 본인 PC 에서만 사용. 일반 사용자 빌드에는 토큰 미포함이라 메뉴가 보이지 않는다.
+
+### 1. 운영자 토큰 발급
+
+`ADMIN_API_TOKEN` 값을 Doppler `prd` 에서 본인이 안전한 곳에 저장한 그대로 사용 (또는 별도 운영자 토큰 분리).
+
+### 2. `frontend/.env.local` 에 추가
+
+```env
+VITE_ADMIN_API_TOKEN=<ADMIN_API_TOKEN 값>
+VITE_API_URL=https://folio-editor.co.kr/api/v1
+```
+
+⚠️ `.env.local` 은 `.gitignore` 대상. **절대 git 에 커밋 금지**. 운영자 본인 PC 에만.
+
+### 3. 운영자 빌드 띄우기
+
+```bash
+# Electron 앱 (가장 간단)
+cd frontend && pnpm dev
+
+# 또는 웹 (브라우저)
+cd frontend && pnpm dev:web
+# → http://localhost:5173 접속
+```
+
+### 4. 메뉴 진입
+
+설정 → **"환불 검토 (운영자)"** 메뉴 클릭. 토큰이 있을 때만 표시됨.
+
+### 5. 처리
+
+- 검토 대기 탭에서 환불 신청 확인
+- [승인] / [거절] 버튼 클릭 → 메모 입력 → 처리
+- 승인 시 PortOne 자동 취소 + 토큰 회수
+- 거절 시 결제 상태 그대로, 사용자에게 거절 사유 안내
+
+### 6. 토큰 누출 시
+
+1. Doppler 에서 `ADMIN_API_TOKEN` 새로 생성 + 등록
+2. 운영자 PC 의 `.env.local` 갱신
+3. EC2 backend 재기동 (deploy.sh 또는 GitLab Retry)
+
 ## 적용된 방어 (코드)
 
 ### 1. AdminAuthInterceptor — Rate limit + 실패 알림

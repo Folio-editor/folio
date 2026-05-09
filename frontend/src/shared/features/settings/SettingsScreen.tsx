@@ -9,6 +9,7 @@ import type { SettingsItemId } from '../../components/layout/sidebar-panels/Sett
 import { AccountSettings } from './AccountSettings';
 import { PaymentSettings } from './PaymentSettings';
 import { AboutSettings } from './AboutSettings';
+import { AdminRefundsPage } from './AdminRefundsPage';
 
 const EDITOR_FONT_OPTIONS: {
   id: EditorSettings['fontFamily'];
@@ -49,6 +50,7 @@ export function SettingsScreen({ settingsItemId, onTutorialReset }: SettingsScre
   if (settingsItemId === 'theme') return <ThemeSettings />;
   if (settingsItemId === 'font') return <FontSettings />;
   if (settingsItemId === 'payment') return <PaymentSettings />;
+  if (settingsItemId === 'admin-refunds') return <AdminRefundsPage />;
   if (settingsItemId === 'about') return <AboutSettings onTutorialReset={onTutorialReset} />;
   return null;
 }
