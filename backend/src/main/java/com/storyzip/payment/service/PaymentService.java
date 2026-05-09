@@ -2,25 +2,36 @@ package com.storyzip.payment.service;
 
 import com.storyzip.auth.domain.Writer;
 import com.storyzip.auth.repository.WriterRepository;
+import com.storyzip.common.dto.PageResponse;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
 import com.storyzip.payment.client.PortOneClient;
 import com.storyzip.payment.client.PortOnePaymentResponse;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
+import com.storyzip.payment.domain.Refund;
+import com.storyzip.payment.domain.RefundPolicy;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
 import com.storyzip.payment.dto.PaymentResponse;
 import com.storyzip.payment.dto.TokenPackage;
 import com.storyzip.payment.repository.PaymentRepository;
+import com.storyzip.payment.repository.RefundRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 결제 요청 생성과 검증 처리.
@@ -41,6 +52,7 @@ import java.util.UUID;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
+    private final RefundRepository refundRepository;
     private final WriterRepository writerRepository;
     private final PortOneClient portOneClient;
     private final TokenWalletService tokenWalletService;
@@ -50,6 +62,12 @@ public class PaymentService {
         Writer writer = writerRepository.findById(writerId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.WRITER_NOT_FOUND));
 
+        // 환불 규정 동의 검증 — 클라이언트가 본 약관 버전과 서버 현재 버전이 일치해야 함.
+        if (!RefundPolicy.CURRENT_VERSION.equals(request.refundPolicyVersion())) {
+            throw new PaymentException(ErrorCode.INVALID_REQUEST,
+                    "환불 규정이 업데이트되었습니다. 최신 버전을 확인하고 다시 시도해주세요.");
+        }
+
         TokenPackage pkg = TokenPackage.fromCode(request.packageCode());
         String paymentId = generatePaymentId();
 
@@ -58,10 +76,13 @@ public class PaymentService {
                 .orderId(paymentId)
                 .amount(pkg.getAmount())
                 .tokenQty(pkg.getTokenQty())
+                .refundPolicyVersion(RefundPolicy.CURRENT_VERSION)
+                .refundPolicyAgreedAt(LocalDateTime.now(ZoneOffset.UTC))
                 .build());
 
-        log.info("[PAYMENT_CREATED] writerId={} paymentId={} amount={} tokenQty={} package={}",
-                writerId, payment.getOrderId(), payment.getAmount(), payment.getTokenQty(), pkg.name());
+        log.info("[PAYMENT_CREATED] writerId={} paymentId={} amount={} tokenQty={} package={} policyVersion={}",
+                writerId, payment.getOrderId(), payment.getAmount(), payment.getTokenQty(), pkg.name(),
+                RefundPolicy.CURRENT_VERSION);
 
         return new CreatePaymentResponse(
                 payment.getOrderId(),
@@ -131,6 +152,33 @@ public class PaymentService {
             throw new PaymentException(ErrorCode.FORBIDDEN);
         }
         return PaymentResponse.from(payment);
+    }
+
+    /**
+     * 작가의 결제 이력 페이지 — 최근 순(정렬은 {@link Pageable} 로 호출자가 지정).
+     *
+     * <p>환불 UI 에서 환불 가능 여부 판단을 위해 결제 1건 당 latestRefund 를 함께 반환.
+     *
+     * <p>N+1 회피: payment 페이지 1회 + refund batch IN 1회 = 총 2회 쿼리.
+     * 페이지 결제 수 K, 결제별 환불 평균 R 일 때 (K + 1) 에서 2 로 감소.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> listMyPayments(UUID writerId, Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAllByWriter_Id(writerId, pageable);
+        List<Payment> payments = page.getContent();
+        if (payments.isEmpty()) {
+            return PageResponse.from(page.map(PaymentResponse::from));
+        }
+
+        List<UUID> paymentIds = payments.stream().map(Payment::getId).toList();
+        Map<UUID, List<Refund>> refundsByPaymentId = refundRepository
+                .findAllByPayment_IdInOrderByCreatedAtAsc(paymentIds).stream()
+                .collect(Collectors.groupingBy(r -> r.getPayment().getId()));
+
+        return PageResponse.from(page.map(p -> PaymentResponse.from(
+                p,
+                refundsByPaymentId.getOrDefault(p.getId(), Collections.emptyList())
+        )));
     }
 
     private String generatePaymentId() {

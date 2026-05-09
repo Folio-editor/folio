@@ -1,6 +1,6 @@
 # DB 스키마 / 마이그레이션 보고서
 
-**최종 갱신**: 2026-05-09
+**최종 갱신**: 2026-05-09 (refund + admin_audit_log 추가 반영)
 **대상 DB**: PostgreSQL 16 (`storyzip-postgresql-dev` 컨테이너 / EC2 prod 동일)
 **원본 스키마**: [`infra/db/schema.sql`](../infra/db/schema.sql)
 **마이그레이션 디렉터리**: [`infra/db/migrations/`](../infra/db/migrations/)
@@ -17,15 +17,17 @@
 
 ---
 
-## 2. 현재 테이블 인벤토리 (32개)
+## 2. 현재 테이블 인벤토리 (34개)
 
-### 2.1. 인증 / 결제 (서버 전용)
+### 2.1. 인증 / 결제 / 운영 (서버 전용)
 
 | 테이블 | 용도 | PowerSync |
 |---|---|---|
 | `writer` | OAuth 사용자 | ✗ |
 | `audit_log` | 감사 (IP / UA / action) | ✗ |
+| `admin_audit_log` | **관리자 API 호출 전수 감사** (action / result / IP / UA) | ✗ |
 | `payment` | PortOne 결제 단건 | ✗ |
+| `refund` | **환불 신청 1건** (REQUESTED → APPROVED/REJECTED/CANCELED) | ✗ |
 | `subscription` | 정기 결제 (billing_key, monthly_tokens) | ✗ |
 | `payment_event` | PG 웹훅 멱등 이벤트 큐 | ✗ |
 | `analytics_event_dedup` | GA4 이벤트 중복 제거 | ✗ |
@@ -73,7 +75,7 @@
 
 ---
 
-## 3. 마이그레이션 인벤토리 (15개, 시간순)
+## 3. 마이그레이션 인벤토리 (16개, 시간순)
 
 | # | 파일 | 날짜 | 내용 | 멱등 |
 |---|---|---|---|---|
@@ -92,6 +94,7 @@
 | 13 | `2026-05-08_time_progression_to_text.sql` | 2026-05-08 | `episode_summary.time_progression VARCHAR(50)` → `TEXT` (Phase 4.6 암호화로 ciphertext 길이 초과) | ✓ |
 | 14 | `2026-05-09_encrypt_agent_and_suggestion.sql` | 2026-05-09 | `agent_session.title` + `extraction_suggestion.suggested_name` `VARCHAR(200)` → `TEXT` (v1: ciphertext 길이 수용) | ✓ |
 | 15 | `2026-05-09_review_issue_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'review_issue'` + 누락된 `plot_create / plot_tree / plot_delete` 추가 | ✓ |
+| 16 | `2026-05-09_add_refund_and_admin_audit_log.sql` | 2026-05-09 | **신규 테이블 2개** — `refund` (환불 신청·승인 워크플로우) + `admin_audit_log` (관리자 API 감사). 환불 기능 머지 동반 | ✓ (CREATE TABLE IF NOT EXISTS) |
 
 ---
 
@@ -142,6 +145,13 @@ WHERE conname IN (
 -- plan 테이블이 더 이상 존재하면 안 됨
 SELECT to_regclass('public.plan');
 -- 기대: NULL
+```
+
+### 4.3b. 신규 테이블 존재 확인 (2026-05-09 환불 머지)
+
+```sql
+SELECT to_regclass('public.refund'), to_regclass('public.admin_audit_log');
+-- 기대: 둘 다 NOT NULL — prod 에 미적용 시 백엔드 ddl-auto=validate 단계에서 부팅 실패
 ```
 
 ### 4.4. 인덱스 (성능 회귀 방지)
@@ -326,10 +336,10 @@ ORDER BY conname;
 ### 9.1. 현재 DB 스냅샷 명령
 
 ```bash
-# 테이블 수 (기대: 32)
+# 테이블 수 (기대: 34 — refund + admin_audit_log 추가 후)
 docker exec <pg> psql -tA -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
 
-# 인덱스 수 (기대: ~108 — 성능 가드)
+# 인덱스 수 (기대: ~115 — refund 3 + admin_audit_log 4 추가)
 docker exec <pg> psql -tA -c "SELECT count(*) FROM pg_indexes WHERE schemaname='public'"
 
 # pgvector 설치 확인
@@ -352,3 +362,4 @@ docker exec <pg> psql -tA -c "SELECT count(*) FROM pg_extension WHERE extname='v
 | 날짜 | 변경 |
 |---|---|
 | 2026-05-09 | 초판 — 15개 마이그레이션 + 32개 테이블 인벤토리, EC2 배포 절차, 정합성 검증 SQL |
+| 2026-05-09 | 환불 기능 머지 반영 — 16번 마이그레이션 추가 (`refund` + `admin_audit_log`). prod ddl-auto=validate 라 본 SQL 미적용 시 부팅 실패 — 운영 배포 전 필수 |
