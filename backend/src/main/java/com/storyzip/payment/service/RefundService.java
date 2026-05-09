@@ -139,13 +139,16 @@ public class RefundService {
      *
      * <p>N+1 회피: {@link RefundRepository#findDetailByStatusWithRejectedCount} 가
      * Payment + Writer fetch join + 거절 횟수 서브쿼리를 한 쿼리로 처리.
+     *
+     * <p>{@link jakarta.persistence.Tuple} 의 alias 키로 안전 추출 — select 절 순서가
+     * 바뀌어도 영향 없음.
      */
     @Transactional(readOnly = true)
     public List<com.storyzip.admin.dto.AdminRefundDetail> listDetailByStatus(RefundStatus status) {
         return refundRepository.findDetailByStatusWithRejectedCount(status).stream()
-                .map(row -> {
-                    Refund refund = (Refund) row[0];
-                    long previousRejected = ((Number) row[1]).longValue();
+                .map(t -> {
+                    Refund refund = t.get("refund", Refund.class);
+                    long previousRejected = t.get("rejectedCount", Long.class);
                     return com.storyzip.admin.dto.AdminRefundDetail.of(refund, previousRejected);
                 })
                 .toList();

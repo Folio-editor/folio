@@ -2,6 +2,7 @@ package com.storyzip.payment.repository;
 
 import com.storyzip.payment.domain.Refund;
 import com.storyzip.payment.domain.RefundStatus;
+import jakarta.persistence.Tuple;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -49,11 +50,15 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
      * <p>N+1 회피: 기존엔 환불 1건 당 {@code countByPayment_IdAndStatus} 1쿼리 추가 + Writer
      * lazy fetch 잠재 N쿼리. 이 쿼리 1회로 모두 해소.
      *
-     * <p>반환: {@code Object[2]} 배열 — [0] {@link Refund} (payment/writer fetch 됨),
-     * [1] {@code Long} previousRejectedCount.
+     * <p>반환: {@link Tuple} 리스트 — alias 키로 안전하게 추출:
+     * <ul>
+     *   <li>{@code "refund"} → {@link Refund} (payment/writer fetch 됨)</li>
+     *   <li>{@code "rejectedCount"} → {@link Long} previousRejectedCount</li>
+     * </ul>
+     * 인덱스 기반 {@code Object[]} 보다 타입 안전하고 select 절 순서 바뀌어도 영향 없음.
      */
     @Query("""
-           select r,
+           select r as refund,
                   (select count(r2) from Refund r2
                     where r2.payment.id = r.payment.id
                       and r2.status = com.storyzip.payment.domain.RefundStatus.REJECTED) as rejectedCount
@@ -63,7 +68,7 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
             where r.status = :status
             order by r.requestedAt asc
            """)
-    List<Object[]> findDetailByStatusWithRejectedCount(@Param("status") RefundStatus status);
+    List<Tuple> findDetailByStatusWithRejectedCount(@Param("status") RefundStatus status);
 
     /**
      * 불일치 감지 스케줄러용 — 최근 N시간 내 APPROVED 처리된 환불 중 현금 환불 케이스만.
