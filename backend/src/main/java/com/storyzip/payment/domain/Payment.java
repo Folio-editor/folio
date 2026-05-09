@@ -62,6 +62,17 @@ public class Payment {
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
+    /**
+     * 결제 시 사용자가 동의한 환불 규정의 버전. NOT NULL 강제 — 동의 없이 결제 불가.
+     * 약관 변경 시 이 버전으로 어떤 약관에 동의했는지 추적.
+     */
+    @Column(name = "refund_policy_version", nullable = false, length = 20)
+    private String refundPolicyVersion;
+
+    /** 환불 규정 동의 시각 — 결제 생성 시점. */
+    @Column(name = "refund_policy_agreed_at", nullable = false)
+    private LocalDateTime refundPolicyAgreedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -71,12 +82,15 @@ public class Payment {
     private LocalDateTime updatedAt;
 
     @Builder
-    private Payment(Writer writer, String orderId, Integer amount, Integer tokenQty) {
+    private Payment(Writer writer, String orderId, Integer amount, Integer tokenQty,
+                    String refundPolicyVersion, LocalDateTime refundPolicyAgreedAt) {
         this.writer = writer;
         this.orderId = orderId;
         this.amount = amount;
         this.tokenQty = tokenQty;
         this.status = PaymentStatus.READY;
+        this.refundPolicyVersion = refundPolicyVersion;
+        this.refundPolicyAgreedAt = refundPolicyAgreedAt;
     }
 
     public void markInProgress() {

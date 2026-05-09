@@ -13,6 +13,20 @@ spring:
       write-dates-as-timestamps: false
     time-zone: UTC
 
+  # Gmail SMTP — 환불 신청 시 운영자에게 알림. 약관 제5조.
+  # MAIL_USERNAME/PASSWORD 미설정 시 EmailNotifier가 알아서 패스 (dev/test 깨지지 않음).
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
@@ -62,6 +76,13 @@ ai:
 # Folio 보안 (Plan C — 결정 6/15/16)
 # server_pepper 는 Doppler 의 SERVER_PEPPER 환경변수 (32B base64) 로 직접 주입.
 # 이전엔 AWS Secrets Manager 사용했으나 EC2 외부 차단 환경에서 사용 불가 → 폐기.
+storyzip:
+  mail:
+    # 발신 주소 (Gmail SMTP의 경우 username과 동일하게 설정)
+    from: ${MAIL_FROM:}
+    # 운영자(환불 신청 등 인간 검토 알림 수신) — 약관 5조 1항.
+    operator-to: ${MAIL_OPERATOR_TO:2square.f203@gmail.com}
+
 folio:
   security:
     pepper:
