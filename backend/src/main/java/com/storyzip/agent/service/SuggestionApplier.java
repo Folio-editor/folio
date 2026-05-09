@@ -87,30 +87,67 @@ public class SuggestionApplier {
                 "INSERT INTO character (id, work_id, writer_id, name, gender, age, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, now(), now())",
                 id, workId, writerId, name,
-                gender != null ? gender : "미정",
-                age != null ? age : "미정",
+                normalizeGender(gender),
+                age != null ? age : "미설정",
                 sortOrder
         );
-        // appearance / personality / notes 는 character_note 로 저장 (각 kind 별)
-        insertCharacterNoteIfPresent(id, writerId, workKey, "appearance", p.get("appearance"));
-        insertCharacterNoteIfPresent(id, writerId, workKey, "personality", p.get("personality"));
-        insertCharacterNoteIfPresent(id, writerId, workKey, "custom", p.get("notes"));
-        log.info("[SUGGESTION-APPLY] character INSERT id={} work={}", id, workId);
+        // 기본 정책: 신규 캐릭터의 모든 서술 (intro / appearance / personality / notes) 은
+        // 단일 'intro' character_note 한 행에 합쳐 저장. 외형/성격을 별도 노트로 분리하는 것은
+        // 사용자가 명시적으로 요청한 경우에만 propose_character_update(field='appearance' 등)
+        // 경로로 처리.
+        // payload 호환: 구버전 agent 가 여전히 appearance/personality/notes 를 분리해서 보낼 수
+        // 있으므로 모두 흡수하여 intro 본문 단일 단락으로 합친다.
+        String intro = composeIntroBody(p, workKey);
+        insertCharacterNoteIfPresent(id, writerId, workKey, "intro", "한 줄 소개", intro);
+        log.info("[SUGGESTION-APPLY] character INSERT id={} work={} introLen={}",
+                id, workId, intro == null ? 0 : intro.length());
         return id;
     }
 
+    /** payload 의 intro/appearance/personality/notes/role 을 사람이 읽기 좋은 단락으로 합친다.
+     *
+     *  payload 값들이 v1: ciphertext (proposals.py 가 암호화) 인 경우 work_key 로 즉석 복호화 후 합침.
+     *  결과는 평문 markdown — encRichText 가 다시 tiptap JSON 변환 + 암호화하여 destination 에 적재.
+     */
+    private static String composeIntroBody(Map<String, Object> p, byte[] workKey) {
+        StringBuilder sb = new StringBuilder();
+        appendLabeled(sb, null, decryptIfCipher(workKey, asString(p.get("intro"))));
+        appendLabeled(sb, "역할", decryptIfCipher(workKey, asString(p.get("role"))));
+        appendLabeled(sb, "외형", decryptIfCipher(workKey, asString(p.get("appearance"))));
+        appendLabeled(sb, "성격", decryptIfCipher(workKey, asString(p.get("personality"))));
+        appendLabeled(sb, null, decryptIfCipher(workKey, asString(p.get("notes"))));
+        String body = sb.toString().trim();
+        return body.isEmpty() ? null : body;
+    }
+
+    /** v1: 접두사면 work_key 로 평문화, 아니면 그대로. 복호화 실패 시 null (그 필드 skip). */
+    private static String decryptIfCipher(byte[] workKey, String value) {
+        if (value == null || !value.startsWith("v1:")) return value;
+        try {
+            return AesGcmCipher.decryptString(workKey, value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void appendLabeled(StringBuilder sb, String label, String value) {
+        if (value == null || value.isBlank()) return;
+        if (sb.length() > 0) sb.append("\n\n");
+        if (label != null) sb.append(label).append(": ");
+        sb.append(value);
+    }
+
     private void insertCharacterNoteIfPresent(
-            UUID charId, UUID writerId, byte[] workKey, String kind, Object value
+            UUID charId, UUID writerId, byte[] workKey, String kind, String title, String plain
     ) {
-        String plain = asString(value);
         if (plain == null || plain.isBlank()) return;
         UUID nid = UUID.randomUUID();
-        String title = kind;     // 평문 라벨
+        String encTitle = encStr(workKey, title);
         String content = encRichText(workKey, plain);   // tiptap JSON 으로 래핑 후 암호화
         jdbc.update(
                 "INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, 0, now(), now())",
-                nid, charId, writerId, kind, title, content
+                nid, charId, writerId, kind, encTitle, content
         );
     }
 
@@ -144,8 +181,11 @@ public class SuggestionApplier {
         }
         int sortOrder = nextSortOrder("episode", workId);
         UUID parentId = parseUuid(p.get("parent_id"));
-        // word_count 는 평문 length (UTF-16 단순 추정)
-        int wordCount = asString(p.get("content")) != null ? asString(p.get("content")).length() : 0;
+        // word_count 는 평문 length (UTF-16 단순 추정).
+        // payload.content 가 v1: cipher 일 수 있으므로 평문 길이 기준으로 환산.
+        String rawContent = asString(p.get("content"));
+        String plainContent = decryptIfCipher(workKey, rawContent);
+        int wordCount = plainContent != null ? plainContent.length() : 0;
         jdbc.update(
                 "INSERT INTO episode (id, work_id, writer_id, parent_id, title, content, status, word_count, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, '작성중', ?, ?, now(), now())",
@@ -191,11 +231,14 @@ public class SuggestionApplier {
             return charId;
         }
         if ("gender".equals(field) || "age".equals(field)) {
+            // gender/age 는 평문 컬럼. payload 의 new_value 가 v1: 일 수 있어 평문화 후 처리.
+            String plainValue = decryptIfCipher(workKey, newValue);
+            String storedValue = "gender".equals(field) ? normalizeGender(plainValue) : plainValue;
             jdbc.update(
                     "UPDATE character SET " + field + " = ?, updated_at = now() WHERE id = ?",
-                    newValue, charId
+                    storedValue, charId
             );
-            log.info("[SUGGESTION-APPLY] character.{}={} id={}", field, newValue, charId);
+            log.info("[SUGGESTION-APPLY] character.{}={} id={}", field, storedValue, charId);
             return charId;
         }
         // 그 외 field 는 character_note kind=field 로 추가 (tiptap JSON 래핑)
@@ -318,7 +361,9 @@ public class SuggestionApplier {
             if (!first) sql.append(", ");
             sql.append("content = ?, word_count = ?");
             args.add(encRichText(workKey, newContent));
-            args.add(newContent.length());
+            // word_count 는 평문 length 기준 (cipher 면 복호화 후)
+            String plainNewContent = decryptIfCipher(workKey, newContent);
+            args.add(plainNewContent != null ? plainNewContent.length() : 0);
             first = false;
         }
         if (newStatus != null) {
@@ -468,6 +513,33 @@ public class SuggestionApplier {
         return (maxSort == null ? 0 : maxSort + 1);
     }
 
+    /**
+     * agent 가 보낸 gender 값을 프론트 GENDER_ICON_MAP 키 ('남'/'여'/'기타'/'미설정') 로 정규화.
+     *
+     * <p>프론트 [CharacterOverview.tsx](../../../../frontend/src/shared/features/character/CharacterOverview.tsx)
+     * 의 GENDER_OPTIONS 와 동기화된 enum. 어느 것도 매칭 안 되면 '미설정' fallback —
+     * '?' 아이콘 표시되어 사용자가 즉시 알아챌 수 있도록.
+     *
+     * <p>구버전 데이터에 박혀있던 '미정' 도 '미설정' 으로 흡수 (frontend label map 에 없어 폴백).
+     */
+    private static String normalizeGender(String raw) {
+        if (raw == null) return "미설정";
+        String s = raw.trim().toLowerCase();
+        if (s.isEmpty()) return "미설정";
+        // 정규 한 글자
+        if ("남".equals(raw.trim()) || "여".equals(raw.trim()) || "기타".equals(raw.trim()) || "미설정".equals(raw.trim())) {
+            return raw.trim();
+        }
+        // 변형 흡수
+        return switch (s) {
+            case "남성", "male", "m", "남자", "boy", "man" -> "남";
+            case "여성", "female", "f", "여자", "girl", "woman" -> "여";
+            case "기타", "other", "non-binary", "nonbinary", "nb", "x" -> "기타";
+            case "미정", "미설정", "unknown", "none", "n/a", "null" -> "미설정";
+            default -> "미설정";
+        };
+    }
+
     private static String asString(Object o) {
         if (o == null) return null;
         String s = String.valueOf(o);
@@ -482,67 +554,44 @@ public class SuggestionApplier {
 
     private static String encStr(byte[] workKey, String plaintext) {
         if (plaintext == null) return null;
+        // 2026-05-09: extraction_suggestion.payload 가 v1: ciphertext 를 담아 옴 (proposals.py 가
+        // INSERT 직전 work_key 로 암호화). 평문 컬럼 (character.name 등) 의 destination 도 같은
+        // work_key 로 암호화돼야 하므로, 이미 v1: 인 입력은 그대로 통과 — 이중 암호화 차단.
+        if (plaintext.startsWith("v1:")) return plaintext;
         return AesGcmCipher.encryptString(workKey, plaintext);
     }
 
     /**
-     * 평문을 TipTap doc JSON 으로 래핑 후 암호화.
-     * 프론트 에디터는 character_note.content / world_note.content / plot.content / episode.content
-     * 가 TipTap JSON 임을 가정 (사용자 직접 작성 시 그렇게 저장됨). agent 가 평문으로 저장하면
-     * parseNoteContent JSON.parse 실패 → 빈 문서 표시되는 문제가 있어, 저장 단계에서 래핑.
+     * 평문/Markdown 을 TipTap doc JSON 으로 변환 후 암호화.
+     *
+     * <p>프론트 에디터는 character_note.content / world_note.content / plot.content /
+     * episode.content 가 TipTap JSON 임을 가정. agent 는 본문을 Markdown 으로 보내고
+     * (registry.py / scenarios.py 시스템 프롬프트로 강제), 본 메서드가 위지윅 호환 doc 으로
+     * 변환한 뒤 암호화한다.
+     *
+     * <p>구버전 plain text 입력도 그대로 동작 — Markdown 문법 없으면 단순 paragraph 트리.
+     * 입력이 이미 TipTap doc JSON 이면 통과 (idempotent).
+     *
+     * <p>암호화 호환: AES-GCM 은 UTF-8 byte 단위라 JSON 내용에 무관. 기존 v1: 포맷 그대로.
      */
     private static String encRichText(byte[] workKey, String plaintext) {
         if (plaintext == null || plaintext.isEmpty()) return null;
-        String tiptapJson = wrapPlainTextAsTiptapDoc(plaintext);
-        return AesGcmCipher.encryptString(workKey, tiptapJson);
-    }
-
-    private static String wrapPlainTextAsTiptapDoc(String text) {
-        // \n+ 로 단락 분리. 단락 안의 텍스트는 단일 text 노드.
-        // JSON 직접 조립 — Jackson 의존성 없이 빠르게.
-        String[] paragraphs = text.split("\\n+");
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"type\":\"doc\",\"content\":[");
-        boolean first = true;
-        boolean any = false;
-        for (String p : paragraphs) {
-            String trimmed = p == null ? "" : p;
-            if (trimmed.isEmpty()) continue;
-            if (!first) sb.append(',');
-            sb.append("{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"")
-              .append(jsonEscape(trimmed))
-              .append("\"}]}");
-            first = false;
-            any = true;
-        }
-        if (!any) {
-            sb.append("{\"type\":\"paragraph\"}");
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    private static String jsonEscape(String s) {
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"' -> out.append("\\\"");
-                case '\\' -> out.append("\\\\");
-                case '\n' -> out.append("\\n");
-                case '\r' -> out.append("\\r");
-                case '\t' -> out.append("\\t");
-                case '\b' -> out.append("\\b");
-                case '\f' -> out.append("\\f");
-                default -> {
-                    if (c < 0x20) {
-                        out.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        out.append(c);
-                    }
-                }
+        // 2026-05-09: extraction_suggestion.payload 의 자유 텍스트는 work_key 로 암호화된 v1:
+        // 형태로 도착. 위지윅 destination (episode.content 등) 은 v1:(tiptap_json) 형식이어야
+        // 하므로 transcoding 필요: v1:(markdown) → 평문 markdown → tiptap JSON → v1:(tiptap_json).
+        String md;
+        if (plaintext.startsWith("v1:")) {
+            try {
+                md = AesGcmCipher.decryptString(workKey, plaintext);
+            } catch (Exception e) {
+                // 복호화 실패 시 cipher 그대로 두면 destination 화면이 깨지므로 빈 문서로 대체.
+                return AesGcmCipher.encryptString(workKey,
+                        MarkdownToTiptap.toDocJson(""));
             }
+        } else {
+            md = plaintext;
         }
-        return out.toString();
+        String tiptapJson = MarkdownToTiptap.toDocJson(md);
+        return AesGcmCipher.encryptString(workKey, tiptapJson);
     }
 }

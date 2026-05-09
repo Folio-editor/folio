@@ -114,6 +114,10 @@ async def run_planner_loop(
     if client is None or sonnet_model is None:
         raise RuntimeError("LLM provider lacks Anthropic client (Fake provider unsupported for planner).")
 
+    # ⚠ history sanity: 옛 thread (압축이 페어를 깨뜨렸던 시기) 의 손상된 messages 가
+    # 들어올 수 있다. orphan tool_result / orphan tool_use 를 제거 — Anthropic 400 차단.
+    history = _sanitize_history(history)
+
     # 사용자 신규 메시지를 history 에 append
     history.append({"role": "user", "content": user_message})
 
@@ -341,6 +345,80 @@ def _format_tool_result(result: Any) -> str:
         "더 좁은 범위로 재요청하거나 페이지네이션 사용]"
     )
     return head + suffix
+
+
+def _sanitize_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """깨진 history (압축 페어 손상 등) 정리.
+
+    Anthropic 검증 규칙 위반 패턴 제거:
+      1. orphan user(tool_result_only) — 이전 assistant 의 tool_use 가 사라진 경우
+      2. orphan assistant(tool_use 미응답) — 다음 user(tool_result) 가 없는 경우 → tool_use 블록만 제거하고 text 보존
+
+    돌이킬 수 없는 손상은 사용자 화면엔 평범한 dialog 로 보이게 텍스트만 살림.
+    """
+    if not history:
+        return history
+
+    # 정방향 1패스 — assistant 의 tool_use_id 들을 outstanding set 에 모으고,
+    # 다음 user(tool_result) 의 tool_use_id 가 매칭되면 소비, 안 되면 제거.
+    outstanding_tool_use_ids: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    for msg in history:
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role == "assistant":
+            if isinstance(content, list):
+                tool_use_ids = [
+                    b.get("id")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
+                ]
+                outstanding_tool_use_ids.update(tool_use_ids)
+            out.append(msg)
+            continue
+
+        if role == "user" and isinstance(content, list):
+            kept_blocks: list[dict[str, Any]] = []
+            had_tool_result = False
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    had_tool_result = True
+                    tu_id = b.get("tool_use_id")
+                    if tu_id and tu_id in outstanding_tool_use_ids:
+                        outstanding_tool_use_ids.discard(tu_id)
+                        kept_blocks.append(b)
+                    # orphan tool_result — drop silently
+                else:
+                    kept_blocks.append(b)
+            if not kept_blocks:
+                # 통째 orphan — 메시지 자체 제거
+                continue
+            if had_tool_result and kept_blocks != content:
+                # 일부만 유지 — 새 dict 로 교체
+                out.append({"role": "user", "content": kept_blocks})
+            else:
+                out.append(msg)
+            continue
+
+        out.append(msg)
+
+    # outstanding_tool_use_ids 가 비어있어야 정상. 남아있으면 마지막 assistant 의
+    # tool_use 들이 응답 못 받은 채 끝난 것 → 다음 stream() 호출 시 에러. 빈 tool_result
+    # 로 닫아주는 user 메시지 합성.
+    if outstanding_tool_use_ids:
+        seal = [
+            {
+                "type": "tool_result",
+                "tool_use_id": tu_id,
+                "content": '{"error":"tool_result_lost_recovery_seal"}',
+            }
+            for tu_id in outstanding_tool_use_ids
+        ]
+        out.append({"role": "user", "content": seal})
+
+    return out
 
 
 def _usage_to_dict(usage: Any) -> dict[str, int]:

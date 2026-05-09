@@ -166,8 +166,9 @@ export function RightPanels({
         ariaLabel="우측 패널 너비 조절"
       />
 
-      {/* 상단 헤더 — 활성 탭 라벨 + AI sub-screen breadcrumb. 도구 sub-screen 자체 헤더는 제거됨. */}
-      <RightPanelHeader activeTab={activeTab} />
+      {/* 상단 헤더 — 활성 탭 라벨 + AI sub-screen breadcrumb. 도구 sub-screen 자체 헤더는 제거됨.
+          AI 탭 + 작품 선택 시 Agent 토글 / 채팅·작업물 segmented 도 본 헤더에 통합. */}
+      <RightPanelHeader activeTab={activeTab} selectedWorkId={selectedWorkId} />
 
       {/* 아이콘 탭 행 — 메인 헤더(h-10)와 좌측 검색창 영역과 동일 높이 */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
@@ -232,11 +233,34 @@ export function RightPanels({
  * - DraftView 스트리밍 중에는 뒤로가기 차단 — 사용자는 액션바의 "중단" 버튼으로 명시 abort 후 이동
  * - Review 결과 화면에서 뒤로 갈 때는 메인 에디터 하이라이트도 함께 정리
  */
-function RightPanelHeader({ activeTab }: { activeTab: RightPanelTab }) {
+function RightPanelHeader({
+  activeTab,
+  selectedWorkId,
+}: {
+  activeTab: RightPanelTab;
+  selectedWorkId: string | null;
+}) {
   const aiScreen = useAiSessionStore((s) => s.screen);
   const aiIsStreaming = useAiSessionStore((s) => s.isStreaming);
   const setScreen = useAiSessionStore((s) => s.setScreen);
   const tabLabel = TABS.find((t) => t.key === activeTab)?.label ?? '';
+
+  // Agent 토글 / 섹션 — AI 탭 + 작품 선택 시 헤더에 노출
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const isOnline = useNetworkStatus();
+  const aiEligible = isAuthenticated && !isGuest && isOnline;
+  const agentMode = useAgentChatStore((s) =>
+    selectedWorkId ? s.agentModeByWork[selectedWorkId] ?? false : false,
+  );
+  const setAgentMode = useAgentChatStore((s) => s.setAgentMode);
+  const agentSection = useAgentChatStore((s) =>
+    selectedWorkId ? s.agentSectionByWork[selectedWorkId] ?? 'chat' : 'chat',
+  );
+  const setAgentSection = useAgentChatStore((s) => s.setAgentSection);
+
+  const showAgentControls =
+    activeTab === 'ai' && aiEligible && !!selectedWorkId && aiScreen === 'menu';
 
   // AI 탭 + sub-screen인 경우만 breadcrumb 노출
   const subToolName = activeTab === 'ai' ? getAiToolName(aiScreen) : null;
@@ -254,6 +278,10 @@ function RightPanelHeader({ activeTab }: { activeTab: RightPanelTab }) {
     setScreen('menu');
   };
 
+  // Agent 모드 ON 일 때 헤더 좌측 텍스트가 'AI 도구' → '채팅 모드' 로 전환
+  const headerLabel =
+    activeTab === 'ai' && showAgentControls && agentMode ? '채팅 모드' : tabLabel;
+
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
       {subToolName && allowBack && (
@@ -267,9 +295,9 @@ function RightPanelHeader({ activeTab }: { activeTab: RightPanelTab }) {
           <ArrowLeft size={14} strokeWidth={1.75} />
         </button>
       )}
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-semibold text-sidebar-foreground">
+      <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold text-sidebar-foreground">
         <span className={subToolName ? 'shrink-0 text-muted-foreground' : ''}>
-          {tabLabel}
+          {headerLabel}
         </span>
         {subToolName && (
           <>
@@ -282,6 +310,79 @@ function RightPanelHeader({ activeTab }: { activeTab: RightPanelTab }) {
           </>
         )}
       </span>
+      {showAgentControls && (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Agent 모드 ON 시: 채팅·작업물 섹션 segmented (헤더 우측 인라인) */}
+          {agentMode && selectedWorkId && (
+            <div className="flex items-center rounded-md border border-border bg-background p-0.5">
+              <button
+                type="button"
+                onClick={() => setAgentSection(selectedWorkId, 'chat')}
+                title="채팅"
+                className={cn(
+                  'flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors',
+                  agentSection === 'chat'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <BotMessageSquare size={12} strokeWidth={2} />
+                채팅
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentSection(selectedWorkId, 'inbox')}
+                title="작업물"
+                className={cn(
+                  'flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors',
+                  agentSection === 'inbox'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <ClipboardCopy size={12} strokeWidth={2} />
+                작업물
+              </button>
+            </div>
+          )}
+          {/* Agent 모드 토글 — 라벨 '채팅' + 스위치 */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={agentMode}
+            onClick={() =>
+              selectedWorkId && setAgentMode(selectedWorkId, !agentMode)
+            }
+            className={cn(
+              'flex h-6 items-center gap-1.5 rounded-full border border-border px-1.5 transition-colors',
+              agentMode ? 'bg-primary/15' : 'bg-background',
+            )}
+            title={agentMode ? '채팅 모드 ON — 클릭하여 OFF' : '채팅 모드 OFF — 클릭하여 ON'}
+          >
+            <span
+              className={cn(
+                'text-[11px] font-medium',
+                agentMode ? 'text-primary' : 'text-muted-foreground',
+              )}
+            >
+              채팅
+            </span>
+            <span
+              className={cn(
+                'relative inline-flex h-3.5 w-7 shrink-0 rounded-full transition-colors',
+                agentMode ? 'bg-primary' : 'bg-muted-foreground/30',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white transition-transform',
+                  agentMode ? 'translate-x-3.5' : 'translate-x-0.5',
+                )}
+              />
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -895,12 +996,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const isOnline = useNetworkStatus();
   const aiEligible = isAuthenticated && !isGuest && isOnline;
 
-  // Phase 4 — Agent 모드 토글 (작품별)
+  // Phase 4 — Agent 모드 토글 + 섹션 (store 기반, 헤더 와 공유)
   const agentMode = useAgentChatStore((s) =>
     selectedWorkId ? s.agentModeByWork[selectedWorkId] ?? false : false,
   );
   const setAgentMode = useAgentChatStore((s) => s.setAgentMode);
-  const [agentSection, setAgentSection] = useState<'chat' | 'inbox'>('chat');
+  const agentSection = useAgentChatStore((s) =>
+    selectedWorkId ? s.agentSectionByWork[selectedWorkId] ?? 'chat' : 'chat',
+  );
 
   // 자격 상실 시 agent 모드 자동 OFF (오프라인 전환·로그아웃 등)
   useEffect(() => {
@@ -1314,57 +1417,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           ⚠ {ineligibleReason}
         </div>
       )}
-      {/* Phase 4 — Agent 토글 + 모드 분기 (작품 선택된 경우만) */}
-      {selectedWorkId && aiEligible && (
-        <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-1.5 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-muted-foreground">AI 도구 기능</span>
-            {agentMode && (
-              <div className="flex gap-0.5 rounded-md border border-border bg-background p-0.5">
-                <button
-                  onClick={() => setAgentSection('chat')}
-                  className={`rounded px-1.5 py-0.5 text-[10px] ${
-                    agentSection === 'chat'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  채팅
-                </button>
-                <button
-                  onClick={() => setAgentSection('inbox')}
-                  className={`rounded px-1.5 py-0.5 text-[10px] ${
-                    agentSection === 'inbox'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  받은 편지함
-                </button>
-              </div>
-            )}
-          </div>
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground">Agent</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={agentMode}
-              onClick={() => setAgentMode(selectedWorkId, !agentMode)}
-              className={`relative h-4 w-7 rounded-full transition-colors ${
-                agentMode ? 'bg-primary' : 'bg-muted-foreground/30'
-              }`}
-              title={agentMode ? 'Agent 모드 ON' : 'Agent 모드 OFF'}
-            >
-              <span
-                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
-                  agentMode ? 'translate-x-3.5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </label>
-        </div>
-      )}
+      {/* Agent 토글 / 채팅·작업물 segmented 는 RightPanelHeader 로 이동됨 (헤더 우측 인라인). */}
       {aiEligible && agentMode && selectedWorkId && agentSection === 'chat' && (
         <AgentChatPanel workId={selectedWorkId} />
       )}

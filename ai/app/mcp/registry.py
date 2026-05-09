@@ -42,6 +42,7 @@ from app.mcp.tools.proposals import (
     propose_plot_delete,
     propose_plot_revision,
     propose_plot_tree,
+    propose_review_issue,
     propose_world_note,
     propose_world_note_delete,
     propose_world_note_update,
@@ -353,12 +354,22 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "**drill 용 (raw)** — 회차 평문 그대로 fetch (Vault Transit). "
             "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode 또는 "
-            "analyze_episode 가 ~70% 저렴. 토큰 비용 큼 — 호출 제한적."
+            "analyze_episode 가 ~70% 저렴. 토큰 비용 큼 — 호출 제한적. "
+            "검수 (propose_review_issue) 시엔 with_line_numbers=true 로 호출 — [N] 라인 번호 prefix 형식 본문 반환."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "with_line_numbers": {
+                    "type": "boolean",
+                    "description": (
+                        "true 면 본문을 '[1] ...\\n[2] ...' 형식으로 반환. propose_review_issue 의 "
+                        "lines 필드와 1:1 매칭되는 인덱스. 검수 목적이면 반드시 true. "
+                        "재작성·인용 등 평문 그대로 필요할 땐 false (기본값)."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["sort_order"],
         },
@@ -413,29 +424,55 @@ MCP_TOOLS: list[dict[str, Any]] = [
     # ───────── Phase 4: 작가 승인 큐 (extraction_suggestion 에 pending) ─────────
     {
         "name": "propose_character",
-        "description": "신규 등장 인물 등록 제안 (작가 승인 후 character 테이블 INSERT).",
+        "description": (
+            "신규 등장 인물 등록 제안 (작가 승인 후 character 테이블 INSERT). "
+            "외형·성격을 포함한 모든 인물 서술은 단일 'intro' 한 단락으로 합쳐 작성한다 — "
+            "외형/성격을 별도 노트로 분리하지 말 것. 작가가 '외형 노트 따로 만들어줘' 등 "
+            "명시적으로 지시한 경우에 한해 propose_character_update(field='appearance' 등) 사용."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
                 "role": {"type": "string"},
-                "gender": {"type": "string"},
+                "gender": {
+                    "type": "string",
+                    "enum": ["남", "여", "기타", "미설정"],
+                    "description": (
+                        "프론트 위지윅이 아이콘으로 매핑하는 정규 값만 허용. "
+                        "'남성'/'여성'/'male'/'female' 등 변형 금지 — 반드시 '남'/'여'/'기타'/'미설정' 한 글자."
+                    ),
+                },
                 "age": {"type": "string"},
-                "appearance": {"type": "string"},
-                "personality": {"type": "string"},
-                "notes": {"type": "string"},
+                "intro": {
+                    "type": "string",
+                    "description": (
+                        "인물 한 줄 소개 + 외형 + 성격 + 기타 메모를 한 본문에 Markdown 으로 합쳐 작성. "
+                        "권장 구조: '## 외형\\n...\\n\\n## 성격\\n...\\n\\n## 메모\\n- 항목' 식으로 "
+                        "h2 소제목 + 단락/목록 활용. 별도 외형/성격 노트로 분리하지 말 것."
+                    ),
+                },
             },
             "required": ["name"],
         },
     },
     {
         "name": "propose_world_note",
-        "description": "신규 세계관 노트 등록 제안 (작가 승인 후 world_note 테이블 INSERT).",
+        "description": (
+            "신규 세계관 노트 등록 제안 (작가 승인 후 world_note 테이블 INSERT). "
+            "content 는 Markdown 으로 작성 — 백엔드가 위지윅(TipTap) doc 으로 자동 변환."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
-                "content": {"type": "string"},
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "세계관 본문 (Markdown). 제목(##~###), **굵게**, *기울임*, 목록(-/1.), "
+                        "인용(>), 코드블록 사용 가능. 표/이미지/링크 사용 금지."
+                    ),
+                },
                 "category": {"type": "string"},
             },
             "required": ["name", "content"],
@@ -443,13 +480,31 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "propose_character_update",
-        "description": "기존 인물 프로필 수정 제안 (작가 승인 후 character 테이블 UPDATE).",
+        "description": (
+            "기존 인물 프로필 수정 제안 (작가 승인 후 character 테이블 UPDATE 또는 "
+            "character_note 별도 행 INSERT). 'name'/'gender'/'age' 는 character 테이블 직속 "
+            "컬럼 갱신, 그 외 (appearance/personality/mbti 등) 는 새 character_note 행 추가. "
+            "★ 외형/성격/MBTI 등 별도 노트 추가는 작가가 명시적으로 요청한 경우에만 사용. "
+            "그렇지 않으면 인물 서술은 intro 본문에 통합한다."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "character_id": {"type": "string"},
-                "field": {"type": "string", "description": "수정할 컬럼 (예: appearance, personality)"},
-                "new_value": {"type": "string"},
+                "field": {
+                    "type": "string",
+                    "description": (
+                        "name/gender/age (character 직속) 또는 appearance/personality/mbti 등 "
+                        "(character_note 신규 행). 후자는 작가 명시 요청 시에만."
+                    ),
+                },
+                "new_value": {
+                    "type": "string",
+                    "description": (
+                        "field='gender' 일 때는 반드시 '남'/'여'/'기타'/'미설정' 중 하나 (한 글자). "
+                        "'남성'/'male' 등 변형 입력 금지 — 프론트 아이콘 매핑 실패 원인."
+                    ),
+                },
                 "reason": {"type": "string", "description": "수정 사유 (작가가 검토할 때 참고)"},
             },
             "required": ["character_id", "field", "new_value", "reason"],
@@ -457,12 +512,21 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "propose_plot_revision",
-        "description": "플롯 줄거리 재작성 제안 (작가 승인 후 plot 테이블 UPDATE).",
+        "description": (
+            "플롯 줄거리 재작성 제안 (작가 승인 후 plot 테이블 UPDATE). "
+            "new_outline 은 Markdown 으로 — 위지윅 자동 변환."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "plot_id": {"type": "string"},
-                "new_outline": {"type": "string"},
+                "new_outline": {
+                    "type": "string",
+                    "description": (
+                        "새 플롯 본문 (Markdown). 막/장면 구조는 ##/### 소제목, 핵심 사건은 - 목록, "
+                        "강조는 **굵게** 정도로 절제."
+                    ),
+                },
                 "reason": {"type": "string"},
             },
             "required": ["plot_id", "new_outline", "reason"],
@@ -473,13 +537,21 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "신규 회차 (다음 화 또는 외전) 초안 INSERT 제안. "
             "기존 회차 본문/제목 수정은 propose_episode_update 사용. "
-            "작가 승인 시 episode 로 INSERT (status='작성중')."
+            "작가 승인 시 episode 로 INSERT (status='작성중'). "
+            "content 는 Markdown — 위지윅 자동 변환."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
-                "content": {"type": "string"},
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "회차 본문 (Markdown). 작품 분위기 해치지 않게 강조 절제: 대화·서술 위주, "
+                        "꼭 필요할 때만 **굵게** / *기울임*. 단락 구분은 빈 줄. "
+                        "장면 전환 표현은 별도 마크업 없이 빈 줄 + ' * * * ' 같은 기호 단락."
+                    ),
+                },
                 "parent_id": {"type": "string", "description": "분기/외전인 경우 부모 episode id"},
                 "reference_episodes": {
                     "type": "array",
@@ -517,7 +589,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "world_note_id": {"type": "string"},
                 "name": {"type": "string", "description": "(옵션) 새 이름"},
-                "content": {"type": "string", "description": "(옵션) 새 내용 (평문, 자동 tiptap 래핑)"},
+                "content": {"type": "string", "description": "(옵션) 새 내용 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "reason": {"type": "string"},
             },
             "required": ["world_note_id", "reason"],
@@ -547,7 +619,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "episode_id": {"type": "string"},
                 "title": {"type": "string", "description": "(옵션) 새 제목"},
-                "content": {"type": "string", "description": "(옵션) 새 본문 (평문, 자동 tiptap 래핑)"},
+                "content": {"type": "string", "description": "(옵션) 새 본문 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "status": {
                     "type": "string",
                     "description": "(옵션) '작성중' / '완성' / '발행' 등 평문 상태",
@@ -568,7 +640,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "플롯 제목 (예: '1막 만남')"},
-                "content": {"type": "string", "description": "플롯 줄거리·계획 (평문, tiptap 자동 래핑)"},
+                "content": {"type": "string", "description": "플롯 줄거리·계획 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "status": {"type": "string"},
                 "parent_id": {"type": "string", "description": "(옵션) 상위 플롯 id"},
                 "reason": {"type": "string"},
@@ -588,7 +660,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "root_title": {"type": "string", "description": "부모 챕터 제목 (예: '챕터1')"},
-                "root_content": {"type": "string", "description": "부모 챕터 줄거리·요약"},
+                "root_content": {"type": "string", "description": "부모 챕터 줄거리·요약 (Markdown — 위지윅 자동 변환)"},
                 "root_status": {"type": "string", "description": "(옵션) 부모 status"},
                 "parent_id": {"type": "string", "description": "(옵션) 더 상위 막의 id"},
                 "children": {
@@ -598,7 +670,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
                         "type": "object",
                         "properties": {
                             "title": {"type": "string"},
-                            "content": {"type": "string"},
+                            "content": {
+                                "type": "string",
+                                "description": "자식 플롯 본문 (Markdown — 위지윅 자동 변환)",
+                            },
                             "status": {"type": "string"},
                         },
                         "required": ["title", "content"],
@@ -632,6 +707,63 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 "reason": {"type": "string"},
             },
             "required": ["episode_id", "reason"],
+        },
+    },
+    # ───────── Phase 5: 검수 발견 사항 (위치 매핑) ─────────
+    {
+        "name": "propose_review_issue",
+        "description": (
+            "회차 검수 결과로 발견한 이슈 1건을 작가 승인 큐에 적재. 본 도구는 자동 수정 적용을 "
+            "하지 않고, 프론트 채팅 응답에서 '본문에서 보기' 버튼으로 본문 위치 점프 + 흐릿한 "
+            "하이라이트를 제공한다. 작가가 직접 본문을 고친 뒤 승인/거절로 닫음. "
+            "★ 호출 전 fetch_episode_plaintext(sort_order=N, with_line_numbers=True) 로 라인 "
+            "번호 형식 ([1] ...) 본문을 fetch 해야 lines 정확. 모호한 추측 금지 — 본문에 명시적 "
+            "근거가 있는 발견만."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": (
+                        "검수 대상 회차의 id (uuid 36자). list_episodes / fetch_episode_plaintext / "
+                        "get_episode_summary 응답의 id 필드를 그대로 사용. sort_order 숫자나 "
+                        "'9화' 같은 title 절대 금지 — UUID 형식 검증 실패."
+                    ),
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "description": "이슈가 위치한 본문 line 번호 (1-based, 위 fetch 의 [N] 인덱스). 1~3 개 권장.",
+                    "minItems": 1,
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["critical", "warning", "info"],
+                    "description": "심각도 — critical: 명백한 모순/오류, warning: 일관성 우려, info: 개선 제안",
+                },
+                "issue_type": {
+                    "type": "string",
+                    "enum": [
+                        "setting_conflict",
+                        "tone_conflict",
+                        "foreshadow_unresolved",
+                        "character_arc",
+                        "timeline",
+                        "other",
+                    ],
+                    "description": "이슈 분류 — 설정 충돌 / 톤 충돌 / 미회수 복선 / 인물 행적 모순 / 시간선 모순 / 기타",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "무엇이 문제인지 1~3 문장. 본문에 명시된 근거 인용 권장.",
+                },
+                "suggestion": {
+                    "type": "string",
+                    "description": "(옵션) 권고 수정 방향. 작가가 본문 고칠 때 참고용.",
+                },
+            },
+            "required": ["episode_id", "lines", "severity", "issue_type", "description"],
         },
     },
 ]
@@ -676,6 +808,7 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "propose_plot_create": propose_plot_create,
     "propose_plot_tree": propose_plot_tree,
     "propose_plot_delete": propose_plot_delete,
+    "propose_review_issue": propose_review_issue,
 }
 
 # 도구 카테고리 (BudgetTracker Tier 2 키 분류)
@@ -715,6 +848,7 @@ TOOL_CATEGORY: dict[str, str] = {
     "propose_plot_create": "propose",
     "propose_plot_tree": "propose",
     "propose_plot_delete": "propose",
+    "propose_review_issue": "propose",
 }
 
 

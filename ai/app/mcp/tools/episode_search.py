@@ -113,7 +113,7 @@ async def find_relevant_episodes(
         "  WHERE ec.work_id = :wid AND ec.writer_id = :wr "
         "    AND (NOT :excl OR ep.sort_order <> :ref)"
         ") "
-        "SELECT sort_order, title, "
+        "SELECT episode_id, sort_order, title, "
         "       MAX(sim) AS max_sim, "
         "       AVG(sim) AS avg_sim, "
         "       COUNT(*) AS chunk_count "
@@ -142,19 +142,25 @@ async def find_relevant_episodes(
             "other_chunks": other_chunks,
             "message": "쿼리 결과 0 — 데이터 정합성 의심.",
         }
-    # title 복호화는 list_episodes 와 같은 패턴 — 여기선 sort_order 만으로 충분하므로 평문이면 노출, v1: 면 placeholder
-    top = []
-    for row in rows:
-        title = row[1]
-        if isinstance(title, str) and title.startswith("v1:"):
-            title = "(제목 암호화 — 회차 식별은 sort_order 사용)"
-        top.append({
-            "sort_order": row[0],
-            "title": title,
-            "max_sim": round(float(row[2]), 4),
-            "avg_sim": round(float(row[3]), 4),
-            "chunk_count": int(row[4]),
-        })
+    # id + title 모두 노출. title 은 batch 복호화 (placeholder 대신 평문).
+    top = [
+        {
+            "id": str(row[0]),
+            "sort_order": row[1],
+            "title": row[2],
+            "max_sim": round(float(row[3]), 4),
+            "avg_sim": round(float(row[4]), 4),
+            "chunk_count": int(row[5]),
+        }
+        for row in rows
+    ]
+    try:
+        top = await decrypt_rows(ctx.work_id, top, ["title"])
+    except DecryptResolverError:
+        for r in top:
+            t = r.get("title")
+            if isinstance(t, str) and t.startswith("v1:"):
+                r["title"] = "(제목 암호화 미해제)"
     return {
         "reference_sort_order": reference_sort_order,
         "top": top,
@@ -175,18 +181,26 @@ async def search_episode_chunks(
 
     vec_str = "[" + ",".join(str(v) for v in vecs[0]) + "]"
 
+    # episode_id, sort_order JOIN — 어느 회차의 chunk 인지 식별 가능해야 후속 도구 호출 가능
     r = await session.execute(
         sa_text(
-            "SELECT content, 1 - (embedding <=> cast(:vec AS vector)) AS similarity "
-            "FROM episode_chunk "
-            "WHERE work_id = :wid AND writer_id = :wr "
-            "ORDER BY embedding <=> cast(:vec AS vector) "
+            "SELECT ep.id, ep.sort_order, ec.content, "
+            "       1 - (ec.embedding <=> cast(:vec AS vector)) AS similarity "
+            "FROM episode_chunk ec "
+            "JOIN episode ep ON ep.id = ec.episode_id "
+            "WHERE ec.work_id = :wid AND ec.writer_id = :wr "
+            "ORDER BY ec.embedding <=> cast(:vec AS vector) "
             "LIMIT :k"
         ),
         {"vec": vec_str, "wid": ctx.work_id, "wr": ctx.writer_id, "k": k},
     )
     rows = [
-        {"content": row[0], "similarity": round(float(row[1]), 4)}
+        {
+            "episode_id": str(row[0]),
+            "sort_order": row[1],
+            "content": row[2],
+            "similarity": round(float(row[3]), 4),
+        }
         for row in r.fetchall()
     ]
     return await _decrypt_chunk_content(ctx.work_id, rows)
@@ -248,7 +262,7 @@ async def query_episodes_by_chunks(
         params["smax"] = sort_order_max
 
     sql = (
-        "SELECT ec.content, ep.sort_order, "
+        "SELECT ep.id, ep.sort_order, ec.content, "
         "       1 - (ec.embedding <=> cast(:vec AS vector)) AS similarity "
         "FROM episode_chunk ec "
         "JOIN episode ep ON ep.id = ec.episode_id "
@@ -270,15 +284,25 @@ async def query_episodes_by_chunks(
 
     matched_chunks = [
         {
+            "episode_id": str(row[0]),
             "sort_order": row[1],
-            "content": row[0],
-            "similarity": round(float(row[2]), 4),
+            "content": row[2],
+            "similarity": round(float(row[3]), 4),
         }
         for row in rows
     ]
     # Phase 4.6: chunk content 일괄 복호화 (Haiku 합성 입력은 평문 필수)
     matched_chunks = await _decrypt_chunk_content(ctx.work_id, matched_chunks)
-    episodes = sorted({c["sort_order"] for c in matched_chunks})
+    # 회차별 (id, sort_order) 쌍 목록 — 후속 propose_* 도구 호출 시 episode_id 필요
+    seen_ids: dict[str, int] = {}
+    for c in matched_chunks:
+        eid = c.get("episode_id")
+        if isinstance(eid, str) and eid not in seen_ids:
+            seen_ids[eid] = c["sort_order"]
+    episodes = [
+        {"episode_id": eid, "sort_order": so}
+        for eid, so in sorted(seen_ids.items(), key=lambda kv: kv[1])
+    ]
 
     # Haiku 합성
     llm = get_llm()

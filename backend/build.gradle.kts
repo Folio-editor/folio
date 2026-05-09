@@ -56,6 +56,12 @@ dependencies {
     // Caffeine — WorkKeyService TTL 캐시 (Vault 호출 최소화)
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
+    // CommonMark — agent propose_* content 의 Markdown → TipTap JSON 변환
+    // (SuggestionApplier 가 평문/마크다운을 받아 위지윅 호환 doc 으로 래핑)
+    implementation("org.commonmark:commonmark:0.24.0")
+    // GFM strikethrough (~~ 텍스트 ~~) — TipTap strike mark 매핑
+    implementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.24.0")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

@@ -730,6 +730,8 @@ function NoteItem({
     createCharacterNote,
     placeCharacterNote,
   } = useLocalWrite();
+  // appearance/personality kind 자동 생성은 폐기됐으나 (intro 통합), 구버전 사용자 데이터에
+  // 남아있을 수 있어 컨텍스트 메뉴 잠금만 유지 — 사용자가 옛 노트를 실수로 지우지 않도록.
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);

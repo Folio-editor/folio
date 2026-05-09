@@ -233,6 +233,28 @@ public class AiClient {
         });
     }
 
+    /** Agent 대화 세션 삭제 — writer_id 를 query 로 전달해 AI 서버에서 소유자 검증. */
+    public void deleteAgentThread(String threadId, String writerId) {
+        ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "deleteAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                restClient.delete()
+                        .uri(uriBuilder -> uriBuilder
+                                .path("/v1/agent/threads/{tid}")
+                                .queryParam("writer_id", writerId)
+                                .build(threadId))
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .toBodilessEntity();
+                return null;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
     /**
      * Agent SSE 스트리밍 — AI 서버 /v1/agent/threads/{tid}/messages/stream 프록시.
      * step / done / error 이벤트를 그대로 SseEmitter 로 전달.

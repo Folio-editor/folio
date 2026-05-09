@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.runner import run_agent
 from app.agent.scenarios import SCENARIOS
-from app.agent.session import create_session, list_threads, load_session
+from app.agent.session import create_session, delete_session, list_threads, load_session
 from app.celery_app import celery_app
 from app.db.session import get_session, async_session
 from app.middleware.auth import require_internal_api_key
@@ -322,3 +322,16 @@ async def get_thread(
         messages=sess["messages"],
         summary_so_far=sess["summary_so_far"],
     )
+
+
+@router.delete("/threads/{thread_id}", status_code=204)
+async def delete_thread(
+    thread_id: str,
+    writer_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> None:
+    """대화 세션 삭제 — Spring 측에서 인증된 writer_id 를 query 로 강제 전달."""
+    ok = await delete_session(db, uuid.UUID(thread_id), uuid.UUID(writer_id))
+    if not ok:
+        raise HTTPException(status_code=404, detail="thread_not_found_or_not_owner")
+    return None

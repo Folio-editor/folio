@@ -381,7 +381,8 @@ CREATE TABLE extraction_suggestion (
             'character_update','character_delete',
             'world_note_update','world_note_delete',
             'plot_create','plot_tree','plot_revision','plot_delete',
-            'episode_draft','episode_update','episode_delete'
+            'episode_draft','episode_update','episode_delete',
+            'review_issue'
         )),
     suggested_name      VARCHAR(200) NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,

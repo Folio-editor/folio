@@ -109,6 +109,19 @@ public class AgentController {
         return body;
     }
 
+    @DeleteMapping("/threads/{threadId}")
+    @Operation(summary = "대화 세션 삭제")
+    public ResponseEntity<Void> deleteThread(
+            @PathVariable String threadId,
+            Authentication auth
+    ) {
+        // 소유자 검증은 AI 서버 쪽 DELETE 가 writer_id 기반 조건절로 1행 보장.
+        // 서비스 단에서 1차로 GET 으로 owner 확인하면 race window 가 생기므로 atomic DELETE 만 신뢰.
+        aiClient.deleteAgentThread(threadId, auth.getName());
+        log.info("agent thread deleted threadId={} writer={}", threadId, auth.getName());
+        return ResponseEntity.noContent().build();
+    }
+
     // ─────── Messages ───────
 
     @PostMapping("/threads/{threadId}/messages")

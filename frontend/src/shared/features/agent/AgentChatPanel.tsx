@@ -8,13 +8,11 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, MessageSquarePlus, Send } from 'lucide-react';
-import { useQuery } from '@powersync/react';
-
-import { decryptWorkFieldOnce, isCipher } from '../../crypto/fieldDecrypt';
+import { ArrowUp, ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from 'lucide-react';
 
 import {
   createAgentThread,
+  deleteAgentThread,
   getAgentThread,
   listAgentThreads,
   listSuggestions,
@@ -27,6 +25,8 @@ import {
   type AgentThreadDetail,
   type AgentThreadSummary,
 } from '../../api/agent';
+import { SuggestionBodyPreview, entityLabel, useDecryptedSuggestion } from './suggestionPreview';
+import { ChatMarkdown } from './ChatMarkdown';
 import { apiClient } from '../../lib/apiClient';
 import { useAgentChatStore } from '../../stores/agentChatStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -103,6 +103,7 @@ export function AgentChatPanel({ workId }: Props) {
 
   async function handleNewThread() {
     setError(null);
+    setHistoryOpen(false);
     try {
       const r = await createAgentThread(workId, 'auto');
       const tid = r.threadId;
@@ -111,7 +112,24 @@ export function AgentChatPanel({ workId }: Props) {
       setThreads(workId, refreshed);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(`thread 생성 실패: ${msg}`);
+      setError(`새 대화 생성 실패: ${msg}`);
+    }
+  }
+
+  async function handleDeleteThread(threadId: string) {
+    setError(null);
+    try {
+      await deleteAgentThread(threadId);
+      // 활성 thread 가 삭제됐으면 비우고 thread 자체 캐시도 클리어 (다음 thread 활성화는 사용자 선택)
+      if (threadId === activeThreadId) {
+        setActiveThread(workId, null);
+        setThread(null);
+      }
+      const refreshed = await listAgentThreads(workId);
+      setThreads(workId, refreshed);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`대화 삭제 실패: ${msg}`);
     }
   }
 
@@ -198,8 +216,12 @@ export function AgentChatPanel({ workId }: Props) {
     return (
       <div key={idx} className={`flex flex-col ${align} gap-1`}>
         <div className="text-[10px] text-muted-foreground">{role === 'user' ? '나' : 'Agent'}</div>
-        <div className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${bubble}`}>
-          {text}
+        <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${bubble}`}>
+          {role === 'user' ? (
+            <span className="whitespace-pre-wrap">{text}</span>
+          ) : (
+            <ChatMarkdown text={text} variant="assistant" />
+          )}
         </div>
       </div>
     );
@@ -222,56 +244,60 @@ export function AgentChatPanel({ workId }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더 — 현재 thread 제목 + 히스토리 드롭다운 + 새 스레드 */}
+      {/* 헤더 — 단일 트리거 (현재 대화 제목 ▼). 드롭다운 안에 [+ 새 대화] + 히스토리 + 항목별 X 삭제. */}
       <div className="relative flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <button
           type="button"
           onClick={() => setHistoryOpen((v) => !v)}
-          disabled={threads.length === 0}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-left text-xs hover:border-border hover:bg-accent disabled:opacity-60"
-          title="대화 히스토리"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-left text-xs hover:border-border hover:bg-accent"
+          title="대화 목록 / 새 대화"
         >
           <span className="truncate font-medium">
-            {activeTitle ?? '대화를 시작해주세요'}
+            {activeTitle ?? '+ 새 대화 시작'}
           </span>
-          {threads.length > 0 && (
-            historyOpen
-              ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
-              : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
-          )}
+          {historyOpen
+            ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+            : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />}
         </button>
-        <button
-          type="button"
-          onClick={() => { setHistoryOpen(false); void handleNewThread(); }}
-          className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs hover:bg-accent"
-          title="새 스레드"
-        >
-          <MessageSquarePlus size={14} />
-          새 스레드
-        </button>
-        {historyOpen && threads.length > 0 && (
-          <div className="absolute left-3 top-full z-20 mt-1 w-[calc(100%-1.5rem)] max-h-72 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
-            {threads.map((t) => (
+        {historyOpen && (
+          <>
+            {/* 바깥 클릭 dismiss — 키보드 접근성 위해 button 으로 */}
+            <button
+              type="button"
+              aria-label="대화 목록 닫기"
+              tabIndex={-1}
+              onClick={() => setHistoryOpen(false)}
+              className="fixed inset-0 z-10 cursor-default bg-transparent"
+            />
+            <div className="absolute left-3 top-full z-20 mt-1 w-[calc(100%-1.5rem)] max-h-80 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+              {/* + 새 대화 — 드롭다운 첫 항목 (한 번 클릭으로 즉시 생성·전환) */}
               <button
-                key={t.thread_id}
                 type="button"
-                onClick={() => {
-                  setActiveThread(workId, t.thread_id);
-                  setHistoryOpen(false);
-                }}
-                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-accent ${
-                  t.thread_id === activeThreadId ? 'bg-accent/60 font-medium' : ''
-                }`}
+                onClick={() => void handleNewThread()}
+                className="flex w-full items-center gap-2 border-b border-border/60 bg-muted/40 px-2 py-2 text-left text-xs font-medium text-primary hover:bg-accent"
               >
-                <span className="truncate flex-1">
-                  {t.title || `대화 · ${t.thread_id.slice(0, 6)}`}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {t.last_activity_at ? new Date(t.last_activity_at).toLocaleDateString() : ''}
-                </span>
+                <Plus size={14} className="shrink-0" />
+                새 대화 시작
               </button>
-            ))}
-          </div>
+              {threads.length === 0 && (
+                <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                  이전 대화가 없습니다.
+                </div>
+              )}
+              {threads.map((t) => (
+                <ThreadHistoryItem
+                  key={t.thread_id}
+                  thread={t}
+                  active={t.thread_id === activeThreadId}
+                  onSelect={() => {
+                    setActiveThread(workId, t.thread_id);
+                    setHistoryOpen(false);
+                  }}
+                  onDelete={() => void handleDeleteThread(t.thread_id)}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -287,7 +313,7 @@ export function AgentChatPanel({ workId }: Props) {
         )}
         {!activeThreadId && !loading && (
           <div className="text-center text-xs text-muted-foreground">
-            [새 스레드] 를 클릭해 대화를 시작하세요.
+            상단 제목 영역을 눌러 [새 대화 시작] 으로 진입하세요.
           </div>
         )}
         {thread?.summary_so_far && (
@@ -302,8 +328,8 @@ export function AgentChatPanel({ workId }: Props) {
             text.trim() ? (
               <div key={`live-${i}`} className="flex flex-col items-start gap-1">
                 <div className="text-[10px] text-muted-foreground">Agent</div>
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-sidebar-accent px-3 py-2 text-sm text-sidebar-accent-foreground">
-                  {text}
+                <div className="max-w-[85%] rounded-lg bg-sidebar-accent px-3 py-2 text-sm text-sidebar-accent-foreground">
+                  <ChatMarkdown text={text} variant="assistant" />
                   <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current opacity-60" />
                 </div>
               </div>
@@ -329,7 +355,7 @@ export function AgentChatPanel({ workId }: Props) {
         </div>
       </div>
 
-      {/* 입력 */}
+      {/* 입력 — 작가가 긴 지시문 작성 시 시야 확보 위해 textarea 4행 + min-h. */}
       <div className="flex shrink-0 items-end gap-2 border-t border-border p-2">
         <textarea
           value={message}
@@ -340,22 +366,109 @@ export function AgentChatPanel({ workId }: Props) {
               void handleSend();
             }
           }}
-          rows={2}
+          rows={4}
           maxLength={8000}
           placeholder="메시지 입력 — agent 가 의도 자동 분류 (Ctrl+Enter 전송)"
           disabled={!activeThreadId || sending}
-          className="flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          className="min-h-24 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
         />
         <button
           type="button"
           onClick={handleSend}
           disabled={!activeThreadId || sending || !message.trim()}
-          className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
           title="전송 (Ctrl+Enter)"
+          aria-label="메시지 전송"
         >
-          {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          {sending ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2.4} />}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─────── 드롭다운 히스토리 항목 (삭제 확인 inline) ───────
+
+function ThreadHistoryItem({
+  thread,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  thread: AgentThreadSummary;
+  active: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const title = thread.title || `대화 · ${thread.thread_id.slice(0, 6)}`;
+  const date = thread.last_activity_at
+    ? new Date(thread.last_activity_at).toLocaleDateString()
+    : '';
+
+  if (confirmingDelete) {
+    return (
+      <div
+        className={`flex items-center gap-1 px-2 py-1.5 text-xs ${
+          active ? 'bg-accent/60' : ''
+        }`}
+      >
+        <span className="flex-1 truncate text-[11px] text-red-600">
+          삭제할까요? '{title.slice(0, 20)}'
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmingDelete(false);
+          }}
+          className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:bg-accent"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmingDelete(false);
+            onDelete();
+          }}
+          className="rounded bg-red-500 px-1.5 py-0.5 text-[10px] text-white hover:bg-red-600"
+        >
+          삭제
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`group flex items-center gap-1 hover:bg-accent ${
+        active ? 'bg-accent/60' : ''
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className={`flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs ${
+          active ? 'font-medium' : ''
+        }`}
+      >
+        <span className="truncate flex-1">{title}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{date}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setConfirmingDelete(true);
+        }}
+        className="mr-1 hidden h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500 group-hover:flex"
+        title="대화 삭제"
+        aria-label="대화 삭제"
+      >
+        <Trash2 size={12} />
+      </button>
     </div>
   );
 }
@@ -404,7 +517,7 @@ function ProgressHeader({ steps }: { steps: AgentStreamStepEvent[] }) {
         title={expanded ? '접기' : '펼치기'}
       >
         <Loader2 size={12} className="animate-spin text-muted-foreground" />
-        <span className="truncate font-mono text-muted-foreground">{lastLabel}</span>
+        <span className="truncate text-muted-foreground">{lastLabel}</span>
         <span className="ml-auto shrink-0 text-[10px] opacity-60">
           step {iters} · {cumTokens} 크레딧
         </span>
@@ -415,7 +528,7 @@ function ProgressHeader({ steps }: { steps: AgentStreamStepEvent[] }) {
         )}
       </button>
       {expanded && steps.length > 0 && (
-        <div className="space-y-0.5 border-t border-border/40 px-3 py-1 font-mono text-[10px] text-muted-foreground">
+        <div className="space-y-0.5 border-t border-border/40 px-3 py-1 text-[10px] text-muted-foreground">
           {steps.map((l, i) => (
             <div key={`${l.seq}-${i}`}>{labelStep(l)}</div>
           ))}
@@ -425,14 +538,62 @@ function ProgressHeader({ steps }: { steps: AgentStreamStepEvent[] }) {
   );
 }
 
+/** 백엔드 도구 ID → 작가용 한글 라벨. 미정의 도구는 가드 fallback ('도구 실행 중'). */
+const TOOL_LABELS: Record<string, string> = {
+  // 조회 (read-only)
+  list_plots: '플롯 목록 조회 중',
+  get_plot: '플롯 상세 조회 중',
+  list_characters: '인물 목록 조회 중',
+  get_character: '인물 상세 조회 중',
+  list_world_notes: '세계관 목록 조회 중',
+  get_world_note: '세계관 상세 조회 중',
+  list_episodes: '회차 목록 조회 중',
+  list_all_oneline_summaries: '회차 한 줄 요약 모음 조회 중',
+  list_episode_summaries: '회차 요약 목록 조회 중',
+  get_episode_summary: '회차 요약 조회 중',
+  fetch_episode_plaintext: '회차 본문 가져오는 중',
+  // 검색 / 분석
+  search_episode_summaries: '회차 요약 검색 중',
+  search_episode_chunks: '본문 청크 검색 중',
+  query_episodes_by_chunks: '본문 자유 검색 중',
+  find_relevant_episodes: '관련 회차 탐색 중',
+  track_foreshadow: '복선 추적 분석 중',
+  character_arc: '인물 행적 분석 중',
+  timeline_scan: '시간선 점검 중',
+  summarize_episode: '회차 요약 생성 중',
+  analyze_episode: '회차 심층 분석 중',
+  request_episode_summary_backfill: '전체 요약 백필 요청 중',
+  // 보조 에이전트
+  invoke_haiku_worker: '보조 에이전트 작업 중',
+  // 쓰기 제안 (작가 승인 큐)
+  propose_character: '인물 등록 제안 작성 중',
+  propose_character_update: '인물 수정 제안 작성 중',
+  propose_character_delete: '인물 삭제 제안 작성 중',
+  propose_world_note: '세계관 등록 제안 작성 중',
+  propose_world_note_update: '세계관 수정 제안 작성 중',
+  propose_world_note_delete: '세계관 삭제 제안 작성 중',
+  propose_plot_create: '플롯 추가 제안 작성 중',
+  propose_plot_tree: '챕터 트리 추가 제안 작성 중',
+  propose_plot_revision: '플롯 재작성 제안 작성 중',
+  propose_plot_delete: '플롯 삭제 제안 작성 중',
+  propose_episode_draft: '회차 초안 작성 중',
+  propose_episode_update: '회차 수정 제안 작성 중',
+  propose_episode_delete: '회차 삭제 제안 작성 중',
+};
+
+function toolLabel(toolName: string | null | undefined): string {
+  if (!toolName) return '도구 실행 중';
+  return TOOL_LABELS[toolName] ?? `${toolName} 실행 중`;
+}
+
 function labelStep(l: AgentStreamStepEvent): string {
-  if (l.step_type === 'tool_call') return `🔧 ${l.tool_name ?? '(tool)'}`;
+  if (l.step_type === 'tool_call') return `🔧 ${toolLabel(l.tool_name)}`;
   if (l.step_type === 'planner_call')
-    return `💭 sonnet (in ${l.input_tokens}/out ${l.output_tokens}) · +${l.user_tokens} 크레딧`;
+    return `💭 답변 구상 중 · +${l.user_tokens} 크레딧`;
   if (l.step_type === 'worker_call')
-    return `🛠 haiku (in ${l.input_tokens}/out ${l.output_tokens}) · +${l.user_tokens} 크레딧`;
-  if (l.step_type === 'compression') return '📦 대화 압축';
-  return `${l.step_type} · ${l.actor}`;
+    return `🛠 보조 에이전트 분석 중 · +${l.user_tokens} 크레딧`;
+  if (l.step_type === 'compression') return '📦 이전 대화 압축 중';
+  return '⚙ 처리 중';
 }
 
 // (구) StreamProgress — ProgressHeader 로 대체됨. 미사용 코드 제거.
@@ -507,7 +668,7 @@ function ResponseFooter({ resp, workId }: { resp: AgentRunResponse; workId: stri
       {previewOpen && suggestions && (
         <div className="space-y-1">
           {suggestions.map((s) => (
-            <SuggestionPreview
+            <SuggestionInlineCard
               key={s.id}
               s={s}
               workId={workId}
@@ -522,61 +683,9 @@ function ResponseFooter({ resp, workId }: { resp: AgentRunResponse; workId: stri
   );
 }
 
-/**
- * Suggestion payload 안의 v1: ciphertext 문자열을 재귀적으로 복호화.
- * payload 구조가 다양하므로(plot_tree.root/children, character.* 평면, episode.title/content)
- * 객체/배열/문자열을 deep-walk 하며 v1: 만 골라 복호화한다.
- *
- * 폴백: KEK 부재 / encrypted_dek 부재 / 복호화 실패 → ciphertext 그대로 두어 UI 깨짐 방지.
- */
-function useDecryptedSuggestionPayload(
-  workId: string,
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const { data: workRows = [] } = useQuery<{ encrypted_dek: string | null }>(
-    `SELECT encrypted_dek FROM work WHERE id = ?`,
-    [workId],
-  );
-  const encryptedDek = workRows[0]?.encrypted_dek ?? null;
+// ─────── 채팅창 응답 직후 미리보기 카드 (suggested_name v1: 복호화 포함) ───────
 
-  const [decrypted, setDecrypted] = useState<Record<string, unknown>>(payload);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function walk(value: unknown): Promise<unknown> {
-      if (typeof value === 'string') {
-        if (!isCipher(value)) return value;
-        return await decryptWorkFieldOnce({ workId, encryptedDek, value });
-      }
-      if (Array.isArray(value)) {
-        return await Promise.all(value.map(walk));
-      }
-      if (value && typeof value === 'object') {
-        const entries = await Promise.all(
-          Object.entries(value as Record<string, unknown>).map(
-            async ([k, v]) => [k, await walk(v)] as const,
-          ),
-        );
-        return Object.fromEntries(entries);
-      }
-      return value;
-    }
-
-    (async () => {
-      const next = (await walk(payload)) as Record<string, unknown>;
-      if (!cancelled) setDecrypted(next);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [payload, workId, encryptedDek]);
-
-  return decrypted;
-}
-
-function SuggestionPreview({
+function SuggestionInlineCard({
   s,
   workId,
   busy,
@@ -589,137 +698,27 @@ function SuggestionPreview({
   onApprove: () => void;
   onReject: () => void;
 }) {
-  const p = useDecryptedSuggestionPayload(workId, s.payload);
-  const labels: Record<string, string> = {
-    character: '인물 추가',
-    character_update: '인물 수정',
-    character_delete: '인물 삭제',
-    world_note: '세계관 추가',
-    world_note_update: '세계관 수정',
-    world_note_delete: '세계관 삭제',
-    plot_revision: '플롯 수정',
-    plot_create: '플롯 추가',
-    plot_tree: '챕터 + 하위 플롯',
-    plot_delete: '플롯 삭제',
-    episode_draft: '회차 초안',
-    episode_update: '회차 수정',
-    episode_delete: '회차 삭제',
-  };
+  const decoded = useDecryptedSuggestion(s);
   return (
     <div className="rounded border border-border bg-background p-2 text-xs">
       <div className="mb-1 flex items-center gap-2">
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          {labels[s.entity_type] ?? s.entity_type}
+          {entityLabel(s.entity_type)}
         </span>
-        <span className="font-medium">{s.suggested_name}</span>
+        <span className="font-medium">{decoded.suggested_name}</span>
         {s.status !== 'pending' && (
           <span className="ml-auto text-[10px] text-muted-foreground">
             {s.status === 'confirmed' ? '✓ 승인됨 (자동 작성)' : '거절'}
           </span>
         )}
       </div>
-      <div className="space-y-0.5 text-[11px]">
-        {s.entity_type === 'episode_draft' && (
-          <>
-            <div>
-              <strong>제목:</strong> {String(p.title ?? '')}
-            </div>
-            <div className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 text-[11px]">
-              {String(p.content ?? '')}
-            </div>
-          </>
-        )}
-        {s.entity_type === 'world_note' && (
-          <>
-            <div>
-              <strong>이름:</strong> {String(p.name ?? '')}
-            </div>
-            <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2">
-              {String(p.content ?? '')}
-            </div>
-          </>
-        )}
-        {s.entity_type === 'character' && (
-          <>
-            {(['name', 'role', 'gender', 'age', 'appearance', 'personality', 'notes'] as const).map(
-              (k) => {
-                const v = p[k];
-                if (!v) return null;
-                return (
-                  <div key={k}>
-                    <strong>{k}:</strong> {String(v)}
-                  </div>
-                );
-              },
-            )}
-          </>
-        )}
-        {s.entity_type === 'plot_tree' && (
-          <div className="space-y-1">
-            <div>
-              <strong>📁 {String((p.root as Record<string, unknown>)?.title ?? s.suggested_name)}</strong>
-            </div>
-            {Boolean((p.root as Record<string, unknown>)?.content) && (
-              <div className="rounded bg-muted/30 p-2 text-[11px] whitespace-pre-wrap">
-                {String((p.root as Record<string, unknown>).content)}
-              </div>
-            )}
-            <div className="ml-3 space-y-1 border-l border-border/60 pl-2">
-              {Array.isArray(p.children) &&
-                (p.children as Array<Record<string, unknown>>).map((c, i) => (
-                  <div key={i}>
-                    <div className="text-[11px]">
-                      └ <strong>{String(c.title ?? `(자식 ${i + 1})`)}</strong>
-                    </div>
-                    {Boolean(c.content) && (
-                      <div className="ml-3 rounded bg-muted/20 p-1.5 text-[10px] whitespace-pre-wrap">
-                        {String(c.content)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              승인 시 부모 + 자식 {Array.isArray(p.children) ? p.children.length : 0}개 한꺼번에 작성됩니다.
-            </div>
-          </div>
-        )}
-        {(s.entity_type === 'character_update' ||
-          s.entity_type === 'world_note_update' ||
-          s.entity_type === 'episode_update' ||
-          s.entity_type === 'plot_revision') && (
-          <pre className="max-h-40 overflow-auto rounded bg-muted/30 p-2 text-[10px]">
-            {JSON.stringify(p, null, 2)}
-          </pre>
-        )}
-        {(s.entity_type === 'character_delete' ||
-          s.entity_type === 'world_note_delete' ||
-          s.entity_type === 'episode_delete') && (
-          <div className="rounded bg-red-500/10 p-2 text-[11px] text-red-600">
-            ⚠ 삭제 — {String(p.reason ?? '(사유 없음)')}
-          </div>
-        )}
-      </div>
-      {s.status === 'pending' && (
-        <div className="mt-2 flex justify-end gap-1">
-          <button
-            type="button"
-            onClick={onReject}
-            disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
-          >
-            거절
-          </button>
-          <button
-            type="button"
-            onClick={onApprove}
-            disabled={busy}
-            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
-          >
-            ✓ 승인 (자동 작성)
-          </button>
-        </div>
-      )}
+      <SuggestionBodyPreview
+        s={s}
+        workId={workId}
+        busy={busy}
+        onApprove={onApprove}
+        onReject={onReject}
+      />
     </div>
   );
 }

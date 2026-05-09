@@ -17,8 +17,11 @@ import {
 /**
  * 신규 가입자가 OnboardingGuideDialog 에서 "샘플 작품 만들기" 를 눌렀을 때 호출되는 시드 훅.
  *
- * 작품 1 + 기획 노트 1 + 세계관 트리(부모×N + 자식×N) + 캐릭터 3(intro + 공통노트 + 개별노트)
+ * 작품 1 + 기획 노트 1 + 세계관 트리(부모×N + 자식×N) + 캐릭터 3(intro 단일 + 공통노트 + 개별노트)
  * + 플롯 막 2(각 막당 자식 회차 3) + 복선 2(+ foreshadow_link) + 회차 3 + 아이디어 3 일괄 INSERT.
+ *
+ * ※ 외형/성격 노트는 자동 생성 X — ensureCharacterNotes 가 intro 1개만 만들고,
+ *   인물 묘사는 모두 introContent 에 합쳐서 작성. (2026-05-09 변경)
  *
  * 회차 ↔ 플롯 1막 자식 회차는 plot_episode_link 로 1:1 연결되며,
  * 복선은 ONBOARDING_FORESHADOW[i].links 의 episodeKey/plotKey 를 시드 시 보존된 ID 배열로

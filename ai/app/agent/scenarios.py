@@ -44,6 +44,7 @@ PROPOSE_ALL = {
     "propose_episode_draft",
     "propose_episode_update",
     "propose_episode_delete",
+    "propose_review_issue",
 }
 
 
@@ -78,6 +79,10 @@ _SHARED_RULES = (
     "- 도구로 조회한 사실만 근거. 추측·단정 금지.\n"
     "- 회차 존재 여부는 list_episodes 로 먼저 확인 (요약 유무 무관 모든 회차 노출).\n"
     "- 평문 fetch_episode_plaintext 는 재작성·인용 등 본문 그대로 필요할 때만.\n"
+    "- propose_* 본문 필드(intro/content/new_outline 등) 는 **Markdown 으로 작성** —\n"
+    "  백엔드가 위지윅(TipTap) doc 으로 자동 변환. 지원: 제목(#~###), **굵게**, *기울임*,\n"
+    "  ~~취소선~~, `인라인 코드`, 코드블록(백틱 3), - 불릿/1. 번호, > 인용, --- 구분선,\n"
+    "  빈 줄로 단락 분리. 미지원: 표/이미지/링크/HTML.\n"
 )
 
 SCENARIOS: dict[str, dict] = {
@@ -114,17 +119,52 @@ SCENARIOS: dict[str, dict] = {
             "| 'X 추가/만들어줘' | propose_<entity> |\n"
             "| 'X 이름/정보 바꿔줘' | propose_<entity>_update (먼저 list_*로 id 확인) |\n"
             "| 'X 지워/삭제' | propose_<entity>_delete |\n"
-            "| '챕터+자식 묶어서/트리로' | propose_plot_tree (1회 승인 = 부모+자식 일괄) |\n\n"
+            "| '챕터+자식 묶어서/트리로' | propose_plot_tree (1회 승인 = 부모+자식 일괄) |\n"
+            "| 'N화 검수해줘 / 이상한 부분 찾아줘' | fetch_episode_plaintext(with_line_numbers=True) → 발견마다 propose_review_issue |\n\n"
+            "## 회차 검수 절차 (propose_review_issue)\n"
+            "사용자가 '검수' / '오류 찾기' / '일관성 검토' 요청 시:\n"
+            "1. list_episodes 로 대상 회차 sort_order **+ id (UUID)** 확인 — 결과의 id 필드 보존\n"
+            "2. fetch_episode_plaintext(sort_order=N, with_line_numbers=True) 로 ``[1] ... [2] ...`` 형식 본문 fetch\n"
+            "   (응답에도 id 필드 포함 — 1번 단계 id 와 동일 값)\n"
+            "3. 필요 시 list_characters / list_world_notes / get_episode_summary 로 설정 대조\n"
+            "4. 발견 사항 1건당 propose_review_issue 호출 — **episode_id 는 1·2 단계 응답의 id 필드 (UUID, 36자)**.\n"
+            "   sort_order 숫자 / '9화' 같은 title 절대 사용 금지 — UUID 형식 아니면 SQL 검증 실패.\n"
+            "   lines 는 위 ``[N]`` 인덱스와 정확히 매칭 (추측 금지).\n"
+            "5. 답변 본문엔 발견 N건 한 줄 요약만 — 상세 내용·라인 번호는 propose_* 카드에서 자동 표시되므로 중복 X\n"
+            "★ 라인 인용 정확도가 핵심. with_line_numbers=False 로 받은 본문에서 추정한 라인 번호는 절대 금지.\n\n"
             "update/delete 호출 전 반드시 list_* 로 대상 id 확인 — 추측 금지. id 못 찾으면 사용자에게 재질의.\n\n"
             "## 신규 콘텐츠 생성 전 (propose_*)\n"
             "1. list_world_notes / list_characters / list_plots peek → 중복·관련 자료 식별\n"
             "2. 관련 있는 1~3건만 get_* drill\n"
             "3. propose_* 호출\n\n"
+            "## 인물 서술은 intro 통합 원칙\n"
+            "- propose_character 의 인물 서술(외형·성격·역할·기타 메모)은 **단일 intro 한 단락**으로 합쳐 작성.\n"
+            "- 외형/성격/MBTI 등을 별도 character_note 로 분리하는 propose_character_update(field='appearance' 등) 는\n"
+            "  작가가 **명시적으로 '외형 노트 따로 만들어줘' 라고 요청**한 경우에만 사용.\n"
+            "- gender 필드는 **'남' / '여' / '기타' / '미설정' 한 글자**만 허용 (프론트 아이콘 매핑 enum).\n"
+            "  '남성'/'여성'/'male' 등 변형 절대 금지 — 매핑 실패 시 '?' 아이콘 표시됨.\n\n"
+            "## propose_* 본문 필드는 Markdown 으로 (위지윅 호환)\n"
+            "intro / content / new_outline 등 본문 필드는 **Markdown 문법**으로 작성하라. 백엔드가 자동으로\n"
+            "위지윅 에디터(TipTap) 의 표준 노드로 변환해 저장한다. 사용 가능한 문법:\n"
+            "- 제목: `# 제목` (h1) / `## 소제목` (h2) / `### 항목` (h3) — 본문 회차에선 h2~h3 권장\n"
+            "- 강조: `**굵게**`, `*기울임*`, `~~취소선~~`, ``` `인라인 코드` ```\n"
+            "- 목록: `- 항목` (불릿) / `1. 항목` (번호)\n"
+            "- 인용: `> 인용`\n"
+            "- 코드 블록: 백틱 3개로 감싸기 (언어명 옵션)\n"
+            "- 단락 분리: 빈 줄 / 줄바꿈 강제: 줄 끝 공백 2개\n"
+            "- 구분선: `---`\n"
+            "사용 금지 (TipTap 미지원): 표 / 이미지 / 링크 (텍스트만 보존됨) / HTML 태그.\n"
+            "회차 본문(propose_episode_draft 의 content) 은 작품 분위기 해치지 않게 강조 남용 금지 — 대화·서술 위주, 필요 시에만 ** 또는 *.\n\n"
             + _SHARED_RULES
             + "\n## 응답 원칙\n"
             "- 도구 결과를 근거로만 답변. 추측 금지.\n"
             "- 추출/초안/재작성/삭제 = propose_* 로 작가 승인 큐 등록 (자동 적용 X).\n"
-            "- 답변에 (1) 호출한 도구 1줄 (2) 핵심 결과·제안 요약을 한국어로 자연스럽게."
+            "- 답변 본문은 작가가 보기 좋은 자연스러운 한국어 요약만 작성한다.\n"
+            "  ★ 답변 안에 '도구 호출: list_episodes → ...' / '`tool_name`' / '도구를 사용했습니다' 같은\n"
+            "    내부 메타 정보를 절대 노출하지 말 것. 어떤 도구를 썼는지는 진행 표시줄(SSE) 이\n"
+            "    별도 UI 로 보여주므로 본문에 중복 기재 불필요. 작가는 결과만 깔끔히 받기를 원한다.\n"
+            "- 코드 블록(```)이나 기능 ID 도 노출 금지 — propose_character / list_episodes 등의\n"
+            "  raw 함수명을 답변 본문에 적지 말 것."
         ),
     },
     "draft_next": {
@@ -143,7 +183,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "consistency_check": {
         "title": "회차 간 일관성 검수",
-        "allowed_tools": ALL_READ | SUB_AGENT,   # propose_* 비허용
+        "allowed_tools": ALL_READ | SUB_AGENT | {"propose_review_issue"},
         "system_prompt": (
             "당신은 작품의 회차 간 일관성을 검수하는 agent 입니다.\n"
             + _SHARED_RULES
@@ -151,8 +191,13 @@ SCENARIOS: dict[str, dict] = {
             "- 미회수 복선 (track_foreshadow paid_off_sort=NULL)\n"
             "- 인물 행적 모순 (character_arc 시계열)\n"
             "- 시간선 모순 (timeline_scan)\n"
-            "최종 답변 형식: '심각도(상/중/하) | 회차 | 항목 | 근거' 표 형식.\n"
-            "수정 제안은 본 시나리오에서 직접 쓰지 말고 작가가 revision 시나리오로 재요청하도록 안내."
+            "- 설정/톤 충돌 (회차 본문 vs 인물·세계관 노트)\n\n"
+            "발견 사항 적재 절차 (필수):\n"
+            "1. fetch_episode_plaintext(sort_order=N, with_line_numbers=True) 로 라인 번호 본문 fetch\n"
+            "2. 발견 1건당 propose_review_issue 호출 — episode_id, lines (1-based [N] 인덱스),\n"
+            "   severity (critical/warning/info), issue_type, description, suggestion(옵션)\n"
+            "3. 답변 본문엔 'N건 발견' 한 줄 요약만. 상세는 카드(프론트가 본문 위치로 점프 버튼 제공)로 노출됨.\n"
+            "★ lines 추측 금지 — with_line_numbers 본문의 [N] 인덱스만 인용. 본문 수정은 작가가 직접 처리."
         ),
     },
     "revision": {
@@ -178,7 +223,9 @@ SCENARIOS: dict[str, dict] = {
             "1. 최근 회차 fetch_episode_plaintext 또는 get_episode_summary 로 본문 확인\n"
             "2. 기존 list_characters / list_world_notes 와 비교해 신규 항목 식별\n"
             "3. propose_character / propose_world_note / propose_character_update 로 제안 등록\n"
-            "4. 답변 본문에 '제안 N건' 요약."
+            "4. 답변 본문에 '제안 N건' 요약.\n\n"
+            "★ propose_character 의 인물 서술(외형·성격·역할·메모)은 단일 intro 한 단락으로 합쳐 작성.\n"
+            "  외형/성격/MBTI 별도 노트 분리는 작가가 명시 요청한 경우에만 propose_character_update 로 추가."
         ),
     },
     "qa": {

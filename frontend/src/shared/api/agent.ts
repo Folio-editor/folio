@@ -116,6 +116,10 @@ export function getAgentThread(threadId: string) {
   return apiClient.get<AgentThreadDetail>(`/agent/threads/${threadId}`);
 }
 
+export function deleteAgentThread(threadId: string) {
+  return apiClient.delete<void>(`/agent/threads/${threadId}`);
+}
+
 export function sendAgentMessage(threadId: string, message: string) {
   return apiClient.post<AgentRunResponse>(`/agent/threads/${threadId}/messages`, { message });
 }
