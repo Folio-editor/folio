@@ -56,6 +56,9 @@ dependencies {
     // Caffeine — WorkKeyService TTL 캐시 (Vault 호출 최소화)
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
+    // Mail (Gmail SMTP) — 환불 신청 시 운영자 알림. 약관 제5조.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

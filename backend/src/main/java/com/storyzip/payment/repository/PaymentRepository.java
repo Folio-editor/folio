@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,6 +16,9 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     Optional<Payment> findByOrderId(String orderId);
 
     Optional<Payment> findByPaymentKey(String paymentKey);
+
+    /** 결제 이력 조회 — 최근 결제부터 정렬. 환불 정책상 7일 청약철회 + 5년 보관 의무로 모두 노출. */
+    List<Payment> findAllByWriter_IdOrderByCreatedAtDesc(UUID writerId);
 
     /**
      * 환불 처리 등 결제 상태 변경 시 동시 진입을 막기 위한 행 잠금 조회.

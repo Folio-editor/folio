@@ -6,6 +6,7 @@ import com.storyzip.payment.dto.ConfirmPaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentRequest;
 import com.storyzip.payment.dto.CreatePaymentResponse;
 import com.storyzip.payment.dto.PaymentResponse;
+import com.storyzip.payment.dto.RefundRequest;
 import com.storyzip.payment.dto.RefundResponse;
 import com.storyzip.payment.dto.TokenWalletResponse;
 import com.storyzip.payment.service.PaymentService;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -54,13 +56,35 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getByOrderId(writerId, paymentId));
     }
 
-    /** 환불 — 24시간 이내 전액, 이후 잔여 일수 비례 부분 환불. */
-    @PostMapping("/{paymentId}/refund")
-    public ResponseEntity<RefundResponse> refund(
-            Authentication authentication,
-            @PathVariable String paymentId) {
+    /** 내 결제 이력 — 최근 순. 환불 UI에서 사용. */
+    @GetMapping("/me")
+    public ResponseEntity<List<PaymentResponse>> listMyPayments(Authentication authentication) {
         UUID writerId = requireWriterId(authentication);
-        return ResponseEntity.ok(refundService.refund(writerId, paymentId));
+        return ResponseEntity.ok(paymentService.listMyPayments(writerId));
+    }
+
+    /**
+     * 환불 신청 — 약관 제5조. 즉시 환불되지 않고 운영자 검토 후 승인된다.
+     *
+     * <p>신청 시 이메일이 운영자({@code 2square.f203@gmail.com})에게 발송된다.
+     * 거절 후 1회까지 재신청 가능. active(REQUESTED/APPROVED) 환불이 있으면 신규 신청 차단.
+     */
+    @PostMapping("/{paymentId}/refund")
+    public ResponseEntity<RefundResponse> requestRefund(
+            Authentication authentication,
+            @PathVariable String paymentId,
+            @Valid @RequestBody RefundRequest request) {
+        UUID writerId = requireWriterId(authentication);
+        return ResponseEntity.ok(refundService.requestRefund(writerId, paymentId, request));
+    }
+
+    /** 환불 신청 취소 — 사용자가 신청 후 본인 취소 (REQUESTED 상태에서만). */
+    @PostMapping("/refunds/{refundId}/cancel")
+    public ResponseEntity<RefundResponse> cancelRefundRequest(
+            Authentication authentication,
+            @PathVariable UUID refundId) {
+        UUID writerId = requireWriterId(authentication);
+        return ResponseEntity.ok(refundService.cancelRequest(writerId, refundId));
     }
 
     @GetMapping("/wallet")

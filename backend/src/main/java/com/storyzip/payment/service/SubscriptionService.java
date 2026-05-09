@@ -8,6 +8,7 @@ import com.storyzip.payment.client.PortOneClient;
 import com.storyzip.payment.client.PortOnePaymentResponse;
 import com.storyzip.payment.domain.Payment;
 import com.storyzip.payment.domain.PaymentMethod;
+import com.storyzip.payment.domain.RefundPolicy;
 import com.storyzip.payment.domain.Subscription;
 import com.storyzip.payment.domain.SubscriptionStatus;
 import com.storyzip.payment.dto.BillingAuthPrepareResponse;
@@ -68,6 +69,11 @@ public class SubscriptionService {
     public SubscriptionResponse create(UUID writerId, CreateSubscriptionRequest request) {
         Writer writer = writerRepository.findById(writerId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.WRITER_NOT_FOUND));
+
+        if (!RefundPolicy.CURRENT_VERSION.equals(request.refundPolicyVersion())) {
+            throw new PaymentException(ErrorCode.INVALID_REQUEST,
+                    "환불 규정이 업데이트되었습니다. 최신 버전을 확인하고 다시 시도해주세요.");
+        }
 
         subscriptionRepository.findByWriter_IdAndStatus(writer.getId(), SubscriptionStatus.ACTIVE)
                 .ifPresent(s -> { throw new PaymentException(ErrorCode.SUBSCRIPTION_ALREADY_ACTIVE); });
@@ -159,11 +165,15 @@ public class SubscriptionService {
         String paymentId = generatePaymentId();
         String orderName = plan.getDisplayName() + " - " + orderNameSuffix;
 
+        // 정기결제 갱신은 사용자가 가입 시 동의한 약관 버전을 그대로 이어 사용한다.
+        // 가입 결제와 매월 갱신 결제의 추적을 일관되게 유지하기 위함.
         Payment payment = paymentRepository.save(Payment.builder()
                 .writer(writer)
                 .orderId(paymentId)
                 .amount(plan.getAmount())
                 .tokenQty(plan.getMonthlyTokens())
+                .refundPolicyVersion(RefundPolicy.CURRENT_VERSION)
+                .refundPolicyAgreedAt(LocalDateTime.now(ZoneOffset.UTC))
                 .build());
         payment.markInProgress();
 
