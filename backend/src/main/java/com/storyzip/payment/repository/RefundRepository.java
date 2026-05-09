@@ -43,6 +43,29 @@ public interface RefundRepository extends JpaRepository<Refund, UUID> {
     List<Refund> findAllByStatusOrderByRequestedAtAsc(RefundStatus status);
 
     /**
+     * 운영자 검토 화면용 — Refund + Payment + Writer 를 fetch join 으로 한 쿼리에 가져오고,
+     * 같은 payment 의 REJECTED 환불 횟수를 서브쿼리로 함께 반환.
+     *
+     * <p>N+1 회피: 기존엔 환불 1건 당 {@code countByPayment_IdAndStatus} 1쿼리 추가 + Writer
+     * lazy fetch 잠재 N쿼리. 이 쿼리 1회로 모두 해소.
+     *
+     * <p>반환: {@code Object[2]} 배열 — [0] {@link Refund} (payment/writer fetch 됨),
+     * [1] {@code Long} previousRejectedCount.
+     */
+    @Query("""
+           select r,
+                  (select count(r2) from Refund r2
+                    where r2.payment.id = r.payment.id
+                      and r2.status = com.storyzip.payment.domain.RefundStatus.REJECTED) as rejectedCount
+             from Refund r
+             join fetch r.payment p
+             join fetch p.writer w
+            where r.status = :status
+            order by r.requestedAt asc
+           """)
+    List<Object[]> findDetailByStatusWithRejectedCount(@Param("status") RefundStatus status);
+
+    /**
      * 불일치 감지 스케줄러용 — 최근 N시간 내 APPROVED 처리된 환불 중 현금 환불 케이스만.
      * COMPANY_FAULT_CREDIT 은 PortOne 호출 안 하므로 제외.
      */

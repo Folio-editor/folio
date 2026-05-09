@@ -91,7 +91,7 @@ public record AdminRefundDetail(
                 payment.getCreatedAt(),
                 payment.getRefundPolicyVersion(),
                 elapsed,
-                payment.getOrderId() != null && payment.getOrderId().startsWith("SUB-"),
+                payment.isSubscription(),
 
                 writer.getId(),
                 writer.getEmail(),
