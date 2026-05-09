@@ -55,7 +55,6 @@ public class RefundService {
 
     private static final long WITHDRAWAL_DAYS = 7;
     private static final int SUBSCRIPTION_PERIOD_DAYS = 30;
-    private static final String SUBSCRIPTION_ORDER_PREFIX = "SUB-";
     private static final long MAX_REJECTED_RETRIES = 1;
 
     private final PaymentRepository paymentRepository;
@@ -91,7 +90,7 @@ public class RefundService {
                     "거절 후 1회 재신청만 가능합니다");
         }
 
-        boolean isSubscription = isSubscriptionPayment(payment);
+        boolean isSubscription = payment.isSubscription();
         LocalDateTime approvedAt = payment.getApprovedAt() != null
                 ? payment.getApprovedAt() : payment.getCreatedAt();
         long daysElapsed = ChronoUnit.DAYS.between(approvedAt.toLocalDate(),
@@ -137,14 +136,16 @@ public class RefundService {
 
     /**
      * 운영자 화면용 — 검토에 필요한 모든 컨텍스트를 묶은 상세 목록.
-     * Payment + Writer 정보 + 경과 일수 + 이전 거절 횟수 등을 한 번에 반환.
+     *
+     * <p>N+1 회피: {@link RefundRepository#findDetailByStatusWithRejectedCount} 가
+     * Payment + Writer fetch join + 거절 횟수 서브쿼리를 한 쿼리로 처리.
      */
     @Transactional(readOnly = true)
     public List<com.storyzip.admin.dto.AdminRefundDetail> listDetailByStatus(RefundStatus status) {
-        return refundRepository.findAllByStatusOrderByRequestedAtAsc(status).stream()
-                .map(refund -> {
-                    long previousRejected = refundRepository.countByPayment_IdAndStatus(
-                            refund.getPayment().getId(), RefundStatus.REJECTED);
+        return refundRepository.findDetailByStatusWithRejectedCount(status).stream()
+                .map(row -> {
+                    Refund refund = (Refund) row[0];
+                    long previousRejected = ((Number) row[1]).longValue();
                     return com.storyzip.admin.dto.AdminRefundDetail.of(refund, previousRejected);
                 })
                 .toList();
@@ -299,10 +300,6 @@ public class RefundService {
     }
 
     // ─────────────── 헬퍼 ───────────────
-
-    private boolean isSubscriptionPayment(Payment payment) {
-        return payment.getOrderId() != null && payment.getOrderId().startsWith(SUBSCRIPTION_ORDER_PREFIX);
-    }
 
     private boolean isFullCash(Refund refund) {
         return refund.getRefundType() == RefundType.FULL

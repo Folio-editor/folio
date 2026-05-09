@@ -117,4 +117,18 @@ public class Payment {
     public boolean isDone() {
         return this.status == PaymentStatus.DONE;
     }
+
+    /**
+     * 구독 결제(정기결제) 여부.
+     *
+     * <p>현재는 {@code orderId} prefix({@code SUB-}) 로 식별 — {@code SubscriptionService}
+     * 의 {@code generatePaymentId()} 가 발급. 종량제는 {@code SZ-}.
+     *
+     * <p>식별 방식이 변경되면 (예: 별도 {@code subscription_id} FK 도입) 이 메서드만 수정.
+     */
+    public boolean isSubscription() {
+        return orderId != null && orderId.startsWith(SUBSCRIPTION_ORDER_PREFIX);
+    }
+
+    private static final String SUBSCRIPTION_ORDER_PREFIX = "SUB-";
 }
