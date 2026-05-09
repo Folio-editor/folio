@@ -34,21 +34,7 @@ import type { RefundReason, RefundStatus, RefundType } from '../../types/payment
  * <p>토큰은 localStorage 에 8시간 만료로 저장. 만료되면 자동 삭제 + 재입력.
  */
 export function AdminRefundsPage() {
-  // 페이지 진입 시 사회공학 방어 — DevTools 콘솔 사용 경고. 1회만 출력.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const w = window as unknown as { __folioAdminWarned?: boolean };
-    if (w.__folioAdminWarned) return;
-    w.__folioAdminWarned = true;
-    // eslint-disable-next-line no-console
-    console.warn(
-      '%c[Folio 보안 경고]',
-      'color:#dc2626;font-size:14px;font-weight:bold',
-      '\n이 페이지는 운영자 전용입니다. 누군가 이 콘솔에 코드를 붙여넣으라고 했다면 ' +
-        '계정 탈취 시도일 가능성이 높습니다. 절대 실행하지 마세요.',
-    );
-  }, []);
-
+  // DevTools 사회공학 방어 경고는 AppRoot 의 useEffect 에서 전역 1회 출력 — 여기선 생략.
   // 진입 가능 여부 자체를 막음 (메뉴를 우회해 직접 라우팅했을 때 방어).
   if (!isAdminEntryPointAccessible()) {
     return <UnauthorizedNotice />;
