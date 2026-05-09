@@ -61,6 +61,14 @@ services:
       TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
       TOSS_API_BASE_URL: ${TOSS_API_BASE_URL:-https://api.tosspayments.com}
       TOSS_WEBHOOK_SECRET: ${TOSS_WEBHOOK_SECRET:-}
+      # Gmail SMTP — 환불 신청 시 운영자(2square.f203@gmail.com)에게 알림. 약관 제5조.
+      # 미설정 시 EmailNotifier 가 swallow → 부팅은 깨지지 않지만 알림 전송 안 됨.
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_OPERATOR_TO: ${MAIL_OPERATOR_TO:-2square.f203@gmail.com}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
     depends_on:
       postgresql:
