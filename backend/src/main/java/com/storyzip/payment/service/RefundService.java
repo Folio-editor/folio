@@ -135,6 +135,21 @@ public class RefundService {
                 .toList();
     }
 
+    /**
+     * 운영자 화면용 — 검토에 필요한 모든 컨텍스트를 묶은 상세 목록.
+     * Payment + Writer 정보 + 경과 일수 + 이전 거절 횟수 등을 한 번에 반환.
+     */
+    @Transactional(readOnly = true)
+    public List<com.storyzip.admin.dto.AdminRefundDetail> listDetailByStatus(RefundStatus status) {
+        return refundRepository.findAllByStatusOrderByRequestedAtAsc(status).stream()
+                .map(refund -> {
+                    long previousRejected = refundRepository.countByPayment_IdAndStatus(
+                            refund.getPayment().getId(), RefundStatus.REJECTED);
+                    return com.storyzip.admin.dto.AdminRefundDetail.of(refund, previousRejected);
+                })
+                .toList();
+    }
+
     @Transactional
     public RefundResponse cancelRequest(UUID writerId, UUID refundId) {
         Refund refund = refundRepository.findById(refundId)

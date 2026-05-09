@@ -1,6 +1,7 @@
 package com.storyzip.admin;
 
 import com.storyzip.admin.dto.AdminRefundDecisionRequest;
+import com.storyzip.admin.dto.AdminRefundDetail;
 import com.storyzip.payment.domain.RefundStatus;
 import com.storyzip.payment.dto.RefundResponse;
 import com.storyzip.payment.service.RefundService;
@@ -31,12 +32,23 @@ public class AdminRefundController {
 
     private final RefundService refundService;
 
-    /** 검토 대기 환불 목록 — status 미지정 시 REQUESTED 기본. */
+    /** 검토 대기 환불 목록 — status 미지정 시 REQUESTED 기본. (간략 응답, 호환용) */
     @AdminAudited(action = "REFUND_LIST", resourceType = "refund")
     @GetMapping
     public ResponseEntity<List<RefundResponse>> list(
             @RequestParam(name = "status", defaultValue = "REQUESTED") RefundStatus status) {
         return ResponseEntity.ok(refundService.listByStatus(status));
+    }
+
+    /**
+     * 운영자 검토용 상세 목록 — Refund + Payment + Writer 조인 + 경과 일수 + 이전 거절 횟수.
+     * 운영자 페이지가 합리적 결정을 내릴 수 있도록 모든 컨텍스트를 한 번에 반환.
+     */
+    @AdminAudited(action = "REFUND_LIST_DETAIL", resourceType = "refund")
+    @GetMapping("/detail")
+    public ResponseEntity<List<AdminRefundDetail>> listDetail(
+            @RequestParam(name = "status", defaultValue = "REQUESTED") RefundStatus status) {
+        return ResponseEntity.ok(refundService.listDetailByStatus(status));
     }
 
     /** 환불 승인 — PortOne 취소 + 토큰 회수/보상 + Payment 상태 변경. */
