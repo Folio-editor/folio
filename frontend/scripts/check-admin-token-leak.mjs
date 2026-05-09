@@ -75,7 +75,23 @@ if (token.length < 16) {
   process.exit(2);
 }
 
+// 토큰 자체 + 자동 인코딩된 변형 검사 — 공격자가 평문 대신 base64/hex/URL 로 박은 경우 감지.
+// 임의 base64 패턴이 아니라 "이 토큰의 정확한 변환만" 검사하므로 false-positive 없음.
+const variants = [
+  { value: token, encoding: 'plain' },
+  { value: Buffer.from(token, 'utf8').toString('base64'), encoding: 'base64' },
+  { value: Buffer.from(token, 'utf8').toString('base64url'), encoding: 'base64url' },
+  { value: Buffer.from(token, 'utf8').toString('hex'), encoding: 'hex' },
+  { value: encodeURIComponent(token), encoding: 'url' },
+];
+// 평문과 동일한 변형은 중복 제거 (예: 영문/숫자만으로 된 토큰의 url 인코딩).
+const uniqueVariants = variants.filter(
+  (v, i, arr) => arr.findIndex((x) => x.value === v.value) === i,
+);
+
 console.log(`[admin-token-leak] scanning ${root} for ${TOKEN_ENV} (len=${token.length})...`);
+console.log(`[admin-token-leak]   variants checked: ${uniqueVariants.map((v) => v.encoding).join(', ')}`);
+
 const matches = [];
 for (const file of walk(root)) {
   const ext = extname(file).toLowerCase();
@@ -86,18 +102,23 @@ for (const file of walk(root)) {
   } catch {
     continue; // 바이너리 등
   }
-  if (content.includes(token)) {
-    matches.push(file.replace(root, '<build>'));
+  for (const variant of uniqueVariants) {
+    if (content.includes(variant.value)) {
+      matches.push({
+        file: file.replace(root, '<build>'),
+        encoding: variant.encoding,
+      });
+    }
   }
 }
 
 if (matches.length === 0) {
-  console.log(green('[admin-token-leak] ✓ no leak detected.'));
+  console.log(green('[admin-token-leak] ✓ no leak detected (plain/base64/base64url/hex/url all clean).'));
   process.exit(0);
 }
 
 console.error(red(`[admin-token-leak] ✗ TOKEN LEAK DETECTED in ${matches.length} file(s):`));
-for (const m of matches) console.error(red('  - ' + m));
+for (const m of matches) console.error(red(`  - [${m.encoding}] ${m.file}`));
 console.error('');
 console.error(yellow('이 빌드는 일반 사용자에게 배포하면 안 됩니다. 다음 중 하나로 처리하세요:'));
 console.error(yellow('  1) 운영자 본인 PC 에서만 사용 (배포 X) — pnpm dev / pnpm dev:web'));
