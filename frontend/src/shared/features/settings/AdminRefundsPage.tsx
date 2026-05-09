@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock, Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
+  LogOut,
+  RefreshCw,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import {
   AdminApiError,
   adminApi,
-  isAdminEnabled,
+  clearAdminToken,
+  isAdminAuthenticated,
+  isAdminEntryPointAccessible,
+  setAdminToken,
   type AdminRefundView,
 } from '../../lib/adminApi';
 import type { RefundReason, RefundStatus, RefundType } from '../../types/payment';
@@ -12,33 +23,36 @@ import type { RefundReason, RefundStatus, RefundType } from '../../types/payment
 /**
  * 운영자 환불 검토 화면.
  *
- * <p>탭으로 status 별 목록 (REQUESTED / APPROVED / REJECTED / CANCELED) 조회.
- * 검토 대기(REQUESTED) 행마다 승인/거절 다이얼로그 → adminApi 호출.
+ * <p>흐름:
+ * <ol>
+ *   <li>진입 가능 여부 (URL ?admin=1 또는 localStorage 토큰): 안 되면 메뉴 자체가 안 보임</li>
+ *   <li>토큰 미입력: 토큰 입력 폼</li>
+ *   <li>토큰 입력 후 첫 API 호출이 성공: 정상 페이지</li>
+ *   <li>API 401: 토큰 자동 삭제 + 입력 폼 다시</li>
+ * </ol>
  *
- * <p>VITE_ADMIN_API_TOKEN 미설정 시 안내 화면만 표시 (메뉴 자체도 숨겨짐).
+ * <p>토큰은 localStorage 에 8시간 만료로 저장. 만료되면 자동 삭제 + 재입력.
  */
 export function AdminRefundsPage() {
-  if (!isAdminEnabled()) {
-    return <DisabledNotice />;
+  // DevTools 사회공학 방어 경고는 AppRoot 의 useEffect 에서 전역 1회 출력 — 여기선 생략.
+  // 진입 가능 여부 자체를 막음 (메뉴를 우회해 직접 라우팅했을 때 방어).
+  if (!isAdminEntryPointAccessible()) {
+    return <UnauthorizedNotice />;
   }
+
   return <AdminRefundsContent />;
 }
 
-function DisabledNotice() {
+function UnauthorizedNotice() {
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
-        <h2 className="text-sm font-semibold text-foreground">환불 검토 (운영자)</h2>
+        <h2 className="text-sm font-semibold text-foreground">접근 불가</h2>
       </div>
       <div className="flex flex-1 items-center justify-center px-6 py-10">
         <div className="max-w-sm rounded-lg border border-dashed border-border bg-muted/30 px-5 py-6 text-center">
           <ShieldAlert size={28} strokeWidth={1.5} className="mx-auto mb-2 text-muted-foreground" />
-          <p className="text-xs text-foreground">관리자 토큰이 설정되지 않았습니다.</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            운영자 빌드에서만 활성화됩니다. <code>.env.local</code>에{' '}
-            <code className="rounded bg-muted px-1">VITE_ADMIN_API_TOKEN</code>
-            을 설정한 뒤 다시 빌드하세요.
-          </p>
+          <p className="text-xs text-foreground">운영자 페이지에 접근할 수 없습니다.</p>
         </div>
       </div>
     </div>
@@ -58,6 +72,108 @@ interface DialogState {
 }
 
 function AdminRefundsContent() {
+  const [authenticated, setAuthenticated] = useState(isAdminAuthenticated());
+
+  if (!authenticated) {
+    return <TokenInputForm onAuthenticated={() => setAuthenticated(true)} />;
+  }
+
+  return <AdminRefundsBody onLogout={() => setAuthenticated(false)} />;
+}
+
+function TokenInputForm({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      setError('토큰을 입력해주세요.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // 임시로 저장 후 검증 호출 — 실패하면 자동으로 삭제됨 (adminApi 의 401 처리).
+      setAdminToken(trimmed);
+      await adminApi.listRefunds('REQUESTED');
+      onAuthenticated();
+    } catch (e) {
+      const msg = e instanceof AdminApiError && e.status === 401
+        ? '토큰이 올바르지 않습니다.'
+        : e instanceof Error ? e.message : '인증 실패';
+      setError(msg);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-background">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-6">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <ShieldAlert size={14} strokeWidth={1.75} />
+          환불 검토 (운영자)
+        </h2>
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <div className="w-full max-w-sm">
+          <div className="mb-4 text-center">
+            <ShieldAlert
+              size={32}
+              strokeWidth={1.5}
+              className="mx-auto mb-2 text-muted-foreground"
+            />
+            <h3 className="text-sm font-semibold text-foreground">관리자 토큰 입력</h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Doppler 의 <code className="rounded bg-muted px-1">ADMIN_API_TOKEN</code> 값을 입력해주세요.
+              브라우저에 <strong>8시간 동안</strong> 저장되며 만료 후 재입력 필요.
+            </p>
+          </div>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => {
+              setToken(e.target.value);
+              if (error) setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSubmit();
+            }}
+            placeholder="ADMIN_API_TOKEN"
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            disabled={busy}
+            autoFocus
+          />
+          {error && (
+            <div className="mt-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+              {error}
+            </div>
+          )}
+          <Button
+            className="mt-3 w-full"
+            disabled={busy || !token.trim()}
+            onClick={() => void handleSubmit()}
+          >
+            {busy ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                인증 중
+              </>
+            ) : (
+              '인증'
+            )}
+          </Button>
+          <p className="mt-3 text-center text-[10px] text-muted-foreground">
+            이 페이지는 운영자 전용입니다. 토큰을 모르면 접근하지 마세요.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminRefundsBody({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<RefundStatus>('REQUESTED');
   const [refunds, setRefunds] = useState<AdminRefundView[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,12 +189,17 @@ function AdminRefundsContent() {
       const list = await adminApi.listRefunds(activeTab);
       setRefunds(list);
     } catch (e) {
+      // 401 이면 토큰이 자동 삭제됨 → 입력 폼으로 복귀.
+      if (e instanceof AdminApiError && e.status === 401) {
+        onLogout();
+        return;
+      }
       setError(toErrorMessage(e));
       setRefunds([]);
     } finally {
       setLoading(false);
     }
-  }, [activeTab]);
+  }, [activeTab, onLogout]);
 
   useEffect(() => {
     void refresh();
@@ -101,10 +222,20 @@ function AdminRefundsContent() {
       setDialog(null);
       await refresh();
     } catch (e) {
+      if (e instanceof AdminApiError && e.status === 401) {
+        onLogout();
+        return;
+      }
       setError(toErrorMessage(e));
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleLogout = () => {
+    if (!confirm('관리자 토큰을 삭제하고 로그아웃하시겠어요?')) return;
+    clearAdminToken();
+    onLogout();
   };
 
   return (
@@ -114,15 +245,26 @@ function AdminRefundsContent() {
           <ShieldAlert size={14} strokeWidth={1.75} />
           환불 검토 (운영자)
         </h2>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={loading}
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-          새로고침
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={loading}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            새로고침
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            title="관리자 토큰 삭제"
+          >
+            <LogOut size={11} />
+            로그아웃
+          </button>
+        </div>
       </div>
 
       <div className="flex shrink-0 gap-1 border-b border-border bg-muted/20 px-6 py-2">
