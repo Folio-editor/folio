@@ -1,5 +1,6 @@
 package com.storyzip.payment.controller;
 
+import com.storyzip.common.dto.PageResponse;
 import com.storyzip.common.exception.AuthException;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.payment.dto.ConfirmPaymentRequest;
@@ -14,11 +15,13 @@ import com.storyzip.payment.service.RefundService;
 import com.storyzip.payment.service.TokenWalletService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -56,11 +59,22 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getByOrderId(writerId, paymentId));
     }
 
-    /** 내 결제 이력 — 최근 순. 환불 UI에서 사용. */
+    /**
+     * 내 결제 이력 — 최근 순 페이지네이션. 환불 UI 에서 사용.
+     *
+     * <p>{@code page} 0-based, {@code size} 1~50 (기본 10). size 50 초과는 50 으로 클램프.
+     * 정렬은 {@code createdAt} 내림차순 고정 — 환불 UI 특성상 최신 결제부터 노출이 자연스러움.
+     */
     @GetMapping("/me")
-    public ResponseEntity<List<PaymentResponse>> listMyPayments(Authentication authentication) {
+    public ResponseEntity<PageResponse<PaymentResponse>> listMyPayments(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
         UUID writerId = requireWriterId(authentication);
-        return ResponseEntity.ok(paymentService.listMyPayments(writerId));
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(paymentService.listMyPayments(writerId, pageable));
     }
 
     /**
