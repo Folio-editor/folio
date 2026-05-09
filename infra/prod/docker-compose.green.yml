@@ -69,6 +69,8 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_OPERATOR_TO: ${MAIL_OPERATOR_TO:-2square.f203@gmail.com}
+      # 관리자 API 인증 토큰 (X-Admin-Token 헤더). 미설정 시 admin API 전부 401 차단.
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
     depends_on:
       postgresql:

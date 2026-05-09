@@ -45,7 +45,9 @@ public class SecurityConfig {
             // AI 서버가 X-Internal-Api-Key 헤더로 호출하는 내부 디크립트 API.
             // JWT 인증을 우회하고 InternalDecryptController 의 자체 헤더 검증으로만 통과.
             // (Spring Security 가 먼저 401 차단하면 controller 의 헤더 검증 도달 못 함)
-            "/internal/**"
+            "/internal/**",
+            // 관리자 API — JWT 우회 후 AdminAuthInterceptor 의 X-Admin-Token 헤더 검증.
+            "/api/v1/admin/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
