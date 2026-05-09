@@ -36,30 +36,41 @@ function hasWindow(): boolean {
 
 export function getAdminToken(): string {
   if (!hasWindow()) return '';
+  const raw = localStorage.getItem(ADMIN_TOKEN_KEY);
+  if (!raw) return '';
+  let parsed: unknown;
   try {
-    const raw = localStorage.getItem(ADMIN_TOKEN_KEY);
-    if (!raw) return '';
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      !('token' in parsed) ||
-      !('expiresAt' in parsed) ||
-      typeof (parsed as StoredToken).token !== 'string' ||
-      typeof (parsed as StoredToken).expiresAt !== 'number'
-    ) {
-      // 옛 포맷이거나 손상된 데이터 — 정리.
-      localStorage.removeItem(ADMIN_TOKEN_KEY);
-      return '';
-    }
-    const stored = parsed as StoredToken;
-    if (Date.now() > stored.expiresAt) {
-      localStorage.removeItem(ADMIN_TOKEN_KEY);
-      return '';
-    }
-    return stored.token.trim();
+    parsed = JSON.parse(raw);
   } catch {
+    // JSON.parse 자체 실패 — 손상된 데이터. 다음 접속 시 또 실패하지 않도록 즉시 정리.
+    safeRemove();
     return '';
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !('token' in parsed) ||
+    !('expiresAt' in parsed) ||
+    typeof (parsed as StoredToken).token !== 'string' ||
+    typeof (parsed as StoredToken).expiresAt !== 'number'
+  ) {
+    // 옛 포맷이거나 형식이 어긋난 데이터 — 정리.
+    safeRemove();
+    return '';
+  }
+  const stored = parsed as StoredToken;
+  if (Date.now() > stored.expiresAt) {
+    safeRemove();
+    return '';
+  }
+  return stored.token.trim();
+}
+
+function safeRemove(): void {
+  try {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    // localStorage 자체가 사용 불가 (사적 모드 / quota 등) — 무시.
   }
 }
 
