@@ -1,6 +1,6 @@
 import { CreditCard, Info, Palette, ShieldCheck, Type, User } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import { isAdminEnabled } from '../../../lib/adminApi';
+import { isAdminEntryPointAccessible } from '../../../lib/adminApi';
 
 export type SettingsItemId = 'account' | 'theme' | 'font' | 'payment' | 'about' | 'admin-refunds';
 
@@ -13,8 +13,12 @@ const BASE_ITEMS: { id: SettingsItemId; label: string; icon: typeof Palette }[] 
 ];
 
 /**
- * 운영자 메뉴 — VITE_ADMIN_API_TOKEN 환경변수가 빌드에 주입된 경우에만 표시.
- * 일반 사용자에게 배포되는 빌드에는 토큰 미주입 → 메뉴 숨김.
+ * 운영자 메뉴 — 다음 중 하나일 때만 표시:
+ * 1) URL 에 ?admin=1 쿼리 (운영자가 직접 진입 경로 알고 입력)
+ * 2) localStorage 에 admin token 이미 저장됨 (이전에 진입한 적 있음)
+ *
+ * <p>일반 사용자는 둘 다 해당 안 되어 메뉴 자체가 안 보인다.
+ * 토큰 검증은 페이지 진입 시 실제 API 호출에서 수행.
  */
 const ADMIN_ITEMS: { id: SettingsItemId; label: string; icon: typeof Palette }[] = [
   { id: 'admin-refunds', label: '환불 검토 (운영자)', icon: ShieldCheck },
@@ -26,7 +30,7 @@ interface SettingsListProps {
 }
 
 export function SettingsList({ selectedItemId, onItemSelect }: SettingsListProps) {
-  const items = isAdminEnabled() ? [...BASE_ITEMS, ...ADMIN_ITEMS] : BASE_ITEMS;
+  const items = isAdminEntryPointAccessible() ? [...BASE_ITEMS, ...ADMIN_ITEMS] : BASE_ITEMS;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
