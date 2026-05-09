@@ -123,7 +123,7 @@ export interface MainTab {
 // ── 우측 사이드바 탭 ───────────────────────────────────
 
 /** 우측 사이드바 탭 */
-export type RightPanelTab = 'docs' | 'idea' | 'ai';
+export type RightPanelTab = 'docs' | 'idea' | 'ai' | 'inbox';
 
 // ── 우측 보조 패널 ─────────────────────────────────────
 

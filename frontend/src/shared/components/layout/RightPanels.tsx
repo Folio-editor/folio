@@ -135,6 +135,7 @@ const TABS: { key: RightPanelTab; icon: typeof FileStack; label: string }[] = [
   { key: 'docs', icon: FileStack, label: '문서 뷰어' },
   { key: 'idea', icon: Lightbulb, label: '아이디어' },
   { key: 'ai', icon: BotMessageSquare, label: 'AI 도구' },
+  { key: 'inbox', icon: ClipboardCopy, label: '작업물' },
 ];
 
 export function RightPanels({
@@ -218,9 +219,42 @@ export function RightPanels({
             mainItemId={mainItemId}
           />
         </div>
+        {activeTab === 'inbox' && <InboxTabContent />}
       </div>
     </div>
   );
+}
+
+/**
+ * 작업물 탭 — Agent 가 만든 변경 제안 (suggestion) 큐.
+ * 인증·온라인 가드 후 SuggestionInbox 를 그대로 렌더한다.
+ */
+function InboxTabContent() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const isOnline = useNetworkStatus();
+  if (!isOnline) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
+        오프라인 상태에서는 작업물 큐를 사용할 수 없습니다.
+      </div>
+    );
+  }
+  if (isGuest) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
+        게스트 모드에서는 작업물 큐를 사용할 수 없습니다. 로그인 후 이용해주세요.
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
+        로그인이 필요합니다.
+      </div>
+    );
+  }
+  return <SuggestionInbox />;
 }
 
 /* ── 우측 패널 공통 헤더 ── */
@@ -254,10 +288,6 @@ function RightPanelHeader({
     selectedWorkId ? s.agentModeByWork[selectedWorkId] ?? false : false,
   );
   const setAgentMode = useAgentChatStore((s) => s.setAgentMode);
-  const agentSection = useAgentChatStore((s) =>
-    selectedWorkId ? s.agentSectionByWork[selectedWorkId] ?? 'chat' : 'chat',
-  );
-  const setAgentSection = useAgentChatStore((s) => s.setAgentSection);
 
   const showAgentControls =
     activeTab === 'ai' && aiEligible && !!selectedWorkId && aiScreen === 'menu';
@@ -312,40 +342,7 @@ function RightPanelHeader({
       </span>
       {showAgentControls && (
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {/* Agent 모드 ON 시: 채팅·작업물 섹션 segmented (헤더 우측 인라인) */}
-          {agentMode && selectedWorkId && (
-            <div className="flex items-center rounded-md border border-border bg-background p-0.5">
-              <button
-                type="button"
-                onClick={() => setAgentSection(selectedWorkId, 'chat')}
-                title="채팅"
-                className={cn(
-                  'flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors',
-                  agentSection === 'chat'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <BotMessageSquare size={12} strokeWidth={2} />
-                채팅
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentSection(selectedWorkId, 'inbox')}
-                title="작업물"
-                className={cn(
-                  'flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors',
-                  agentSection === 'inbox'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <ClipboardCopy size={12} strokeWidth={2} />
-                작업물
-              </button>
-            </div>
-          )}
-          {/* Agent 모드 토글 — 라벨 '채팅' + 스위치 */}
+          {/* Agent 모드 토글 — 라벨 '채팅' + 스위치. 작업물(제안 큐) 은 inbox 탭으로 별도 분리됨. */}
           <button
             type="button"
             role="switch"
@@ -996,14 +993,11 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const isOnline = useNetworkStatus();
   const aiEligible = isAuthenticated && !isGuest && isOnline;
 
-  // Phase 4 — Agent 모드 토글 + 섹션 (store 기반, 헤더 와 공유)
+  // Phase 4 — Agent 모드 토글 (store 기반, 헤더 와 공유). 작업물 큐는 inbox 탭으로 별도 분리됨.
   const agentMode = useAgentChatStore((s) =>
     selectedWorkId ? s.agentModeByWork[selectedWorkId] ?? false : false,
   );
   const setAgentMode = useAgentChatStore((s) => s.setAgentMode);
-  const agentSection = useAgentChatStore((s) =>
-    selectedWorkId ? s.agentSectionByWork[selectedWorkId] ?? 'chat' : 'chat',
-  );
 
   // 자격 상실 시 agent 모드 자동 OFF (오프라인 전환·로그아웃 등)
   useEffect(() => {
@@ -1417,11 +1411,10 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           ⚠ {ineligibleReason}
         </div>
       )}
-      {/* Agent 토글 / 채팅·작업물 segmented 는 RightPanelHeader 로 이동됨 (헤더 우측 인라인). */}
-      {aiEligible && agentMode && selectedWorkId && agentSection === 'chat' && (
+      {/* Agent 토글은 RightPanelHeader 로 이동. 작업물(제안 큐) 은 우측 패널의 'inbox' 탭으로 별도 분리. */}
+      {aiEligible && agentMode && selectedWorkId && (
         <AgentChatPanel workId={selectedWorkId} />
       )}
-      {aiEligible && agentMode && selectedWorkId && agentSection === 'inbox' && <SuggestionInbox />}
       {aiEligible && !agentMode && (
         <>
       {screen === 'spellcheck-history-view' && (

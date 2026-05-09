@@ -24,6 +24,7 @@ from app.mcp.tools.episode_search import (
     query_episodes_by_chunks,
     search_episode_chunks,
 )
+from app.mcp.tools.episode_spellcheck import check_spelling
 from app.mcp.tools.episode_summary import (
     get_episode_summary,
     list_all_oneline_summaries,
@@ -43,6 +44,8 @@ from app.mcp.tools.proposals import (
     propose_plot_revision,
     propose_plot_tree,
     propose_review_issue,
+    propose_spelling_fix,
+    propose_spelling_fix_batch,
     propose_world_note,
     propose_world_note_delete,
     propose_world_note_update,
@@ -709,6 +712,135 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "required": ["episode_id", "reason"],
         },
     },
+    # ───────── Phase 5: 한국어 맞춤법 검사 ─────────
+    {
+        "name": "check_spelling",
+        "description": (
+            "회차 본문의 한국어 맞춤법·띄어쓰기·문장부호·오탈자 점검 (Haiku 1회 호출). "
+            "설정·맥락·복선·문체는 평가하지 않음 — 순수 표기 오류만. 작품의 인물·세계관 "
+            "이름은 자동으로 화이트리스트 처리되어 false positive 방지. "
+            "★ 검수 시나리오에서 propose_review_issue 와 함께 사용 권장: 본 도구로 표기 오류 "
+            "전수 점검 후, 작가에게 의미 있는 1~5건만 issue_type='other' + severity='info' 로 "
+            "propose_review_issue 호출. 단순 오타 30건을 모두 propose 하면 작가 검토 부담 ↑ — "
+            "여러 건을 1개 propose 의 description 에 묶어 요약 권장 (예: 'L12·L34 띄어쓰기 / "
+            "L57 마침표 누락')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sort_order": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "검사 대상 회차 순번 (list_episodes 의 sort_order).",
+                },
+            },
+            "required": ["sort_order"],
+        },
+    },
+    # ───────── Phase 5: 맞춤법 자동 수정 (즉시 반영) ─────────
+    {
+        "name": "propose_spelling_fix",
+        "description": (
+            "회차 본문의 한국어 표기 오류 1건을 자동 치환 가능한 형태로 작가 승인 큐에 적재. "
+            "★ propose_review_issue 와 달리 승인 시 backend 가 해당 line 의 TipTap 텍스트에서 "
+            "original → suggestion 으로 1회 치환 후 episode 재저장 → PowerSync sync. "
+            "check_spelling 결과의 issue 1건 = propose_spelling_fix 1회 호출. "
+            "제약: 1 propose = 1 치환 / 마크(굵게·기울임) 걸친 텍스트는 1차 미지원 (backend 가 "
+            "복합 마크 발견 시 적용 거부 → 작가에게 직접 수정 안내). 같은 line 에 여러 오류면 "
+            "각각 propose 호출."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "대상 회차 UUID (36자). check_spelling / fetch_episode_plaintext 응답의 id 필드.",
+                },
+                "line": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "오류 위치 line 번호 (1-based). check_spelling 결과의 issue.line.",
+                },
+                "original": {
+                    "type": "string",
+                    "description": "본문 그대로의 문자열 (한 글자도 빠뜨리거나 더하지 말 것).",
+                    "minLength": 1,
+                },
+                "suggestion": {
+                    "type": "string",
+                    "description": "original 자리를 1:1 대체할 교정 문자열. original 과 동일하면 안 됨.",
+                    "minLength": 1,
+                },
+                "fix_type": {
+                    "type": "string",
+                    "enum": ["typo", "spacing", "punctuation"],
+                    "description": "분류 — 오탈자 / 띄어쓰기 / 문장부호",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "(옵션) 수정 사유 — 작가 검토 시 판단 근거",
+                },
+            },
+            "required": ["episode_id", "line", "original", "suggestion", "fix_type"],
+        },
+    },
+    # ───────── Phase 5: 맞춤법 일괄 체크리스트 (다건 묶음 제안) ─────────
+    {
+        "name": "propose_spelling_fix_batch",
+        "description": (
+            "회차의 한국어 표기 오류 N건을 1개의 체크리스트 제안으로 묶어 적재. ★ 권장 — "
+            "propose_spelling_fix 를 N번 호출하면 작가가 카드 N개를 일일이 검토해야 하지만, "
+            "본 도구를 1회 호출하면 작가가 체크박스로 일괄 선택 후 [적용] 한 번에 자동 치환됨. "
+            "check_spelling 결과의 issues 배열을 거의 그대로 fixes 인자로 전달 가능 — line / "
+            "original / suggestion / type→fix_type 매핑만 신경쓰면 됨. 빈 배열·잘못된 fix_type "
+            "·line 미존재·original==suggestion 는 자동 필터링되며, 모두 무효면 error 반환."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "대상 회차 UUID (36자). check_spelling / fetch_episode_plaintext 응답의 id 필드.",
+                },
+                "fixes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "맞춤법 수정 항목 목록. check_spelling 의 issues 배열을 그대로 매핑 가능.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "line": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "오류 위치 line 번호 (1-based, check_spelling 결과의 line).",
+                            },
+                            "original": {
+                                "type": "string",
+                                "description": "본문 그대로의 문자열 (한 글자도 변형 금지).",
+                                "minLength": 1,
+                            },
+                            "suggestion": {
+                                "type": "string",
+                                "description": "교정 후 들어갈 문자열. original 과 동일하면 자동 제외.",
+                                "minLength": 1,
+                            },
+                            "fix_type": {
+                                "type": "string",
+                                "enum": ["typo", "spacing", "punctuation"],
+                                "description": "분류 — 오탈자 / 띄어쓰기 / 문장부호",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "(옵션) 수정 사유 — 작가 검토 시 판단 근거",
+                            },
+                        },
+                        "required": ["line", "original", "suggestion", "fix_type"],
+                    },
+                },
+            },
+            "required": ["episode_id", "fixes"],
+        },
+    },
     # ───────── Phase 5: 검수 발견 사항 (위치 매핑) ─────────
     {
         "name": "propose_review_issue",
@@ -809,6 +941,9 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "propose_plot_tree": propose_plot_tree,
     "propose_plot_delete": propose_plot_delete,
     "propose_review_issue": propose_review_issue,
+    "propose_spelling_fix": propose_spelling_fix,
+    "propose_spelling_fix_batch": propose_spelling_fix_batch,
+    "check_spelling": check_spelling,
 }
 
 # 도구 카테고리 (BudgetTracker Tier 2 키 분류)
@@ -849,6 +984,9 @@ TOOL_CATEGORY: dict[str, str] = {
     "propose_plot_tree": "propose",
     "propose_plot_delete": "propose",
     "propose_review_issue": "propose",
+    "propose_spelling_fix": "propose",
+    "propose_spelling_fix_batch": "propose",
+    "check_spelling": "sub_agent",       # Haiku 호출 — sub_agent 카테고리 (analyze_episode 와 동급)
 }
 
 

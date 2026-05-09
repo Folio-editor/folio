@@ -15,6 +15,7 @@ import { decryptWorkFieldOnce, isCipher } from '../../crypto/fieldDecrypt';
 import type { AgentSuggestion } from '../../api/agent';
 import { useMainTabsStore } from '../../stores/mainTabsStore';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
+import { ChatMarkdown } from './ChatMarkdown';
 
 const ENTITY_LABEL: Record<string, string> = {
   character: '인물 추가',
@@ -31,6 +32,8 @@ const ENTITY_LABEL: Record<string, string> = {
   episode_update: '회차 수정',
   episode_delete: '회차 삭제',
   review_issue: '검수 발견',
+  spelling_fix: '맞춤법 수정',
+  spelling_batch: '맞춤법 일괄',
 };
 
 export function entityLabel(entityType: string): string {
@@ -137,65 +140,98 @@ export function useDecryptedSuggestion(s: AgentSuggestion): {
  *
  * SuggestionInbox 에선 work_id 가 항목마다 다를 수 있어 s.work_id 를 그대로 workId 로 전달.
  */
+// 인물 필드 한글 라벨 — 'role'·'intro' 같은 영문 키 대신 작가가 직관 인지.
+const CHARACTER_FIELD_LABEL: Record<string, string> = {
+  name: '이름',
+  role: '역할',
+  gender: '성별',
+  age: '나이',
+  intro: '소개',
+  appearance: '외형',
+  personality: '성격',
+  notes: '메모',
+};
+
+// markdown 으로 렌더할 자유 서술 필드 (intro/notes 등). 짧은 라벨 (이름·성별) 은 평문.
+const CHARACTER_MARKDOWN_FIELDS = new Set(['intro', 'appearance', 'personality', 'notes']);
+
 export function SuggestionBodyPreview({
   s,
   workId,
   busy,
   onApprove,
   onReject,
+  hideActions = false,
+  batchChecked,
+  onBatchCheckedChange,
 }: {
   s: AgentSuggestion;
   workId: string;
   busy: boolean;
-  onApprove: () => void;
+  /** spelling_batch 일 때 selectedIndices 배열 전달 — 작가가 체크한 fix idx. 다른 type 은 미전달. */
+  onApprove: (selectedIndices?: number[]) => void;
   onReject: () => void;
+  /** 외부 footer 가 액션을 제공하는 경우 (예: ReviewOverlay) 내장 거절/승인 행 숨김. */
+  hideActions?: boolean;
+  /** spelling_batch 의 체크 상태를 부모가 직접 관리할 때 (overlay footer 통합). */
+  batchChecked?: Set<number>;
+  onBatchCheckedChange?: (next: Set<number>) => void;
 }) {
   const p = useDecryptedSuggestionPayload(workId, s.payload);
   return (
-    <div className="space-y-1 text-[11px]">
+    <div className="space-y-1.5 text-[11px]">
       {s.entity_type === 'episode_draft' && (
         <>
           <div>
-            <strong>제목:</strong> {String(p.title ?? '')}
+            <strong className="text-muted-foreground">제목</strong> · {String(p.title ?? '')}
           </div>
-          <div className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2 text-[11px]">
-            {String(p.content ?? '')}
+          <div className="rounded bg-muted/30 p-2">
+            <ChatMarkdown text={String(p.content ?? '')} />
           </div>
         </>
       )}
       {s.entity_type === 'world_note' && (
         <>
           <div>
-            <strong>이름:</strong> {String(p.name ?? '')}
+            <strong className="text-muted-foreground">이름</strong> · {String(p.name ?? '')}
           </div>
-          <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/30 p-2">
-            {String(p.content ?? '')}
+          <div className="rounded bg-muted/30 p-2">
+            <ChatMarkdown text={String(p.content ?? '')} />
           </div>
         </>
       )}
       {s.entity_type === 'character' && (
-        <>
+        <div className="space-y-1.5">
           {(['name', 'role', 'gender', 'age', 'intro', 'appearance', 'personality', 'notes'] as const).map(
             (k) => {
               const v = p[k];
               if (!v) return null;
+              const label = CHARACTER_FIELD_LABEL[k] ?? k;
+              const isMarkdown = CHARACTER_MARKDOWN_FIELDS.has(k);
               return (
                 <div key={k}>
-                  <strong>{k}:</strong> {String(v)}
+                  <div className="text-[10px] font-medium text-muted-foreground">{label}</div>
+                  {isMarkdown ? (
+                    <div className="mt-0.5 rounded bg-muted/20 px-2 py-1">
+                      <ChatMarkdown text={String(v)} />
+                    </div>
+                  ) : (
+                    <div className="mt-0.5">{String(v)}</div>
+                  )}
                 </div>
               );
             },
           )}
-        </>
+        </div>
       )}
       {s.entity_type === 'plot_tree' && (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div>
             <strong>📁 {String((p.root as Record<string, unknown>)?.title ?? s.suggested_name)}</strong>
           </div>
           {Boolean((p.root as Record<string, unknown>)?.content) && (
-            <div className="rounded bg-muted/30 p-2 text-[11px] whitespace-pre-wrap">
-              {String((p.root as Record<string, unknown>).content)}
+            <div className="rounded bg-muted/30 p-2">
+              <ChatMarkdown text={String((p.root as Record<string, unknown>).content)} />
             </div>
           )}
           <div className="ml-3 space-y-1 border-l border-border/60 pl-2">
@@ -206,8 +242,8 @@ export function SuggestionBodyPreview({
                     └ <strong>{String(c.title ?? `(자식 ${i + 1})`)}</strong>
                   </div>
                   {Boolean(c.content) && (
-                    <div className="ml-3 rounded bg-muted/20 p-1.5 text-[10px] whitespace-pre-wrap">
-                      {String(c.content)}
+                    <div className="ml-3 rounded bg-muted/20 px-2 py-1">
+                      <ChatMarkdown text={String(c.content)} />
                     </div>
                   )}
                 </div>
@@ -222,12 +258,25 @@ export function SuggestionBodyPreview({
         s.entity_type === 'world_note_update' ||
         s.entity_type === 'episode_update' ||
         s.entity_type === 'plot_revision') && (
-        <pre className="max-h-40 overflow-auto rounded bg-muted/30 p-2 text-[10px]">
-          {JSON.stringify(p, null, 2)}
-        </pre>
+        <UpdatePayloadView payload={p} />
       )}
       {s.entity_type === 'review_issue' && (
         <ReviewIssueCard suggestion={s} payload={p} />
+      )}
+      {s.entity_type === 'spelling_fix' && (
+        <SpellingFixCard payload={p} />
+      )}
+      {s.entity_type === 'spelling_batch' && (
+        <SpellingBatchCard
+          payload={p}
+          status={s.status}
+          busy={busy}
+          onApply={(idxs) => onApprove(idxs)}
+          onReject={onReject}
+          controlledChecked={batchChecked}
+          onCheckedChange={onBatchCheckedChange}
+          hideActions={hideActions}
+        />
       )}
       {(s.entity_type === 'character_delete' ||
         s.entity_type === 'world_note_delete' ||
@@ -236,7 +285,10 @@ export function SuggestionBodyPreview({
           ⚠ 삭제 — {String(p.reason ?? '(사유 없음)')}
         </div>
       )}
-      {s.status === 'pending' && s.entity_type !== 'review_issue' && (
+      {!hideActions && s.status === 'pending'
+        && s.entity_type !== 'review_issue'
+        && s.entity_type !== 'spelling_fix'
+        && s.entity_type !== 'spelling_batch' && (
         <div className="mt-2 flex justify-end gap-1">
           <button
             type="button"
@@ -248,7 +300,7 @@ export function SuggestionBodyPreview({
           </button>
           <button
             type="button"
-            onClick={onApprove}
+            onClick={() => onApprove()}
             disabled={busy}
             className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
           >
@@ -256,8 +308,31 @@ export function SuggestionBodyPreview({
           </button>
         </div>
       )}
+      {/* spelling_fix — 1:1 자동 치환. 거절 = 무시, 승인 = 즉시 적용 */}
+      {!hideActions && s.status === 'pending' && s.entity_type === 'spelling_fix' && (
+        <div className="mt-2 flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={busy}
+            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            title="이 수정을 무시"
+          >
+            무시
+          </button>
+          <button
+            type="button"
+            onClick={() => onApprove()}
+            disabled={busy}
+            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
+            title="승인 시 본문에 즉시 자동 치환 (PowerSync sync)"
+          >
+            ✓ 적용
+          </button>
+        </div>
+      )}
       {/* review_issue 는 자동 적용 X — 작가가 본문 수정한 뒤 닫음/무시 */}
-      {s.status === 'pending' && s.entity_type === 'review_issue' && (
+      {!hideActions && s.status === 'pending' && s.entity_type === 'review_issue' && (
         <div className="mt-2 flex justify-end gap-1">
           <button
             type="button"
@@ -270,7 +345,7 @@ export function SuggestionBodyPreview({
           </button>
           <button
             type="button"
-            onClick={onApprove}
+            onClick={() => onApprove()}
             disabled={busy}
             className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
             title="확인 처리 (자동 수정 안 함)"
@@ -279,6 +354,67 @@ export function SuggestionBodyPreview({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────── update 계열 payload 렌더 (character_update / world_note_update / episode_update / plot_revision) ───────
+//
+// JSON dump 대신 구조 키 / 자유 텍스트 분리해 사람이 읽기 좋은 폼.
+// 자유 텍스트 (long string / markdown 후보) 는 ChatMarkdown 으로, 짧은 라벨은 평문.
+
+const UPDATE_FIELD_LABEL: Record<string, string> = {
+  character_id: '대상 인물',
+  world_note_id: '대상 세계관',
+  episode_id: '대상 회차',
+  plot_id: '대상 플롯',
+  field: '수정 필드',
+  value: '새 값',
+  name: '이름',
+  title: '제목',
+  role: '역할',
+  intro: '소개',
+  appearance: '외형',
+  personality: '성격',
+  notes: '메모',
+  content: '본문',
+  outline: '개요',
+  new_outline: '개요',
+  status: '상태',
+  reason: '사유',
+};
+
+const UPDATE_MARKDOWN_KEYS = new Set([
+  'value', 'intro', 'appearance', 'personality', 'notes', 'content', 'outline', 'new_outline',
+]);
+
+function UpdatePayloadView({ payload }: { payload: Record<string, unknown> }) {
+  const entries = Object.entries(payload).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  if (entries.length === 0) {
+    return <div className="rounded bg-muted/30 p-2 text-[10px] text-muted-foreground">변경 사항 없음</div>;
+  }
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([k, v]) => {
+        const label = UPDATE_FIELD_LABEL[k] ?? k;
+        const isString = typeof v === 'string';
+        const isMd = isString && UPDATE_MARKDOWN_KEYS.has(k);
+        const text = isString ? v : JSON.stringify(v, null, 2);
+        return (
+          <div key={k}>
+            <div className="text-[10px] font-medium text-muted-foreground">{label}</div>
+            {isMd ? (
+              <div className="mt-0.5 rounded bg-muted/20 px-2 py-1">
+                <ChatMarkdown text={text} />
+              </div>
+            ) : isString ? (
+              <div className="mt-0.5">{text}</div>
+            ) : (
+              <pre className="mt-0.5 overflow-auto rounded bg-muted/20 px-2 py-1 text-[10px]">{text}</pre>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -381,6 +517,215 @@ function ReviewIssueCard({
           <span className="text-[10px] font-medium text-muted-foreground">💡 권고</span>
           <div className="mt-0.5 leading-relaxed">{p.suggestion}</div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─────── 맞춤법 일괄 체크리스트 카드 ───────
+
+interface SpellingBatchFix {
+  line?: number;
+  original?: string;
+  suggestion?: string;
+  fix_type?: 'typo' | 'spacing' | 'punctuation';
+  reason?: string | null;
+}
+
+interface SpellingBatchPayload {
+  episode_id?: string;
+  fixes?: SpellingBatchFix[];
+}
+
+function SpellingBatchCard({
+  payload,
+  status,
+  busy,
+  onApply,
+  onReject,
+  controlledChecked,
+  onCheckedChange,
+  hideActions = false,
+}: {
+  payload: Record<string, unknown>;
+  status: 'pending' | 'confirmed' | 'rejected';
+  busy: boolean;
+  onApply: (selectedIndices: number[]) => void;
+  onReject: () => void;
+  /** 부모가 selection 을 직접 관리할 때 controlled 모드. (ReviewOverlay 의 외부 footer 통일용) */
+  controlledChecked?: Set<number>;
+  onCheckedChange?: (next: Set<number>) => void;
+  /** 내부 액션 버튼 (전체 무시 / 선택 적용) 숨김 — 외부 footer 가 제공할 때 */
+  hideActions?: boolean;
+}) {
+  const p = payload as SpellingBatchPayload;
+  const fixes = Array.isArray(p.fixes) ? p.fixes : [];
+  // controlled / uncontrolled 동시 지원. controlledChecked 있으면 그걸 사용, 없으면 내부 state.
+  const [internalChecked, setInternalChecked] = useState<Set<number>>(
+    () => new Set(fixes.map((_, i) => i)),
+  );
+  const checked = controlledChecked ?? internalChecked;
+  const setChecked = (updater: (prev: Set<number>) => Set<number>) => {
+    if (controlledChecked && onCheckedChange) {
+      onCheckedChange(updater(controlledChecked));
+    } else {
+      setInternalChecked(updater);
+    }
+  };
+  const allChecked = checked.size === fixes.length;
+  const noneChecked = checked.size === 0;
+
+  function toggle(i: number) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setChecked((prev) =>
+      prev.size === fixes.length ? new Set() : new Set(fixes.map((_, i) => i)),
+    );
+  }
+
+  if (fixes.length === 0) {
+    return (
+      <div className="rounded bg-muted/30 p-2 text-[10px] text-muted-foreground">
+        수정 항목 없음
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] text-muted-foreground">
+          {status === 'pending'
+            ? <><strong className="text-foreground">{checked.size}</strong> / {fixes.length} 선택됨</>
+            : <>{fixes.length}건</>}
+        </div>
+        {status === 'pending' && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            disabled={busy}
+            className="text-[10px] text-primary hover:underline disabled:opacity-50"
+          >
+            {allChecked ? '전체 해제' : '전체 선택'}
+          </button>
+        )}
+      </div>
+      <ul className="max-h-56 space-y-0.5 overflow-y-auto rounded border border-border/50 bg-background/40 p-1">
+        {fixes.map((f, i) => {
+          const isChecked = checked.has(i);
+          const typeLabel = (f.fix_type && FIX_TYPE_LABEL[f.fix_type]) || '맞춤법';
+          return (
+            <li
+              key={i}
+              className={`flex items-start gap-1.5 rounded px-1.5 py-1 text-[11px] ${
+                status === 'pending' && isChecked ? 'bg-primary/5' : ''
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => toggle(i)}
+                disabled={busy || status !== 'pending'}
+                className="mt-0.5 h-3 w-3 shrink-0 cursor-pointer accent-primary disabled:cursor-not-allowed"
+                aria-label={`L${f.line} ${f.original} → ${f.suggestion}`}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="rounded bg-blue-500/15 px-1 font-medium text-blue-600">{typeLabel}</span>
+                  <span className="tabular-nums">L{f.line}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span className="rounded bg-red-500/10 px-1 font-mono text-red-700 line-through">
+                    {f.original}
+                  </span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="rounded bg-emerald-500/10 px-1 font-mono text-emerald-700">
+                    {f.suggestion}
+                  </span>
+                </div>
+                {f.reason && (
+                  <div className="mt-0.5 text-[10px] text-muted-foreground">{f.reason}</div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {/* 외부 footer 가 액션 제공 시 (ReviewOverlay) 내부 버튼 숨김 — UI 통일성. */}
+      {!hideActions && status === 'pending' && (
+        <div className="flex justify-end gap-1 pt-0.5">
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={busy}
+            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            title="이 묶음 전체 무시"
+          >
+            전체 무시
+          </button>
+          <button
+            type="button"
+            onClick={() => onApply(Array.from(checked).sort((a, b) => a - b))}
+            disabled={busy || noneChecked}
+            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
+            title="체크된 항목만 본문에 일괄 자동 치환"
+          >
+            ✓ 선택 항목 적용 ({checked.size})
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────── 맞춤법 자동 치환 카드 ───────
+
+interface SpellingFixPayload {
+  episode_id?: string;
+  line?: number;
+  original?: string;
+  suggestion?: string;
+  fix_type?: 'typo' | 'spacing' | 'punctuation';
+  reason?: string | null;
+}
+
+const FIX_TYPE_LABEL: Record<string, string> = {
+  typo: '오탈자',
+  spacing: '띄어쓰기',
+  punctuation: '문장부호',
+};
+
+function SpellingFixCard({ payload }: { payload: Record<string, unknown> }) {
+  const p = payload as SpellingFixPayload;
+  const typeLabel = (p.fix_type && FIX_TYPE_LABEL[p.fix_type]) || '맞춤법';
+  const lineLabel = p.line ? `L${p.line}` : '';
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+          {typeLabel}
+        </span>
+        <span className="text-[10px] text-muted-foreground">{lineLabel}</span>
+      </div>
+      {/* original → suggestion 한눈 비교 */}
+      <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-1 text-[11px]">
+        <span className="text-muted-foreground">원본</span>
+        <span className="rounded bg-red-500/10 px-1.5 py-0.5 font-mono text-red-700 line-through">
+          {p.original}
+        </span>
+        <span className="text-muted-foreground">교정</span>
+        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-emerald-700">
+          {p.suggestion}
+        </span>
+      </div>
+      {p.reason && (
+        <div className="text-[10px] text-muted-foreground">사유: {p.reason}</div>
       )}
     </div>
   );

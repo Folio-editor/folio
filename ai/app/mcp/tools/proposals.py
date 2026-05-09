@@ -514,6 +514,163 @@ async def propose_review_issue(
     )
 
 
+async def propose_spelling_fix(
+    session: AsyncSession,
+    ctx: WriterContext,
+    *,
+    episode_id: str,
+    line: int,
+    original: str,
+    suggestion: str,
+    fix_type: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """회차 본문 한국어 표기 오류 1건을 자동 적용 가능한 형태로 작가 승인 큐에 적재.
+
+    propose_review_issue 와 달리 ★ 승인 시 자동 치환 적용 ★ — backend SuggestionApplier 가
+    해당 line 의 TipTap text 블록에서 original → suggestion 으로 1회 치환 후 episode 재저장.
+    PowerSync 가 모든 클라이언트로 sync.
+
+    제약:
+      - 1 propose = 1 치환 (line + original + suggestion 1쌍).
+      - 같은 line 에 여러 오류면 각각 propose 호출.
+      - original 이 본문에 둘 이상 있으면 backend 가 첫 매치만 적용 (line 격리로 보통 안전).
+      - 마크 (굵게/기울임) 가 걸친 텍스트는 backend 가 1차 단일 text 노드만 지원.
+        실패 시 작가에게 'manual fix required' 응답 → 작가가 직접 수정.
+
+    Args:
+      episode_id: 대상 회차 id (uuid 36자, list_episodes / fetch_episode_plaintext / check_spelling 응답의 id)
+      line: 오류 위치 line 번호 (1-based, check_spelling 결과의 line 또는 fetch_episode_plaintext(with_line_numbers=True) [N])
+      original: 본문에 등장하는 정확한 문자열 (그대로 복사 — 한 글자도 빠뜨리거나 더하지 말 것)
+      suggestion: 교정 후 들어갈 문자열 (original 자리를 1:1 대체)
+      fix_type: 'typo' | 'spacing' | 'punctuation' (분류 라벨)
+      reason: (옵션) 수정 사유 — 작가 검토 시 판단 근거
+    """
+    # episode 격리 검증 + updated_at fetch (race window 차단용 — 작가가 그 사이 본문 편집 시 적용 거부)
+    r = await session.execute(
+        sa_text(
+            "SELECT title, updated_at FROM episode "
+            "WHERE id = :eid AND work_id = :wid AND writer_id = :wr"
+        ),
+        {"eid": episode_id, "wid": ctx.work_id, "wr": ctx.writer_id},
+    )
+    row = r.fetchone()
+    if row is None:
+        return {"error": "episode_not_found_in_work"}
+
+    if fix_type not in ("typo", "spacing", "punctuation"):
+        return {"error": "invalid_fix_type", "got": fix_type}
+    if not original or not suggestion:
+        return {"error": "original_and_suggestion_required"}
+    if original == suggestion:
+        return {"error": "no_change"}
+    if not isinstance(line, int) or line < 1:
+        return {"error": "invalid_line"}
+
+    payload = {
+        "episode_id": episode_id,
+        "line": line,
+        "original": original,
+        "suggestion": suggestion,
+        "fix_type": fix_type,
+        "reason": reason,
+        # race window 차단 — backend 적용 시점에 episode.updated_at 과 비교, 변하면 409 거부
+        "expected_updated_at": row[1].isoformat() if row[1] is not None else None,
+    }
+    return await _insert_suggestion(
+        session,
+        ctx,
+        entity_type="spelling_fix",
+        suggested_name=f"L{line} {original} → {suggestion}",
+        payload=payload,
+        episode_id=uuid.UUID(episode_id),
+    )
+
+
+async def propose_spelling_fix_batch(
+    session: AsyncSession,
+    ctx: WriterContext,
+    *,
+    episode_id: str,
+    fixes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """회차 본문 표기 오류 N건을 1개의 체크리스트 제안으로 묶어 적재.
+
+    propose_spelling_fix 와 달리 1 propose = N 치환. 작가는 작업물 / 검토 오버레이에서
+    항목별 체크박스로 OK / NG 선별 후 [√ 적용] 클릭 → backend 가 선택된 항목만 일괄 자동
+    치환.
+
+    Args:
+      episode_id: 대상 회차 UUID
+      fixes: ``[{line, original, suggestion, fix_type, reason?}]`` — check_spelling 의
+              issues 결과를 거의 그대로 매핑. 각 fix 의 line/original/suggestion 은
+              propose_spelling_fix 와 동일 의미.
+
+    검증:
+      - 빈 배열 거부
+      - 각 fix 의 fix_type / line / original / suggestion 필수
+      - original == suggestion 이면 해당 fix 제외 (no_change 노이즈)
+    """
+    r = await session.execute(
+        sa_text(
+            "SELECT title, updated_at FROM episode "
+            "WHERE id = :eid AND work_id = :wid AND writer_id = :wr"
+        ),
+        {"eid": episode_id, "wid": ctx.work_id, "wr": ctx.writer_id},
+    )
+    row = r.fetchone()
+    if row is None:
+        return {"error": "episode_not_found_in_work"}
+    if not isinstance(fixes, list) or len(fixes) == 0:
+        return {"error": "fixes_required_non_empty_list"}
+
+    cleaned: list[dict[str, Any]] = []
+    for i, raw in enumerate(fixes):
+        if not isinstance(raw, dict):
+            continue
+        fix_type = str(raw.get("fix_type") or raw.get("type") or "").strip().lower()
+        if fix_type not in ("typo", "spacing", "punctuation"):
+            continue
+        line_v = raw.get("line")
+        if not isinstance(line_v, int) or line_v < 1:
+            continue
+        original = str(raw.get("original") or "").strip()
+        suggestion = str(raw.get("suggestion") or "").strip()
+        if not original or not suggestion or original == suggestion:
+            continue
+        reason = raw.get("reason")
+        cleaned.append({
+            "idx": i,
+            "line": line_v,
+            "original": original,
+            "suggestion": suggestion,
+            "fix_type": fix_type,
+            "reason": str(reason) if reason else None,
+        })
+
+    if not cleaned:
+        return {"error": "no_valid_fixes_after_validation"}
+
+    payload = {
+        "episode_id": episode_id,
+        "fixes": cleaned,
+        "expected_updated_at": row[1].isoformat() if row[1] is not None else None,
+    }
+    suggested_name = (
+        f"맞춤법 {len(cleaned)}건 — "
+        + ", ".join(f"L{f['line']}" for f in cleaned[:5])
+        + ("..." if len(cleaned) > 5 else "")
+    )
+    return await _insert_suggestion(
+        session,
+        ctx,
+        entity_type="spelling_batch",
+        suggested_name=suggested_name,
+        payload=payload,
+        episode_id=uuid.UUID(episode_id),
+    )
+
+
 async def propose_episode_draft(
     session: AsyncSession,
     ctx: WriterContext,

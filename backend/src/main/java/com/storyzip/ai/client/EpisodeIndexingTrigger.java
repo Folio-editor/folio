@@ -33,7 +33,7 @@ import java.util.UUID;
  *   <li>workId null skip</li>
  *   <li>AiClient 빈 미존재 skip (test profile 대응)</li>
  *   <li>server_encrypted_dek 미발급 skip</li>
- *   <li>동일 episode 5초 디바운스 (indexing) — PUT+PATCH 연속 도착 흡수</li>
+ *   <li>동일 episode 5초 디바운스 (indexing / summary 각자) — PUT+PATCH 연속 도착 흡수</li>
  *   <li>summary 는 status '완성' 신규 진입 + ACTIVE 구독자만</li>
  * </ul>
  */
@@ -47,10 +47,18 @@ public class EpisodeIndexingTrigger {
     private final WorkRepository workRepo;
 
     private Cache<UUID, Long> debounce;
+    private Cache<UUID, Long> summaryDebounce;
 
     @PostConstruct
     void initDebounce() {
         debounce = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(5))
+                .maximumSize(10_000)
+                .build();
+        // fireSummary 전용 — PowerSync PUT+PATCH 가 status='완성' 전이를 두 번 발행할 때
+        // Haiku 호출이 중복 enqueue 되는 race window 차단. content_hash idempotency 는
+        // 첫 task 의 INSERT 가 끝난 뒤에야 동작하므로 트리거 단에서 1차 흡수.
+        summaryDebounce = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(5))
                 .maximumSize(10_000)
                 .build();
@@ -121,6 +129,13 @@ public class EpisodeIndexingTrigger {
             log.info("[AI-TRACE] pipeline=summary skip episode={} reason=AiClient_bean_missing", episodeId);
             return;
         }
+        Long lastSummary = summaryDebounce.getIfPresent(episodeId);
+        long nowSummary = System.currentTimeMillis();
+        if (lastSummary != null && (nowSummary - lastSummary) < 5_000) {
+            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=debounce_5s", episodeId);
+            return;
+        }
+        summaryDebounce.put(episodeId, nowSummary);
         SubscriptionRepository subRepo = subscriptionRepoProvider.getIfAvailable();
         if (subRepo == null) {
             log.info("[AI-TRACE] pipeline=summary skip episode={} reason=SubscriptionRepo_missing", episodeId);

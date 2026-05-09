@@ -29,8 +29,31 @@ from app.services.providers import get_llm
 
 log = logging.getLogger(__name__)
 
-COMPRESS_THRESHOLD = 40    # 메시지 N개 도달 시 첫 절반 압축
+COMPRESS_THRESHOLD = 40         # 메시지 N개 도달 시 첫 절반 압축 (1차 트리거)
 COMPRESS_HEAD_COUNT = 20
+
+# 토큰 기반 보수적 임계값 (2026-05-09 추가).
+# Sonnet 4.x context window = 200,000 tokens. 50% 지점에서 자동 압축 → 다음 turn 안전 마진 확보.
+# 한국어 평균 ~3.5 chars/token, 메시지 JSON 직렬화 길이로 근사 추정.
+COMPRESS_TOKEN_THRESHOLD = 100_000   # 자동 압축 발동
+COMPRESS_TOKEN_WARN = 150_000        # UI 경고 (오렌지)
+COMPRESS_TOKEN_CRITICAL = 180_000    # UI 빨강 — Anthropic 200K 한계 임박
+ANTHROPIC_CONTEXT_LIMIT = 200_000    # 절대 한계 (참조용)
+_CHARS_PER_TOKEN = 3.5               # 한국어/혼합 콘텐츠 평균
+
+
+def estimate_messages_tokens(messages: list[dict]) -> int:
+    """messages 의 토큰 수 근사 — JSON 직렬화 길이 / 3.5.
+
+    실측은 Anthropic 호출 후 usage.input_tokens 가 정확. 본 함수는 압축 트리거 / UI 게이지용
+    fast estimate. 오차 ±20% 허용.
+    """
+    import json
+    try:
+        s = json.dumps(messages, ensure_ascii=False)
+    except Exception:
+        s = str(messages)
+    return int(len(s) / _CHARS_PER_TOKEN)
 
 
 async def _decrypt_text_or_passthrough(work_id: uuid.UUID | None, value: str | None) -> str | None:
@@ -303,17 +326,32 @@ async def maybe_compress(
     messages: list[dict],
     summary_so_far: str | None,
     budget: BudgetTracker | None,
+    *,
+    force: bool = False,
 ) -> tuple[list[dict], str | None, bool]:
-    """메시지 N=COMPRESS_THRESHOLD 도달 시 첫 ~COMPRESS_HEAD_COUNT 개를 Haiku 로 요약, summary_so_far 갱신.
+    """메시지 N=COMPRESS_THRESHOLD 또는 토큰 추정량이 임계 도달 시 첫 ~COMPRESS_HEAD_COUNT 개를
+    Haiku 로 요약, summary_so_far 갱신.
 
     실 cut_at 은 tool_use/tool_result 페어 보존을 위해 동적 조정 — head 에 페어 모두 포함.
 
+    Args:
+      force: True 면 임계값 무시하고 항상 압축 (수동 트리거용).
+
     반환: (압축 후 messages, 갱신된 summary_so_far, did_compress)
     """
-    if len(messages) < COMPRESS_THRESHOLD:
+    msg_count = len(messages)
+    estimated = estimate_messages_tokens(messages)
+    over_msg_threshold = msg_count >= COMPRESS_THRESHOLD
+    over_token_threshold = estimated >= COMPRESS_TOKEN_THRESHOLD
+    if not force and not over_msg_threshold and not over_token_threshold:
         return messages, summary_so_far, False
 
-    head, tail = _split_preserving_tool_pairs(messages, COMPRESS_HEAD_COUNT)
+    # 압축할 충분한 메시지가 없으면 (수동 force 시 messages < HEAD_COUNT) skip
+    if msg_count <= COMPRESS_HEAD_COUNT // 2:
+        return messages, summary_so_far, False
+
+    head_target = min(COMPRESS_HEAD_COUNT, max(1, msg_count - 5))    # 최근 5개는 보존
+    head, tail = _split_preserving_tool_pairs(messages, head_target)
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
@@ -342,6 +380,50 @@ async def maybe_compress(
         usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
         budget.record_compression(usage)
     return tail, new_summary, True
+
+
+async def compress_thread_now(
+    session: AsyncSession,
+    thread_id: uuid.UUID,
+) -> dict[str, Any]:
+    """작가가 채팅 UI 의 [압축] 버튼을 눌렀을 때 호출되는 수동 압축 진입점.
+
+    절차:
+      1. load_session — messages/summary/title 복호화 결과 로드
+      2. maybe_compress(force=True) — 임계값 무시하고 압축 (단 messages 가 거의 없으면 no-op)
+      3. save_session_messages — 압축 결과 영속
+
+    반환: {compressed: bool, before: {messages_count, estimated_tokens},
+           after: {messages_count, estimated_tokens}, summary_so_far_len}
+    """
+    sess = await load_session(session, thread_id)
+    if sess is None:
+        return {"error": "thread_not_found"}
+
+    before_count = len(sess["messages"])
+    before_tokens = estimate_messages_tokens(sess["messages"])
+
+    new_messages, new_summary, did = await maybe_compress(
+        sess["messages"], sess["summary_so_far"], None, force=True
+    )
+    if not did:
+        return {
+            "compressed": False,
+            "reason": "messages_too_few" if before_count <= COMPRESS_HEAD_COUNT // 2 else "no_op",
+            "before": {"messages_count": before_count, "estimated_tokens": before_tokens},
+            "after": {"messages_count": before_count, "estimated_tokens": before_tokens},
+            "summary_so_far_len": len(sess["summary_so_far"] or ""),
+        }
+
+    await save_session_messages(session, thread_id, new_messages, new_summary)
+
+    after_tokens = estimate_messages_tokens(new_messages)
+    return {
+        "compressed": True,
+        "before": {"messages_count": before_count, "estimated_tokens": before_tokens},
+        "after": {"messages_count": len(new_messages), "estimated_tokens": after_tokens},
+        "summary_so_far_len": len(new_summary or ""),
+    }
 
 
 def _first_text(content: Any) -> str:

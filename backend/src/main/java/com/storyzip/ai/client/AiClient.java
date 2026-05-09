@@ -233,6 +233,29 @@ public class AiClient {
         });
     }
 
+    /** 대화 수동 압축 — Haiku 1회 호출로 첫 절반을 요약. */
+    public Map<String, Object> compressAgentThread(String threadId) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "compressAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = restClient.post()
+                        .uri("/v1/agent/threads/{tid}/compress", threadId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(Map.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
     /** Agent 대화 세션 삭제 — writer_id 를 query 로 전달해 AI 서버에서 소유자 검증. */
     public void deleteAgentThread(String threadId, String writerId) {
         ExternalCallLogger.measure(

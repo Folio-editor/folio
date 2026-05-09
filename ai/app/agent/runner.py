@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -92,6 +93,17 @@ async def run_agent(
         # 사용자에게 abort 사유 메시지를 history 에도 남김
         messages.append({"role": "assistant", "content": answer})
         logger.warning("agent.budget_exceeded scenario=%s reason=%s", scenario, e.reason)
+    except asyncio.CancelledError:
+        # 사용자가 채팅 UI 의 ■ 중단 버튼 → SSE fetch 취소 → FastAPI StreamingResponse
+        # generator 에 CancelledError 전파 → run_planner_loop 의 await 지점에서 raise.
+        # 본 함수는 partial 처리 후 정리 (영수증/세션 저장) 가 필수라 cancel 을 의도적으로
+        # 흡수. catch 후엔 후속 await 들이 정상 실행됨 (이 시점에 task 의 cancel state 가
+        # 리셋됐으므로). 호출자 (SSE endpoint) 는 응답을 이미 끊었으니 return 값 의미 없음.
+        status = "partial"
+        budget.aborted = "client_disconnect"
+        answer = "[AGENT] 사용자 중단 — 현재까지 진행한 단계까지만 반영했습니다."
+        messages.append({"role": "assistant", "content": answer})
+        logger.info("agent.client_disconnect scenario=%s thread=%s", scenario, thread_id)
     except Exception as e:
         status = "failed"
         # 실제 예외 타입/메시지를 사용자에게 노출 (rate limit / API 에러 진단 가능)

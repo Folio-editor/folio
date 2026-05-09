@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BookOpenText,
   BotMessageSquare,
+  ClipboardCopy,
   ClipboardList,
   Route,
   Globe,
@@ -48,9 +49,10 @@ const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
 };
 
 /** 우측 패널 퀵 점프 버튼 정의 */
-const QUICK_JUMP_ITEMS: { tab: 'idea' | 'ai'; icon: LucideIcon; label: string }[] = [
+const QUICK_JUMP_ITEMS: { tab: 'idea' | 'ai' | 'inbox'; icon: LucideIcon; label: string }[] = [
   { tab: 'idea', icon: Lightbulb, label: '아이디어' },
   { tab: 'ai', icon: BotMessageSquare, label: 'AI 도구' },
+  { tab: 'inbox', icon: ClipboardCopy, label: '작업물' },
 ];
 
 /**
@@ -110,7 +112,7 @@ export function ActivityBar({
   };
 
   const renderQuickJump = (
-    tab: 'idea' | 'ai',
+    tab: 'idea' | 'ai' | 'inbox',
     Icon: LucideIcon,
     label: string,
   ) => {

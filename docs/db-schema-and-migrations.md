@@ -95,6 +95,8 @@
 | 14 | `2026-05-09_encrypt_agent_and_suggestion.sql` | 2026-05-09 | `agent_session.title` + `extraction_suggestion.suggested_name` `VARCHAR(200)` → `TEXT` (v1: ciphertext 길이 수용) | ✓ |
 | 15 | `2026-05-09_review_issue_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'review_issue'` + 누락된 `plot_create / plot_tree / plot_delete` 추가 | ✓ |
 | 16 | `2026-05-09_add_refund_and_admin_audit_log.sql` | 2026-05-09 | **신규 테이블 2개** — `refund` (환불 신청·승인 워크플로우) + `admin_audit_log` (관리자 API 감사). 환불 기능 머지 동반 | ✓ (CREATE TABLE IF NOT EXISTS) |
+| 17 | `2026-05-09_add_spelling_fix_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'spelling_fix'` 추가 (단건 자동 치환 — propose_spelling_fix MCP 도구) | ✓ |
+| 18 | `2026-05-09_add_spelling_batch_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'spelling_batch'` 추가 (다건 체크리스트 — propose_spelling_fix_batch MCP 도구. 작가가 항목 선택 후 일괄 적용) | ✓ |
 
 ---
 
@@ -136,7 +138,7 @@ WHERE conname IN (
 ```
 
 기대값:
-- `extraction_suggestion_entity_type_check` 에 **`review_issue`** + `plot_create / plot_tree / plot_delete` 포함
+- `extraction_suggestion_entity_type_check` 에 **`review_issue`** + `plot_create / plot_tree / plot_delete` + **`spelling_fix` / `spelling_batch`** 포함
 - `agent_session_scenario_check` 에 **`auto`** 포함
 
 ### 4.3. 폐기 테이블 확인

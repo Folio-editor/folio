@@ -8,9 +8,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Loader2, Trash2, X } from 'lucide-react';
 
 import {
+  deleteSuggestion,
   listSuggestions,
   patchSuggestion,
   type AgentSuggestion,
@@ -61,11 +62,26 @@ export function SuggestionInbox() {
     );
   }
 
-  async function handlePatch(id: string, status: 'confirmed' | 'rejected') {
+  async function handlePatch(
+    id: string,
+    status: 'confirmed' | 'rejected',
+    selectedIndices?: number[],
+  ) {
     setBusyId(id);
     try {
-      await patchSuggestion(id, status);
+      await patchSuggestion(id, status, undefined, selectedIndices);
       await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setBusyId(id);
+    try {
+      await deleteSuggestion(id);
+      // 낙관적 제거 — refresh 보다 빠른 UX
+      setItems((prev) => prev.filter((s) => s.id !== id));
     } finally {
       setBusyId(null);
     }
@@ -103,8 +119,9 @@ export function SuggestionInbox() {
             key={item.id}
             item={item}
             busy={busyId === item.id}
-            onConfirm={() => handlePatch(item.id, 'confirmed')}
+            onConfirm={(selectedIndices) => handlePatch(item.id, 'confirmed', selectedIndices)}
             onReject={() => handlePatch(item.id, 'rejected')}
+            onDelete={() => handleDelete(item.id)}
           />
         ))}
       </div>
@@ -117,24 +134,70 @@ function SuggestionCard({
   busy,
   onConfirm,
   onReject,
+  onDelete,
 }: {
   item: AgentSuggestion;
   busy: boolean;
-  onConfirm: () => void;
+  /** spelling_batch 일 때 selectedIndices 전달, 그 외는 인자 없음. */
+  onConfirm: (selectedIndices?: number[]) => void;
   onReject: () => void;
+  onDelete: () => void;
 }) {
   // pending 은 자동 펼침 (작가가 즉시 검토하도록), confirmed/rejected 는 접힘 시작 (히스토리 조회 모드)
   const [previewOpen, setPreviewOpen] = useState(item.status === 'pending');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const label = entityLabel(item.entity_type);
+  // review_issue 는 자동 적용 X — 작가가 본문을 직접 수정한 뒤 '확인/무시' 로 큐에서 닫는 체크리스트형.
+  // spelling_fix 는 1:1 자동 치환 — '적용 / 무시'.
+  // 다른 entity_type 은 승인 시 SuggestionApplier 가 INSERT/UPDATE/DELETE 자동 실행 ('승인 (자동 작성) / 거절').
+  const isReviewIssue = item.entity_type === 'review_issue';
+  const isSpellingFix = item.entity_type === 'spelling_fix';
   // suggested_name + reviewer_note 가 v1: ciphertext 일 수 있음 (2026-05-09 암호화 정책) — 자동 복호화.
   const decoded = useDecryptedSuggestion(item);
   return (
     <div className="rounded border border-border bg-background p-2 text-xs">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{label}</span>
-        <span className="text-[10px] text-muted-foreground">
-          {new Date(item.created_at).toLocaleString()}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(item.created_at).toLocaleString()}
+          </span>
+          {/* 영구 삭제 — 처리 완료/미처리 모두 가능. 승인된 entity 본문은 보존, 큐 행만 제거. */}
+          {confirmingDelete ? (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={busy}
+                className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  onDelete();
+                }}
+                disabled={busy}
+                className="rounded bg-red-500 px-1.5 py-0.5 text-[10px] text-white hover:bg-red-600 disabled:opacity-50"
+              >
+                삭제
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={busy}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
+              title="이 기록 영구 삭제"
+              aria-label="기록 삭제"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
       </div>
       <button
         type="button"
@@ -167,22 +230,50 @@ function SuggestionCard({
             onClick={onReject}
             disabled={busy}
             className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
+            title={
+              isReviewIssue
+                ? '이 발견을 무시'
+                : isSpellingFix
+                  ? '이 수정을 무시'
+                  : '이 제안을 거절'
+            }
           >
-            <X size={12} /> 거절
+            <X size={12} /> {isReviewIssue || isSpellingFix ? '무시' : '거절'}
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm()}
             disabled={busy}
-            className="flex h-7 items-center gap-1 rounded bg-primary px-2 text-xs text-primary-foreground disabled:opacity-50"
+            className={
+              isReviewIssue
+                ? 'flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50'
+                : 'flex h-7 items-center gap-1 rounded bg-primary px-2 text-xs text-primary-foreground disabled:opacity-50'
+            }
+            title={
+              isReviewIssue
+                ? '확인 처리 (본문 자동 수정 안 함 — 작가가 직접 수정)'
+                : isSpellingFix
+                  ? '승인 시 본문에 즉시 자동 치환 (PowerSync sync)'
+                  : '승인 시 본문에 자동 작성됩니다'
+            }
           >
-            <Check size={12} /> 승인 (자동 작성)
+            <Check size={12} />{' '}
+            {isReviewIssue ? '확인' : isSpellingFix ? '적용' : '승인 (자동 작성)'}
           </button>
         </div>
       )}
       {!previewOpen && item.status !== 'pending' && (
         <div className="mt-1 text-[10px] text-muted-foreground">
-          상태: {item.status === 'confirmed' ? '✓ 승인 (자동 작성됨)' : '거절'}
+          상태:{' '}
+          {item.status === 'confirmed'
+            ? isReviewIssue
+              ? '✓ 확인됨'
+              : isSpellingFix
+                ? '✓ 적용됨'
+                : '✓ 승인 (자동 작성됨)'
+            : isReviewIssue || isSpellingFix
+              ? '무시'
+              : '거절'}
           {decoded.reviewer_note && <> · {decoded.reviewer_note}</>}
         </div>
       )}

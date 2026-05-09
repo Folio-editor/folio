@@ -100,7 +100,9 @@ export interface AgentSuggestion {
 // ─────── Threads ───────
 
 export function createAgentThread(workId: string, scenario: AgentScenario, title?: string) {
-  return apiClient.post<{ threadId: string; scenario: AgentScenario; title: string | null }>(
+  // ★ wire format 은 snake_case ('thread_id') — backend AgentThreadResponse 가 @JsonProperty 로
+  // 강제하므로 camelCase 로 잘못 읽으면 undefined 반환되어 신규 thread 자동 진입 실패.
+  return apiClient.post<{ thread_id: string; scenario: AgentScenario; title: string | null }>(
     '/agent/threads',
     { workId, scenario, title },
   );
@@ -118,6 +120,18 @@ export function getAgentThread(threadId: string) {
 
 export function deleteAgentThread(threadId: string) {
   return apiClient.delete<void>(`/agent/threads/${threadId}`);
+}
+
+export interface AgentCompressResult {
+  compressed: boolean;
+  reason?: string;
+  before: { messages_count: number; estimated_tokens: number };
+  after: { messages_count: number; estimated_tokens: number };
+  summary_so_far_len: number;
+}
+
+export function compressAgentThread(threadId: string) {
+  return apiClient.post<AgentCompressResult>(`/agent/threads/${threadId}/compress`, {});
 }
 
 export function sendAgentMessage(threadId: string, message: string) {
@@ -227,9 +241,23 @@ export function listSuggestions(status?: string, entityType?: string) {
   return apiClient.get<AgentSuggestion[]>(`/agent/suggestions${qs ? '?' + qs : ''}`);
 }
 
-export function patchSuggestion(id: string, status: 'confirmed' | 'rejected', reviewerNote?: string) {
+/**
+ * @param selectedIndices - spelling_batch 전용. 작가가 체크한 fix idx 배열 (예: [0, 2, 5]).
+ *   null/undefined → 모두 적용. 다른 entity_type 에선 무시.
+ */
+export function patchSuggestion(
+  id: string,
+  status: 'confirmed' | 'rejected',
+  reviewerNote?: string,
+  selectedIndices?: number[],
+) {
   return apiClient.patch<{ id: string; status: string }>(`/agent/suggestions/${id}`, {
     status,
     reviewerNote,
+    selectedIndices,
   });
+}
+
+export function deleteSuggestion(id: string) {
+  return apiClient.delete<void>(`/agent/suggestions/${id}`);
 }
