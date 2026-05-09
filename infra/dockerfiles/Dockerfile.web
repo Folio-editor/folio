@@ -23,6 +23,12 @@ WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 # Vite 빌드 시점 환경변수 (ARG → ENV)
+#
+# ⚠️ VITE_ADMIN_API_TOKEN 은 의도적으로 ARG/ENV 에 추가하지 않는다.
+# 일반 사용자 빌드(이 Dockerfile) 에 운영자 토큰이 박히면 dist-web/ JS 파일에
+# 평문 노출됨. 운영자는 본인 PC 에서 pnpm dev / pnpm dev:web 로만 사용.
+# build:web 스크립트가 산출물에 토큰 누출 시 빌드 자체를 실패시키므로
+# 실수로 ARG 추가되더라도 이중 방어된다 (scripts/check-admin-token-leak.mjs).
 ARG VITE_API_URL
 ARG VITE_POWERSYNC_URL
 ARG VITE_GOOGLE_CLIENT_ID

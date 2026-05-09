@@ -40,6 +40,7 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
 
     private final AdminProperties adminProperties;
     private final EmailNotifier emailNotifier;
+    private final AdminAuditService auditService;
 
     /** IP 별 인증 실패 횟수 — 15분 sliding window. */
     private final Cache<String, AtomicInteger> failedAttempts = Caffeine.newBuilder()
@@ -53,9 +54,11 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
             .maximumSize(10_000)
             .build();
 
-    public AdminAuthInterceptor(AdminProperties adminProperties, EmailNotifier emailNotifier) {
+    public AdminAuthInterceptor(AdminProperties adminProperties, EmailNotifier emailNotifier,
+                                AdminAuditService auditService) {
         this.adminProperties = adminProperties;
         this.emailNotifier = emailNotifier;
+        this.auditService = auditService;
     }
 
     @Override
@@ -65,6 +68,7 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
 
         if (!adminProperties.isEnabled()) {
             log.warn("[ADMIN_AUTH] token disabled — all admin API requests rejected. uri={} ip={}", uri, ip);
+            auditService.recordError(request, "AUTH_DENIED", null, null, "ADMIN_API_TOKEN not set");
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Admin API disabled");
             return false;
         }
@@ -73,6 +77,8 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
         AtomicInteger counter = failedAttempts.get(ip, k -> new AtomicInteger(0));
         if (counter.get() > MAX_FAILED_ATTEMPTS) {
             log.warn("[ADMIN_AUTH_RATE_LIMITED] ip={} attempts={} uri={}", ip, counter.get(), uri);
+            auditService.recordError(request, "AUTH_RATE_LIMITED", null, null,
+                    "attempts=" + counter.get());
             response.sendError(429, "Too many failed attempts");
             return false;
         }
@@ -82,6 +88,8 @@ public class AdminAuthInterceptor implements HandlerInterceptor {
             int attempts = counter.incrementAndGet();
             log.warn("[ADMIN_AUTH_FAILED] uri={} ip={} hasHeader={} attempts={}",
                     uri, ip, token != null, attempts);
+            auditService.recordError(request, "AUTH_FAILED", null, null,
+                    "attempts=" + attempts + ", hasHeader=" + (token != null));
 
             // 알림: 첫 실패 + cooldown 안 걸린 경우만 발송 (스팸 방지).
             if (recentAlerts.getIfPresent(ip) == null) {
