@@ -247,6 +247,19 @@ export function PaymentSettings() {
     setRefundTarget(payment);
   };
 
+  const cancelRefundRequest = async (refundId: string) => {
+    setError(null);
+    setInfo(null);
+    if (!confirm('환불 신청을 철회하시겠어요? 검토 대기 중인 신청만 철회할 수 있습니다.')) return;
+    try {
+      await paymentApi.cancelRefundRequest(refundId);
+      setInfo('환불 신청을 철회했습니다.');
+      await refreshPayments();
+    } catch (e) {
+      handleAsyncError(e, '환불 신청 철회');
+    }
+  };
+
   const submitRefund = async (reason: RefundReason, detail: string) => {
     if (!refundTarget) return;
     setBusyRefund(true);
@@ -492,6 +505,7 @@ export function PaymentSettings() {
                     key={p.id}
                     payment={p}
                     onRefundClick={() => openRefundDialog(p)}
+                    onCancelRefundClick={(refundId) => void cancelRefundRequest(refundId)}
                   />
                 ))}
               </div>
@@ -555,9 +569,11 @@ function RefundPolicyHint() {
 function PaymentRow({
   payment,
   onRefundClick,
+  onCancelRefundClick,
 }: {
   payment: PaymentResponse;
   onRefundClick: () => void;
+  onCancelRefundClick: (refundId: string) => void;
 }) {
   const refund = payment.latestRefund;
   const isSubscription = payment.orderId.startsWith('SUB-');
@@ -568,6 +584,9 @@ function PaymentRow({
     (refund === null ||
       refund.status === 'REJECTED' ||
       refund.status === 'CANCELED');
+
+  // 신청 철회 가능 — 검토 대기(REQUESTED) 상태에서만.
+  const canCancelRequest = refund !== null && refund.status === 'REQUESTED';
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
@@ -587,15 +606,25 @@ function PaymentRow({
         </div>
         {refund && <RefundBadge refund={refund} />}
       </div>
-      <div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!canRequest}
-          onClick={onRefundClick}
-        >
-          환불 신청
-        </Button>
+      <div className="flex flex-col gap-1.5">
+        {canCancelRequest && refund ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onCancelRefundClick(refund.refundId)}
+          >
+            신청 철회
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canRequest}
+            onClick={onRefundClick}
+          >
+            환불 신청
+          </Button>
+        )}
       </div>
     </div>
   );
