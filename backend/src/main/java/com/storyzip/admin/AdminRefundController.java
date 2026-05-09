@@ -19,7 +19,9 @@ import java.util.UUID;
  * <p>인증: {@code X-Admin-Token} 헤더 (값은 Doppler {@code ADMIN_API_TOKEN}).
  * {@link AdminAuthInterceptor} 가 모든 요청 전에 검증.
  *
- * <p>Phase B 미완: Writer.role 기반 인증으로 강화 예정. 현재는 단일 토큰.
+ * <p>모든 호출은 {@link AdminAudited} 어노테이션 + {@link AdminAuditAspect} 로 자동 감사 로그 기록.
+ *
+ * <p>Phase B 미완: Writer.role 기반 인증으로 강화.
  */
 @Slf4j
 @RestController
@@ -30,6 +32,7 @@ public class AdminRefundController {
     private final RefundService refundService;
 
     /** 검토 대기 환불 목록 — status 미지정 시 REQUESTED 기본. */
+    @AdminAudited(action = "REFUND_LIST", resourceType = "refund")
     @GetMapping
     public ResponseEntity<List<RefundResponse>> list(
             @RequestParam(name = "status", defaultValue = "REQUESTED") RefundStatus status) {
@@ -37,21 +40,23 @@ public class AdminRefundController {
     }
 
     /** 환불 승인 — PortOne 취소 + 토큰 회수/보상 + Payment 상태 변경. */
+    @AdminAudited(action = "REFUND_APPROVE", resourceType = "refund", resourceIdParam = "refundId")
     @PostMapping("/{refundId}/approve")
     public ResponseEntity<RefundResponse> approve(
             @PathVariable UUID refundId,
-            @Valid @RequestBody(required = false) AdminRefundDecisionRequest request) {
-        String note = request == null ? null : request.adminNote();
+            @Valid @RequestBody(required = false) AdminRefundDecisionRequest body) {
+        String note = body == null ? null : body.adminNote();
         log.info("[ADMIN_REFUND_APPROVE] refundId={} note={}", refundId, note);
         return ResponseEntity.ok(refundService.approveRefund(refundId, note));
     }
 
     /** 환불 거절 — 사유 기록만, 결제 상태는 그대로. */
+    @AdminAudited(action = "REFUND_REJECT", resourceType = "refund", resourceIdParam = "refundId")
     @PostMapping("/{refundId}/reject")
     public ResponseEntity<RefundResponse> reject(
             @PathVariable UUID refundId,
-            @Valid @RequestBody(required = false) AdminRefundDecisionRequest request) {
-        String note = request == null ? null : request.adminNote();
+            @Valid @RequestBody(required = false) AdminRefundDecisionRequest body) {
+        String note = body == null ? null : body.adminNote();
         log.info("[ADMIN_REFUND_REJECT] refundId={} note={}", refundId, note);
         return ResponseEntity.ok(refundService.rejectRefund(refundId, note));
     }

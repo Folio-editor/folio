@@ -6,6 +6,51 @@
 
 `X-Admin-Token` 단일 토큰이 노출되면 누구든 환불 승인/거절 가능 → **사업적 손실 직접 발생**.
 
+## 운영자 페이지 사용법
+
+운영자 본인 PC 에서만 사용. 일반 사용자 빌드에는 토큰 미포함이라 메뉴가 보이지 않는다.
+
+### 1. 운영자 토큰 발급
+
+`ADMIN_API_TOKEN` 값을 Doppler `prd` 에서 본인이 안전한 곳에 저장한 그대로 사용 (또는 별도 운영자 토큰 분리).
+
+### 2. `frontend/.env.local` 에 추가
+
+```env
+VITE_ADMIN_API_TOKEN=<ADMIN_API_TOKEN 값>
+VITE_API_URL=https://folio-editor.co.kr/api/v1
+```
+
+⚠️ `.env.local` 은 `.gitignore` 대상. **절대 git 에 커밋 금지**. 운영자 본인 PC 에만.
+
+### 3. 운영자 빌드 띄우기
+
+```bash
+# Electron 앱 (가장 간단)
+cd frontend && pnpm dev
+
+# 또는 웹 (브라우저)
+cd frontend && pnpm dev:web
+# → http://localhost:5173 접속
+```
+
+### 4. 메뉴 진입
+
+설정 → **"환불 검토 (운영자)"** 메뉴 클릭. 토큰이 있을 때만 표시됨.
+
+### 5. 처리
+
+- 검토 대기 탭에서 환불 신청 확인
+- [승인] / [거절] 버튼 클릭 → 메모 입력 → 처리
+- 승인 시 PortOne 자동 취소 + 토큰 회수
+- 거절 시 결제 상태 그대로, 사용자에게 거절 사유 안내
+
+### 6. 토큰 누출 시
+
+1. Doppler 에서 `ADMIN_API_TOKEN` 새로 생성 + 등록
+2. 운영자 PC 의 `.env.local` 갱신
+3. EC2 backend 재기동 (deploy.sh 또는 GitLab Retry)
+
 ## 적용된 방어 (코드)
 
 ### 1. AdminAuthInterceptor — Rate limit + 실패 알림
@@ -88,6 +133,78 @@ backend 구조화 로그(`[ADMIN_REFUND_APPROVE]` `[ADMIN_AUTH_FAILED]` 등)를 
 ```
 
 비정상 IP / 시간대 / 빈도 발견 시 즉시 토큰 회전.
+
+## 감사 로그 (AdminAuditLog)
+
+모든 admin API 호출이 `admin_audit_log` 테이블에 별도 트랜잭션으로 INSERT 됩니다.
+
+### 컬럼
+
+| 컬럼 | 설명 |
+|---|---|
+| `action` | `REFUND_APPROVE` / `REFUND_REJECT` / `REFUND_LIST_REQUESTED` / `AUTH_FAILED` / `AUTH_RATE_LIMITED` / `AUTH_DENIED` |
+| `result` | `SUCCESS` / `ERROR` |
+| `resource_type` / `resource_id` | 대상 — `refund` + UUID |
+| `admin_note` | 운영자 메모 또는 거절 사유 |
+| `request_ip` / `user_agent` / `request_path` | 호출자 추적 |
+| `error_message` | 실패 시 사유 |
+| `created_at` | 시각 |
+
+### 침해 의심 시 분석 쿼리
+
+```sql
+-- 최근 24시간 인증 실패
+SELECT created_at, request_ip, user_agent, error_message
+FROM admin_audit_log
+WHERE action LIKE 'AUTH_%' AND result = 'ERROR'
+  AND created_at >= NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC;
+
+-- 같은 IP 가 짧은 시간에 여러 번 실패
+SELECT request_ip, COUNT(*) AS failed_count, MIN(created_at), MAX(created_at)
+FROM admin_audit_log
+WHERE action LIKE 'AUTH_%' AND result = 'ERROR'
+  AND created_at >= NOW() - INTERVAL '1 hour'
+GROUP BY request_ip
+HAVING COUNT(*) >= 3
+ORDER BY failed_count DESC;
+
+-- 특정 환불 작업 이력
+SELECT created_at, action, result, request_ip, admin_note, error_message
+FROM admin_audit_log
+WHERE resource_type = 'refund' AND resource_id = '<refund-id>'
+ORDER BY created_at;
+```
+
+### prod 마이그레이션 SQL
+
+`ddl-auto=validate` 라 prod 에서 자동 생성 안 됨. backend 새 코드 배포 전에 EC2 에서 직접 실행 필요:
+
+```sql
+CREATE TABLE admin_audit_log (
+    id UUID PRIMARY KEY,
+    action VARCHAR(50) NOT NULL,
+    result VARCHAR(20) NOT NULL,
+    resource_type VARCHAR(30),
+    resource_id UUID,
+    admin_note VARCHAR(500),
+    request_ip VARCHAR(45),
+    user_agent VARCHAR(500),
+    request_path VARCHAR(200),
+    error_message VARCHAR(500),
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX idx_admin_audit_action ON admin_audit_log(action);
+CREATE INDEX idx_admin_audit_resource ON admin_audit_log(resource_type, resource_id);
+CREATE INDEX idx_admin_audit_created_at ON admin_audit_log(created_at);
+CREATE INDEX idx_admin_audit_request_ip ON admin_audit_log(request_ip);
+```
+
+```bash
+# EC2 에서 적용
+docker exec -i folio-postgresql-prod psql -U folio -d folio < migration.sql
+```
 
 ## 침해 의심 시 즉시 조치
 
