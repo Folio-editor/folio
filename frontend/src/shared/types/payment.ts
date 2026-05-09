@@ -36,8 +36,22 @@ export interface CreatePaymentResponse {
   tokenQty: number;
 }
 
-export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELED' | 'REFUNDED';
 export type PaymentMethod = 'CARD' | 'VIRTUAL_ACCOUNT' | 'EASY_PAY' | 'TRANSFER' | 'MOBILE_PHONE' | 'CULTURE_GIFT_CERTIFICATE';
+
+/** 백엔드 RefundPolicy.CURRENT_VERSION 과 동기화. */
+export const REFUND_POLICY_VERSION = 'v1';
+
+export interface RefundSummary {
+  refundId: string;
+  status: RefundStatus;
+  refundType: RefundType;
+  reason: RefundReason;
+  refundAmount: number;
+  tokenDeducted: number;
+  requestedAt: string;
+  processedAt: string | null;
+}
 
 export interface PaymentResponse {
   id: string;
@@ -49,6 +63,31 @@ export interface PaymentResponse {
   method: PaymentMethod | null;
   approvedAt: string | null;
   createdAt: string;
+  refundPolicyVersion: string | null;
+  refundPolicyAgreedAt: string | null;
+  /** 가장 최근 환불 신청 — 환불 가능 여부 / 상태 배지 표시에 사용. */
+  latestRefund: RefundSummary | null;
+}
+
+export type RefundType =
+  | 'FULL'
+  | 'PARTIAL_USED'
+  | 'PARTIAL_DAYS'
+  | 'COMPANY_FAULT'
+  | 'COMPANY_FAULT_CREDIT';
+
+export type RefundStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+
+export type RefundReason =
+  | 'CUSTOMER_CHANGE_OF_MIND'
+  | 'SERVICE_ISSUE'
+  | 'PAYMENT_ERROR'
+  | 'COMPANY_FAULT'
+  | 'OTHER';
+
+export interface RefundRequest {
+  reason: RefundReason;
+  detail?: string;
 }
 
 export interface RefundResponse {
@@ -57,7 +96,10 @@ export interface RefundResponse {
   originalAmount: number;
   refundAmount: number;
   tokenDeducted: number;
-  refundType: string;
+  refundType: RefundType;
+  reason: RefundReason;
+  refundId: string;
+  status: RefundStatus;
 }
 
 export type SubscriptionPlanCode = 'PRO_MONTHLY';
