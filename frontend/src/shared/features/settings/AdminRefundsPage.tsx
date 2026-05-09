@@ -16,9 +16,10 @@ import {
   isAdminAuthenticated,
   isAdminEntryPointAccessible,
   setAdminToken,
-  type AdminRefundView,
+  type AdminRefundDetail,
 } from '../../lib/adminApi';
-import type { RefundReason, RefundStatus, RefundType } from '../../types/payment';
+import { parseServerDate } from '../../lib/dateTime';
+import type { PaymentMethod, RefundReason, RefundStatus, RefundType } from '../../types/payment';
 
 /**
  * 운영자 환불 검토 화면.
@@ -67,7 +68,7 @@ const STATUS_TABS: { id: RefundStatus; label: string; icon: typeof Clock }[] = [
 ];
 
 interface DialogState {
-  refund: AdminRefundView;
+  refund: AdminRefundDetail;
   action: 'approve' | 'reject';
 }
 
@@ -175,7 +176,7 @@ function TokenInputForm({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 function AdminRefundsBody({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<RefundStatus>('REQUESTED');
-  const [refunds, setRefunds] = useState<AdminRefundView[]>([]);
+  const [refunds, setRefunds] = useState<AdminRefundDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -186,7 +187,7 @@ function AdminRefundsBody({ onLogout }: { onLogout: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const list = await adminApi.listRefunds(activeTab);
+      const list = await adminApi.listRefundDetails(activeTab);
       setRefunds(list);
     } catch (e) {
       // 401 이면 토큰이 자동 삭제됨 → 입력 폼으로 복귀.
@@ -340,44 +341,167 @@ function RefundRow({
   onApprove,
   onReject,
 }: {
-  refund: AdminRefundView;
+  refund: AdminRefundDetail;
   onApprove: () => void;
   onReject: () => void;
 }) {
-  const isSubscription = refund.orderId.startsWith('SUB-');
   const canDecide = refund.status === 'REQUESTED';
+  const within7Days = refund.daysElapsed < 7;
+  const isRetry = refund.previousRejectedCount > 0;
+  const isCompanyFault = refund.reason === 'COMPANY_FAULT';
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
-      <div className="min-w-0 flex-1">
+    <div className="rounded-lg border border-border bg-background">
+      {/* 헤더 — 상태 / 결제ID / 종류 */}
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2">
         <div className="flex items-center gap-1.5">
           <span className="font-mono text-[11px] text-foreground">{refund.orderId}</span>
           <span className="text-[10px] text-muted-foreground">
-            {isSubscription ? '구독' : '종량제'}
+            {refund.isSubscription ? '구독' : '종량제'}
           </span>
           <StatusBadge status={refund.status} />
+          {isRetry && (
+            <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-900 dark:bg-orange-500/20 dark:text-orange-200">
+              재신청 ({refund.previousRejectedCount}회 거절)
+            </span>
+          )}
+          {isCompanyFault && (
+            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-900 dark:bg-red-500/20 dark:text-red-200">
+              회사 귀책
+            </span>
+          )}
         </div>
-        <div className="mt-1 text-[11px] text-foreground">
-          {refund.originalAmount.toLocaleString()}원 결제 → {formatRefundType(refund.refundType)}{' '}
-          {refund.refundAmount > 0 && `(${refund.refundAmount.toLocaleString()}원 환불)`}
-          {refund.tokenDeducted > 0 && ` · 크레딧 ${refund.tokenDeducted.toLocaleString()}`}
-        </div>
-        <div className="mt-0.5 text-[10px] text-muted-foreground">
-          사유: {formatReason(refund.reason)}
-        </div>
+        <span
+          className={`text-[10px] font-medium ${
+            within7Days ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+          }`}
+        >
+          {within7Days ? '✓ 7일 이내' : '⚠ 7일 경과'} · 경과 {refund.daysElapsed}일
+        </span>
       </div>
+
+      {/* 본문 — grid 로 정보 묶음 */}
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-2">
+        {/* 좌: 결제 정보 */}
+        <div className="space-y-1">
+          <Section title="결제 정보">
+            <Row label="금액" value={`${refund.originalAmount.toLocaleString()}원`} />
+            <Row label="크레딧" value={refund.tokenQty.toLocaleString()} />
+            <Row label="결제 시각" value={formatDate(refund.approvedAt ?? refund.paymentCreatedAt)} />
+            <Row label="결제수단" value={formatPaymentMethod(refund.paymentMethod)} />
+            <Row label="약관 동의" value={refund.refundPolicyVersion} />
+          </Section>
+        </div>
+
+        {/* 우: 작가 + 환불 신청 */}
+        <div className="space-y-1">
+          <Section title="작가">
+            <Row label="이메일" value={refund.writerEmail} mono />
+            <Row label="닉네임" value={refund.writerNickname} />
+            <Row label="작가 ID" value={shortId(refund.writerId)} mono />
+          </Section>
+
+          <Section title="환불 신청">
+            <Row label="신청 시각" value={formatDate(refund.requestedAt)} />
+            <Row label="사유" value={formatReason(refund.reason)} />
+            <Row label="분류" value={formatRefundType(refund.refundType)} />
+            <Row
+              label="처리 결과"
+              value={
+                refund.refundType === 'COMPANY_FAULT_CREDIT'
+                  ? `크레딧 ${refund.tokenDeducted.toLocaleString()} 보상 (현금 X)`
+                  : `${refund.refundAmount.toLocaleString()}원 환불 + 크레딧 ${refund.tokenDeducted.toLocaleString()} 회수`
+              }
+            />
+          </Section>
+        </div>
+
+        {/* 자유 사유 — 가장 중요한 정보, 풀 너비 */}
+        {refund.detail && refund.detail.trim() && (
+          <div className="sm:col-span-2">
+            <div className="mb-1 text-[10px] font-medium text-muted-foreground">자유 사유</div>
+            <div className="rounded-md border border-amber-300/40 bg-amber-50/40 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {refund.detail}
+            </div>
+          </div>
+        )}
+
+        {/* 운영자 메모 (이미 처리된 건이면 표시) */}
+        {refund.adminNote && (
+          <div className="sm:col-span-2">
+            <Row label="운영자 메모" value={refund.adminNote} />
+          </div>
+        )}
+      </div>
+
+      {/* 푸터 — 액션 버튼 */}
       {canDecide && (
-        <div className="flex shrink-0 flex-col gap-1.5">
-          <Button size="sm" onClick={onApprove}>
-            승인
-          </Button>
+        <div className="flex items-center justify-end gap-2 border-t border-border/60 px-4 py-2">
           <Button size="sm" variant="outline" onClick={onReject}>
             거절
+          </Button>
+          <Button size="sm" onClick={onApprove}>
+            승인
           </Button>
         </div>
       )}
     </div>
   );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-medium text-muted-foreground">{title}</div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-[11px]">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={`min-w-0 truncate text-right text-foreground ${mono ? 'font-mono' : ''}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function shortId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id;
+}
+
+function formatPaymentMethod(method: PaymentMethod | null): string {
+  if (!method) return '—';
+  switch (method) {
+    case 'CARD':
+      return '카드';
+    case 'EASY_PAY':
+      return '간편결제 (카카오페이 등)';
+    case 'VIRTUAL_ACCOUNT':
+      return '가상계좌';
+    case 'TRANSFER':
+      return '계좌이체';
+    case 'MOBILE_PHONE':
+      return '휴대폰';
+    case 'CULTURE_GIFT_CERTIFICATE':
+      return '문화상품권';
+    default:
+      return method;
+  }
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  const d = parseServerDate(iso);
+  if (!d) return iso;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function pad(n: number): string {
+  return n.toString().padStart(2, '0');
 }
 
 function StatusBadge({ status }: { status: RefundStatus }) {
@@ -410,7 +534,7 @@ function DecisionDialog({
 }: {
   open: boolean;
   action: 'approve' | 'reject';
-  refund: AdminRefundView | null;
+  refund: AdminRefundDetail | null;
   busy: boolean;
   onSubmit: (note: string) => void;
   onClose: () => void;
@@ -447,8 +571,13 @@ function DecisionDialog({
                 ` · 크레딧 ${refund.tokenDeducted.toLocaleString()} 회수/보상 예정`}
             </div>
             <div className="mt-0.5 text-muted-foreground">
-              사유: {formatReason(refund.reason)}
+              사유: {formatReason(refund.reason)} · 작가 {refund.writerEmail} · 경과 {refund.daysElapsed}일
             </div>
+            {refund.detail && refund.detail.trim() && (
+              <div className="mt-2 rounded border border-amber-300/40 bg-amber-50/40 px-2 py-1 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                자유 사유: {refund.detail}
+              </div>
+            )}
           </div>
           <div className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
             {description}

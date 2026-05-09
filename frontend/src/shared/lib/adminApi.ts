@@ -17,10 +17,52 @@
  */
 
 import type {
+  PaymentMethod,
   PaymentResponse,
+  PaymentStatus,
+  RefundReason,
   RefundResponse,
   RefundStatus,
+  RefundType,
 } from '../types/payment';
+
+/**
+ * 백엔드 AdminRefundDetail (Refund + Payment + Writer 조인) 1:1 매핑.
+ * 운영자 화면에서 검토에 필요한 모든 컨텍스트.
+ */
+export interface AdminRefundDetail {
+  // Refund
+  refundId: string;
+  status: RefundStatus;
+  reason: RefundReason;
+  detail: string | null;
+  refundType: RefundType;
+  refundAmount: number;
+  tokenDeducted: number;
+  requestedAt: string;
+  processedAt: string | null;
+  adminNote: string | null;
+  previousRejectedCount: number;
+
+  // Payment
+  paymentId: string;
+  orderId: string;
+  paymentKey: string | null;
+  originalAmount: number;
+  tokenQty: number;
+  paymentStatus: PaymentStatus;
+  paymentMethod: PaymentMethod | null;
+  approvedAt: string | null;
+  paymentCreatedAt: string;
+  refundPolicyVersion: string;
+  daysElapsed: number;
+  isSubscription: boolean;
+
+  // Writer
+  writerId: string;
+  writerEmail: string;
+  writerNickname: string;
+}
 
 const ADMIN_TOKEN_KEY = 'folio:admin-token';
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
@@ -182,6 +224,13 @@ export interface AdminPaymentDetail extends PaymentResponse {}
 export const adminApi = {
   listRefunds: (status: RefundStatus = 'REQUESTED') =>
     request<AdminRefundView[]>('GET', `/admin/refunds?status=${status}`),
+
+  /**
+   * 운영자 검토용 상세 목록 — Refund + Payment + Writer 모든 컨텍스트.
+   * 화면에서 합리적 결정에 필요한 정보가 모두 들어있음.
+   */
+  listRefundDetails: (status: RefundStatus = 'REQUESTED') =>
+    request<AdminRefundDetail[]>('GET', `/admin/refunds/detail?status=${status}`),
 
   approveRefund: (refundId: string, adminNote?: string) =>
     request<AdminRefundView>('POST', `/admin/refunds/${refundId}/approve`, {
