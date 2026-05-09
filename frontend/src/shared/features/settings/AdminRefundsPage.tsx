@@ -30,8 +30,25 @@ import type { RefundReason, RefundStatus, RefundType } from '../../types/payment
  *   <li>토큰 입력 후 첫 API 호출이 성공: 정상 페이지</li>
  *   <li>API 401: 토큰 자동 삭제 + 입력 폼 다시</li>
  * </ol>
+ *
+ * <p>토큰은 localStorage 에 8시간 만료로 저장. 만료되면 자동 삭제 + 재입력.
  */
 export function AdminRefundsPage() {
+  // 페이지 진입 시 사회공학 방어 — DevTools 콘솔 사용 경고. 1회만 출력.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as { __folioAdminWarned?: boolean };
+    if (w.__folioAdminWarned) return;
+    w.__folioAdminWarned = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      '%c[Folio 보안 경고]',
+      'color:#dc2626;font-size:14px;font-weight:bold',
+      '\n이 페이지는 운영자 전용입니다. 누군가 이 콘솔에 코드를 붙여넣으라고 했다면 ' +
+        '계정 탈취 시도일 가능성이 높습니다. 절대 실행하지 마세요.',
+    );
+  }, []);
+
   // 진입 가능 여부 자체를 막음 (메뉴를 우회해 직접 라우팅했을 때 방어).
   if (!isAdminEntryPointAccessible()) {
     return <UnauthorizedNotice />;
@@ -124,7 +141,7 @@ function TokenInputForm({ onAuthenticated }: { onAuthenticated: () => void }) {
             <h3 className="text-sm font-semibold text-foreground">관리자 토큰 입력</h3>
             <p className="mt-1 text-[11px] text-muted-foreground">
               Doppler 의 <code className="rounded bg-muted px-1">ADMIN_API_TOKEN</code> 값을 입력해주세요.
-              브라우저에 저장되며 다음 접속부터는 자동으로 적용됩니다.
+              브라우저에 <strong>8시간 동안</strong> 저장되며 만료 후 재입력 필요.
             </p>
           </div>
           <input

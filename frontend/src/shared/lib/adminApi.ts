@@ -2,13 +2,15 @@
  * 운영자 환불 처리 API 클라이언트.
  *
  * <p>인증: {@code X-Admin-Token} 헤더에 운영자가 직접 입력한 토큰 사용.
- * 토큰은 {@code localStorage["folio:admin-token"]} 에 저장.
+ * 토큰은 {@code localStorage["folio:admin-token"]} 에 {@code {token, expiresAt}}
+ * JSON 으로 저장되며 8시간 후 자동 만료.
  *
  * <p>이전엔 빌드 시점 환경변수({@code VITE_ADMIN_API_TOKEN}) 주입 방식이었으나
  * prod 빌드에 토큰이 박히면 누구나 추출 가능 → localStorage 런타임 입력으로 전환.
  *
- * <p>운영자만 진입 경로(URL `?admin=1` 또는 메뉴)를 알고 토큰을 입력해 사용.
- * 일반 사용자는 메뉴/페이지 자체를 못 봄.
+ * <p><b>localStorage 의 한계 — XSS 취약</b>:
+ * 동일 origin 의 모든 JS 가 토큰에 접근 가능. 단기 완화로 8시간 만료를 둠.
+ * 본질적 해결은 Phase B 의 HttpOnly 쿠키 또는 Writer.role JWT 인증.
  *
  * <p>JWT refresh / 사용자 인증 흐름과 무관하므로 기존 apiClient 를 거치지 않고
  * 단순 fetch 로 호출한다.
@@ -21,25 +23,62 @@ import type {
 } from '../types/payment';
 
 const ADMIN_TOKEN_KEY = 'folio:admin-token';
+const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
+
+interface StoredToken {
+  token: string;
+  expiresAt: number; // epoch ms
+}
+
+function hasWindow(): boolean {
+  return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+}
 
 export function getAdminToken(): string {
+  if (!hasWindow()) return '';
   try {
-    return localStorage.getItem(ADMIN_TOKEN_KEY)?.trim() ?? '';
+    const raw = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!raw) return '';
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !('token' in parsed) ||
+      !('expiresAt' in parsed) ||
+      typeof (parsed as StoredToken).token !== 'string' ||
+      typeof (parsed as StoredToken).expiresAt !== 'number'
+    ) {
+      // 옛 포맷이거나 손상된 데이터 — 정리.
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      return '';
+    }
+    const stored = parsed as StoredToken;
+    if (Date.now() > stored.expiresAt) {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      return '';
+    }
+    return stored.token.trim();
   } catch {
     return '';
   }
 }
 
 export function setAdminToken(token: string): void {
+  if (!hasWindow()) return;
   const trimmed = token.trim();
-  if (trimmed) {
-    localStorage.setItem(ADMIN_TOKEN_KEY, trimmed);
-  } else {
+  if (!trimmed) {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
+    return;
   }
+  const stored: StoredToken = {
+    token: trimmed,
+    expiresAt: Date.now() + TOKEN_TTL_MS,
+  };
+  localStorage.setItem(ADMIN_TOKEN_KEY, JSON.stringify(stored));
 }
 
 export function clearAdminToken(): void {
+  if (!hasWindow()) return;
   localStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
@@ -49,12 +88,15 @@ export function clearAdminToken(): void {
  * <p>다음 중 하나면 진입 가능:
  * <ul>
  *   <li>URL 에 {@code ?admin=1} 쿼리 (운영자 본인이 알고 직접 입력)</li>
- *   <li>localStorage 에 토큰이 이미 저장되어 있음 (이전에 진입한 적 있음)</li>
+ *   <li>localStorage 에 유효한 토큰이 이미 저장되어 있음 (만료 안 됨)</li>
  * </ul>
  *
  * <p>일반 사용자는 둘 다 해당 안 되어 메뉴/페이지 미노출.
+ *
+ * <p>SSR 환경에선 {@code window} 미존재 — false 반환 (메뉴 숨김).
  */
 export function isAdminEntryPointAccessible(): boolean {
+  if (!hasWindow()) return false;
   if (getAdminToken()) return true;
   try {
     const params = new URLSearchParams(window.location.search);
@@ -87,7 +129,7 @@ export class AdminApiError extends Error {
 async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const token = getAdminToken();
   if (!token) {
-    throw new AdminApiError(0, '관리자 토큰이 입력되지 않았습니다.');
+    throw new AdminApiError(0, '관리자 토큰이 입력되지 않았거나 만료되었습니다.');
   }
   const res = await fetch(`${apiUrl()}${path}`, {
     method,
