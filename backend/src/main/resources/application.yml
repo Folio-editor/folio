@@ -90,6 +90,10 @@ storyzip:
     from: ${MAIL_FROM:}
     # 운영자(환불 신청 등 인간 검토 알림 수신) — 약관 5조 1항.
     operator-to: ${MAIL_OPERATOR_TO:2square.f203@gmail.com}
+  admin:
+    # 관리자 API (X-Admin-Token 헤더) 인증 토큰 — Doppler ADMIN_API_TOKEN 으로 주입.
+    # 미설정 시 모든 /api/v1/admin/** 호출이 401로 차단된다 (보안 fail-safe).
+    api-token: ${ADMIN_API_TOKEN:}
 
 folio:
   security:

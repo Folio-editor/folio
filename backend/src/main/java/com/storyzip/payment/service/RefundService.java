@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -121,6 +122,17 @@ public class RefundService {
                 buildEmailBody(refund, payment, request, daysElapsed, isSubscription));
 
         return toResponse(payment, refund);
+    }
+
+    /**
+     * 운영자 화면용 — 특정 status 의 환불 목록 조회.
+     * 보통 {@link RefundStatus#REQUESTED} 로 호출해 검토 대기 큐 확인.
+     */
+    @Transactional(readOnly = true)
+    public List<RefundResponse> listByStatus(RefundStatus status) {
+        return refundRepository.findAllByStatusOrderByRequestedAtAsc(status).stream()
+                .map(refund -> toResponse(refund.getPayment(), refund))
+                .toList();
     }
 
     @Transactional
