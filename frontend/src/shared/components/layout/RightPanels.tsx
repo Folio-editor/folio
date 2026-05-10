@@ -17,6 +17,7 @@ import {
   BotMessageSquare,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   ArrowUpRight,
@@ -75,6 +76,7 @@ import { useAgentChatStore } from '../../stores/agentChatStore';
 import { AgentChatPanel } from '../../features/agent/AgentChatPanel';
 import { ChatMarkdown } from '../../features/agent/ChatMarkdown';
 import {
+  SuggestionBodyPreview,
   entityLabel,
   useDecryptedSuggestion,
 } from '../../features/agent/suggestionPreview';
@@ -327,8 +329,13 @@ function RightPanelHeader({
   const showAgentControls =
     activeTab === 'ai' && aiEligible && !!selectedWorkId && aiScreen === 'menu';
 
-  // AI 탭 + sub-screen인 경우만 breadcrumb 노출
-  const subToolName = activeTab === 'ai' ? getAiToolName(aiScreen) : null;
+  // AI 탭 + sub-screen인 경우만 breadcrumb 노출.
+  // create-streaming 은 4개 도구(문서생성/검수/맞춤법/요약)가 공유하는 인프라 — origin 화면의
+  // 도구명을 표시해야 사용자가 어떤 도구를 쓰고 있는지 정확히 인지한다.
+  const aiOriginScreen = useAiSessionStore((s) => s.createOriginScreen);
+  const breadcrumbScreen =
+    aiScreen === 'create-streaming' && aiOriginScreen ? aiOriginScreen : aiScreen;
+  const subToolName = activeTab === 'ai' ? getAiToolName(breadcrumbScreen) : null;
   // DraftViewScreen 스트리밍 중에는 뒤로가기 차단
   const allowBack = !(activeTab === 'ai' && aiScreen === 'draft-view' && aiIsStreaming);
 
@@ -1272,7 +1279,8 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       const tid = r?.thread_id;
       if (!tid) throw new Error('thread_id 누락');
       // create-streaming 화면이 takePendingFirstPrompt 로 SSE 시작 — 같은 인프라 재사용.
-      startCreateAction(tid);
+      // origin='review-input' 명시 — '다시 만들기' / breadcrumb 가 검수 화면으로 정확히 라우팅.
+      startCreateAction(tid, 'review-input');
       setPendingFirstPrompt(tid, fullPrompt);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2726,7 +2734,7 @@ function CreateInputScreen({
         ? `[참고 자료]\n${referencePrompt.trim()}\n\n`
         : '';
       const fullPrompt = refBlock + prompt.trim();
-      startCreate(tid);
+      startCreate(tid, 'create-input');
       // streamMessage 는 useEffect 안에서 시작 — startCreate 가 screen 을 'create-streaming' 으로 전환
       // 그 화면이 마운트되면서 createThreadId + prompt 로 SSE 시작.
       setPendingFirstPrompt(tid, fullPrompt);
@@ -3052,8 +3060,10 @@ function CreateStreamingScreen() {
   }
 
   function handleStartOver() {
+    // origin 도구의 input 화면으로 복귀 — 검수에서 시작했으면 review-input, 문서 생성에서 시작했으면 create-input.
+    const origin = useAiSessionStore.getState().createOriginScreen;
     resetCreate();
-    setScreen('create-input');
+    setScreen(origin ?? 'create-input');
   }
 
   // turn 분류 — thinking 들은 진행바에 통합, body 만 카드, wrap 은 plain text
@@ -3143,14 +3153,12 @@ function CreateStreamingScreen() {
           </div>
         )}
 
-        {/* 완료 + 제안/본문/마무리가 모두 없을 때 — 마지막 사고 응답을 "AI 결과" 카드로 메인 노출.
-            예: 원고 검수에서 결론 텍스트가 진행 헤더 안에만 묻혀 사용자가 확인 어려운 케이스.
-            색상은 중립 — AI 결과 텍스트 자체가 이슈를 보고할 수도 있고 무이슈를 보고할 수도 있어
-            성공(emerald) 으로 단정하면 오해를 부른다. */}
+        {/* 완료 시 — 본문 카드(propose_episode_draft) 가 없으면 마지막 사고 응답을 "AI 결과" 카드로
+            메인 노출. 검수/요약/맞춤법 등 텍스트 결론이 진행 헤더 안에만 묻혀 사용자가 확인 어려운
+            케이스 보완. 색상은 중립 — 결론이 이슈 보고일 수도 있고 무이슈 보고일 수도 있어 성공
+            (emerald) 으로 단정하지 않는다. 제안 카드 존재 여부와 무관하게 노출. */}
         {state === 'done' &&
-          suggestionIds.length === 0 &&
           bodyTurns.length === 0 &&
-          wrapTurns.length === 0 &&
           (lastThinking?.text.trim() ?? '') !== '' && (
             <div className="rounded-md border border-border bg-muted/30 p-3 shadow-sm">
               <div className="mb-1.5 flex items-center gap-1.5">
@@ -3164,12 +3172,17 @@ function CreateStreamingScreen() {
               </div>
             </div>
           )}
-
-        {/* 완료 후 제안 큐 안내 */}
-        {state === 'done' && (
-          <CreateSuggestionsReview suggestionIds={suggestionIds} />
-        )}
       </div>
+
+      {/* 제안 검토 dock — 패널 하단 (액션 버튼 위). 페이지네이션 + SuggestionBodyPreview.
+          state === 'done' 이면 무조건 mount 해서 dock 이 직접 fetch — suggestion_ids 가
+          빈 채로 도착해도 source_thread_id 매칭으로 카드 복원 가능. */}
+      {state === 'done' && (
+        <CreateSuggestionsDock
+          suggestionIds={suggestionIds}
+          threadId={threadId ?? null}
+        />
+      )}
 
       {/* 하단 액션 — streaming 중엔 중지 / done|error 시 다시 만들기 */}
       <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
@@ -3292,7 +3305,297 @@ interface CreateStreamStepLite {
   seq?: number;
 }
 
-/** 완료 후 제안 카드들을 인라인으로 렌더 — SuggestionInbox 진입 없이 카드 안에서 적용/거절 */
+/**
+ * 완료 후 제안 검토 dock — AgentChatPanel 의 ReviewOverlay 와 동일 패턴.
+ * - 좌우 페이지네이션으로 카드 1건씩 표시
+ * - SuggestionBodyPreview 로 entity 별 풍부한 미리보기 (spelling_batch 체크리스트 포함)
+ * - 푸터에 거절/적용 액션 통합 (spelling_batch 는 체크된 N건만 적용)
+ * - 패널 하단에 sticky 로 위치 — 액션 버튼(다시 만들기) 위.
+ *
+ * 매칭 전략 (다중 fallback — backend race / done 이벤트 누락에도 강건):
+ *   1) suggestion_ids 가 done 이벤트에 실려 도착 → 그 ID set 매칭 (가장 정확)
+ *   2) source_thread_id === threadId 매칭 (이번 run 의 모든 propose 자동 수집)
+ *   3) 둘의 union — 어느 한쪽이라도 식별되는 카드 모두 포함
+ *   4) 모두 실패 → status=all 로 폴백 재조회 + 동일 매칭
+ */
+function CreateSuggestionsDock({
+  suggestionIds,
+  threadId,
+}: {
+  suggestionIds: string[];
+  threadId: string | null;
+}) {
+  const [suggestions, setSuggestions] = useState<AgentSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [idx, setIdx] = useState(0);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSuggestions([]);
+    setIdx(0);
+    if (suggestionIds.length === 0 && !threadId) {
+      // 식별 단서 자체가 없음 — 폴백 매칭도 불가
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    let cancelled = false;
+
+    const matchAny = (rows: AgentSuggestion[]): AgentSuggestion[] => {
+      const wantedIds = new Set(suggestionIds);
+      return rows.filter(
+        (s) => wantedIds.has(s.id) || (threadId != null && s.source_thread_id === threadId),
+      );
+    };
+    const sortByOrder = (rows: AgentSuggestion[]) => {
+      // suggestion_ids 입력 순서 우선, 그 외는 created_at ASC (에이전트 호출 순)
+      const order = new Map(suggestionIds.map((id, i) => [id, i]));
+      return [...rows].sort((a, b) => {
+        const oa = order.get(a.id);
+        const ob = order.get(b.id);
+        if (oa != null && ob != null) return oa - ob;
+        if (oa != null) return -1;
+        if (ob != null) return 1;
+        return (a.created_at ?? '').localeCompare(b.created_at ?? '');
+      });
+    };
+
+    void (async () => {
+      try {
+        const api = await import('../../api/agent');
+        // 1차: pending 만 (방금 생성된 제안은 거의 항상 pending)
+        let all = await api.listSuggestions('pending');
+        let matched = matchAny(all);
+        if (matched.length === 0) {
+          // 2차: 전체 status — 이미 confirmed/rejected 처리된 케이스 방어
+          all = await api.listSuggestions();
+          matched = matchAny(all);
+        }
+        if (!cancelled) setSuggestions(sortByOrder(matched));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [suggestionIds, threadId]);
+
+  async function act(
+    id: string,
+    status: 'confirmed' | 'rejected',
+    selectedIndices?: number[],
+  ) {
+    setBusyId(id);
+    try {
+      const api = await import('../../api/agent');
+      await api.patchSuggestion(id, status, undefined, selectedIndices);
+      setSuggestions((prev) => {
+        const updated = prev.map((s) => (s.id === id ? { ...s, status } : s));
+        // 다음 pending 자동 이동 — 없으면 현재 idx 유지
+        const nextIdx = updated.findIndex((s, i) => i > idx && s.status === 'pending');
+        const fallback = updated.findIndex((s) => s.status === 'pending');
+        const target = nextIdx >= 0 ? nextIdx : fallback >= 0 ? fallback : idx;
+        setIdx(target);
+        return updated;
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <Loader2 size={12} className="animate-spin" />
+        제안 불러오는 중...
+      </div>
+    );
+  }
+
+  // 제안이 없으면 dock 자체를 그리지 않는다 — AI 결과 카드가 메인 영역을 차지하므로
+  // 추가 empty state 카드는 중복/노이즈.
+  if (suggestions.length === 0) {
+    return null;
+  }
+
+  const current = suggestions[idx];
+  if (!current) return null;
+  return (
+    <CreateSuggestionsDockOverlay
+      suggestions={suggestions}
+      idx={idx}
+      busy={busyId === current.id}
+      onPrev={() => setIdx((i) => Math.max(0, i - 1))}
+      onNext={() => setIdx((i) => Math.min(suggestions.length - 1, i + 1))}
+      onApprove={(selectedIndices) => void act(current.id, 'confirmed', selectedIndices)}
+      onReject={() => void act(current.id, 'rejected')}
+    />
+  );
+}
+
+/** dock 안의 단일 카드 — AgentChatPanel.ReviewOverlay 와 동일 레이아웃. */
+function CreateSuggestionsDockOverlay({
+  suggestions,
+  idx,
+  busy,
+  onPrev,
+  onNext,
+  onApprove,
+  onReject,
+}: {
+  suggestions: AgentSuggestion[];
+  idx: number;
+  busy: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onApprove: (selectedIndices?: number[]) => void;
+  onReject: () => void;
+}) {
+  const total = suggestions.length;
+  const current = suggestions[idx];
+  const decoded = useDecryptedSuggestion(current);
+  const atFirst = idx === 0;
+  const atLast = idx === total - 1;
+  const isPending = current.status === 'pending';
+  const isReviewIssue = current.entity_type === 'review_issue';
+  const isSpellingFix = current.entity_type === 'spelling_fix';
+  const isSpellingBatch = current.entity_type === 'spelling_batch';
+
+  // spelling_batch 체크리스트 상태 — 카드 전환 시 모두 체크된 상태로 리셋
+  const batchFixCount = useMemo(() => {
+    if (!isSpellingBatch) return 0;
+    const fixes = (current.payload as { fixes?: unknown[] } | undefined)?.fixes;
+    return Array.isArray(fixes) ? fixes.length : 0;
+  }, [current.id, current.payload, isSpellingBatch]);
+  const [batchChecked, setBatchChecked] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (isSpellingBatch) {
+      setBatchChecked(new Set(Array.from({ length: batchFixCount }, (_, i) => i)));
+    } else {
+      setBatchChecked(new Set());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.id, batchFixCount, isSpellingBatch]);
+
+  const statusLabel =
+    current.status === 'confirmed'
+      ? isReviewIssue ? '✓ 확인됨' : isSpellingFix || isSpellingBatch ? '✓ 적용됨' : '✓ 승인'
+      : current.status === 'rejected'
+        ? isReviewIssue || isSpellingFix || isSpellingBatch ? '무시' : '거절'
+        : null;
+
+  const rejectLabel = isReviewIssue || isSpellingFix || isSpellingBatch ? '무시' : '거절';
+  const approveLabel = isReviewIssue
+    ? '확인'
+    : isSpellingFix
+      ? '적용'
+      : isSpellingBatch
+        ? `적용 (${batchChecked.size})`
+        : '승인 (자동 작성)';
+  const approveDisabled = busy || (isSpellingBatch && batchChecked.size === 0);
+  const approveTitle = isReviewIssue
+    ? '확인 처리 (본문 자동 수정 안 함 — 작가가 직접 수정)'
+    : isSpellingFix
+      ? '승인 시 본문에 즉시 자동 치환'
+      : isSpellingBatch
+        ? `체크된 ${batchChecked.size}건만 본문에 일괄 자동 치환`
+        : '승인 시 본문에 자동 작성됩니다';
+
+  return (
+    <div className="flex shrink-0 flex-col border-t border-primary/30 bg-card shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+      {/* 헤더 — 카운터 · entity · 제목 · 상태 */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-1.5">
+        <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
+          {idx + 1} / {total}
+        </span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {entityLabel(current.entity_type)}
+        </span>
+        {decoded.ready ? (
+          <span className="min-w-0 flex-1 truncate text-[11px] font-medium">
+            {decoded.suggested_name}
+          </span>
+        ) : (
+          <span className="h-3 min-w-0 flex-1 animate-pulse rounded bg-muted/60" />
+        )}
+        {statusLabel && (
+          <span className="shrink-0 text-[10px] text-muted-foreground">{statusLabel}</span>
+        )}
+      </div>
+
+      {/* 본문 — entity 별 풍부 미리보기. footer 가 액션 통합 → hideActions */}
+      <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
+        <SuggestionBodyPreview
+          s={current}
+          workId={current.work_id}
+          busy={busy}
+          onApprove={(selectedIndices) => onApprove(selectedIndices)}
+          onReject={onReject}
+          hideActions
+          batchChecked={isSpellingBatch ? batchChecked : undefined}
+          onBatchCheckedChange={isSpellingBatch ? setBatchChecked : undefined}
+        />
+      </div>
+
+      {/* 푸터 — 좌우 페이지네이션 + 액션 */}
+      <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={atFirst}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
+          title="이전 제안"
+          aria-label="이전 제안"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={atLast}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-30"
+          title="다음 제안"
+          aria-label="다음 제안"
+        >
+          <ChevronRight size={14} />
+        </button>
+        <div className="flex-1" />
+        {isPending && (
+          <>
+            <button
+              type="button"
+              onClick={onReject}
+              disabled={busy}
+              className="flex h-6 items-center gap-0.5 rounded border border-border px-2 text-[11px] hover:bg-accent disabled:opacity-50"
+            >
+              <X size={11} /> {rejectLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onApprove(
+                  isSpellingBatch ? Array.from(batchChecked).sort((a, b) => a - b) : undefined,
+                )
+              }
+              disabled={approveDisabled}
+              className={
+                isReviewIssue
+                  ? 'flex h-6 items-center gap-0.5 rounded border border-border px-2 text-[11px] hover:bg-accent disabled:opacity-50'
+                  : 'flex h-6 items-center gap-0.5 rounded bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
+              }
+              title={approveTitle}
+            >
+              <Check size={11} /> {approveLabel}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** (legacy) 완료 후 제안 카드들을 인라인으로 렌더 — 하위 호환 유지용 (현재 사용 X). */
 function CreateSuggestionsReview({ suggestionIds }: { suggestionIds: string[] }) {
   const [suggestions, setSuggestions] = useState<
     Awaited<ReturnType<typeof import('../../api/agent').listSuggestions>>
@@ -3301,19 +3604,44 @@ function CreateSuggestionsReview({ suggestionIds }: { suggestionIds: string[] })
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[CreateSuggestionsReview] effect — suggestionIds:', suggestionIds);
+    setSuggestions([]);
     if (suggestionIds.length === 0) {
       setLoading(false);
       return;
     }
+    setLoading(true);
+    let cancelled = false;
     void (async () => {
       try {
-        const all = await (await import('../../api/agent')).listSuggestions();
+        // status 필터 미지정 → 모든 상태 반환하되 backend LIMIT 50. 방금 생성된 propose 는
+        // 항상 status='pending' 이므로 'pending' 으로 좁혀 안전 매칭. ALSO: 매칭 실패 시
+        // 'all' 로 fallback 재조회 (backend status 컬럼이 다른 케이스 방어).
+        const api = await import('../../api/agent');
+        let all = await api.listSuggestions('pending');
         const wanted = new Set(suggestionIds);
-        setSuggestions(all.filter((s) => wanted.has(s.id)));
+        let matched = all.filter((s) => wanted.has(s.id));
+        if (matched.length === 0 && suggestionIds.length > 0) {
+          // pending 에 없으면 전체 status 로 재조회 (이미 confirmed/rejected 처리됐거나 server 측 race)
+          all = await api.listSuggestions();
+          matched = all.filter((s) => wanted.has(s.id));
+        }
+        // eslint-disable-next-line no-console
+        console.log('[CreateSuggestionsReview] fetched', {
+          listLen: all.length,
+          wanted: Array.from(wanted),
+          firstFewIds: all.slice(0, 5).map((s) => s.id),
+          matchedLen: matched.length,
+        });
+        if (!cancelled) setSuggestions(matched);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [suggestionIds]);
 
   async function act(id: string, status: 'confirmed' | 'rejected') {

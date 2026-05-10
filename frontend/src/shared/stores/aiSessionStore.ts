@@ -342,6 +342,11 @@ interface AiSessionStore {
   createSteps: CreateStepEvent[];                       // 도구 호출 진행
   createSuggestionIds: string[];                        // 완료 시 적재된 propose_* 제안 id
   createError: string;
+  /**
+   * 스트리밍을 시작한 origin 도구의 input screen — '다시 만들기' / 헤더 breadcrumb 가
+   * 정확한 도구로 돌아갈 수 있도록 기억. 미설정 시 'create-input' 으로 폴백.
+   */
+  createOriginScreen: AiScreen | null;
   // tool_use 의 본문 필드 (content/intro 등) 점진 streaming 누적 — 카드 모드에서 결과물 실시간 표시용.
   // buffer = SSE 로 받은 raw partial_json 누적, text = buffer 에서 추출한 known string 필드 평문.
   createToolStream: { toolName: string; field: string; text: string; buffer: string } | null;
@@ -399,7 +404,11 @@ interface AiSessionStore {
   setCreatePrompt: (v: string) => void;
   setCreateReferencePrompt: (v: string) => void;
   setCreateReferenceSortOrders: (orders: number[]) => void;
-  startCreate: (threadId: string) => void;
+  /**
+   * @param originScreen 스트리밍 시작 시 사용자가 머무르던 도구 input 화면.
+   *   '다시 만들기' 시 이 화면으로 돌아간다. 미지정 시 'create-input' 으로 폴백.
+   */
+  startCreate: (threadId: string, originScreen?: AiScreen) => void;
   appendCreateChunk: (text: string) => void;
   addCreateStep: (step: CreateStepEvent) => void;
   startCreateToolStream: (toolName: string, field: string) => void;
@@ -472,6 +481,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   createLiveText: '',
   createSteps: [],
   createSuggestionIds: [],
+  createOriginScreen: null,
   createError: '',
 
   setScreen: (screen) => set({ screen, viewingHistoryId: null, viewingReviewHistoryId: null, viewingSpellcheckHistoryId: null }),
@@ -834,8 +844,8 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   setCreateReferenceSortOrders: (orders) =>
     set({ createReferenceSortOrders: [...orders].sort((a, b) => a - b) }),
 
-  startCreate: (threadId) =>
-    set({
+  startCreate: (threadId, originScreen) =>
+    set((s) => ({
       screen: 'create-streaming',
       createState: 'streaming',
       createThreadId: threadId,
@@ -845,7 +855,16 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       createError: '',
       createToolStream: null,
       createTurns: [],
-    }),
+      // origin 미지정 시 현재 화면이 의미있는 입력 화면이면 그걸 보존, 아니면 폴백.
+      createOriginScreen: originScreen ?? (
+        s.screen === 'create-input' ||
+        s.screen === 'review-input' ||
+        s.screen === 'spellcheck-input' ||
+        s.screen === 'summarize-input'
+          ? s.screen
+          : 'create-input'
+      ),
+    })),
 
   appendCreateChunk: (text) =>
     set((s) => ({ createLiveText: s.createLiveText + text })),
@@ -934,6 +953,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       createLiveText: '',
       createSteps: [],
       createSuggestionIds: [],
+      createOriginScreen: null,
       createError: '',
     }),
 }));

@@ -546,17 +546,21 @@ function ReviewIssueCard({
     if (!hasJump || !p.episode_id) return;
     // 1) 메인 패널에 회차 오픈 (이미 열려있으면 점프)
     openTab({ section: 'episode', itemId: p.episode_id });
-    // 2) ReviewHighlight 에 단일 이슈 세팅 + 포커스 — TipTap 확장이 흐릿한 데코 + scrollIntoView 자동 처리
-    setHighlightIssues([
-      {
-        index: 0,
-        type: p.type ?? 'other',
-        severity: p.severity ?? 'info',
-        lines,
-        location: linesLabel,
-        description: p.description ?? '',
-      },
-    ]);
+    // 2) ReviewHighlight 에 단일 이슈 세팅 + 포커스 — TipTap 확장이 흐릿한 데코 + scrollIntoView 자동 처리.
+    //    episodeId 명시 → 다른 회차 에디터엔 데코 안 그려짐 (잔여 하이라이트 차단).
+    setHighlightIssues(
+      [
+        {
+          index: 0,
+          type: p.type ?? 'other',
+          severity: p.severity ?? 'info',
+          lines,
+          location: linesLabel,
+          description: p.description ?? '',
+        },
+      ],
+      p.episode_id,
+    );
     focusHighlightIssue(0);
   }
 
@@ -635,6 +639,29 @@ function SpellingBatchCard({
 }) {
   const p = payload as SpellingBatchPayload;
   const fixes = Array.isArray(p.fixes) ? p.fixes : [];
+
+  // 본문 점프 — fix 행 클릭 시 해당 회차 열고 line 번호 위치를 ReviewHighlight 로 강조.
+  const openTab = useMainTabsStore((s) => s.openTab);
+  const setHighlightIssues = useReviewHighlightStore((s) => s.setIssues);
+  const focusHighlightIssue = useReviewHighlightStore((s) => s.focusIssue);
+  function jumpToFix(fix: SpellingBatchFix) {
+    if (!p.episode_id || typeof fix.line !== 'number' || fix.line < 1) return;
+    openTab({ section: 'episode', itemId: p.episode_id });
+    setHighlightIssues(
+      [
+        {
+          index: 0,
+          type: fix.fix_type ?? 'other',
+          severity: 'info',
+          lines: [fix.line],
+          location: `L${fix.line}`,
+          description: `${fix.original ?? ''} → ${fix.suggestion ?? ''}`,
+        },
+      ],
+      p.episode_id,
+    );
+    focusHighlightIssue(0);
+  }
   // controlled / uncontrolled 동시 지원. controlledChecked 있으면 그걸 사용, 없으면 내부 state.
   const [internalChecked, setInternalChecked] = useState<Set<number>>(
     () => new Set(fixes.map((_, i) => i)),
@@ -695,6 +722,7 @@ function SpellingBatchCard({
         {fixes.map((f, i) => {
           const isChecked = checked.has(i);
           const typeLabel = (f.fix_type && FIX_TYPE_LABEL[f.fix_type]) || '맞춤법';
+          const canJump = !!p.episode_id && typeof f.line === 'number' && f.line >= 1;
           return (
             <li
               key={i}
@@ -710,24 +738,54 @@ function SpellingBatchCard({
                 className="mt-0.5 h-3 w-3 shrink-0 cursor-pointer accent-primary disabled:cursor-not-allowed"
                 aria-label={`L${f.line} ${f.original} → ${f.suggestion}`}
               />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
-                  <span className="rounded bg-blue-500/15 px-1 font-medium text-blue-600">{typeLabel}</span>
-                  <span className="tabular-nums">L{f.line}</span>
+              {canJump ? (
+                <button
+                  type="button"
+                  onClick={() => jumpToFix(f)}
+                  className="group min-w-0 flex-1 rounded text-left transition-colors hover:bg-accent/40"
+                  title="본문에서 이 위치 보기 — 회차 열고 해당 줄 강조"
+                >
+                  <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="rounded bg-blue-500/15 px-1 font-medium text-blue-600">{typeLabel}</span>
+                    <span className="tabular-nums">L{f.line}</span>
+                    <ArrowUpRight
+                      size={10}
+                      className="ml-auto opacity-0 transition-opacity group-hover:opacity-70"
+                    />
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <span className="rounded bg-red-500/10 px-1 font-mono text-red-700 line-through">
+                      {f.original}
+                    </span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="rounded bg-emerald-500/10 px-1 font-mono text-emerald-700">
+                      {f.suggestion}
+                    </span>
+                  </div>
+                  {f.reason && (
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">{f.reason}</div>
+                  )}
+                </button>
+              ) : (
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="rounded bg-blue-500/15 px-1 font-medium text-blue-600">{typeLabel}</span>
+                    <span className="tabular-nums">L{f.line}</span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    <span className="rounded bg-red-500/10 px-1 font-mono text-red-700 line-through">
+                      {f.original}
+                    </span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="rounded bg-emerald-500/10 px-1 font-mono text-emerald-700">
+                      {f.suggestion}
+                    </span>
+                  </div>
+                  {f.reason && (
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">{f.reason}</div>
+                  )}
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                  <span className="rounded bg-red-500/10 px-1 font-mono text-red-700 line-through">
-                    {f.original}
-                  </span>
-                  <span className="text-muted-foreground">→</span>
-                  <span className="rounded bg-emerald-500/10 px-1 font-mono text-emerald-700">
-                    {f.suggestion}
-                  </span>
-                </div>
-                {f.reason && (
-                  <div className="mt-0.5 text-[10px] text-muted-foreground">{f.reason}</div>
-                )}
-              </div>
+              )}
             </li>
           );
         })}

@@ -95,6 +95,20 @@ const createWindow = () => {
 
   bindMaximizeEvents(mainWindow);
 
+  // window.open(http/https) 호출은 OS 기본 브라우저로 위임 — 앱 안에 새 BrowserWindow 띄우지 않음.
+  // 정적 <a target="_blank"> + 일부 외부 리다이렉트 시 fallback 으로 동작.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        void shell.openExternal(u.toString());
+      }
+    } catch {
+      /* ignore */
+    }
+    return { action: 'deny' };
+  });
+
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }

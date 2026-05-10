@@ -79,8 +79,9 @@ export function TitleBar({ title }: { title?: string }) {
           title="버그 리포트 — 새 탭에서 열기"
           url={FEEDBACK_LINKS.bug}
         />
-        <span className="mx-1 h-4 w-px bg-activity-bar-border/60" aria-hidden />
-        <UpdateQuickButton />
+        {/* 구분선 + 업데이트 버튼은 한 단위로 — UpdateQuickButton 이 null 반환 시 (dev/web)
+            구분선이 외톨이로 남지 않도록 함께 묶음. */}
+        <UpdateQuickButtonWithDivider />
 
         {/* OS 창 컨트롤 — macOS는 OS traffic light가 좌측에 있으므로 숨김 */}
         {!isMac && (
@@ -132,6 +133,22 @@ export function TitleBar({ title }: { title?: string }) {
  *
  * unsupported(웹/dev) 또는 isWeb: 렌더 안 함.
  */
+/**
+ * UpdateQuickButton + 좌측 구분선 묶음.
+ * 본 버튼이 null 반환하는 환경(dev / unsupported / web — 단 web 은 TitleBar 자체가 null)
+ * 에서는 구분선도 함께 사라지도록 한 컴포넌트로 묶었다.
+ */
+function UpdateQuickButtonWithDivider() {
+  const { isWeb, state } = useUpdater();
+  if (isWeb || state.phase === 'unsupported') return null;
+  return (
+    <>
+      <span className="mx-1 h-4 w-px bg-activity-bar-border/60" aria-hidden />
+      <UpdateQuickButton />
+    </>
+  );
+}
+
 function UpdateQuickButton() {
   const { state, isWeb, check, download } = useUpdater();
   const isOnline = useNetworkStatus();
