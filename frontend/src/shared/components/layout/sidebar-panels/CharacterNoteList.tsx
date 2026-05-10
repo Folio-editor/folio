@@ -23,7 +23,8 @@ import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useDecryptedCharacterList } from '../../../hooks/useDecryptedCharacter';
 import { useDecryptedCharacterNoteList } from '../../../hooks/useDecryptedCharacterNote';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
-import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
+import { useSidebarClickHandler, SIDEBAR_ITEM_HINT } from '../../../lib/sidebarClickHandler';
+import { Tooltip } from '../../ui/Tooltip';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
@@ -545,37 +546,38 @@ function CharacterTreeItem({
             {...dragListeners}
             className="group flex items-center"
           >
-            <button
-              type="button"
-              {...charClickHandlers}
-              title="클릭=메인 / 더블·⌘+클릭=핀"
-              className={cn(
-                'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                isCharSelected
-                  ? 'bg-secondary font-medium text-primary'
-                  : isExpanded
-                    ? 'font-medium text-sidebar-foreground'
-                    : 'text-sidebar-foreground',
-              )}
-            >
-              {hasChildNotes ? (
-                <ChevronRight
-                  size={12}
-                  strokeWidth={2}
-                  className={cn(
-                    'shrink-0 transition-transform',
-                    isExpanded && 'rotate-90',
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleExpand();
-                  }}
-                />
-              ) : (
-                <span className="w-3 shrink-0" aria-hidden />
-              )}
-              {character.name?.trim() || '(이름 없음)'}
-            </button>
+            <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+              <button
+                type="button"
+                {...charClickHandlers}
+                className={cn(
+                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                  isCharSelected
+                    ? 'bg-secondary font-medium text-primary'
+                    : isExpanded
+                      ? 'font-medium text-sidebar-foreground'
+                      : 'text-sidebar-foreground',
+                )}
+              >
+                {hasChildNotes ? (
+                  <ChevronRight
+                    size={12}
+                    strokeWidth={2}
+                    className={cn(
+                      'shrink-0 transition-transform',
+                      isExpanded && 'rotate-90',
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleExpand();
+                    }}
+                  />
+                ) : (
+                  <span className="w-3 shrink-0" aria-hidden />
+                )}
+                {character.name?.trim() || '(이름 없음)'}
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); handleQuickAddNote(); }}
@@ -730,6 +732,8 @@ function NoteItem({
     createCharacterNote,
     placeCharacterNote,
   } = useLocalWrite();
+  // appearance/personality kind 자동 생성은 폐기됐으나 (intro 통합), 구버전 사용자 데이터에
+  // 남아있을 수 있어 컨텍스트 메뉴 잠금만 유지 — 사용자가 옛 노트를 실수로 지우지 않도록.
   const isFixed = note.kind === 'appearance' || note.kind === 'personality';
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.title);
@@ -831,19 +835,20 @@ function NoteItem({
       {...dragListeners}
       className="group flex items-center"
     >
-      <button
-        type="button"
-        {...clickHandlers}
-        title="클릭=메인 / 더블·⌘+클릭=핀"
-        className={cn(
-          'flex-1 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
-          selected
-            ? 'bg-secondary font-medium text-primary'
-            : 'text-sidebar-foreground',
-        )}
-      >
-        {note.title?.trim() || '(제목 없음)'}
-      </button>
+      <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+        <button
+          type="button"
+          {...clickHandlers}
+          className={cn(
+            'flex-1 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
+            selected
+              ? 'bg-secondary font-medium text-primary'
+              : 'text-sidebar-foreground',
+          )}
+        >
+          {note.title?.trim() || '(제목 없음)'}
+        </button>
+      </Tooltip>
     </div>
   );
 

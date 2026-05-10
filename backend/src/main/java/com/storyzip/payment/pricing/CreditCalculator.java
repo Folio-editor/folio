@@ -10,7 +10,7 @@ import java.util.Map;
  * <p>정책 (2026-05-08 업데이트 — 크레딧 단위 10× 세분화):
  * <ul>
  *   <li>1 크레딧 = 0.8원 (이전 8원에서 1/10 로 세분화)</li>
- *   <li>차감 = ROUND(API 원가 × 1.3 ÷ 0.8)</li>
+ *   <li>차감 = ROUND(API 원가 × 1.1 ÷ 0.8)  — 2026-05-09 마진 1.3 → 1.1 인하</li>
  *   <li>USD → KRW = 1,450</li>
  * </ul>
  *
@@ -23,7 +23,7 @@ import java.util.Map;
 public class CreditCalculator {
 
     public static final double USD_TO_KRW = 1_450d;
-    public static final double MARGIN_RATIO = 1.3d;
+    public static final double MARGIN_RATIO = 1.1d;
     public static final double CREDIT_VALUE_KRW = 0.8d;
 
     /** 모델별 1M 토큰당 USD 단가. */

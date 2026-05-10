@@ -15,7 +15,8 @@ import { useDecryptedForeshadowList } from '../../../hooks/useDecryptedForeshado
 import { useDecryptedIdeaArchiveList } from '../../../hooks/useDecryptedIdeaArchive';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { WorkspaceSection, SECTION_TABLES, type ClickIntent } from '../../../types/workspace';
-import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
+import { useSidebarClickHandler, SIDEBAR_ITEM_HINT } from '../../../lib/sidebarClickHandler';
+import { Tooltip } from '../../ui/Tooltip';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
@@ -538,19 +539,20 @@ function SectionItem({
             {...dragListeners}
             className="group flex w-full items-center"
           >
-            <button
-              type="button"
-              {...clickHandlers}
-              title="클릭=메인 / 더블·⌘+클릭=핀"
-              className={cn(
-                'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                selected
-                  ? 'bg-secondary font-medium text-primary'
-                  : 'text-sidebar-foreground',
-              )}
-            >
-              {label}
-            </button>
+            <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+              <button
+                type="button"
+                {...clickHandlers}
+                className={cn(
+                  'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                  selected
+                    ? 'bg-secondary font-medium text-primary'
+                    : 'text-sidebar-foreground',
+                )}
+              >
+                {label}
+              </button>
+            </Tooltip>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>

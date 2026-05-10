@@ -256,7 +256,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
   };
 
   const handleNewAct = async () => {
-    const title = `${acts.length + 1}막`;
+    const title = `챕터 ${acts.length + 1}`;
     await createPlot(workId, title, acts.length);
   };
 
@@ -273,7 +273,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
         trailing={
           <div className="flex items-center gap-2">
             <ViewToggle mode={viewMode} onChange={setViewMode} />
-            <Button onClick={() => void handleNewAct()}>+ 새 막</Button>
+            <Button onClick={() => void handleNewAct()}>+ 새 챕터</Button>
             <EditorToolbarToggle />
           </div>
         }
@@ -285,7 +285,7 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
         <div className="p-6">
         {acts.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
-            아직 플롯이 없습니다. 새 막을 추가하여 줄거리를 설계하세요.
+            아직 플롯이 없습니다. 새 챕터를 추가하여 줄거리를 설계하세요.
           </p>
         ) : viewMode === 'grid' ? (
           <DndContext
@@ -422,7 +422,7 @@ function ActSection({
     {
       immediatelyRender: false,
       extensions: createInlineExtensions({
-        placeholder: '막에 대한 설명을 입력하세요…',
+        placeholder: '챕터에 대한 설명을 입력하세요…',
       }),
       content: parseNoteContent(act.content),
       onCreate: ({ editor: ed }) => {
@@ -512,7 +512,7 @@ function ActSection({
           value={title.value}
           onChange={(e) => title.onChange(e.target.value)}
           onBlur={title.onBlur}
-          placeholder="막 제목"
+          placeholder="챕터 제목"
           className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground"
         />
 
@@ -532,7 +532,7 @@ function ActSection({
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
-          title="막 삭제"
+          title="챕터 삭제"
           className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
         >
           <Trash2 size={14} />
@@ -551,8 +551,8 @@ function ActSection({
 
       {confirmDelete && (
         <DeleteConfirmDialog
-          title="막 삭제"
-          message={`"${act.title || '(제목 없음)'}" 막과 하위 ${episodes.length}개 회차가 모두 삭제됩니다.`}
+          title="챕터 삭제"
+          message={`"${act.title || '(제목 없음)'}" 챕터와 하위 ${episodes.length}개 회차가 모두 삭제됩니다.`}
           busy={deleteBusy}
           onConfirm={() => {
             setDeleteBusy(true);
@@ -997,7 +997,7 @@ function ActGridSection({
     {
       immediatelyRender: false,
       extensions: createInlineExtensions({
-        placeholder: '막에 대한 설명을 입력하세요…',
+        placeholder: '챕터에 대한 설명을 입력하세요…',
       }),
       content: parseNoteContent(act.content),
       onCreate: ({ editor: ed }) => {

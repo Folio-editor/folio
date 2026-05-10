@@ -165,15 +165,19 @@
   --editor-comment-accent: oklch(0.70 0.10 250);
   --editor-name-character: oklch(0.75 0.18 290);
   --editor-name-place: oklch(0.75 0.13 170);
-  --editor-mark: oklch(0.40 0.10 90);
-  --editor-mark-yellow: oklch(0.45 0.12 95);
-  --editor-mark-green:  oklch(0.42 0.10 150);
-  --editor-mark-blue:   oklch(0.42 0.10 240);
-  --editor-mark-pink:   oklch(0.42 0.12 0);
-  --editor-mark-purple: oklch(0.42 0.10 295);
-  --editor-mark-orange: oklch(0.45 0.12 60);
-  --editor-mark-red:    oklch(0.45 0.13 25);
-  --editor-mark-gray:   oklch(0.40 0.01 285);
+  /* 다크모드 형광펜 — 어두운 채도 톤 (불투명).
+     배경(약 oklch 0.15) < 하이라이트(0.30) < 글자(0.92) 의 명도 계층으로
+     글자(밝은 회색) 가시성을 유지하면서 색상 hint 는 또렷하게 인식되도록 함.
+     라이트 톤 + alpha 방식은 글자와 명도가 비슷해 가시성을 해쳐 폐기. */
+  --editor-mark: oklch(0.32 0.08 95);
+  --editor-mark-yellow: oklch(0.32 0.08 95);    /* 다크 머스타드 */
+  --editor-mark-green:  oklch(0.30 0.08 150);   /* 다크 포레스트 */
+  --editor-mark-blue:   oklch(0.30 0.10 240);   /* 다크 네이비 */
+  --editor-mark-pink:   oklch(0.30 0.08 0);     /* 다크 와인 */
+  --editor-mark-purple: oklch(0.30 0.08 295);   /* 다크 보라 */
+  --editor-mark-orange: oklch(0.32 0.08 60);    /* 다크 브라운 */
+  --editor-mark-red:    oklch(0.30 0.10 25);    /* 다크 적갈 */
+  --editor-mark-gray:   oklch(0.28 0.01 285);   /* 다크 슬레이트 */
   --editor-find-match: oklch(0.40 0.12 90);
   --editor-find-match-current: oklch(0.50 0.18 50);
   --editor-review-critical: oklch(0.25 0.05 25);

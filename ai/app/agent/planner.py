@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -114,6 +115,10 @@ async def run_planner_loop(
     if client is None or sonnet_model is None:
         raise RuntimeError("LLM provider lacks Anthropic client (Fake provider unsupported for planner).")
 
+    # ⚠ history sanity: 옛 thread (압축이 페어를 깨뜨렸던 시기) 의 손상된 messages 가
+    # 들어올 수 있다. orphan tool_result / orphan tool_use 를 제거 — Anthropic 400 차단.
+    history = _sanitize_history(history)
+
     # 사용자 신규 메시지를 history 에 append
     history.append({"role": "user", "content": user_message})
 
@@ -129,13 +134,16 @@ async def run_planner_loop(
                 # 새 assistant turn 시작 신호 — 프론트가 새 메시지 버블 띄우도록
                 if event_emit:
                     event_emit({"event_type": "assistant_start"})
+                # high-level streaming — messages.stream() 의 검증된 helper 사용.
+                # text_delta 만 forward 하면 충분 (C-2: 본문은 자연어로 흐름. tool input json
+                # streaming 은 anthropic default buffering 이라 어차피 batch — forward 무의미).
+                # get_final_message() 가 response.content / usage / stop_reason 자동 합성.
                 async with client.messages.stream(
                     model=sonnet_model,
                     max_tokens=PLANNER_MAX_TOKENS,
                     system=system_blocks,
                     tools=tools,
                     messages=history,
-                    # Sonnet 4 의 XML hallucination 빈도 감소 + tool 결정 안정성 ↑
                     temperature=0.2,
                 ) as stream:
                     async for ev in stream:
@@ -240,12 +248,37 @@ async def run_planner_loop(
         # ⚠ 중요: 한 번 record_tool 이 BudgetExceeded 를 raise 하면 남은 tool_use 들에도
         # 빈 tool_result 를 합성해 history 에 append 해야 다음 turn 에서 Anthropic API 가
         # "tool_use must be followed by tool_result" 검증을 통과한다 (Phase 4 audit A-5).
+
+        # ★ C-2 (2026-05-10): propose_episode_draft 의 content 자동 합성.
+        # anthropic 의 tool_use input JSON 은 default 로 buffered (token streaming 불가).
+        # 시나리오 prompt 가 모델에게 본문은 자연어(text content) 로 출력 후 propose 호출하도록
+        # 지시 → 사용자가 본문을 라이브로 봄. 그 후 백엔드(여기) 가 직전 text content 를 추출해
+        # propose 의 input.content 로 자동 주입.
+        # Fallback: 모델이 prompt 무시하고 직접 채워 호출하면 그 값 우선 (기존 동작).
+        prev_text_content = ""
+        for b in (content if isinstance(content, list) else []):
+            if getattr(b, "type", None) == "text":
+                t = getattr(b, "text", "") or ""
+                prev_text_content += t
+
         tool_results: list[dict[str, Any]] = []
         budget_aborted: BudgetExceeded | None = None
         for tu in tool_uses:
             name = getattr(tu, "name", "")
             tu_id = getattr(tu, "id", "")
             args = getattr(tu, "input", {}) or {}
+            # propose_episode_draft 자동 본문 합성 — 모델이 content 비워두고 호출한 경우만.
+            if (
+                name == "propose_episode_draft"
+                and isinstance(args, dict)
+                and not (args.get("content") or "").strip()
+                and prev_text_content.strip()
+            ):
+                args = {**args, "content": prev_text_content.strip()}
+                logger.info(
+                    "planner.propose_episode_draft.content_synthesized title=%s text_len=%d",
+                    str(args.get("title", ""))[:40], len(prev_text_content),
+                )
             if budget_aborted is not None:
                 # 예산 초과 후 — 실행 없이 abort 알림만
                 tool_results.append({
@@ -341,6 +374,80 @@ def _format_tool_result(result: Any) -> str:
         "더 좁은 범위로 재요청하거나 페이지네이션 사용]"
     )
     return head + suffix
+
+
+def _sanitize_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """깨진 history (압축 페어 손상 등) 정리.
+
+    Anthropic 검증 규칙 위반 패턴 제거:
+      1. orphan user(tool_result_only) — 이전 assistant 의 tool_use 가 사라진 경우
+      2. orphan assistant(tool_use 미응답) — 다음 user(tool_result) 가 없는 경우 → tool_use 블록만 제거하고 text 보존
+
+    돌이킬 수 없는 손상은 사용자 화면엔 평범한 dialog 로 보이게 텍스트만 살림.
+    """
+    if not history:
+        return history
+
+    # 정방향 1패스 — assistant 의 tool_use_id 들을 outstanding set 에 모으고,
+    # 다음 user(tool_result) 의 tool_use_id 가 매칭되면 소비, 안 되면 제거.
+    outstanding_tool_use_ids: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    for msg in history:
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role == "assistant":
+            if isinstance(content, list):
+                tool_use_ids = [
+                    b.get("id")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id")
+                ]
+                outstanding_tool_use_ids.update(tool_use_ids)
+            out.append(msg)
+            continue
+
+        if role == "user" and isinstance(content, list):
+            kept_blocks: list[dict[str, Any]] = []
+            had_tool_result = False
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    had_tool_result = True
+                    tu_id = b.get("tool_use_id")
+                    if tu_id and tu_id in outstanding_tool_use_ids:
+                        outstanding_tool_use_ids.discard(tu_id)
+                        kept_blocks.append(b)
+                    # orphan tool_result — drop silently
+                else:
+                    kept_blocks.append(b)
+            if not kept_blocks:
+                # 통째 orphan — 메시지 자체 제거
+                continue
+            if had_tool_result and kept_blocks != content:
+                # 일부만 유지 — 새 dict 로 교체
+                out.append({"role": "user", "content": kept_blocks})
+            else:
+                out.append(msg)
+            continue
+
+        out.append(msg)
+
+    # outstanding_tool_use_ids 가 비어있어야 정상. 남아있으면 마지막 assistant 의
+    # tool_use 들이 응답 못 받은 채 끝난 것 → 다음 stream() 호출 시 에러. 빈 tool_result
+    # 로 닫아주는 user 메시지 합성.
+    if outstanding_tool_use_ids:
+        seal = [
+            {
+                "type": "tool_result",
+                "tool_use_id": tu_id,
+                "content": '{"error":"tool_result_lost_recovery_seal"}',
+            }
+            for tu_id in outstanding_tool_use_ids
+        ]
+        out.append({"role": "user", "content": seal})
+
+    return out
 
 
 def _usage_to_dict(usage: Any) -> dict[str, int]:

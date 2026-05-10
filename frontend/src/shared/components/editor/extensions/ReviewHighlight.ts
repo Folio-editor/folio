@@ -12,6 +12,8 @@ function circledNumber(n: number): string {
 
 export interface ReviewHighlightStorage {
   lastVersion: number;
+  /** 본 에디터 인스턴스가 표시 중인 episode/note id — store.episodeId 와 매칭될 때만 데코 렌더. */
+  itemId: string;
 }
 
 declare module '@tiptap/core' {
@@ -46,7 +48,7 @@ const ReviewHighlight = Extension.create<Record<string, never>, ReviewHighlightS
   name: 'reviewHighlight',
 
   addStorage() {
-    return { lastVersion: -1 };
+    return { lastVersion: -1, itemId: '' };
   },
 
   addCommands() {
@@ -119,9 +121,14 @@ const ReviewHighlight = Extension.create<Record<string, never>, ReviewHighlightS
       doc: import('@tiptap/pm/model').Node,
       store: ReturnType<typeof useReviewHighlightStore.getState>,
     ): DecorationSet {
-      const { issues, focusedIndex } = store;
+      const { issues, focusedIndex, episodeId } = store;
 
       if (issues.length === 0) return DecorationSet.empty;
+      // ★ episode 격리: 다른 회차/문서의 에디터에는 데코를 그리지 않는다 (잔여물 차단).
+      // store.episodeId 가 null 이면 legacy/광범위 모드 — 모든 에디터에 표시.
+      if (episodeId != null && extensionStorage.itemId !== episodeId) {
+        return DecorationSet.empty;
+      }
 
       const nodeMap = buildNodeMap(doc);
       const decorations: Decoration[] = [];
