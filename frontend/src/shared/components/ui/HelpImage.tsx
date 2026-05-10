@@ -19,10 +19,10 @@ export interface HelpImageProps {
  * 도움말 모달 본문에 삽입하는 스크린샷.
  * useResolvedTheme 으로 현재 테마에 맞는 이미지 자동 선택.
  *
- * 사용 예 (tabHelpContent.tsx):
- *   import addPlotLight from '@assets/help/plot/add-act.light.png';
- *   import addPlotDark  from '@assets/help/plot/add-act.dark.png';
- *   <HelpImage light={addPlotLight} dark={addPlotDark} alt="좌측 사이드바의 + 새 챕터 버튼 위치" />
+ * 사용 예 (tabHelpContent.tsx — 상대 경로 import 후 light/dark prop 으로 주입):
+ *   - 라이트/다크 페어 이미지를 프로젝트 내 상대 경로로 import
+ *   - HelpImage 에 두 src 와 alt(필수) 를 props 로 전달
+ *   - HelpImage 가 useResolvedTheme 으로 적절한 src 자동 선택
  */
 export function HelpImage({ light, dark, alt, caption, zoomable = true }: HelpImageProps) {
   const theme = useResolvedTheme();
