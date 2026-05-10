@@ -24,7 +24,7 @@ _PRICE_USD_PER_M = {
     "haiku":  {"in": 0.8,  "out":  4.0, "cache_read": 0.08, "cache_create": 1.0},
 }
 USD_TO_KRW = 1450.0
-MARGIN_RATIO = 1.3
+MARGIN_RATIO = 1.1     # 2026-05-09: 1.3 → 1.1 인하 (backend CreditCalculator 와 동기 필수)
 # Phase: 결제 단위 재구성 (10000원 = 1300 → 13000 credits).
 # backend CreditCalculator.CREDIT_VALUE_KRW 와 항상 동일 유지 — 한쪽만 바꾸면 청구 mismatch.
 CREDIT_VALUE_KRW = 0.8
@@ -41,7 +41,7 @@ def _convert(model: str, usage: dict[str, int]) -> int:
 
     CreditCalculator (backend) 와 동일 공식:
         cost_krw = USD * 1450      # 환율
-        charged  = cost_krw * 1.3   # 마진
+        charged  = cost_krw * 1.1   # 마진 (2026-05-09 인하)
         credits  = round(charged / 0.8)   # 1 크레딧 = 0.8 원 (10000원 = 13000 credits)
     """
     p = _PRICE_USD_PER_M.get(model, _PRICE_USD_PER_M["sonnet"])

@@ -89,5 +89,12 @@ folio:
     # vault.enabled 는 application.yml 에서 true hardcode (dev/prod 동일 경로).
     # dev: backend 가 호스트에서 직접 실행 (gradlew bootRun) → docker 내부 도메인 'vault' 해석 불가.
     # compose 가 publish 한 host port (localhost:8200) 사용. prod 는 backend 도 컨테이너라 vault hostname 그대로.
+    #
+    # ★ Windows + WSL2 + Docker Desktop 환경에서 VS Code 의 Ports 자동 포워딩이
+    # 127.0.0.1:8200 을 squat 하는 케이스가 잦다. JVM 은 'localhost' 를 IPv4 우선
+    # resolve (java.net.preferIPv6Addresses=false 기본값) → VS Code listener 로 빨려가
+    # 5초 read timeout → SocketTimeoutException → server-dek / decrypt 전부 500.
+    # IPv6 loopback ([::1]) 직접 명시 — Docker 가 publish 한 [::]:8200 / wslrelay 의
+    # [::1]:8200 으로 직행하므로 squat 회피. (2026-05-09 디버깅 결과)
     vault:
-      url: http://localhost:8200
+      url: http://[::1]:8200

@@ -1,6 +1,6 @@
 // MUST be the first import — userData 경로를 다른 모듈이 캐시하기 전에 변경해야 함
 import './appPaths';
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import path from 'node:path';
 import {
   loginWithGoogle,
@@ -95,6 +95,20 @@ const createWindow = () => {
 
   bindMaximizeEvents(mainWindow);
 
+  // window.open(http/https) 호출은 OS 기본 브라우저로 위임 — 앱 안에 새 BrowserWindow 띄우지 않음.
+  // 정적 <a target="_blank"> + 일부 외부 리다이렉트 시 fallback 으로 동작.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        void shell.openExternal(u.toString());
+      }
+    } catch {
+      /* ignore */
+    }
+    return { action: 'deny' };
+  });
+
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
@@ -184,6 +198,18 @@ function registerWindowHandlers() {
   });
   ipcMain.handle('window:isMaximized', (e) => {
     return BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false;
+  });
+  // 외부 링크 — http/https 만 허용. file:// / javascript: 차단해 RCE/스푸핑 위험 제거.
+  ipcMain.handle('window:openExternal', async (_e, raw: unknown) => {
+    if (typeof raw !== 'string') return;
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      return;
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+    await shell.openExternal(url.toString());
   });
 }
 

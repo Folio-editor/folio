@@ -26,7 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.runner import run_agent
 from app.agent.scenarios import SCENARIOS
-from app.agent.session import create_session, list_threads, load_session
+from app.agent.session import (
+    compress_thread_now,
+    create_session,
+    delete_session,
+    list_threads,
+    load_session,
+)
 from app.celery_app import celery_app
 from app.db.session import get_session, async_session
 from app.middleware.auth import require_internal_api_key
@@ -216,6 +222,38 @@ async def _agent_sse_generator(thread_id: str, user_message: str):
             except asyncio.QueueFull:
                 pass
             return
+        # tool_use input json 점진 누적 streaming — 카드 모드의 결과물 실시간 표시용.
+        if ev_type == "tool_input_start":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_start",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
+        if ev_type == "tool_input_stop":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_stop",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
+        if ev_type == "tool_input_delta":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_delta",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                    "partial_json": meta.get("partial_json", ""),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
         # 2) BudgetTracker 가 보내는 step 메타
         recent = meta.get("recent_lines", [])
         if recent:
@@ -322,3 +360,32 @@ async def get_thread(
         messages=sess["messages"],
         summary_so_far=sess["summary_so_far"],
     )
+
+
+@router.delete("/threads/{thread_id}", status_code=204)
+async def delete_thread(
+    thread_id: str,
+    writer_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> None:
+    """대화 세션 삭제 — Spring 측에서 인증된 writer_id 를 query 로 강제 전달."""
+    ok = await delete_session(db, uuid.UUID(thread_id), uuid.UUID(writer_id))
+    if not ok:
+        raise HTTPException(status_code=404, detail="thread_not_found_or_not_owner")
+    return None
+
+
+@router.post("/threads/{thread_id}/compress")
+async def compress_thread(
+    thread_id: str,
+    db: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """작가가 채팅 UI 의 [대화 압축] 버튼을 누르면 호출. 임계값 무시하고 즉시 압축.
+
+    Haiku 1회 호출 비용은 작가에게 청구되지 않음 (BudgetTracker 미적용 — 운영 부담).
+    Phase 5+ 에서 영수증 발행 검토.
+    """
+    result = await compress_thread_now(db, uuid.UUID(thread_id))
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result

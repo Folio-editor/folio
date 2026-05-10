@@ -13,7 +13,6 @@ import { EditorToolbarToggle } from '../../components/editor/EditorToolbarToggle
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { BreadcrumbTitle } from '../../components/layout/BreadcrumbTitle';
 import { ContentEditor } from '../../components/editor/ContentEditor';
-import { ExportButton } from '../workspace/ExportButton';
 import type { WorkspaceSection } from '../../types/workspace';
 
 interface EpisodeEditScreenProps {
@@ -107,7 +106,6 @@ function EpisodeEditor({
               onChange={(status) => void updateEpisode(id, { status })}
             />
             <EditorToolbarToggle />
-            <ExportButton workId={item.work_id} initialEpisodeId={id} />
             <button
               type="button"
               onClick={() => setConfirmTrash(true)}

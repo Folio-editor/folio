@@ -191,7 +191,7 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
                 value={title.value}
                 onChange={(e) => title.onChange(e.target.value)}
                 onBlur={title.onBlur}
-                placeholder="막 제목"
+                placeholder="챕터 제목"
                 className="border-none px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
               />
             }
@@ -217,7 +217,7 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
           <WorldNoteInlineEditor
             noteId={id}
             initialContent={act.content}
-            placeholder="막 전체의 줄거리와 핵심 사건을 정리하세요…"
+            placeholder="챕터 전체의 줄거리와 핵심 사건을 정리하세요…"
             onUpdate={(json) => void updatePlot(id, { content: json })}
             size="base"
           />

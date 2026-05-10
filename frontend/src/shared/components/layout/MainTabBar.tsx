@@ -335,14 +335,14 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
 
   return (
     <div className="flex h-10 shrink-0 items-stretch bg-muted/40">
-      {/* back/forward */}
+      {/* back/forward — 비활성 탭과 동일한 border/hover 토큰으로 통일 (시각 일치) */}
       <button
         type="button"
         onClick={back}
         disabled={!canBack}
         title="뒤로 (Alt+←)"
         aria-label="뒤로"
-        className="flex w-8 shrink-0 items-center justify-center border-b border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+        className="flex w-8 shrink-0 items-center justify-center border-b border-r border-border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronLeft size={14} />
       </button>
@@ -352,7 +352,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
         disabled={!canForward}
         title="앞으로 (Alt+→)"
         aria-label="앞으로"
-        className="flex w-8 shrink-0 items-center justify-center border-b border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+        className="flex w-8 shrink-0 items-center justify-center border-b border-r border-border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronRight size={14} />
       </button>

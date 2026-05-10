@@ -78,6 +78,8 @@ export interface FolioWindowApi {
   onMaximizeChanged: (callback: (maximized: boolean) => void) => () => void;
   /** OS 플랫폼. 커스텀 TitleBar가 Windows/macOS 분기에 사용. */
   platform: 'win32' | 'darwin' | 'linux' | 'web';
+  /** 외부 URL 을 사용자의 기본 브라우저에서 연다. http/https 스킴만 허용. */
+  openExternal: (url: string) => Promise<void>;
 }
 
 /**

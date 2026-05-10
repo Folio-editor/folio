@@ -24,6 +24,7 @@ import {
   type StatusPillOption,
 } from '../../components/ui/StatusPillDropdown';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
+import { ExportButton } from './ExportButton';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
 import { parseServerDate } from '../../lib/dateTime';
@@ -212,6 +213,7 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
         }
         title={<span className="text-lg font-semibold">홈</span>}
         subtitle={work.title?.trim() || '작품 허브'}
+        trailing={<ExportButton workId={id} />}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-10 py-8">

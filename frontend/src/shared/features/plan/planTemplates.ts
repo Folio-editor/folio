@@ -15,7 +15,7 @@ export interface PlanTemplate {
   id: string;
   label: string;
   description: string;
-  iconKey: 'file' | 'sparkles' | 'bookOpen' | 'globe';
+  iconKey: 'file' | 'sparkles' | 'bookOpen' | 'globe' | 'lightbulb';
   content: TiptapNode | null;
 }
 
@@ -74,7 +74,7 @@ export const PLAN_TEMPLATES: PlanTemplate[] = [
     id: 'basic-story-plan',
     label: '기본 작품 기획',
     description: '작품의 핵심, 주인공, 갈등을 빠르게 잡습니다.',
-    iconKey: 'sparkles',
+    iconKey: 'lightbulb',
     content: doc([
       heading(1, '기본 작품 기획'),
       quote('작품의 핵심을 짧고 선명하게 잡아두는 시작용 기획서입니다.'),

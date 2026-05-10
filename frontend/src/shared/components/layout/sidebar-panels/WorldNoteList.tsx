@@ -23,7 +23,8 @@ import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useDecryptedWorldNoteList, type RawWorldNoteRow } from '../../../hooks/useDecryptedWorldNote';
 import { decryptWorkFieldOnce } from '../../../crypto/fieldDecrypt';
-import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
+import { useSidebarClickHandler, SIDEBAR_ITEM_HINT } from '../../../lib/sidebarClickHandler';
+import { Tooltip } from '../../ui/Tooltip';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
@@ -523,35 +524,36 @@ function WorldNoteTreeItem({
                 isMergeOver && 'bg-primary/15 ring-1 ring-primary',
               )}
             >
-              <button
-                type="button"
-                {...clickHandlers}
-                title="클릭=메인 / 더블·⌘+클릭=핀"
-                className={cn(
-                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                  isSelected
-                    ? 'bg-secondary font-medium text-primary'
-                    : 'text-sidebar-foreground',
-                )}
-              >
-                {(note.child_count ?? 0) > 0 ? (
-                  <ChevronRight
-                    size={12}
-                    strokeWidth={2}
-                    className={cn(
-                      'shrink-0 transition-transform',
-                      isExpanded && 'rotate-90',
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleExpand(note.id);
-                    }}
-                  />
-                ) : (
-                  <span className="inline-block w-3 shrink-0" aria-hidden="true" />
-                )}
-                {note.name?.trim() || '(이름 없음)'}
-              </button>
+              <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+                <button
+                  type="button"
+                  {...clickHandlers}
+                  className={cn(
+                    'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                    isSelected
+                      ? 'bg-secondary font-medium text-primary'
+                      : 'text-sidebar-foreground',
+                  )}
+                >
+                  {(note.child_count ?? 0) > 0 ? (
+                    <ChevronRight
+                      size={12}
+                      strokeWidth={2}
+                      className={cn(
+                        'shrink-0 transition-transform',
+                        isExpanded && 'rotate-90',
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleExpand(note.id);
+                      }}
+                    />
+                  ) : (
+                    <span className="inline-block w-3 shrink-0" aria-hidden="true" />
+                  )}
+                  {note.name?.trim() || '(이름 없음)'}
+                </button>
+              </Tooltip>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleQuickAddChild(); }}
