@@ -676,10 +676,22 @@ async def propose_episode_draft(
     ctx: WriterContext,
     *,
     title: str,
-    content: str,
+    content: str | None = None,
     parent_id: str | None = None,
     reference_episodes: list[int] | None = None,
 ) -> dict[str, Any]:
+    """회차 초안 INSERT 제안.
+
+    ★ C-2 변경 (2026-05-10): ``content`` 는 optional. 시나리오 prompt 가 모델에게 본문을
+    자연어로 직접 출력 후 ``propose_episode_draft({title})`` 만 호출하도록 지시하고, planner 가
+    직전 text_delta 누적값을 ``content`` 로 자동 주입한다. 이는 anthropic 의 default 정책으로
+    tool_use input JSON 이 buffered (token streaming 불가) 인 점을 우회 — text content 만
+    token 단위 streaming 됨.
+
+    Fallback: 모델이 prompt 무시하고 content 를 직접 채워 호출하면 그 값을 그대로 사용
+    (기존 동작 호환). content 가 비어있고 planner 의 자동 주입도 안 되면 빈 본문으로 적재 →
+    작가가 카드에서 거절 가능.
+    """
     if parent_id:
         r = await session.execute(
             sa_text(
@@ -691,7 +703,7 @@ async def propose_episode_draft(
             return {"error": "parent_episode_not_found_in_work"}
     payload = {
         "title": title,
-        "content": content,
+        "content": content or "",
         "parent_id": parent_id,
         "reference_episodes": reference_episodes or [],
     }

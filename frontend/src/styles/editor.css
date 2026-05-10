@@ -65,7 +65,12 @@
 }
 
 /* ── 장면 구분선 ── */
-.folio-editor .scene-break {
+/* ── 데코레이션 공통 — 메인(.folio-editor) + 모든 인라인 에디터 wrapper.
+   인물·세계관·플롯 인라인 에디터에서도 작가메모·이름태그·형광펜 등이 동일하게 렌더되도록 selector 통일. */
+.folio-editor .scene-break,
+.note-inline-editor .scene-break,
+.inline-note-editor .scene-break,
+.plot-inline-editor .scene-break {
   text-align: center;
   padding: 1.5em 0;
   color: var(--muted-foreground);
@@ -76,15 +81,24 @@
 }
 
 /* ── 대사 / 독백 ── */
-.folio-editor .dialogue {
+.folio-editor .dialogue,
+.note-inline-editor .dialogue,
+.inline-note-editor .dialogue,
+.plot-inline-editor .dialogue {
   color: var(--editor-dialogue);
 }
-.folio-editor .inner-thought {
+.folio-editor .inner-thought,
+.note-inline-editor .inner-thought,
+.inline-note-editor .inner-thought,
+.plot-inline-editor .inner-thought {
   color: var(--editor-inner-thought);
 }
 
 /* ── 주석 (구 작가 메모, mark type은 authorNote 유지 — AI 파서 호환) ── */
-.folio-editor .author-note {
+.folio-editor .author-note,
+.note-inline-editor .author-note,
+.inline-note-editor .author-note,
+.plot-inline-editor .author-note {
   color: var(--editor-comment-fg);
   text-decoration: underline dotted var(--editor-comment-accent);
   text-decoration-thickness: 1px;
@@ -94,33 +108,119 @@
 }
 
 /* ── 이름 태그 ── */
-.folio-editor .name-tag {
+.folio-editor .name-tag,
+.note-inline-editor .name-tag,
+.inline-note-editor .name-tag,
+.plot-inline-editor .name-tag {
   background: var(--accent);
   border-radius: 3px;
   padding: 0 3px;
   font-weight: 500;
 }
-.folio-editor .name-tag[data-kind='character'] {
+.folio-editor .name-tag[data-kind='character'],
+.note-inline-editor .name-tag[data-kind='character'],
+.inline-note-editor .name-tag[data-kind='character'],
+.plot-inline-editor .name-tag[data-kind='character'] {
   border-bottom: 2px solid var(--editor-name-character);
 }
-.folio-editor .name-tag[data-kind='place'] {
+.folio-editor .name-tag[data-kind='place'],
+.note-inline-editor .name-tag[data-kind='place'],
+.inline-note-editor .name-tag[data-kind='place'],
+.plot-inline-editor .name-tag[data-kind='place'] {
   border-bottom: 2px solid var(--editor-name-place);
 }
 
-/* ── 형광펜 (multicolor) ── */
-.folio-editor .ProseMirror mark {
+/* ── 형광펜 (multicolor) — 모든 에디터 wrapper 공통 ── */
+.folio-editor .ProseMirror mark,
+.note-inline-editor .ProseMirror mark,
+.inline-note-editor .ProseMirror mark,
+.plot-inline-editor .ProseMirror mark {
   background-color: var(--editor-mark);
   border-radius: 2px;
   padding: 0 2px;
 }
-.folio-editor .ProseMirror mark[data-color='yellow'] { background-color: var(--editor-mark-yellow); }
-.folio-editor .ProseMirror mark[data-color='green']  { background-color: var(--editor-mark-green);  }
-.folio-editor .ProseMirror mark[data-color='blue']   { background-color: var(--editor-mark-blue);   }
-.folio-editor .ProseMirror mark[data-color='pink']   { background-color: var(--editor-mark-pink);   }
-.folio-editor .ProseMirror mark[data-color='purple'] { background-color: var(--editor-mark-purple); }
-.folio-editor .ProseMirror mark[data-color='orange'] { background-color: var(--editor-mark-orange); }
-.folio-editor .ProseMirror mark[data-color='red']    { background-color: var(--editor-mark-red);    }
-.folio-editor .ProseMirror mark[data-color='gray']   { background-color: var(--editor-mark-gray);   }
+.folio-editor .ProseMirror mark[data-color='yellow'],
+.note-inline-editor .ProseMirror mark[data-color='yellow'],
+.inline-note-editor .ProseMirror mark[data-color='yellow'],
+.plot-inline-editor .ProseMirror mark[data-color='yellow'] { background-color: var(--editor-mark-yellow); }
+.folio-editor .ProseMirror mark[data-color='green'],
+.note-inline-editor .ProseMirror mark[data-color='green'],
+.inline-note-editor .ProseMirror mark[data-color='green'],
+.plot-inline-editor .ProseMirror mark[data-color='green'] { background-color: var(--editor-mark-green); }
+.folio-editor .ProseMirror mark[data-color='blue'],
+.note-inline-editor .ProseMirror mark[data-color='blue'],
+.inline-note-editor .ProseMirror mark[data-color='blue'],
+.plot-inline-editor .ProseMirror mark[data-color='blue'] { background-color: var(--editor-mark-blue); }
+.folio-editor .ProseMirror mark[data-color='pink'],
+.note-inline-editor .ProseMirror mark[data-color='pink'],
+.inline-note-editor .ProseMirror mark[data-color='pink'],
+.plot-inline-editor .ProseMirror mark[data-color='pink'] { background-color: var(--editor-mark-pink); }
+.folio-editor .ProseMirror mark[data-color='purple'],
+.note-inline-editor .ProseMirror mark[data-color='purple'],
+.inline-note-editor .ProseMirror mark[data-color='purple'],
+.plot-inline-editor .ProseMirror mark[data-color='purple'] { background-color: var(--editor-mark-purple); }
+.folio-editor .ProseMirror mark[data-color='orange'],
+.note-inline-editor .ProseMirror mark[data-color='orange'],
+.inline-note-editor .ProseMirror mark[data-color='orange'],
+.plot-inline-editor .ProseMirror mark[data-color='orange'] { background-color: var(--editor-mark-orange); }
+.folio-editor .ProseMirror mark[data-color='red'],
+.note-inline-editor .ProseMirror mark[data-color='red'],
+.inline-note-editor .ProseMirror mark[data-color='red'],
+.plot-inline-editor .ProseMirror mark[data-color='red'] { background-color: var(--editor-mark-red); }
+.folio-editor .ProseMirror mark[data-color='gray'],
+.note-inline-editor .ProseMirror mark[data-color='gray'],
+.inline-note-editor .ProseMirror mark[data-color='gray'],
+.plot-inline-editor .ProseMirror mark[data-color='gray'] { background-color: var(--editor-mark-gray); }
+
+/* ── 다크모드 형광펜 강제 적용 ──
+   CSS variable cascade 문제(인라인 style/specificity 등)로 다크에서 라이트 색상이
+   적용되는 회귀 방지를 위해 html.dark prefix 로 한 번 더 명시.
+   여기서 직접 색상 값을 박아 두면 var() 미해석 케이스에도 안전.
+   색상 조절 시: 두 곳(이 영역 + tokens.css 의 .dark) 모두 수정 필요. */
+html.dark .folio-editor .ProseMirror mark,
+html.dark .note-inline-editor .ProseMirror mark,
+html.dark .inline-note-editor .ProseMirror mark,
+html.dark .plot-inline-editor .ProseMirror mark { background-color: oklch(0.32 0.08 95); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='yellow'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='yellow'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='yellow'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='yellow'] { background-color: oklch(0.32 0.08 95); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='green'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='green'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='green'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='green'] { background-color: oklch(0.30 0.08 150); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='blue'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='blue'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='blue'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='blue'] { background-color: oklch(0.30 0.10 240); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='pink'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='pink'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='pink'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='pink'] { background-color: oklch(0.30 0.08 0); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='purple'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='purple'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='purple'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='purple'] { background-color: oklch(0.30 0.08 295); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='orange'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='orange'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='orange'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='orange'] { background-color: oklch(0.32 0.08 60); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='red'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='red'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='red'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='red'] { background-color: oklch(0.30 0.10 25); }
+
+html.dark .folio-editor .ProseMirror mark[data-color='gray'],
+html.dark .note-inline-editor .ProseMirror mark[data-color='gray'],
+html.dark .inline-note-editor .ProseMirror mark[data-color='gray'],
+html.dark .plot-inline-editor .ProseMirror mark[data-color='gray'] { background-color: oklch(0.28 0.01 285); }
 
 /* ── 집중 모드 ── */
 .folio-editor.focus-mode .ProseMirror > *:not(.has-focus) {

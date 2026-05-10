@@ -18,13 +18,16 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   ArrowUpRight,
   ClipboardCopy,
   Clock,
   FileStack,
   GripVertical,
+  PanelsTopLeft,
   History,
   Info,
+  HelpCircle,
   Lightbulb,
   ListChecks,
   Loader2,
@@ -47,6 +50,16 @@ import { ContentEditor } from '../editor/ContentEditor';
 import { Select } from '../ui/Select';
 import { Popover } from '../ui/Popover';
 import { DeleteConfirmDialog } from '../ui/DeleteConfirmDialog';
+import { FloatingHelpCard } from '../ui/FloatingHelpCard';
+import { Tooltip } from '../ui/Tooltip';
+import { RIGHT_TAB_HELP } from '../../constants/tabHelpContent';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../ui/context-menu';
 import { Skeleton } from '../ui/Skeleton';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useProgressMessage, type ProgressStage } from '../../hooks/useProgressMessage';
@@ -135,7 +148,7 @@ interface RightPanelsProps {
 }
 
 const TABS: { key: RightPanelTab; icon: typeof FileStack; label: string }[] = [
-  { key: 'docs', icon: FileStack, label: '문서 뷰어' },
+  { key: 'docs', icon: PanelsTopLeft, label: '문서 뷰어' },
   { key: 'idea', icon: Lightbulb, label: '아이디어' },
   { key: 'ai', icon: BotMessageSquare, label: 'AI 도구' },
   { key: 'inbox', icon: ClipboardCopy, label: '작업물' },
@@ -177,21 +190,21 @@ export function RightPanels({
       {/* 아이콘 탭 행 — 메인 헤더(h-10)와 좌측 검색창 영역과 동일 높이 */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-sidebar-border/50 px-3">
         {TABS.map(({ key, icon: Icon, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onTabChange(key)}
-            title={label}
-            aria-label={label}
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-              activeTab === key
-                ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
-            )}
-          >
-            <Icon size={15} strokeWidth={1.75} />
-          </button>
+          <Tooltip key={key} side="bottom" content={label}>
+            <button
+              type="button"
+              onClick={() => onTabChange(key)}
+              aria-label={label}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                activeTab === key
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+              )}
+            >
+              <Icon size={15} strokeWidth={1.75} />
+            </button>
+          </Tooltip>
         ))}
       </div>
 
@@ -282,6 +295,25 @@ function RightPanelHeader({
   const setScreen = useAiSessionStore((s) => s.setScreen);
   const tabLabel = TABS.find((t) => t.key === activeTab)?.label ?? '';
 
+  // ── 우측 탭별 컨텍스트 도움말 (좌측 SecondarySidebar 의 패턴 동일) ──
+  const tabHelp = RIGHT_TAB_HELP[activeTab];
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!tabHelp) {
+      setHelpOpen(false);
+      return;
+    }
+    const key = `folio.rightTabHelp.${activeTab}.shown`;
+    if (localStorage.getItem(key)) {
+      setHelpOpen(false);
+      return;
+    }
+    setHelpOpen(true);
+    localStorage.setItem(key, 'true');
+  }, [activeTab, tabHelp]);
+
   // Agent 토글 / 섹션 — AI 탭 + 작품 선택 시 헤더에 노출
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isGuest = useAuthStore((s) => s.isGuest);
@@ -343,9 +375,8 @@ function RightPanelHeader({
           </>
         )}
       </span>
-      {showAgentControls && (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          {/* Agent 모드 토글 — 라벨 '채팅' + 스위치. 작업물(제안 큐) 은 inbox 탭으로 별도 분리됨. */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {showAgentControls && (
           <button
             type="button"
             role="switch"
@@ -381,7 +412,35 @@ function RightPanelHeader({
               />
             </span>
           </button>
-        </div>
+        )}
+        {tabHelp && (
+          <button
+            ref={helpButtonRef}
+            type="button"
+            onClick={() => setHelpOpen((v) => !v)}
+            aria-label="이 탭 도움말"
+            aria-pressed={helpOpen}
+            title={helpOpen ? '도움말 닫기' : '이 탭 도움말'}
+            className={cn(
+              'rounded p-1 transition-colors',
+              helpOpen
+                ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
+                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            )}
+          >
+            <HelpCircle size={14} strokeWidth={2} />
+          </button>
+        )}
+      </div>
+      {tabHelp && (
+        <FloatingHelpCard
+          open={helpOpen}
+          title={tabHelp.title}
+          steps={tabHelp.steps}
+          onClose={() => setHelpOpen(false)}
+          persistKey="folio.rightTabHelp.position.v1"
+          originRef={helpButtonRef}
+        />
       )}
     </div>
   );
@@ -610,11 +669,13 @@ function IdeaPanelList({
   onSelect: (id: string) => void;
 }) {
   const writerId = useWriterId();
-  const { createIdea } = useLocalWrite();
+  const { createIdea, deleteIdeaArchive, reorderItems } = useLocalWrite();
   const [inputText, setInputText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [searchText, setSearchText] = useState('');
   const [sortKey, setSortKey] = useState<IdeaSortKey>('default');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   // content/tag는 v1: 암호문 → useDecryptedIdeaArchiveList 거쳐야 한다.
   const { data: rawRows = [] } = useQuery<RawIdeaListRow>(
@@ -682,6 +743,21 @@ function IdeaPanelList({
       e.preventDefault();
       void handleSubmit();
     }
+  };
+
+  // 기본 정렬 (sort_order ASC) 기준으로 이웃과 swap → 전체 reindex 로 일관성 보장.
+  const handleMove = async (id: string, delta: -1 | 1) => {
+    const idx = ideas.findIndex((i) => i.id === id);
+    if (idx < 0) return;
+    const target = idx + delta;
+    if (target < 0 || target >= ideas.length) return;
+    const reordered = [...ideas];
+    const [moved] = reordered.splice(idx, 1);
+    reordered.splice(target, 0, moved);
+    await reorderItems(
+      'idea_archive',
+      reordered.map((it, i) => ({ id: it.id, sortOrder: i * 1000 })),
+    );
   };
 
   return (
@@ -825,34 +901,103 @@ function IdeaPanelList({
         ) : (
           <div className="flex flex-col gap-1.5">
             {filteredIdeas.map((idea) => (
-              <button
-                key={idea.id}
-                type="button"
-                onClick={() => onSelect(idea.id)}
-                className="flex flex-col items-start rounded-md border border-border bg-background p-2.5 text-left transition-all hover:border-ring hover:shadow-sm"
-              >
-                <div className="flex w-full items-center justify-between gap-1 mb-1">
-                  {idea.tag ? (
-                    <span className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${TAG_COLOR[idea.tag] ?? 'bg-muted'}`}>
-                      {idea.tag}
-                    </span>
-                  ) : (
-                    <span />
-                  )}
-                  {idea.updated_at && (
-                    <span className="text-[10px] text-muted-foreground shrink-0">
-                      {timeAgo(idea.updated_at)}
-                    </span>
-                  )}
-                </div>
-                <p className="line-clamp-2 text-xs text-foreground">
-                  {extractText(idea.content) || '(빈 아이디어)'}
-                </p>
-              </button>
+              <ContextMenu key={idea.id}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelect(idea.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelect(idea.id);
+                      }
+                    }}
+                    className="group relative flex cursor-pointer flex-col items-start rounded-md border border-border bg-background p-2.5 text-left transition-all hover:border-ring hover:shadow-sm focus:border-ring focus:outline-none"
+                  >
+                    <div className="mb-1 flex w-full items-center justify-between gap-1">
+                      {idea.tag ? (
+                        <span className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${TAG_COLOR[idea.tag] ?? 'bg-muted'}`}>
+                          {idea.tag}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {idea.updated_at && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {timeAgo(idea.updated_at)}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDeleteId(idea.id);
+                          }}
+                          title="아이디어 삭제"
+                          aria-label="아이디어 삭제"
+                          className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="line-clamp-2 text-xs text-foreground">
+                      {extractText(idea.content) || '(빈 아이디어)'}
+                    </p>
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onSelect={() => onSelect(idea.id)}>
+                    <ArrowUpRight size={12} /> 열기
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    disabled={sortKey !== 'default' || ideas.findIndex((i) => i.id === idea.id) <= 0}
+                    onSelect={() => void handleMove(idea.id, -1)}
+                  >
+                    <ChevronUp size={12} /> 위로 이동
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={
+                      sortKey !== 'default' ||
+                      ideas.findIndex((i) => i.id === idea.id) < 0 ||
+                      ideas.findIndex((i) => i.id === idea.id) >= ideas.length - 1
+                    }
+                    onSelect={() => void handleMove(idea.id, 1)}
+                  >
+                    <ChevronDown size={12} /> 아래로 이동
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    destructive
+                    onSelect={() => setPendingDeleteId(idea.id)}
+                  >
+                    <Trash2 size={12} /> 삭제
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             ))}
           </div>
         )}
       </div>
+
+      {pendingDeleteId && (
+        <DeleteConfirmDialog
+          title="아이디어 삭제"
+          message="이 아이디어가 영구 삭제됩니다."
+          busy={deleteBusy}
+          onConfirm={() => {
+            setDeleteBusy(true);
+            void Promise.resolve(deleteIdeaArchive(pendingDeleteId)).then(() => {
+              setDeleteBusy(false);
+              setPendingDeleteId(null);
+            });
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1387,7 +1532,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('create-input')}
-        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <PenSquare size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -1401,7 +1546,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('review-input')}
-        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SearchCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -1415,7 +1560,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('spellcheck-input')}
-        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SpellCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -1429,7 +1574,7 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       <button
         type="button"
         onClick={() => setScreen('summarize-input')}
-        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+        className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <ScrollText size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
@@ -1570,19 +1715,14 @@ function ReviewInputScreen({
         {hasPinned && episode && (
           <CardlessInput
             label="검수 시 중점 사항 (선택)"
-            help="비워두면 일반 검수 (인물·복선·시간선·설정 충돌·맞춤법 모두) 를 진행합니다."
+            help="비워두면 일반 검수를 진행합니다."
           >
             <textarea
               value={focusPrompt}
               onChange={(e) => setFocusPrompt(e.target.value)}
               rows={4}
               maxLength={1500}
-              placeholder={
-                '예시:\n' +
-                '• 인물 \'리화\' 의 말투 일관성에 특히 신경 써줘.\n' +
-                '• 1막 도입 복선이 제대로 회수됐는지 확인.\n' +
-                '• 시간선 모순이 있는지 점검.'
-              }
+              placeholder="특별히 점검할 부분이 있다면 자유롭게 적어주세요."
               className={CARDLESS_INPUT_CLASS}
             />
           </CardlessInput>
@@ -1600,7 +1740,7 @@ function ReviewInputScreen({
               검수 시작
             </button>
             <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-              AI 가 의미 검수 + 맞춤법 검사를 함께 진행합니다. 발견된 이슈는 [적용]/[거절] 버튼으로 검토 후 본문에 반영할지 결정할 수 있어요.
+              자세한 사용법은 우측 상단 <span className="font-medium">?</span> 도움말을 참고하세요.
             </p>
           </>
         )}
@@ -2308,8 +2448,7 @@ function SummarizeInputScreen({
                 {summarizeState === 'loading' ? '요약 생성 중...' : '회차 요약 생성'}
               </button>
               <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-                한 줄 요약·등장인물·핵심 사건·복선 등 12개 항목을 자동 추출합니다.
-                이미 생성된 요약이 있고 본문이 변경되지 않았으면 캐시(Haiku 0회)로 즉시 반환됩니다.
+                자세한 사용법은 우측 상단 <span className="font-medium">?</span> 도움말을 참고하세요.
               </p>
             </div>
           )
@@ -2605,39 +2744,28 @@ function CreateInputScreen({
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
         <CardlessInput
           label={<>어떤 문서를 만들까요? <span className="text-danger">*</span></>}
-          help="구체적으로 적을수록 정확한 결과가 나옵니다 — 등장 인물·시간·분위기·분량 같은 정보를 함께 적어주세요."
+          help="만들고 싶은 문서를 자유롭게 적어주세요."
         >
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={6}
             maxLength={2000}
-            placeholder={
-              '예시:\n' +
-              '• 다음 화 초안을 만들어줘. 주인공이 좌주를 처음 만나는 장면, 긴장감 고조.\n' +
-              '• 새 인물 \'리화\' 추가 — 상인 출신, 23세, 호기심 많고 밝은 성격.\n' +
-              '• 마법 길드 입회 의식에 대한 세계관 노트 작성.\n' +
-              '• 1막 플롯 트리 — 메인 챕터 + 자식 노드 5개.'
-            }
+            placeholder="만들고 싶은 문서를 자유롭게 적어주세요."
             className={CARDLESS_INPUT_CLASS}
           />
         </CardlessInput>
 
         <CardlessInput
           label="참고 자료 지시 (선택)"
-          help="AI 가 자동으로 해당 자료를 찾아 참고합니다. 회차 범위, 세계관·인물 문서명을 자유롭게 적어주세요."
+          help="참고할 회차 범위나 문서명을 적으면 AI 가 자동으로 찾아 참고합니다."
         >
           <textarea
             value={referencePrompt}
             onChange={(e) => setReferencePrompt(e.target.value)}
             rows={3}
             maxLength={1000}
-            placeholder={
-              '예시:\n' +
-              '• 1~10화 참고\n' +
-              '• 세계관의 \'마법 길드 체계\' 문서 참고\n' +
-              '• 인물 \'리화\' 와 \'좌주\' 의 관계 참고'
-            }
+            placeholder="참고할 회차 범위나 문서명을 적어주세요."
             className={CARDLESS_INPUT_CLASS}
           />
         </CardlessInput>
@@ -2652,7 +2780,7 @@ function CreateInputScreen({
           {submitting ? '생성 시작 중...' : '생성 시작'}
         </button>
         <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-          AI 가 결과를 스트리밍으로 작성합니다. 완료 후 [적용]/[거절] 버튼으로 본문에 반영할지 직접 결정할 수 있어요.
+          자세한 사용법은 우측 상단 <span className="font-medium">?</span> 도움말을 참고하세요.
         </p>
       </div>
     </div>
@@ -2788,11 +2916,18 @@ function CreateStreamingScreen() {
   const suggestionIds = useAiSessionStore((s) => s.createSuggestionIds);
   const error = useAiSessionStore((s) => s.createError);
   const toolStream = useAiSessionStore((s) => s.createToolStream);
+  const liveText = useAiSessionStore((s) => s.createLiveText);
+
+  const turns = useAiSessionStore((s) => s.createTurns);
 
   const appendChunk = useAiSessionStore((s) => s.appendCreateChunk);
   const addStep = useAiSessionStore((s) => s.addCreateStep);
   const startCreateToolStream = useAiSessionStore((s) => s.startCreateToolStream);
   const appendCreateToolPartial = useAiSessionStore((s) => s.appendCreateToolPartial);
+  const startCreateTurn = useAiSessionStore((s) => s.startCreateTurn);
+  const appendCreateTurnText = useAiSessionStore((s) => s.appendCreateTurnText);
+  const addCreateTurnTool = useAiSessionStore((s) => s.addCreateTurnTool);
+  const markCreateTurnAsBody = useAiSessionStore((s) => s.markCreateTurnAsBody);
   const finishCreate = useAiSessionStore((s) => s.finishCreate);
   const failCreate = useAiSessionStore((s) => s.failCreate);
   const setScreen = useAiSessionStore((s) => s.setScreen);
@@ -2846,13 +2981,30 @@ function CreateStreamingScreen() {
               cum_user_tokens: evt.cum_user_tokens,
               seq: evt.seq,
             });
+            // turn 카드 헤더에 도구 라벨 추가
+            if (evt.step_type === 'tool_call' && evt.tool_name) {
+              addCreateTurnTool(evt.tool_name);
+              // propose_episode_draft 호출 시 그 turn 을 본문 카드로 마크
+              if (evt.tool_name === 'propose_episode_draft') {
+                markCreateTurnAsBody();
+              }
+            }
+          } else if (evt.type === 'assistant_start') {
+            // 새 turn 시작 — 새 카드 추가
+            startCreateTurn();
+          } else if (evt.type === 'assistant_end') {
+            // turn 종료 — 다음 assistant_start 까지 동일 turn 유지
           } else if (evt.type === 'text_delta' && evt.text) {
-            // 사고 과정 텍스트 — 카드 모드 화면엔 표시 안 하지만 store 누적은 유지 (디버그/향후 활용).
+            // turn 별 카드에 누적 + (legacy 호환) 전체 liveText 도 누적
+            appendCreateTurnText(evt.text);
             appendChunk(evt.text);
           } else if (evt.type === 'tool_input_start') {
-            // propose_* 도구 시작 — streaming 박스 reset (이전 도구 결과는 done 시 큐로 이동).
-            // field 는 input_json 누적 buffer 에서 progressive 추출.
+            // propose_* 도구 시작 — streaming 박스 reset.
             startCreateToolStream(evt.tool_name ?? '', '');
+            // 본문 도구면 현재 turn 을 body 로 마크 (step 보다 먼저 도착 가능성 대비)
+            if (evt.tool_name === 'propose_episode_draft') {
+              markCreateTurnAsBody();
+            }
           } else if (evt.type === 'tool_input_delta' && evt.partial_json) {
             // tool_input_start 가 누락됐다면 (이벤트 순서 흔들림) 안전장치로 첫 chunk 시 stream 시작.
             const cur = useAiSessionStore.getState().createToolStream;
@@ -2904,48 +3056,84 @@ function CreateStreamingScreen() {
     setScreen('create-input');
   }
 
+  // turn 분류 — thinking 들은 진행바에 통합, body 만 카드, wrap 은 plain text
+  const thinkingTurns = turns.filter((t) => t.kind === 'thinking');
+  const bodyTurns = turns.filter((t) => t.kind === 'body');
+  const wrapTurns = turns.filter((t) => t.kind === 'wrap');
+  const lastThinking = thinkingTurns[thinkingTurns.length - 1];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {/* 진행 표시 — 도구 호출 step */}
-        {state === 'streaming' && (
-          <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-[11px]">
-            <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
-            <span className="truncate text-muted-foreground">
-              {steps.length === 0
-                ? '의도를 분석 중...'
-                : labelCreateStep(steps[steps.length - 1])}
-            </span>
-            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">
-              step {steps[steps.length - 1]?.iterations ?? 0} ·{' '}
-              {steps[steps.length - 1]?.cum_user_tokens ?? 0} 크레딧
-            </span>
-          </div>
+        {/* 진행 표시 — 도구 호출 step + 현재 사고 응답 통합 (덮어쓰기 + 펼침) */}
+        {(state === 'streaming' || thinkingTurns.length > 0) && (
+          <CreateProgressHeader
+            steps={steps}
+            thinkingTurns={thinkingTurns}
+            lastThinking={lastThinking}
+            streaming={state === 'streaming'}
+          />
         )}
 
-        {/* AI 사고과정 텍스트는 카드 모드에서 숨김. 대신 propose_* 도구의 결과물 본문 (content/intro 등)
-            을 SSE 누적해 실시간 표시 — 도구 호출 진행 → 결과물 생성을 작가가 라이브로 본다. */}
-        {toolStream && toolStream.text && (
+        {/* 본문 카드 — body turn 만 강조 카드로. propose_episode_draft 호출된 turn. */}
+        {bodyTurns.map((turn, i) => {
+          const isLastBody = i === bodyTurns.length - 1;
+          // streaming 중이고 마지막 body turn 이며 wrap 아직 안 시작했으면 cursor
+          const showCursor = state === 'streaming' && isLastBody && wrapTurns.length === 0;
+          return (
+            <div
+              key={`body-${i}`}
+              className="rounded-md border border-primary/40 bg-primary/5 p-3 shadow-sm"
+            >
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <PenSquare size={12} className="shrink-0 text-primary" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
+                  본문
+                </span>
+                {turn.toolNames.length > 0 && (
+                  <span className="truncate text-[10px] text-muted-foreground/70">
+                    🔧 {turn.toolNames.map(toolLabel).join(' · ')}
+                  </span>
+                )}
+              </div>
+              <div
+                ref={(el) => {
+                  if (el && showCursor) el.scrollTop = el.scrollHeight;
+                }}
+                className="max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-foreground"
+              >
+                <ChatMarkdown text={turn.text} variant="assistant" />
+                {showCursor && (
+                  <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current opacity-60" />
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* fallback — 모델이 prompt 무시하고 propose 의 input.content 에 본문 채운 경우 */}
+        {bodyTurns.length === 0 && toolStream?.text && (
           <div className="rounded-md border border-primary/40 bg-primary/5 p-3 shadow-sm">
             <div className="mb-1.5 flex items-center gap-1.5">
               <PenSquare size={12} className="shrink-0 text-primary" />
               <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
-                작성 중 — {toolLabel(toolStream.toolName)}
+                본문
               </span>
             </div>
-            <div
-              ref={(el) => {
-                if (el && state === 'streaming') el.scrollTop = el.scrollHeight;
-              }}
-              className="max-h-[40vh] overflow-y-auto text-xs leading-relaxed text-foreground"
-            >
+            <div className="max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-foreground">
               <ChatMarkdown text={toolStream.text} variant="assistant" />
-              {state === 'streaming' && (
-                <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current opacity-60" />
-              )}
             </div>
           </div>
         )}
+
+        {/* 마무리 텍스트 — 카드 X, plain text */}
+        {wrapTurns.map((turn, i) => (
+          turn.text.trim() && (
+            <div key={`wrap-${i}`} className="px-1 text-xs leading-relaxed text-muted-foreground">
+              <ChatMarkdown text={turn.text} variant="assistant" />
+            </div>
+          )
+        ))}
 
         {/* 에러 */}
         {state === 'error' && (
@@ -2954,6 +3142,28 @@ function CreateStreamingScreen() {
             <span className="leading-relaxed">{error || '생성에 실패했습니다.'}</span>
           </div>
         )}
+
+        {/* 완료 + 제안/본문/마무리가 모두 없을 때 — 마지막 사고 응답을 "AI 결과" 카드로 메인 노출.
+            예: 원고 검수에서 결론 텍스트가 진행 헤더 안에만 묻혀 사용자가 확인 어려운 케이스.
+            색상은 중립 — AI 결과 텍스트 자체가 이슈를 보고할 수도 있고 무이슈를 보고할 수도 있어
+            성공(emerald) 으로 단정하면 오해를 부른다. */}
+        {state === 'done' &&
+          suggestionIds.length === 0 &&
+          bodyTurns.length === 0 &&
+          wrapTurns.length === 0 &&
+          (lastThinking?.text.trim() ?? '') !== '' && (
+            <div className="rounded-md border border-border bg-muted/30 p-3 shadow-sm">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <Info size={12} className="shrink-0 text-muted-foreground" />
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  AI 결과
+                </span>
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-foreground">
+                <ChatMarkdown text={lastThinking!.text.trim()} variant="assistant" />
+              </div>
+            </div>
+          )}
 
         {/* 완료 후 제안 큐 안내 */}
         {state === 'done' && (
@@ -2983,6 +3193,82 @@ function CreateStreamingScreen() {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 진행 표시줄 — thinking turn 들과 도구 호출 step 을 통합. collapsible.
+ *
+ * - 접힌 상태 (default): 가장 최근 thinking text + 가장 최근 도구 호출 라벨 (덮어쓰기)
+ * - 펼친 상태: thinking turn 별로 누적 표시 (사고 히스토리)
+ *
+ * 사용자 요구: 사고 응답 카드 누적 X. 진행 중 정보만 표시 + 필요 시 펼침.
+ */
+function CreateProgressHeader({
+  steps,
+  thinkingTurns,
+  lastThinking,
+  streaming,
+}: {
+  steps: CreateStreamStepLite[];
+  thinkingTurns: { kind: 'thinking' | 'body' | 'wrap'; text: string; toolNames: string[] }[];
+  lastThinking: { kind: 'thinking' | 'body' | 'wrap'; text: string; toolNames: string[] } | undefined;
+  streaming: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lastStep = steps[steps.length - 1];
+  const lastStepLabel = lastStep
+    ? labelCreateStep(lastStep)
+    : (streaming ? '의도를 분석 중...' : '');
+  // 접힌 상태에 표시할 한 줄 사고 — 마지막 thinking turn 의 text 끝부분 (긴 text 는 잘라서 표시)
+  const lastThinkingPreview = (lastThinking?.text ?? '').replace(/\s+/g, ' ').trim().slice(-80);
+
+  return (
+    <div className="rounded-md bg-muted/40 text-[11px]">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/60"
+      >
+        {streaming ? (
+          <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
+        ) : (
+          <Check size={12} className="shrink-0 text-emerald-600" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {lastStepLabel}
+          {lastThinkingPreview && (
+            <span className="ml-2 text-muted-foreground/70">· {lastThinkingPreview}</span>
+          )}
+        </span>
+        <span className="shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">
+          step {lastStep?.iterations ?? 0} · {lastStep?.cum_user_tokens ?? 0} 크레딧
+        </span>
+        {expanded ? (
+          <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {expanded && thinkingTurns.length > 0 && (
+        <div className="border-t border-border/40 px-3 py-2 space-y-2">
+          {thinkingTurns.map((turn, i) => (
+            (turn.text.trim() || turn.toolNames.length > 0) && (
+              <div key={i} className="text-[11px] text-muted-foreground">
+                {turn.toolNames.length > 0 && (
+                  <div className="mb-0.5 text-[10px] text-muted-foreground/60">
+                    🔧 {turn.toolNames.map(toolLabel).join(' · ')}
+                  </div>
+                )}
+                {turn.text.trim() && (
+                  <div className="leading-relaxed">{turn.text.trim()}</div>
+                )}
+              </div>
+            )
+          ))}
+        </div>
+      )}
     </div>
   );
 }

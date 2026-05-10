@@ -8,12 +8,15 @@ import {
   RefreshCw,
   RotateCw,
   AlertCircle,
+  Bug,
   CloudOff,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUpdater } from '../../hooks/useUpdater';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { FEEDBACK_LINKS, openExternalLink } from '../../constants/externalLinks';
 
 /**
  * 커스텀 타이틀바 — frame: false 환경에서 OS 창 컨트롤을 직접 그린다.
@@ -59,11 +62,24 @@ export function TitleBar({ title }: { title?: string }) {
         )}
       </div>
 
-      {/* 우측 — 업데이트 빠른 진입 + OS 창 컨트롤 */}
+      {/* 우측 — 설문/버그 + 업데이트 빠른 진입 + OS 창 컨트롤 */}
       <div
         className="flex h-full items-center"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
+        <FeedbackLinkButton
+          icon={<ClipboardList size={13} strokeWidth={1.75} />}
+          label="설문"
+          title="사용자 설문 — 새 탭에서 열기"
+          url={FEEDBACK_LINKS.survey}
+        />
+        <FeedbackLinkButton
+          icon={<Bug size={13} strokeWidth={1.75} />}
+          label="버그"
+          title="버그 리포트 — 새 탭에서 열기"
+          url={FEEDBACK_LINKS.bug}
+        />
+        <span className="mx-1 h-4 w-px bg-activity-bar-border/60" aria-hidden />
         <UpdateQuickButton />
 
         {/* OS 창 컨트롤 — macOS는 OS traffic light가 좌측에 있으므로 숨김 */}
@@ -251,6 +267,34 @@ function DisabledButton({
       className="flex h-8 w-9 cursor-not-allowed items-center justify-center text-activity-bar-foreground/35"
     >
       {icon}
+    </button>
+  );
+}
+
+/**
+ * 타이틀바 우측 텍스트+아이콘 링크 버튼 (설문/버그). 클릭 시 OS 기본 브라우저로 외부 URL 이동.
+ */
+function FeedbackLinkButton({
+  icon,
+  label,
+  title,
+  url,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  url: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => openExternalLink(url)}
+      aria-label={title}
+      title={title}
+      className="flex h-8 items-center gap-1 px-2.5 text-[11px] font-medium text-activity-bar-foreground/85 transition-colors hover:bg-activity-bar-accent hover:text-activity-bar-foreground"
+    >
+      {icon}
+      <span>{label}</span>
     </button>
   );
 }

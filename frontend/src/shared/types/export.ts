@@ -7,11 +7,21 @@
 
 export type ExportFormat = 'txt' | 'docx' | 'pdf';
 
+/** 설정집 내부 섹션 — planSet scope 의 sections 필터에 사용. */
+export type SettingsSection =
+  | 'plan'
+  | 'characters'
+  | 'worldNotes'
+  | 'plots'
+  | 'foreshadows'
+  | 'ideas';
+
 export type ExportScope =
   | { kind: 'work'; workId: string }
   | { kind: 'episodes'; workId: string; episodeIds: string[] }
   | { kind: 'episode'; workId: string; episodeId: string }
-  | { kind: 'planSet'; workId: string };
+  /** sections 가 undefined 면 모든 섹션, 배열이면 해당 섹션만 포함. */
+  | { kind: 'planSet'; workId: string; sections?: SettingsSection[] };
 
 export interface ExportOptions {
   includeCoverPage: boolean;

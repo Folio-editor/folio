@@ -345,6 +345,9 @@ interface AiSessionStore {
   // tool_use 의 본문 필드 (content/intro 등) 점진 streaming 누적 — 카드 모드에서 결과물 실시간 표시용.
   // buffer = SSE 로 받은 raw partial_json 누적, text = buffer 에서 추출한 known string 필드 평문.
   createToolStream: { toolName: string; field: string; text: string; buffer: string } | null;
+  // turn 별 분리 — assistant_start 마다 새 turn, text_delta 누적, step 마다 toolNames 추가.
+  // propose_episode_draft 호출 시 그 turn 의 kind='body' 로 마크 (본문 카드 강조).
+  createTurns: { kind: 'thinking' | 'body' | 'wrap'; text: string; toolNames: string[] }[];
 
   // 액션
   setScreen: (screen: AiScreen) => void;
@@ -403,6 +406,14 @@ interface AiSessionStore {
   appendCreateToolChunk: (chunk: string) => void;
   /** SSE tool_input_delta 마다 raw partial_json 누적 + known field 추출 → text 갱신. */
   appendCreateToolPartial: (partialJson: string) => void;
+  /** assistant_start — 새 turn 카드 시작 (kind='thinking' 으로 시작) */
+  startCreateTurn: () => void;
+  /** text_delta — 마지막 turn 의 text 누적 */
+  appendCreateTurnText: (chunk: string) => void;
+  /** step 의 tool_call — 마지막 turn 헤더에 도구 라벨 추가 */
+  addCreateTurnTool: (toolName: string) => void;
+  /** propose_episode_draft 등 본문 도구 호출 시 — 마지막 turn 을 'body' 로 마크 */
+  markCreateTurnAsBody: () => void;
   finishCreate: (suggestionIds: string[]) => void;
   failCreate: (error: string) => void;
   resetCreate: () => void;
@@ -455,6 +466,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   createReferencePrompt: '',
   createReferenceSortOrders: [],
   createToolStream: null,
+  createTurns: [],
   createState: 'idle',
   createThreadId: null,
   createLiveText: '',
@@ -832,6 +844,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       createSuggestionIds: [],
       createError: '',
       createToolStream: null,
+      createTurns: [],
     }),
 
   appendCreateChunk: (text) =>
@@ -865,6 +878,45 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       };
     }),
 
+  startCreateTurn: () =>
+    set((s) => {
+      // 직전 turn 이 body 였으면 다음 turn 은 wrap (마무리), 아니면 thinking (계속 분석)
+      const last = s.createTurns[s.createTurns.length - 1];
+      const newKind: 'thinking' | 'body' | 'wrap' = last?.kind === 'body' ? 'wrap' : 'thinking';
+      return {
+        createTurns: [...s.createTurns, { kind: newKind, text: '', toolNames: [] }],
+      };
+    }),
+
+  appendCreateTurnText: (chunk) =>
+    set((s) => {
+      if (s.createTurns.length === 0) {
+        // 안전장치 — assistant_start 가 누락되어 turn 이 없는 경우 새로 시작
+        return { createTurns: [{ kind: 'thinking', text: chunk, toolNames: [] }] };
+      }
+      const last = s.createTurns[s.createTurns.length - 1];
+      const updated = { ...last, text: last.text + chunk };
+      return { createTurns: [...s.createTurns.slice(0, -1), updated] };
+    }),
+
+  addCreateTurnTool: (toolName) =>
+    set((s) => {
+      if (s.createTurns.length === 0) return s;
+      const last = s.createTurns[s.createTurns.length - 1];
+      if (last.toolNames.includes(toolName)) return s;     // 중복 방지
+      const updated = { ...last, toolNames: [...last.toolNames, toolName] };
+      return { createTurns: [...s.createTurns.slice(0, -1), updated] };
+    }),
+
+  markCreateTurnAsBody: () =>
+    set((s) => {
+      if (s.createTurns.length === 0) return s;
+      const last = s.createTurns[s.createTurns.length - 1];
+      if (last.kind === 'body') return s;
+      const updated = { ...last, kind: 'body' as const };
+      return { createTurns: [...s.createTurns.slice(0, -1), updated] };
+    }),
+
   finishCreate: (suggestionIds) =>
     set({ createState: 'done', createSuggestionIds: suggestionIds }),
 
@@ -876,6 +928,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
       createReferencePrompt: '',
       createReferenceSortOrders: [],
       createToolStream: null,
+      createTurns: [],
       createState: 'idle',
       createThreadId: null,
       createLiveText: '',

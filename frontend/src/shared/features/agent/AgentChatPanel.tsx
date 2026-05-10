@@ -392,13 +392,36 @@ export function AgentChatPanel({ workId }: Props) {
     if (!text.trim()) return null;     // 텍스트 없는 (tool_use 만) 메시지도 숨김
 
     const align = role === 'user' ? 'items-end' : 'items-start';
+
+    // ★ 본문 turn 강조 — assistant 메시지에 propose_episode_draft tool_use 가 있으면 본문 카드.
+    // C-2: 모델이 본문을 자연어로 출력 후 propose 호출. 그 turn 의 message 가 본문.
+    const draftToolUse = role === 'assistant' ? extractDraftToolUse(m.content) : null;
+    if (draftToolUse) {
+      return (
+        <div key={idx} className={`flex flex-col ${align} gap-1`}>
+          <div className="text-[10px] text-muted-foreground">Folio · 회차 초안</div>
+          <div className="w-full max-w-[95%] rounded-lg border border-primary/40 bg-primary/5 px-3 py-2.5 shadow-sm">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              {/* PenSquare 가 import 안 돼있으면 아이콘 생략 — 단순 텍스트 헤더로 */}
+              <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
+                ✏️ 회차 초안{draftToolUse.title ? ` — ${draftToolUse.title}` : ''}
+              </span>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto text-sm leading-relaxed text-foreground">
+              <ChatMarkdown text={text} variant="assistant" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const bubble =
       role === 'user'
         ? 'bg-primary text-primary-foreground'
         : 'bg-sidebar-accent text-sidebar-accent-foreground';
     return (
       <div key={idx} className={`flex flex-col ${align} gap-1`}>
-        <div className="text-[10px] text-muted-foreground">{role === 'user' ? '나' : 'Agent'}</div>
+        <div className="text-[10px] text-muted-foreground">{role === 'user' ? '나' : 'Folio'}</div>
         <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${bubble}`}>
           {role === 'user' ? (
             <span className="whitespace-pre-wrap">{text}</span>
@@ -513,7 +536,7 @@ export function AgentChatPanel({ workId }: Props) {
           liveAssistantTurns.map((text, i) =>
             text.trim() ? (
               <div key={`live-${i}`} className="flex flex-col items-start gap-1">
-                <div className="text-[10px] text-muted-foreground">Agent</div>
+                <div className="text-[10px] text-muted-foreground">Folio</div>
                 <div className="max-w-[85%] rounded-lg bg-sidebar-accent px-3 py-2 text-sm text-sidebar-accent-foreground">
                   <ChatMarkdown text={text} variant="assistant" />
                   <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current opacity-60" />
@@ -746,6 +769,21 @@ function isToolResultOnly(content: unknown): boolean {
     if (!item || typeof item !== 'object') return false;
     return (item as { type?: string }).type === 'tool_result';
   });
+}
+
+/** assistant 메시지 content 에서 propose_episode_draft tool_use block 추출 — 본문 카드 강조용. */
+function extractDraftToolUse(content: unknown): { title: string } | null {
+  if (!Array.isArray(content)) return null;
+  for (const item of content) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as { type?: string; name?: string; input?: unknown };
+    if (o.type === 'tool_use' && o.name === 'propose_episode_draft') {
+      const input = o.input as { title?: unknown } | null | undefined;
+      const title = input && typeof input.title === 'string' ? input.title : '';
+      return { title };
+    }
+  }
+  return null;
 }
 
 function ProgressHeader({ steps }: { steps: AgentStreamStepEvent[] }) {

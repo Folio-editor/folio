@@ -540,8 +540,14 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "신규 회차 (다음 화 또는 외전) 초안 INSERT 제안. "
             "기존 회차 본문/제목 수정은 propose_episode_update 사용. "
-            "작가 승인 시 episode 로 INSERT (status='작성중'). "
-            "content 는 Markdown — 위지윅 자동 변환."
+            "작가 승인 시 episode 로 INSERT (status='작성중').\n\n"
+            "★ 본문 작성 규칙 (필수 준수):\n"
+            "1. 회차 본문은 이 도구의 'content' 인자에 절대 채우지 마세요.\n"
+            "2. 대신 본문을 자연어 Markdown 으로 직접 출력 (assistant 응답 텍스트로) 한 후,\n"
+            "3. 본문 출력이 끝나면 propose_episode_draft({title}) 만 호출하세요. content 인자는 비웁니다.\n"
+            "백엔드가 직전 자연어 본문을 자동으로 content 로 합성해 큐에 적재합니다.\n"
+            "이 규칙은 anthropic 의 tool input buffering 정책으로 인한 streaming 불가 문제를 우회하기 위함입니다 — "
+            "사용자가 본문이 작성되는 과정을 라이브로 볼 수 있게 하려면 반드시 본문은 자연어로 출력해야 합니다."
         ),
         "input_schema": {
             "type": "object",
@@ -550,9 +556,9 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 "content": {
                     "type": "string",
                     "description": (
-                        "회차 본문 (Markdown). 작품 분위기 해치지 않게 강조 절제: 대화·서술 위주, "
-                        "꼭 필요할 때만 **굵게** / *기울임*. 단락 구분은 빈 줄. "
-                        "장면 전환 표현은 별도 마크업 없이 빈 줄 + ' * * * ' 같은 기호 단락."
+                        "★ 채우지 말 것. 본문은 자연어로 직접 출력 후 백엔드가 자동 합성합니다. "
+                        "이 인자에 본문을 채우면 사용자에게 라이브 streaming 표시되지 않습니다 (anthropic API 한계). "
+                        "예외: 매우 짧은 placeholder 등 특수 사용 시에만."
                     ),
                 },
                 "parent_id": {"type": "string", "description": "분기/외전인 경우 부모 episode id"},
@@ -562,7 +568,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
                     "description": "참조한 회차 sort_order 들",
                 },
             },
-            "required": ["title", "content"],
+            "required": ["title"],
         },
     },
     # ───────── Phase 4.5: CRUD 확장 ─────────
