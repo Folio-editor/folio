@@ -1,5 +1,9 @@
 package com.storyzip.agent.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.storyzip.ai.client.EpisodeIndexingTrigger;
 import com.storyzip.security.AesGcmCipher;
 import com.storyzip.security.WorkKeyService;
@@ -10,8 +14,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,11 +46,21 @@ public class SuggestionApplier {
     private final JdbcTemplate jdbc;
     private final WorkKeyService workKeyService;
     private final EpisodeIndexingTrigger episodeIndexingTrigger;
+    private final ObjectMapper objectMapper;
 
     /**
      * 승인된 suggestion 을 실제 테이블에 적용. 반환: 생성/갱신된 row 의 id (있으면).
+     *
+     * spelling_batch 에 한해 selectedIndices (작가가 체크박스로 선별한 fix idx 들) 가 전달됨.
+     * null 이면 모든 fix 적용. 다른 entity_type 에선 무시.
      */
-    public UUID apply(UUID workId, UUID writerId, String entityType, Map<String, Object> payload) {
+    public UUID apply(
+            UUID workId,
+            UUID writerId,
+            String entityType,
+            Map<String, Object> payload,
+            List<Integer> selectedIndices
+    ) {
         byte[] workKey = workKeyService.resolveWorkKey(workId);
         if (workKey == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -61,6 +81,8 @@ public class SuggestionApplier {
                 case "episode_draft"      -> insertEpisodeDraft(workId, writerId, payload, workKey);
                 case "episode_update"     -> applyEpisodeUpdate(workId, writerId, payload, workKey);
                 case "episode_delete"     -> deleteEpisode(workId, writerId, payload);
+                case "spelling_fix"       -> applySpellingFix(workId, writerId, payload, workKey);
+                case "spelling_batch"     -> applySpellingBatch(workId, writerId, payload, workKey, selectedIndices);
                 default -> {
                     log.warn("[SUGGESTION-APPLY] unknown entity_type={}", entityType);
                     yield null;
@@ -87,30 +109,67 @@ public class SuggestionApplier {
                 "INSERT INTO character (id, work_id, writer_id, name, gender, age, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, now(), now())",
                 id, workId, writerId, name,
-                gender != null ? gender : "미정",
-                age != null ? age : "미정",
+                normalizeGender(gender),
+                age != null ? age : "미설정",
                 sortOrder
         );
-        // appearance / personality / notes 는 character_note 로 저장 (각 kind 별)
-        insertCharacterNoteIfPresent(id, writerId, workKey, "appearance", p.get("appearance"));
-        insertCharacterNoteIfPresent(id, writerId, workKey, "personality", p.get("personality"));
-        insertCharacterNoteIfPresent(id, writerId, workKey, "custom", p.get("notes"));
-        log.info("[SUGGESTION-APPLY] character INSERT id={} work={}", id, workId);
+        // 기본 정책: 신규 캐릭터의 모든 서술 (intro / appearance / personality / notes) 은
+        // 단일 'intro' character_note 한 행에 합쳐 저장. 외형/성격을 별도 노트로 분리하는 것은
+        // 사용자가 명시적으로 요청한 경우에만 propose_character_update(field='appearance' 등)
+        // 경로로 처리.
+        // payload 호환: 구버전 agent 가 여전히 appearance/personality/notes 를 분리해서 보낼 수
+        // 있으므로 모두 흡수하여 intro 본문 단일 단락으로 합친다.
+        String intro = composeIntroBody(p, workKey);
+        insertCharacterNoteIfPresent(id, writerId, workKey, "intro", "한 줄 소개", intro);
+        log.info("[SUGGESTION-APPLY] character INSERT id={} work={} introLen={}",
+                id, workId, intro == null ? 0 : intro.length());
         return id;
     }
 
+    /** payload 의 intro/appearance/personality/notes/role 을 사람이 읽기 좋은 단락으로 합친다.
+     *
+     *  payload 값들이 v1: ciphertext (proposals.py 가 암호화) 인 경우 work_key 로 즉석 복호화 후 합침.
+     *  결과는 평문 markdown — encRichText 가 다시 tiptap JSON 변환 + 암호화하여 destination 에 적재.
+     */
+    private static String composeIntroBody(Map<String, Object> p, byte[] workKey) {
+        StringBuilder sb = new StringBuilder();
+        appendLabeled(sb, null, decryptIfCipher(workKey, asString(p.get("intro"))));
+        appendLabeled(sb, "역할", decryptIfCipher(workKey, asString(p.get("role"))));
+        appendLabeled(sb, "외형", decryptIfCipher(workKey, asString(p.get("appearance"))));
+        appendLabeled(sb, "성격", decryptIfCipher(workKey, asString(p.get("personality"))));
+        appendLabeled(sb, null, decryptIfCipher(workKey, asString(p.get("notes"))));
+        String body = sb.toString().trim();
+        return body.isEmpty() ? null : body;
+    }
+
+    /** v1: 접두사면 work_key 로 평문화, 아니면 그대로. 복호화 실패 시 null (그 필드 skip). */
+    private static String decryptIfCipher(byte[] workKey, String value) {
+        if (value == null || !value.startsWith("v1:")) return value;
+        try {
+            return AesGcmCipher.decryptString(workKey, value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void appendLabeled(StringBuilder sb, String label, String value) {
+        if (value == null || value.isBlank()) return;
+        if (sb.length() > 0) sb.append("\n\n");
+        if (label != null) sb.append(label).append(": ");
+        sb.append(value);
+    }
+
     private void insertCharacterNoteIfPresent(
-            UUID charId, UUID writerId, byte[] workKey, String kind, Object value
+            UUID charId, UUID writerId, byte[] workKey, String kind, String title, String plain
     ) {
-        String plain = asString(value);
         if (plain == null || plain.isBlank()) return;
         UUID nid = UUID.randomUUID();
-        String title = kind;     // 평문 라벨
+        String encTitle = encStr(workKey, title);
         String content = encRichText(workKey, plain);   // tiptap JSON 으로 래핑 후 암호화
         jdbc.update(
                 "INSERT INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, 0, now(), now())",
-                nid, charId, writerId, kind, title, content
+                nid, charId, writerId, kind, encTitle, content
         );
     }
 
@@ -144,8 +203,11 @@ public class SuggestionApplier {
         }
         int sortOrder = nextSortOrder("episode", workId);
         UUID parentId = parseUuid(p.get("parent_id"));
-        // word_count 는 평문 length (UTF-16 단순 추정)
-        int wordCount = asString(p.get("content")) != null ? asString(p.get("content")).length() : 0;
+        // word_count 는 평문 length (UTF-16 단순 추정).
+        // payload.content 가 v1: cipher 일 수 있으므로 평문 길이 기준으로 환산.
+        String rawContent = asString(p.get("content"));
+        String plainContent = decryptIfCipher(workKey, rawContent);
+        int wordCount = plainContent != null ? plainContent.length() : 0;
         jdbc.update(
                 "INSERT INTO episode (id, work_id, writer_id, parent_id, title, content, status, word_count, sort_order, created_at, updated_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, '작성중', ?, ?, now(), now())",
@@ -191,11 +253,14 @@ public class SuggestionApplier {
             return charId;
         }
         if ("gender".equals(field) || "age".equals(field)) {
+            // gender/age 는 평문 컬럼. payload 의 new_value 가 v1: 일 수 있어 평문화 후 처리.
+            String plainValue = decryptIfCipher(workKey, newValue);
+            String storedValue = "gender".equals(field) ? normalizeGender(plainValue) : plainValue;
             jdbc.update(
                     "UPDATE character SET " + field + " = ?, updated_at = now() WHERE id = ?",
-                    newValue, charId
+                    storedValue, charId
             );
-            log.info("[SUGGESTION-APPLY] character.{}={} id={}", field, newValue, charId);
+            log.info("[SUGGESTION-APPLY] character.{}={} id={}", field, storedValue, charId);
             return charId;
         }
         // 그 외 field 는 character_note kind=field 로 추가 (tiptap JSON 래핑)
@@ -318,7 +383,9 @@ public class SuggestionApplier {
             if (!first) sql.append(", ");
             sql.append("content = ?, word_count = ?");
             args.add(encRichText(workKey, newContent));
-            args.add(newContent.length());
+            // word_count 는 평문 length 기준 (cipher 면 복호화 후)
+            String plainNewContent = decryptIfCipher(workKey, newContent);
+            args.add(plainNewContent != null ? plainNewContent.length() : 0);
             first = false;
         }
         if (newStatus != null) {
@@ -339,6 +406,415 @@ public class SuggestionApplier {
             episodeIndexingTrigger.fireSummary(epId, workId, writerId, prevStatus, newStatus);
         }
         return epId;
+    }
+
+    // ─────── spelling_fix — 한국어 표기 오류 자동 치환 ───────
+
+    /**
+     * 1:1 자동 치환. propose_spelling_fix payload:
+     *   {episode_id, line, original, suggestion, fix_type, reason?, expected_updated_at?}
+     *
+     * 안전 가드:
+     *   1. episode 소유권 검증
+     *   2. expected_updated_at != 현재 episode.updated_at → 409 (작가가 그 사이 본문 수정 → 거부)
+     *   3. 본문 복호화 → TipTap JSON 파싱 → line 인덱스 (1-based) top-level block 추출
+     *   4. 해당 block 의 text 노드가 1개 + marks 없음 → 단순 치환
+     *      그 외 (마크 걸침 / 다중 노드) → 422 (작가에게 직접 수정 안내)
+     *   5. text 에 original 미존재 → 422 (이미 수정됐거나 추출 불일치)
+     *   6. 첫 매치만 1회 치환 (정규식 X — literal replace)
+     *   7. 재직렬화 → encStr → episode.content 갱신, updated_at=now()
+     *   8. fireIndexing 으로 chunk_and_embed 재실행 (본문 변경)
+     */
+    private UUID applySpellingFix(UUID workId, UUID writerId, Map<String, Object> p, byte[] workKey) {
+        UUID epId = parseUuid(p.get("episode_id"));
+        if (epId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "episode_id required");
+        }
+        Object lineObj = p.get("line");
+        if (!(lineObj instanceof Number)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "line (integer) required");
+        }
+        int line = ((Number) lineObj).intValue();
+        if (line < 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "line must be >= 1");
+        }
+        // payload 의 자유 텍스트는 agent 가 work_key 로 v1: 암호화해 보냈을 수 있다 (deep_crypt).
+        // _STRUCTURAL_KEYS 에 등록된 키 (episode_id, line) 만 평문 보장 — original/suggestion/
+        // reason/expected_updated_at 은 모두 복호화 후 사용해야 한다.
+        String original = decryptIfCipher(workKey, asString(p.get("original")));
+        String suggestion = decryptIfCipher(workKey, asString(p.get("suggestion")));
+        if (original == null || suggestion == null || original.equals(suggestion)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "original/suggestion required and must differ");
+        }
+        // ISO timestamp — 암호화돼 들어오면 평문화 후 파싱
+        String expectedUpdatedAt = decryptIfCipher(workKey, asString(p.get("expected_updated_at")));
+
+        // 1) episode 소유권 + 현재 content/updated_at fetch
+        Object[] row = jdbc.query(
+                "SELECT content, updated_at FROM episode " +
+                        "WHERE id = ? AND work_id = ? AND writer_id = ?",
+                rs -> {
+                    if (!rs.next()) return null;
+                    return new Object[]{rs.getString(1), rs.getTimestamp(2)};
+                },
+                epId, workId, writerId
+        );
+        if (row == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "episode not found in work");
+        }
+        String encContent = (String) row[0];
+        Timestamp currentUpdatedAt = (Timestamp) row[1];
+
+        // 2) race window 차단 — 작가가 propose 이후 본문을 수정했으면 적용 거부
+        if (expectedUpdatedAt != null && currentUpdatedAt != null) {
+            try {
+                Instant expected = Instant.parse(expectedUpdatedAt);
+                Instant actual = currentUpdatedAt.toInstant();
+                // ms 단위 오차 허용 — Postgres timestamp(6) 와 java Instant 정밀도 차이
+                if (Math.abs(actual.toEpochMilli() - expected.toEpochMilli()) > 1000) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "본문이 그 사이 수정되어 자동 적용 불가 — 직접 수정해주세요.");
+                }
+            } catch (java.time.format.DateTimeParseException ignore) {
+                // expected_updated_at 파싱 실패 — race 검증 스킵 (보수적 적용)
+            }
+        }
+
+        // 3) content 복호화
+        String plainJson = decryptIfCipher(workKey, encContent);
+        if (plainJson == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "본문 복호화 실패");
+        }
+
+        // 4) TipTap JSON 파싱 (legacy plain text 면 거부 — line 매칭 의미 없음)
+        JsonNode doc;
+        try {
+            doc = objectMapper.readTree(plainJson);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "본문이 TipTap JSON 형식 아님 — 자동 적용 불가, 직접 수정해주세요.");
+        }
+        if (!doc.isObject() || !"doc".equals(doc.path("type").asText()) || !doc.path("content").isArray()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "본문 구조 비표준 — 자동 적용 불가, 직접 수정해주세요.");
+        }
+        ArrayNode blocks = (ArrayNode) doc.get("content");
+        // line → block 인덱스 매핑. ai/app/services/text_extractor.py:extract_numbered_text 와 동일 규칙:
+        //   paragraph/heading/codeBlock/blockquote/sceneBreak/horizontalRule = 1 라인 = 1 블록
+        //   bulletList/orderedList = N 라인 (item 수) = 1 블록 — 라인 ≠ 블록 인덱스
+        // 자동 치환은 단순 1:1 블록만 허용. 리스트 항목 자동 수정은 1차 미지원.
+        int targetBlockIdx = -1;
+        int currentLine = 0;
+        for (int i = 0; i < blocks.size(); i++) {
+            JsonNode b = blocks.get(i);
+            String btype = b.path("type").asText("");
+            currentLine++;
+            if (currentLine == line) {
+                if ("paragraph".equals(btype) || "heading".equals(btype)
+                        || "codeBlock".equals(btype) || "blockquote".equals(btype)) {
+                    targetBlockIdx = i;
+                }
+                // sceneBreak / horizontalRule / bulletList(첫 줄) / orderedList(첫 줄) 등 →
+                // 자동 치환 불가 (텍스트 콘텐츠 없거나 다중 라인 블록)
+                break;
+            }
+            // 다중 라인 블록 — line 카운터에 추가 라인 누적
+            if ("bulletList".equals(btype) || "orderedList".equals(btype)) {
+                int items = b.path("content").isArray() ? b.path("content").size() : 0;
+                int extraLines = Math.max(0, items - 1);
+                // target 이 이 리스트 안의 N 번째 항목이면 → 리스트 항목 자동 수정 미지원
+                if (line <= currentLine + extraLines) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "L" + line + " 목록 항목 — 자동 적용 미지원, 직접 수정해주세요.");
+                }
+                currentLine += extraLines;
+            }
+        }
+        if (targetBlockIdx == -1) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 자동 적용 가능한 블록이 아님 (목록·구분선 등) — 직접 수정해주세요.");
+        }
+        JsonNode block = blocks.get(targetBlockIdx);
+        if (!block.path("content").isArray()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 블록에 텍스트 노드 없음 — 자동 적용 불가");
+        }
+        ArrayNode textNodes = (ArrayNode) block.get("content");
+
+        // 5) 단순 케이스만 지원: text 노드 1개 + marks 비어있음
+        if (textNodes.size() != 1) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 마크(굵게/기울임 등) 가 걸친 복합 텍스트 — 자동 적용 미지원, 직접 수정해주세요.");
+        }
+        JsonNode textNode = textNodes.get(0);
+        if (!"text".equals(textNode.path("type").asText())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 비텍스트 노드 — 자동 적용 미지원");
+        }
+        JsonNode marks = textNode.path("marks");
+        if (marks.isArray() && !marks.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 마크가 걸려 있어 자동 적용 미지원, 직접 수정해주세요.");
+        }
+        String text = textNode.path("text").asText("");
+        int idx = text.indexOf(original);
+        if (idx < 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "L" + line + " 에서 원본 문자열을 찾을 수 없음 — 이미 수정됐거나 본문 변경");
+        }
+        // 6) 첫 매치 1회 치환 (literal — String.replaceFirst 의 regex 회피)
+        String newText = text.substring(0, idx) + suggestion + text.substring(idx + original.length());
+
+        // 7) 텍스트 노드 갱신 + JSON 재직렬화
+        ((ObjectNode) textNode).put("text", newText);
+        String newJson;
+        try {
+            newJson = objectMapper.writeValueAsString(doc);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "본문 재직렬화 실패: " + e.getMessage());
+        }
+
+        // 8) word_count 재계산 (block text 합산 — TipTap 기본 length 의미)
+        int newWordCount = computePlainLength(blocks);
+
+        // 9) episode 갱신
+        String encNewContent = encStr(workKey, newJson);
+        jdbc.update(
+                "UPDATE episode SET content = ?, word_count = ?, updated_at = now() WHERE id = ?",
+                encNewContent, newWordCount, epId
+        );
+        log.info("[SUGGESTION-APPLY] spelling_fix episode={} L{} '{}' → '{}'",
+                epId, line,
+                original.length() > 30 ? original.substring(0, 30) + "..." : original,
+                suggestion.length() > 30 ? suggestion.substring(0, 30) + "..." : suggestion);
+
+        // 10) 본문 변경 → chunk_and_embed 재인덱싱 (5초 디바운스로 연속 적용 흡수)
+        episodeIndexingTrigger.fireIndexing(epId, workId, writerId);
+        return epId;
+    }
+
+    /** TipTap blocks 의 text 노드 텍스트 합산 — word_count 갱신용. */
+    private static int computePlainLength(ArrayNode blocks) {
+        int total = 0;
+        for (JsonNode block : blocks) {
+            JsonNode children = block.path("content");
+            if (children.isArray()) {
+                for (JsonNode child : children) {
+                    if ("text".equals(child.path("type").asText())) {
+                        total += child.path("text").asText("").length();
+                    }
+                }
+            }
+        }
+        return total;
+    }
+
+    // ─────── spelling_batch — 다건 체크리스트 일괄 자동 치환 ───────
+
+    /**
+     * 1 propose = N 치환. payload:
+     *   {episode_id, expected_updated_at?, fixes: [{line, original, suggestion, fix_type, reason?}, ...]}
+     *
+     * selectedIndices == null  → 모든 fix 적용 (사용자가 선택 안 보낸 경우 = 기본 모두 OK)
+     * selectedIndices == []    → 적용할 게 없음 → 422 ('아무것도 선택되지 않음')
+     * selectedIndices == [0,2] → fixes[0], fixes[2] 만 적용
+     *
+     * 각 fix 는 단건 spelling_fix 와 동일 가드:
+     *   - 라인→블록 매핑 (paragraph/heading/codeBlock/blockquote 만 자동 적용 가능)
+     *   - 단일 text 노드 + marks 비어있을 때만 치환
+     *   - 같은 블록에 fix 가 여러 개 있어도 indexOf 기반 순차 치환 (이전 치환이 다음 indexOf 결과
+     *     에 영향 줄 수 있지만 original 이 텍스트에 남아있는 한 정상 동작)
+     *
+     * 일부 fix 가 실패해도 다른 fix 는 계속 진행 (best-effort). 적용된 fix 가 1건 이상이면 성공.
+     */
+    private UUID applySpellingBatch(
+            UUID workId, UUID writerId, Map<String, Object> p, byte[] workKey,
+            List<Integer> selectedIndices
+    ) {
+        UUID epId = parseUuid(p.get("episode_id"));
+        if (epId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "episode_id required");
+        }
+        Object fixesObj = p.get("fixes");
+        if (!(fixesObj instanceof List<?>) || ((List<?>) fixesObj).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fixes (non-empty list) required");
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fixes = (List<Map<String, Object>>) fixesObj;
+        String expectedUpdatedAt = decryptIfCipher(workKey, asString(p.get("expected_updated_at")));
+
+        // selectedIndices null → 모두 적용. 빈 리스트 → 사용자가 0건 선택 → 거부.
+        Set<Integer> selectedSet;
+        if (selectedIndices == null) {
+            selectedSet = null;
+        } else if (selectedIndices.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "선택된 항목 없음 — 적어도 하나 체크 후 적용해주세요.");
+        } else {
+            selectedSet = new HashSet<>(selectedIndices);
+        }
+
+        // 1) episode 소유권 + 현재 content/updated_at fetch
+        Object[] row = jdbc.query(
+                "SELECT content, updated_at FROM episode " +
+                        "WHERE id = ? AND work_id = ? AND writer_id = ?",
+                rs -> {
+                    if (!rs.next()) return null;
+                    return new Object[]{rs.getString(1), rs.getTimestamp(2)};
+                },
+                epId, workId, writerId
+        );
+        if (row == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "episode not found in work");
+        }
+        String encContent = (String) row[0];
+        Timestamp currentUpdatedAt = (Timestamp) row[1];
+
+        // 2) race window 차단 — 작가가 propose 이후 본문 수정했으면 거부
+        if (expectedUpdatedAt != null && currentUpdatedAt != null) {
+            try {
+                Instant expected = Instant.parse(expectedUpdatedAt);
+                Instant actual = currentUpdatedAt.toInstant();
+                if (Math.abs(actual.toEpochMilli() - expected.toEpochMilli()) > 1000) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "본문이 그 사이 수정되어 자동 적용 불가 — 직접 수정해주세요.");
+                }
+            } catch (java.time.format.DateTimeParseException ignore) {
+                // 보수적 적용 — 검증 skip
+            }
+        }
+
+        // 3) content 복호화
+        String plainJson = decryptIfCipher(workKey, encContent);
+        if (plainJson == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "본문 복호화 실패");
+        }
+
+        // 4) TipTap JSON 파싱
+        JsonNode doc;
+        try {
+            doc = objectMapper.readTree(plainJson);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "본문이 TipTap JSON 형식 아님 — 자동 적용 불가, 직접 수정해주세요.");
+        }
+        if (!doc.isObject() || !"doc".equals(doc.path("type").asText())
+                || !doc.path("content").isArray()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "본문 구조 비표준 — 자동 적용 불가.");
+        }
+        ArrayNode blocks = (ArrayNode) doc.get("content");
+
+        // 5) 각 fix 처리. 실패는 누적, 성공도 누적.
+        int applied = 0;
+        List<String> skipReasons = new ArrayList<>();
+        for (int i = 0; i < fixes.size(); i++) {
+            if (selectedSet != null && !selectedSet.contains(i)) continue;
+            Map<String, Object> fix = fixes.get(i);
+            Object lineObj = fix.get("line");
+            if (!(lineObj instanceof Number)) {
+                skipReasons.add("L? line 누락");
+                continue;
+            }
+            int line = ((Number) lineObj).intValue();
+            String original = decryptIfCipher(workKey, asString(fix.get("original")));
+            String suggestion = decryptIfCipher(workKey, asString(fix.get("suggestion")));
+            if (original == null || suggestion == null || original.isEmpty()
+                    || suggestion.isEmpty() || original.equals(suggestion)) {
+                skipReasons.add("L" + line + " 원본/교정 비정상");
+                continue;
+            }
+
+            int targetBlockIdx = findTargetBlockIdx(blocks, line);
+            if (targetBlockIdx < 0) {
+                skipReasons.add("L" + line + " 자동 적용 불가 블록 (목록·구분선 등)");
+                continue;
+            }
+            JsonNode block = blocks.get(targetBlockIdx);
+            if (!block.path("content").isArray()) {
+                skipReasons.add("L" + line + " 텍스트 없음");
+                continue;
+            }
+            ArrayNode textNodes = (ArrayNode) block.get("content");
+            if (textNodes.size() != 1) {
+                skipReasons.add("L" + line + " 마크/다중 노드 (직접 수정 필요)");
+                continue;
+            }
+            JsonNode textNode = textNodes.get(0);
+            if (!"text".equals(textNode.path("type").asText())) {
+                skipReasons.add("L" + line + " 비텍스트 노드");
+                continue;
+            }
+            JsonNode marks = textNode.path("marks");
+            if (marks.isArray() && !marks.isEmpty()) {
+                skipReasons.add("L" + line + " 마크 걸림 (직접 수정 필요)");
+                continue;
+            }
+            String text = textNode.path("text").asText("");
+            int idx = text.indexOf(original);
+            if (idx < 0) {
+                skipReasons.add("L" + line + " 원본 미존재 (이미 수정됨?)");
+                continue;
+            }
+            String newText = text.substring(0, idx) + suggestion + text.substring(idx + original.length());
+            ((ObjectNode) textNode).put("text", newText);
+            applied++;
+        }
+
+        if (applied == 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "적용된 항목 없음 — " + (skipReasons.isEmpty() ? "선택 항목 0건" : String.join(", ", skipReasons)));
+        }
+
+        // 6) 재직렬화 + word_count 재계산
+        String newJson;
+        try {
+            newJson = objectMapper.writeValueAsString(doc);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "본문 재직렬화 실패: " + e.getMessage());
+        }
+        int newWordCount = computePlainLength(blocks);
+
+        // 7) episode 갱신
+        String encNewContent = encStr(workKey, newJson);
+        jdbc.update(
+                "UPDATE episode SET content = ?, word_count = ?, updated_at = now() WHERE id = ?",
+                encNewContent, newWordCount, epId
+        );
+        log.info("[SUGGESTION-APPLY] spelling_batch episode={} applied={}/{} skipped={}",
+                epId, applied, fixes.size(), skipReasons);
+
+        // 8) 본문 변경 → chunk_and_embed 재인덱싱
+        episodeIndexingTrigger.fireIndexing(epId, workId, writerId);
+        return epId;
+    }
+
+    /** 라인 번호 → 적용 가능 블록 인덱스. extract_numbered_text 동일 규칙. -1 = 자동 적용 불가. */
+    private static int findTargetBlockIdx(ArrayNode blocks, int line) {
+        int currentLine = 0;
+        for (int i = 0; i < blocks.size(); i++) {
+            JsonNode b = blocks.get(i);
+            String btype = b.path("type").asText("");
+            currentLine++;
+            if (currentLine == line) {
+                if ("paragraph".equals(btype) || "heading".equals(btype)
+                        || "codeBlock".equals(btype) || "blockquote".equals(btype)) {
+                    return i;
+                }
+                return -1;
+            }
+            if ("bulletList".equals(btype) || "orderedList".equals(btype)) {
+                int items = b.path("content").isArray() ? b.path("content").size() : 0;
+                int extraLines = Math.max(0, items - 1);
+                if (line <= currentLine + extraLines) return -1;
+                currentLine += extraLines;
+            }
+        }
+        return -1;
     }
 
     private UUID deleteEpisode(UUID workId, UUID writerId, Map<String, Object> p) {
@@ -468,6 +944,33 @@ public class SuggestionApplier {
         return (maxSort == null ? 0 : maxSort + 1);
     }
 
+    /**
+     * agent 가 보낸 gender 값을 프론트 GENDER_ICON_MAP 키 ('남'/'여'/'기타'/'미설정') 로 정규화.
+     *
+     * <p>프론트 [CharacterOverview.tsx](../../../../frontend/src/shared/features/character/CharacterOverview.tsx)
+     * 의 GENDER_OPTIONS 와 동기화된 enum. 어느 것도 매칭 안 되면 '미설정' fallback —
+     * '?' 아이콘 표시되어 사용자가 즉시 알아챌 수 있도록.
+     *
+     * <p>구버전 데이터에 박혀있던 '미정' 도 '미설정' 으로 흡수 (frontend label map 에 없어 폴백).
+     */
+    private static String normalizeGender(String raw) {
+        if (raw == null) return "미설정";
+        String s = raw.trim().toLowerCase();
+        if (s.isEmpty()) return "미설정";
+        // 정규 한 글자
+        if ("남".equals(raw.trim()) || "여".equals(raw.trim()) || "기타".equals(raw.trim()) || "미설정".equals(raw.trim())) {
+            return raw.trim();
+        }
+        // 변형 흡수
+        return switch (s) {
+            case "남성", "male", "m", "남자", "boy", "man" -> "남";
+            case "여성", "female", "f", "여자", "girl", "woman" -> "여";
+            case "기타", "other", "non-binary", "nonbinary", "nb", "x" -> "기타";
+            case "미정", "미설정", "unknown", "none", "n/a", "null" -> "미설정";
+            default -> "미설정";
+        };
+    }
+
     private static String asString(Object o) {
         if (o == null) return null;
         String s = String.valueOf(o);
@@ -482,67 +985,44 @@ public class SuggestionApplier {
 
     private static String encStr(byte[] workKey, String plaintext) {
         if (plaintext == null) return null;
+        // 2026-05-09: extraction_suggestion.payload 가 v1: ciphertext 를 담아 옴 (proposals.py 가
+        // INSERT 직전 work_key 로 암호화). 평문 컬럼 (character.name 등) 의 destination 도 같은
+        // work_key 로 암호화돼야 하므로, 이미 v1: 인 입력은 그대로 통과 — 이중 암호화 차단.
+        if (plaintext.startsWith("v1:")) return plaintext;
         return AesGcmCipher.encryptString(workKey, plaintext);
     }
 
     /**
-     * 평문을 TipTap doc JSON 으로 래핑 후 암호화.
-     * 프론트 에디터는 character_note.content / world_note.content / plot.content / episode.content
-     * 가 TipTap JSON 임을 가정 (사용자 직접 작성 시 그렇게 저장됨). agent 가 평문으로 저장하면
-     * parseNoteContent JSON.parse 실패 → 빈 문서 표시되는 문제가 있어, 저장 단계에서 래핑.
+     * 평문/Markdown 을 TipTap doc JSON 으로 변환 후 암호화.
+     *
+     * <p>프론트 에디터는 character_note.content / world_note.content / plot.content /
+     * episode.content 가 TipTap JSON 임을 가정. agent 는 본문을 Markdown 으로 보내고
+     * (registry.py / scenarios.py 시스템 프롬프트로 강제), 본 메서드가 위지윅 호환 doc 으로
+     * 변환한 뒤 암호화한다.
+     *
+     * <p>구버전 plain text 입력도 그대로 동작 — Markdown 문법 없으면 단순 paragraph 트리.
+     * 입력이 이미 TipTap doc JSON 이면 통과 (idempotent).
+     *
+     * <p>암호화 호환: AES-GCM 은 UTF-8 byte 단위라 JSON 내용에 무관. 기존 v1: 포맷 그대로.
      */
     private static String encRichText(byte[] workKey, String plaintext) {
         if (plaintext == null || plaintext.isEmpty()) return null;
-        String tiptapJson = wrapPlainTextAsTiptapDoc(plaintext);
-        return AesGcmCipher.encryptString(workKey, tiptapJson);
-    }
-
-    private static String wrapPlainTextAsTiptapDoc(String text) {
-        // \n+ 로 단락 분리. 단락 안의 텍스트는 단일 text 노드.
-        // JSON 직접 조립 — Jackson 의존성 없이 빠르게.
-        String[] paragraphs = text.split("\\n+");
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"type\":\"doc\",\"content\":[");
-        boolean first = true;
-        boolean any = false;
-        for (String p : paragraphs) {
-            String trimmed = p == null ? "" : p;
-            if (trimmed.isEmpty()) continue;
-            if (!first) sb.append(',');
-            sb.append("{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"")
-              .append(jsonEscape(trimmed))
-              .append("\"}]}");
-            first = false;
-            any = true;
-        }
-        if (!any) {
-            sb.append("{\"type\":\"paragraph\"}");
-        }
-        sb.append("]}");
-        return sb.toString();
-    }
-
-    private static String jsonEscape(String s) {
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"' -> out.append("\\\"");
-                case '\\' -> out.append("\\\\");
-                case '\n' -> out.append("\\n");
-                case '\r' -> out.append("\\r");
-                case '\t' -> out.append("\\t");
-                case '\b' -> out.append("\\b");
-                case '\f' -> out.append("\\f");
-                default -> {
-                    if (c < 0x20) {
-                        out.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        out.append(c);
-                    }
-                }
+        // 2026-05-09: extraction_suggestion.payload 의 자유 텍스트는 work_key 로 암호화된 v1:
+        // 형태로 도착. 위지윅 destination (episode.content 등) 은 v1:(tiptap_json) 형식이어야
+        // 하므로 transcoding 필요: v1:(markdown) → 평문 markdown → tiptap JSON → v1:(tiptap_json).
+        String md;
+        if (plaintext.startsWith("v1:")) {
+            try {
+                md = AesGcmCipher.decryptString(workKey, plaintext);
+            } catch (Exception e) {
+                // 복호화 실패 시 cipher 그대로 두면 destination 화면이 깨지므로 빈 문서로 대체.
+                return AesGcmCipher.encryptString(workKey,
+                        MarkdownToTiptap.toDocJson(""));
             }
+        } else {
+            md = plaintext;
         }
-        return out.toString();
+        String tiptapJson = MarkdownToTiptap.toDocJson(md);
+        return AesGcmCipher.encryptString(workKey, tiptapJson);
     }
 }

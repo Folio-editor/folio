@@ -76,7 +76,13 @@ public class SuggestionService {
     }
 
     @Transactional
-    public Map<String, Object> updateStatus(UUID writerId, UUID suggestionId, String newStatus, String reviewerNote) {
+    public Map<String, Object> updateStatus(
+            UUID writerId,
+            UUID suggestionId,
+            String newStatus,
+            String reviewerNote,
+            java.util.List<Integer> selectedIndices
+    ) {
         if (!List.of("confirmed", "rejected").contains(newStatus)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be 'confirmed' or 'rejected'");
         }
@@ -107,7 +113,7 @@ public class SuggestionService {
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> payload = objectMapper.readValue(payloadJson, Map.class);
-                confirmedTargetId = applier.apply(workId, writerId, entityType, payload);
+                confirmedTargetId = applier.apply(workId, writerId, entityType, payload, selectedIndices);
             } catch (ResponseStatusException e) {
                 throw e;     // 4xx 그대로 전파
             } catch (Exception e) {
@@ -133,6 +139,26 @@ public class SuggestionService {
         resp.put("status", newStatus);
         resp.put("confirmed_target_id", confirmedTargetId != null ? confirmedTargetId.toString() : null);
         return resp;
+    }
+
+    /**
+     * suggestion 행 영구 삭제. 처리 완료된 (confirmed/rejected) 기록을 작가가 정리할 때 사용.
+     *
+     * <p>주의: confirmed_target_id 가 가리키는 실제 entity (character / world_note / episode 등) 는
+     * 건드리지 않는다. 작가가 승인 후 등록된 본문은 보존, 큐의 흔적만 제거.
+     *
+     * <p>pending 상태 suggestion 도 삭제 가능 — 작가가 검토 거부 의사로 즉시 제거하고 싶을 수 있음.
+     */
+    @Transactional
+    public void delete(UUID writerId, UUID suggestionId) {
+        int affected = jdbc.update(
+                "DELETE FROM extraction_suggestion WHERE id = ? AND writer_id = ?",
+                suggestionId, writerId
+        );
+        if (affected == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "suggestion not found");
+        }
+        log.info("[AGENT-SUGGESTION] writer={} suggestion={} deleted", writerId, suggestionId);
     }
 
     private Object parseJson(String s) {

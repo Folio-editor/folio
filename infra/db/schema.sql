@@ -76,6 +76,41 @@ CREATE TABLE payment_event (
     processed_at    TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- 환불 1건 = 1 row. 약관 제5조: 사용자 신청 → 운영자 검토 → 승인/거절.
+-- 한 결제당 active(REQUESTED/APPROVED) 환불 1건 제한은 application 레벨에서 강제.
+-- 보존: 전자상거래법 제6조 5년 이상.
+CREATE TABLE refund (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id      UUID NOT NULL REFERENCES payment(id) ON DELETE RESTRICT,
+    status          VARCHAR(20) NOT NULL,           -- REQUESTED / APPROVED / REJECTED / CANCELED
+    reason          VARCHAR(30) NOT NULL,           -- RefundReason enum
+    detail          VARCHAR(500),
+    refund_type     VARCHAR(20) NOT NULL,           -- RefundType enum (FULL / PARTIAL / COMPENSATION)
+    refund_amount   INTEGER NOT NULL,
+    token_deducted  INTEGER NOT NULL,
+    requested_at    TIMESTAMP NOT NULL,
+    processed_at    TIMESTAMP,
+    admin_note      VARCHAR(500),
+    created_at      TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- 관리자 API 호출 전수 감사 로그. 모든 admin endpoint 가 INSERT.
+-- 보존: DB 1년 + S3 archive 4년 (Phase B).
+CREATE TABLE admin_audit_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action          VARCHAR(50) NOT NULL,           -- REFUND_LIST / REFUND_APPROVE / REFUND_REJECT 등
+    result          VARCHAR(20) NOT NULL,           -- SUCCESS / DENIED / ERROR
+    resource_type   VARCHAR(30),                    -- refund / payment / writer (NULL 가능)
+    resource_id     UUID,
+    admin_note      VARCHAR(500),
+    request_ip      VARCHAR(45),                    -- IPv6 포함
+    user_agent      VARCHAR(500),
+    request_path    VARCHAR(200),
+    error_message   VARCHAR(500),
+    created_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
 CREATE TABLE analytics_event_dedup (
     event_id        UUID PRIMARY KEY,
     writer_id       UUID REFERENCES writer(id) ON DELETE SET NULL,
@@ -381,7 +416,8 @@ CREATE TABLE extraction_suggestion (
             'character_update','character_delete',
             'world_note_update','world_note_delete',
             'plot_create','plot_tree','plot_revision','plot_delete',
-            'episode_draft','episode_update','episode_delete'
+            'episode_draft','episode_update','episode_delete',
+            'review_issue'
         )),
     suggested_name      VARCHAR(200) NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -419,6 +455,10 @@ CREATE TRIGGER trg_extraction_suggestion_updated_at
 
 CREATE TRIGGER trg_ai_job_updated_at
     BEFORE UPDATE ON ai_job
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_refund_updated_at
+    BEFORE UPDATE ON refund
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================
@@ -547,6 +587,13 @@ CREATE INDEX idx_idea_archive_work ON idea_archive(work_id);
 -- 서버 전용
 CREATE INDEX idx_audit_log_writer ON audit_log(writer_id);
 CREATE INDEX idx_payment_writer ON payment(writer_id);
+CREATE INDEX idx_refund_payment_id   ON refund(payment_id);
+CREATE INDEX idx_refund_status       ON refund(status);
+CREATE INDEX idx_refund_requested_at ON refund(requested_at);
+CREATE INDEX idx_admin_audit_action      ON admin_audit_log(action);
+CREATE INDEX idx_admin_audit_resource    ON admin_audit_log(resource_type, resource_id);
+CREATE INDEX idx_admin_audit_created_at  ON admin_audit_log(created_at);
+CREATE INDEX idx_admin_audit_request_ip  ON admin_audit_log(request_ip);
 CREATE INDEX idx_subscription_writer ON subscription(writer_id);
 CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
 CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);

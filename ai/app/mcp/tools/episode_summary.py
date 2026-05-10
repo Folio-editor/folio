@@ -18,10 +18,13 @@ from app.services.encrypt_resolver import summary_text_fields
 
 
 async def _decrypt_summary_rows(work_id, rows: list[dict]) -> list[dict]:
-    """summary 텍스트 필드 일괄 복호화 헬퍼. 실패 시 placeholder 로 대체."""
+    """summary 텍스트 필드 + episode title 일괄 복호화 헬퍼. 실패 시 placeholder."""
     if not rows:
         return rows
     fields = [f for f in summary_text_fields() if any(f in r for r in rows)]
+    # title 은 episode 테이블의 v1: 컬럼 (summary 가 아닌 episode 쪽). 함께 복호화 대상.
+    if any("title" in r for r in rows):
+        fields = list(fields) + ["title"]
     if not fields:
         return rows
     try:
@@ -50,7 +53,7 @@ async def list_all_oneline_summaries(
     상세 필요 시 list_episode_summaries / get_episode_summary 로 drill-down.
     """
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.pov_character, es.tone "
+        "SELECT ep.id, ep.sort_order, es.oneline_summary, es.pov_character, es.tone "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
         "WHERE es.work_id = :wid AND es.writer_id = :wr "
@@ -62,10 +65,11 @@ async def list_all_oneline_summaries(
     )
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "pov_character": row[2],
-            "tone": row[3],
+            "id": str(row[0]),    # 후속 propose_* 호출 시 episode_id 인자
+            "sort_order": row[1],
+            "oneline_summary": row[2],
+            "pov_character": row[3],
+            "tone": row[4],
         }
         for row in r.fetchall()
     ]
@@ -77,7 +81,8 @@ async def list_all_oneline_summaries(
 # ============================================================
 
 LIST_FIELDS = (
-    "ep.sort_order, es.oneline_summary, es.pov_character, es.tone, "
+    "ep.id, ep.sort_order, ep.title, "
+    "es.oneline_summary, es.pov_character, es.tone, "
     "es.present_characters, es.cliffhanger"
 )
 
@@ -116,12 +121,14 @@ async def list_episode_summaries(
     r = await session.execute(sa_text(sql), params)
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "pov_character": row[2],
-            "tone": row[3],
-            "present_characters": row[4],
-            "cliffhanger": row[5],
+            "id": str(row[0]),
+            "sort_order": row[1],
+            "title": row[2],
+            "oneline_summary": row[3],
+            "pov_character": row[4],
+            "tone": row[5],
+            "present_characters": row[6],
+            "cliffhanger": row[7],
         }
         for row in r.fetchall()
     ]
@@ -133,7 +140,7 @@ async def list_episode_summaries(
 # ============================================================
 
 DETAIL_FIELDS = (
-    "ep.sort_order, ep.title, "
+    "ep.id, ep.sort_order, ep.title, "
     "es.oneline_summary, es.summary, es.pov_character, "
     "es.present_characters, es.present_locations, es.key_events, "
     "es.time_progression, es.tone, es.cliffhanger, "
@@ -163,23 +170,24 @@ async def get_episode_summary(
     if row is None:
         return None
     out = {
-        "sort_order": row[0],
-        "title": row[1],
-        "oneline_summary": row[2],
-        "summary": row[3],
-        "pov_character": row[4],
-        "present_characters": row[5],
-        "present_locations": row[6],
-        "key_events": row[7],
-        "time_progression": row[8],
-        "tone": row[9],
-        "cliffhanger": row[10],
-        "foreshadow_planted": row[11],
-        "foreshadow_paid_off": row[12],
-        "referenced_world_notes": row[13],
-        "keywords": row[14],
-        "word_count": row[15],
-        "is_confirmed": row[16],
+        "id": str(row[0]),    # propose_review_issue 등의 episode_id 인자에 사용
+        "sort_order": row[1],
+        "title": row[2],
+        "oneline_summary": row[3],
+        "summary": row[4],
+        "pov_character": row[5],
+        "present_characters": row[6],
+        "present_locations": row[7],
+        "key_events": row[8],
+        "time_progression": row[9],
+        "tone": row[10],
+        "cliffhanger": row[11],
+        "foreshadow_planted": row[12],
+        "foreshadow_paid_off": row[13],
+        "referenced_world_notes": row[14],
+        "keywords": row[15],
+        "word_count": row[16],
+        "is_confirmed": row[17],
     }
     decrypted = await _decrypt_summary_rows(ctx.work_id, [out])
     return decrypted[0]
@@ -234,7 +242,8 @@ async def search_episode_summaries(
     # SELECT 시 keyword fallback 매칭에 필요한 모든 컬럼 fetch
     # (자유형 텍스트는 ciphertext 가능, JSONB 는 평문)
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.pov_character, es.tone, "
+        "SELECT ep.id, ep.sort_order, ep.title, "
+        "       es.oneline_summary, es.pov_character, es.tone, "
         "       es.present_characters, es.cliffhanger, es.summary, "
         "       es.present_locations, es.key_events, es.keywords "
         "FROM episode_summary es "
@@ -246,16 +255,18 @@ async def search_episode_summaries(
     r = await session.execute(sa_text(sql), params)
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],     # ciphertext 가능
-            "pov_character": row[2],       # 평문
-            "tone": row[3],                # 평문
-            "present_characters": row[4],  # JSONB 평문
-            "cliffhanger": row[5],         # ciphertext 가능
-            "summary": row[6],             # ciphertext 가능
-            "present_locations": row[7],   # JSONB 평문
-            "key_events": row[8],          # JSONB 평문
-            "keywords": row[9],            # JSONB 평문
+            "id": str(row[0]),
+            "sort_order": row[1],
+            "title": row[2],               # ciphertext 가능
+            "oneline_summary": row[3],     # ciphertext 가능
+            "pov_character": row[4],       # 평문
+            "tone": row[5],                # 평문
+            "present_characters": row[6],  # JSONB 평문
+            "cliffhanger": row[7],         # ciphertext 가능
+            "summary": row[8],             # ciphertext 가능
+            "present_locations": row[9],   # JSONB 평문
+            "key_events": row[10],         # JSONB 평문
+            "keywords": row[11],           # JSONB 평문
         }
         for row in r.fetchall()
     ]

@@ -61,39 +61,63 @@ async def get_plot(
     """drill 용 — 단건 플롯 본문 fetch (title 또는 plot_id 로 지정).
 
     인자 없이 호출 시 list_plots 와 동일 (호환). 본문이 필요 없으면 list_plots 권장.
+
+    ★ title 매칭은 fetch-then-decrypt-then-match 패턴 — DB 의 title 이 v1: ciphertext 라
+    SQL WHERE title=:title 직접 매칭 불가. character.py / world_note.py 와 같은 패턴.
     """
     if title is None and plot_id is None:
         return await list_plots(session, ctx)
 
-    where = ["work_id = :wid", "writer_id = :wr"]
-    params: dict = {"wid": ctx.work_id, "wr": ctx.writer_id}
+    # plot_id 지정 시 — SQL 단건 fetch (UUID 매칭은 안전).
     if plot_id is not None:
-        where.append("id = cast(:pid AS uuid)")
-        params["pid"] = plot_id
-    if title is not None:
-        where.append("title = :title")
-        params["title"] = title
+        r = await session.execute(
+            sa_text(
+                "SELECT id, title, status, content, parent_id "
+                "FROM plot WHERE work_id = :wid AND writer_id = :wr "
+                "  AND id = cast(:pid AS uuid) LIMIT 1"
+            ),
+            {"wid": ctx.work_id, "wr": ctx.writer_id, "pid": plot_id},
+        )
+        row = r.fetchone()
+        if row is None:
+            return {"error": "plot_not_found", "plot_id": plot_id}
+        rows = [
+            {
+                "id": str(row[0]),
+                "title": row[1],
+                "status": row[2],
+                "content": row[3],
+                "parent_id": str(row[4]) if row[4] else None,
+            }
+        ]
+    else:
+        # title 매칭 — 모든 행 fetch 후 평문 비교 (work 당 plot 수 ≤수십, 부담 작음)
+        r = await session.execute(
+            sa_text(
+                "SELECT id, title, status, content, parent_id "
+                "FROM plot WHERE work_id = :wid AND writer_id = :wr"
+            ),
+            {"wid": ctx.work_id, "wr": ctx.writer_id},
+        )
+        all_rows = [
+            {
+                "id": str(row[0]),
+                "title": row[1],
+                "status": row[2],
+                "content": row[3],
+                "parent_id": str(row[4]) if row[4] else None,
+            }
+            for row in r.fetchall()
+        ]
+        try:
+            all_rows = await decrypt_rows(ctx.work_id, all_rows, ["title"])
+        except DecryptResolverError:
+            pass    # 복호화 실패 행은 자연 매칭 제외 (v1: 그대로라 평문 title 과 안 맞음)
+        target = next((row for row in all_rows if row.get("title") == title), None)
+        if target is None:
+            return {"error": "plot_not_found", "title": title}
+        rows = [target]
 
-    r = await session.execute(
-        sa_text(
-            "SELECT id, title, status, content, parent_id "
-            f"FROM plot WHERE {' AND '.join(where)} LIMIT 1"
-        ),
-        params,
-    )
-    row = r.fetchone()
-    if row is None:
-        return {"error": "plot_not_found", "title": title, "plot_id": plot_id}
-
-    rows = [
-        {
-            "id": str(row[0]),
-            "title": row[1],
-            "status": row[2],
-            "content": row[3],
-            "parent_id": str(row[4]) if row[4] else None,
-        }
-    ]
     try:
         rows = await decrypt_rows(ctx.work_id, rows, ["title", "content"])
     except DecryptResolverError:

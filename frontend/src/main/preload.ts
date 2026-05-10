@@ -43,6 +43,8 @@ const api: FolioApi = {
       return () => ipcRenderer.removeListener('window:maximizeChanged', listener);
     },
     platform: process.platform as 'win32' | 'darwin' | 'linux' | 'web',
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('window:openExternal', url) as Promise<void>,
   },
   spellcheck: {
     syncWords: (words: string[]) =>

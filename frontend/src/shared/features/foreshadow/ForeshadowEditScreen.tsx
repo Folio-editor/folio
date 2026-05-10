@@ -241,9 +241,9 @@ function ForeshadowEditor({
   );
 
   // foreshadow_link.context_memo 는 v1: 암호문, 그리고 plot.title 도 v1: 암호문이다.
-  // (1) link 본체 + episode 메타(평문) JOIN
+  // (1) link 본체 + episode 메타 JOIN (episode.title 도 ciphertext 라 별도 복호화 필요)
   // (2) work_id/encrypted_dek 를 같이 가져와 useDecryptedForeshadowLinkList 로 context_memo 복호화
-  // plot 타이틀은 (3) 별도 plot 쿼리 + useDecryptedPlotList 후 JS 머지
+  // (3) plot/episode 타이틀은 별도 쿼리 + useDecrypted*List 후 JS 머지
   const { data: rawLinkRows = [] } = useQuery<RawLinkQueryRow>(
     `SELECT fl.id, fl.foreshadow_id, fl.link_type, fl.episode_id, fl.plot_id,
             fl.context_memo, fl.created_at,
@@ -282,25 +282,50 @@ function ForeshadowEditor({
     return m;
   }, [decryptedPlots]);
 
+  // episode 측도 별도 SELECT — link 의 episode_id + 그 episode 의 parent_id 까지 한 번에.
+  // (이전엔 raw e.title / ep.title 을 그대로 노출해 v1: ciphertext 헤더 표시 회귀.)
+  const { data: rawEpisodeRows = [] } = useQuery<RawEpisodeListRow>(
+    `SELECT e.id, e.work_id, e.title, e.status, e.word_count,
+            e.sort_order, e.parent_id, e.created_at, e.updated_at,
+            w.encrypted_dek AS encrypted_dek
+     FROM episode e
+     LEFT JOIN work w ON w.id = e.work_id
+     WHERE e.work_id = ?
+     ORDER BY e.created_at ASC`,
+    [workId],
+  );
+  const { data: decryptedEpisodes } = useDecryptedEpisodeList(rawEpisodeRows);
+
+  const episodeById = useMemo(() => {
+    const m = new Map<string, { title: string; sort_order: number | null; parent_id: string | null }>();
+    for (const e of decryptedEpisodes) m.set(e.id, {
+      title: e.title,
+      sort_order: e.sort_order,
+      parent_id: e.parent_id,
+    });
+    return m;
+  }, [decryptedEpisodes]);
+
   const linkRows: LinkRow[] = useMemo(() => {
     return decryptedLinks.map((l) => {
-      const rawL = rawLinkRows.find((r) => r.id === l.id);
+      const epMeta = l.episode_id ? episodeById.get(l.episode_id) : null;
+      const epParent = epMeta?.parent_id ? episodeById.get(epMeta.parent_id) : null;
       const plotMeta = l.plot_id ? plotById.get(l.plot_id) : null;
-      const parent = plotMeta?.parent_id ? plotById.get(plotMeta.parent_id) : null;
+      const plotParent = plotMeta?.parent_id ? plotById.get(plotMeta.parent_id) : null;
       return {
         id: l.id,
         link_type: l.link_type,
         episode_id: l.episode_id,
         plot_id: l.plot_id,
         context_memo: l.context_memo,
-        episode_title: rawL?.episode_title ?? null,
-        episode_sort: rawL?.episode_sort ?? null,
-        episode_parent_title: rawL?.episode_parent_title ?? null,
+        episode_title: epMeta?.title ?? null,           // 평문 (decrypted)
+        episode_sort: epMeta?.sort_order ?? null,
+        episode_parent_title: epParent?.title ?? null,  // 평문
         plot_title: plotMeta?.title ?? null,
-        plot_parent_title: parent?.title ?? null,
+        plot_parent_title: plotParent?.title ?? null,
       };
     });
-  }, [decryptedLinks, rawLinkRows, plotById]);
+  }, [decryptedLinks, episodeById, plotById]);
 
   const counts = useMemo(() => {
     const c = { plant: 0, resolve: 0, final_resolve: 0 };

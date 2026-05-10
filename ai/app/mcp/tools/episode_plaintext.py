@@ -28,10 +28,22 @@ from app.services.encrypt_resolver import (
     summary_text_fields,
 )
 from app.services.providers import get_llm
+from app.services.text_extractor import extract_numbered_text, extract_plain_text
 from app.services.work_key_resolver import (
     WorkKeyResolverError,
     resolve_episode_plaintext,
 )
+
+
+async def _decrypt_title(work_id, title: str | None) -> str | None:
+    """단일 title 필드 안전 복호화 — ciphertext 면 평문, 아니면 그대로. 실패 시 placeholder."""
+    if not isinstance(title, str) or not title.startswith("v1:"):
+        return title
+    try:
+        result = await decrypt_rows(work_id, [{"title": title}], ["title"])
+        return result[0].get("title", title)
+    except DecryptResolverError:
+        return "(제목 암호화 미해제)"
 
 
 async def list_episodes(
@@ -73,11 +85,9 @@ async def list_episodes(
             t = r.get("title")
             if isinstance(t, str) and t.startswith("v1:"):
                 r["title"] = "(제목 암호화 미해제)"
-    # id 는 LLM 노출 불필요 (sort_order 로 충분)
-    return [
-        {k: v for k, v in r.items() if k != "id"}
-        for r in rows
-    ]
+    # id 노출 — propose_review_issue / propose_episode_update / propose_episode_delete 의
+    # episode_id 인자에 사용. sort_order 만으론 검수/수정 도구가 행을 식별 못 함.
+    return rows
 
 
 async def fetch_episode_plaintext(
@@ -85,7 +95,24 @@ async def fetch_episode_plaintext(
     ctx: WriterContext,
     *,
     sort_order: int,
+    with_line_numbers: bool = False,
 ) -> dict[str, Any]:
+    """회차 본문 평문 fetch.
+
+    Args:
+      sort_order: 회차 순번
+      with_line_numbers: True 면 본문을 ``[N] ...`` 줄 번호 prefix 형태로 반환.
+        검수 (propose_review_issue) 처럼 본문 위치 인용이 필요한 도구가 사용. 기본 False
+        (재작성·인용 등은 깔끔한 평문 유지).
+        반환된 라인 번호는 episode TipTap 의 top-level block 1-based 인덱스와 동일 — 프론트
+        ReviewHighlight 가 같은 인덱스로 데코레이션. propose_review_issue 의 lines 필드는
+        반드시 이 번호와 1:1 매칭.
+
+    Returns:
+      with_line_numbers=False: ``{sort_order, title, content, word_count}``
+      with_line_numbers=True: ``{sort_order, title, content, word_count, lines_format: True}``
+        — content 가 ``[1] ...\\n[2] ...`` 형식
+    """
     r = await session.execute(
         sa_text(
             "SELECT id, title FROM episode "
@@ -98,16 +125,34 @@ async def fetch_episode_plaintext(
         return {"error": "episode_not_found", "sort_order": sort_order}
 
     episode_id, title = row[0], row[1]
+    # title 복호화 — LLM 에 v1: ciphertext 노출 금지
+    plain_title = await _decrypt_title(ctx.work_id, title)
     try:
         content = await resolve_episode_plaintext(str(episode_id), str(ctx.work_id))
     except WorkKeyResolverError as e:
         return {"error": "no_plaintext", "reason": str(e), "sort_order": sort_order}
 
+    if with_line_numbers:
+        # 검수용 — [N] prefix 형식 (block 인덱스 1-based)
+        numbered = extract_numbered_text(content)
+        return {
+            "id": str(episode_id),    # propose_review_issue.episode_id 인자
+            "sort_order": sort_order,
+            "title": plain_title,
+            "content": numbered,
+            "word_count": len(numbered),
+            "lines_format": True,
+        }
+
+    # 기본 경로 — TipTap JSON 구조 제거 후 평문 반환 (재작성·인용용).
+    # raw JSON 노출 시 attrs/type 메타가 토큰의 80% 차지 → 비용 폭주 + LLM 혼란.
+    plain_content = extract_plain_text(content)
     return {
+        "id": str(episode_id),    # propose_episode_update.episode_id 등에 사용
         "sort_order": sort_order,
-        "title": title,
-        "content": content,
-        "word_count": len(content),
+        "title": plain_title,
+        "content": plain_content,
+        "word_count": len(plain_content),
     }
 
 
@@ -138,6 +183,7 @@ async def analyze_episode(
     if "error" in text_result:
         return text_result
     plaintext = text_result["content"]
+    episode_id = text_result.get("id")
 
     # 2) Haiku 분석
     llm = get_llm()
@@ -145,6 +191,7 @@ async def analyze_episode(
     if haiku_model is None:
         # Fake provider — 평문 그대로 반환 (테스트 모드)
         return {
+            "id": episode_id,
             "sort_order": sort_order,
             "title": text_result["title"],
             "task": task,
@@ -169,6 +216,7 @@ async def analyze_episode(
 
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
     return {
+        "id": episode_id,
         "sort_order": sort_order,
         "title": text_result["title"],
         "task": task,
@@ -249,6 +297,8 @@ async def summarize_episode(
         return {"error": "episode_not_found", "sort_order": sort_order}
 
     episode_id, title, ep_updated, es_last_gen = row[0], row[1], row[2], row[3]
+    # title 복호화 — LLM 노출용 (cache hit 과 신규 양쪽 공통)
+    plain_title = await _decrypt_title(ctx.work_id, title)
     cache_hit = (
         es_last_gen is not None
         and ep_updated is not None
@@ -257,8 +307,9 @@ async def summarize_episode(
     )
     if cache_hit:
         cached = {
+            "id": str(episode_id),
             "sort_order": sort_order,
-            "title": title,
+            "title": plain_title,
             "cached": True,
             "generation_count": int(row[4] or 0),
             "oneline_summary": row[5],
@@ -293,7 +344,8 @@ async def summarize_episode(
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
-    user_prompt = f"[회차 {sort_order} — {title}]\n\n{plaintext}"
+    # Haiku 입력에도 평문 title 사용 (v1: 노출 시 무의미한 노이즈 토큰)
+    user_prompt = f"[회차 {sort_order} — {plain_title}]\n\n{plaintext}"
     try:
         result = await llm.generate_json(
             _SUMMARIZE_SYSTEM,
@@ -364,8 +416,9 @@ async def summarize_episode(
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
     # 반환값은 LLM 이 즉시 사용 — 평문 (plain_values) 유지. DB 에는 ciphertext 적재됨.
     return {
+        "id": str(episode_id),
         "sort_order": sort_order,
-        "title": title,
+        "title": plain_title,
         "cached": False,
         "generation_count": (int(row[4] or 0)) + 1,
         "oneline_summary": plain_values["oneline_summary"],

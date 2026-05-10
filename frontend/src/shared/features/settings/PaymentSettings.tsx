@@ -434,7 +434,7 @@ export function PaymentSettings() {
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-foreground">{pkg.label}</div>
                       <div className="text-[11px] text-muted-foreground">
-                        {pkg.amount.toLocaleString()}원 · {pkg.tokenQty.toLocaleString()} 크레딧
+                        {pkg.amount.toLocaleString()}원
                       </div>
                     </div>
                     <Button
