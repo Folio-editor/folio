@@ -2,12 +2,14 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BookOpenText,
   BotMessageSquare,
+  ClipboardCopy,
   ClipboardList,
   Route,
   Globe,
   Home,
   KeyRound,
   Lightbulb,
+  PanelsTopLeft,
   Settings,
   Trash2,
   Users,
@@ -20,6 +22,7 @@ import {
   type RightPanelTab,
 } from '../../types/workspace';
 import { cn } from '../../lib/cn';
+import { Tooltip } from '../ui/Tooltip';
 
 interface ActivityBarProps {
   activity: Activity;
@@ -48,9 +51,11 @@ const ACTIVITY_ICONS: Record<Activity, LucideIcon> = {
 };
 
 /** 우측 패널 퀵 점프 버튼 정의 */
-const QUICK_JUMP_ITEMS: { tab: 'idea' | 'ai'; icon: LucideIcon; label: string }[] = [
+const QUICK_JUMP_ITEMS: { tab: RightPanelTab; icon: LucideIcon; label: string }[] = [
+  { tab: 'docs', icon: PanelsTopLeft, label: '문서 뷰어' },
   { tab: 'idea', icon: Lightbulb, label: '아이디어' },
   { tab: 'ai', icon: BotMessageSquare, label: 'AI 도구' },
+  { tab: 'inbox', icon: ClipboardCopy, label: '작업물' },
 ];
 
 /**
@@ -82,35 +87,39 @@ export function ActivityBar({
     const label = ACTIVITY_LABELS[item];
 
     return (
-      <button
+      <Tooltip
         key={item}
-        type="button"
-        onClick={() => onActivityChange(item)}
-        disabled={isDisabled}
-        title={isDisabled ? '작품을 먼저 선택하세요' : label}
-        aria-label={label}
-        aria-current={isActive ? 'page' : undefined}
-        className={cn(
-          'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
-          isActive && !isDisabled
-            ? 'text-activity-bar-foreground'
-            : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
-          isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
-        )}
+        side="right"
+        content={isDisabled ? '작품을 먼저 선택하세요' : label}
       >
-        {isActive && !isDisabled && (
-          <span
-            aria-hidden
-            className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
-          />
-        )}
-        <Icon size={20} strokeWidth={1.75} />
-      </button>
+        <button
+          type="button"
+          onClick={() => onActivityChange(item)}
+          disabled={isDisabled}
+          aria-label={label}
+          aria-current={isActive ? 'page' : undefined}
+          className={cn(
+            'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+            isActive && !isDisabled
+              ? 'text-activity-bar-foreground'
+              : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
+            isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+          )}
+        >
+          {isActive && !isDisabled && (
+            <span
+              aria-hidden
+              className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+            />
+          )}
+          <Icon size={20} strokeWidth={1.75} />
+        </button>
+      </Tooltip>
     );
   };
 
   const renderQuickJump = (
-    tab: 'idea' | 'ai',
+    tab: RightPanelTab,
     Icon: LucideIcon,
     label: string,
   ) => {
@@ -123,30 +132,30 @@ export function ActivityBar({
         : `${label} 패널 열기`;
 
     return (
-      <button
-        key={`quick-${tab}`}
-        type="button"
-        onClick={() => onRightPanelQuickJump(tab)}
-        disabled={isDisabled}
-        title={title}
-        aria-label={`${label} 퀵 열기`}
-        aria-current={isActive ? 'true' : undefined}
-        className={cn(
-          'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
-          isActive
-            ? 'text-activity-bar-foreground'
-            : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
-          isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
-        )}
-      >
-        {isActive && (
-          <span
-            aria-hidden
-            className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
-          />
-        )}
-        <Icon size={20} strokeWidth={1.75} />
-      </button>
+      <Tooltip key={`quick-${tab}`} side="right" content={title}>
+        <button
+          type="button"
+          onClick={() => onRightPanelQuickJump(tab)}
+          disabled={isDisabled}
+          aria-label={`${label} 퀵 열기`}
+          aria-current={isActive ? 'true' : undefined}
+          className={cn(
+            'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+            isActive
+              ? 'text-activity-bar-foreground'
+              : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
+            isDisabled && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+          )}
+        >
+          {isActive && (
+            <span
+              aria-hidden
+              className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+            />
+          )}
+          <Icon size={20} strokeWidth={1.75} />
+        </button>
+      </Tooltip>
     );
   };
 
@@ -176,26 +185,27 @@ export function ActivityBar({
       {/* 하단: 휴지통 + 설정 */}
       <div className="flex flex-col items-center pb-1">
         {ACTIVITY_ORDER_BOTTOM.map(renderButton)}
-        <button
-          type="button"
-          onClick={onSettingsClick}
-          aria-label="설정"
-          title="설정"
-          className={cn(
-            'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
-            settingsMode
-              ? 'text-activity-bar-foreground'
-              : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
-          )}
-        >
-          {settingsMode && (
-            <span
-              aria-hidden
-              className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
-            />
-          )}
-          <Settings size={20} strokeWidth={1.75} />
-        </button>
+        <Tooltip side="right" content="설정">
+          <button
+            type="button"
+            onClick={onSettingsClick}
+            aria-label="설정"
+            className={cn(
+              'relative flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+              settingsMode
+                ? 'text-activity-bar-foreground'
+                : 'text-muted-foreground hover:bg-activity-bar-accent hover:text-activity-bar-foreground',
+            )}
+          >
+            {settingsMode && (
+              <span
+                aria-hidden
+                className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r bg-primary"
+              />
+            )}
+            <Settings size={20} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
       </div>
     </nav>
   );

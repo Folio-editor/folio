@@ -25,7 +25,8 @@ import {
   type RawEpisodeListRow,
 } from '../../../hooks/useDecryptedEpisode';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
-import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
+import { useSidebarClickHandler, SIDEBAR_ITEM_HINT } from '../../../lib/sidebarClickHandler';
+import { Tooltip } from '../../ui/Tooltip';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
@@ -399,28 +400,28 @@ function EpisodeItem({
             {...dragListeners}
             className="group flex items-center"
           >
-            <button
-              type="button"
-              {...clickHandlers}
-              title="클릭=메인 / 더블·⌘+클릭=핀"
-              className={cn(
-                'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                selected
-                  ? 'bg-secondary font-medium text-primary'
-                  : 'text-sidebar-foreground',
-              )}
-            >
-              <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
-              {episode.status && (
-                <span
-                  className={cn(
-                    'ml-auto h-2 w-2 shrink-0 rounded-full',
-                    STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
-                  )}
-                  title={episode.status}
-                />
-              )}
-            </button>
+            <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+              <button
+                type="button"
+                {...clickHandlers}
+                className={cn(
+                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                  selected
+                    ? 'bg-secondary font-medium text-primary'
+                    : 'text-sidebar-foreground',
+                )}
+              >
+                <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
+                {episode.status && (
+                  <span
+                    className={cn(
+                      'ml-auto h-2 w-2 shrink-0 rounded-full',
+                      STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
+                    )}
+                  />
+                )}
+              </button>
+            </Tooltip>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>

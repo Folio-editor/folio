@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Highlight from '@tiptap/extension-highlight';
+import Highlight from './extensions/CustomHighlight';
 import Typography from '@tiptap/extension-typography';
 import CharacterCount from '@tiptap/extension-character-count';
 import TextAlign from '@tiptap/extension-text-align';
@@ -255,6 +255,20 @@ export function ContentEditor({
     });
     return unsub;
   }, [editor]);
+
+  // 검수 하이라이트 episode 격리 — 본 에디터의 itemId 를 확장 storage 에 동기화.
+  // store.episodeId 와 매칭될 때만 데코가 그려진다. itemId 변경 시 (다른 회차로 이동) 즉시
+  // 리빌드 → 이전 회차의 잔여 하이라이트 사라짐.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const storage = editor.storage.reviewHighlight as
+      | { itemId: string }
+      | undefined;
+    if (storage) {
+      storage.itemId = itemId;
+      editor.commands.triggerReviewHighlightRebuild();
+    }
+  }, [editor, itemId]);
 
   // 보류 중인 디바운스를 즉시 실행 (flush)
   // pendingSaveRef에 캡처된 콜백을 사용하므로 itemId 전환 시에도 올바른 대상에 저장됨

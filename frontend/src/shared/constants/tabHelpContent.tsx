@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react';
-import type { Activity } from '../types/workspace';
+import type { Activity, RightPanelTab } from '../types/workspace';
 import type { HelpStep } from '../components/ui/FloatingHelpCard';
+
+// 도움말 step 본문에서 사용할 수 있는 이미지 헬퍼.
+// 사용 예 (라이트/다크 페어):
+//   import addActLight from '../assets/images/help/plot/add-act.light.png';
+//   import addActDark  from '../assets/images/help/plot/add-act.dark.png';
+//   body: (<><HelpImage light={addActLight} dark={addActDark} alt="..." caption="..." /> ...</>)
+// HelpImage 는 useResolvedTheme 으로 현재 테마에 맞는 이미지를 자동 선택하고, 클릭 시 확대(라이트박스).
+export { HelpImage } from '../components/ui/HelpImage';
 
 interface TabHelp {
   /** 카드 헤더에 표시되는 제목 */
@@ -9,11 +17,11 @@ interface TabHelp {
   steps: HelpStep[];
 }
 
-// ── 인라인 헬퍼 — Folio 모달 공통 토큰 ────────────────────────
+// ── 인라인 헬퍼 — Folio 모달 공통 토큰 (다크모드 호환) ────────────────────────
 function K({ children }: { children: ReactNode }) {
   return (
     <kbd
-      className="inline-flex items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10px] text-[#111] mx-[1px]"
+      className="inline-flex items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10px] text-[#111] mx-[1px] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
       style={{
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         height: '18px',
@@ -25,7 +33,7 @@ function K({ children }: { children: ReactNode }) {
 }
 
 function H({ children }: { children: ReactNode }) {
-  return <strong className="font-semibold text-[#111]">{children}</strong>;
+  return <strong className="font-semibold text-[#111] dark:text-zinc-100">{children}</strong>;
 }
 
 function GuideBox({
@@ -36,12 +44,12 @@ function GuideBox({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-3 rounded-[6px] border border-[#d4d4d4] bg-white px-3.5 py-2.5">
-      <p className="m-0 mb-1.5 flex items-center gap-2 text-[9.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b]">
+    <div className="mt-3 rounded-[6px] border border-[#d4d4d4] bg-white px-3.5 py-2.5 dark:border-zinc-700 dark:bg-zinc-800">
+      <p className="m-0 mb-1.5 flex items-center gap-2 text-[9.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b] dark:text-zinc-400">
         {label}
-        <span aria-hidden className="flex-1 h-px bg-[#e5e5e2]" />
+        <span aria-hidden className="flex-1 h-px bg-[#e5e5e2] dark:bg-zinc-700" />
       </p>
-      <div className="text-[12px] leading-[1.7] text-[#111]">{children}</div>
+      <div className="text-[12px] leading-[1.7] text-[#111] dark:text-zinc-100">{children}</div>
     </div>
   );
 }
@@ -176,17 +184,17 @@ const HELP: Partial<Record<Activity, TabHelp>> = {
     title: '플롯',
     steps: [
       {
-        title: '+ 새 막으로 시작',
+        title: '+ 새 챕터로 시작',
         body: (
           <>
             <p>
-              플롯은 <H>막</H> 아래에 <H>회차</H>를 넣는 구조예요. 먼저 `도입`, `중반`,
+              플롯은 <H>챕터</H> 아래에 <H>회차</H>를 넣는 구조예요. 먼저 `도입`, `중반`,
               `후반`처럼 큰 흐름부터 나눠 보세요.
             </p>
             <GuideBox label="바로 하기">
               <ol className="list-decimal space-y-1 pl-4">
-                <li>`+ 새 막`으로 큰 흐름 만들기</li>
-                <li>각 막 안에 회차 추가하기</li>
+                <li>`+ 새 챕터`로 큰 흐름 만들기</li>
+                <li>각 챕터 안에 회차 추가하기</li>
                 <li>회차마다 한 줄 줄거리 적기</li>
               </ol>
             </GuideBox>
@@ -212,7 +220,7 @@ const HELP: Partial<Record<Activity, TabHelp>> = {
         body: (
           <>
             <p>
-              막과 회차는 모두 <H>드래그</H>로 순서를 바꿀 수 있어요. 회차를 다른 막으로
+              챕터와 회차는 모두 <H>드래그</H>로 순서를 바꿀 수 있어요. 회차를 다른 챕터로
               끌어다 놓으면 소속도 함께 바뀝니다.
             </p>
           </>
@@ -449,12 +457,274 @@ export function hasTabHelp(activity: Activity): boolean {
   return TAB_HELP[activity] !== undefined;
 }
 
+// ── 우측 사이드바 4개 탭별 도움말 ────────────────────────────
+const RIGHT_HELP: Partial<Record<RightPanelTab, TabHelp>> = {
+  docs: {
+    title: '문서 뷰어',
+    steps: [
+      {
+        title: '여러 문서 동시에 띄우기',
+        body: (
+          <>
+            <p>
+              문서 뷰어는 메인 작업과 함께 참고할 문서를 <H>핀</H>으로 띄워두는 공간이에요.
+              인물·세계관·플롯 카드를 옆에 두고 바로 비교할 수 있어요.
+            </p>
+            <GuideBox label="추가하는 법">
+              <ul className="list-disc space-y-1 pl-4">
+                <li>좌측 사이드바 항목을 <H>드래그</H>해서 이쪽으로 끌어다 놓기</li>
+                <li>항목 우클릭 → <H>스테이지에 추가</H></li>
+              </ul>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '순서 바꾸기 / 접기',
+        body: (
+          <>
+            <p>
+              패널 헤더의 <H>그립</H>으로 위아래 순서를 바꾸고, 헤더를 클릭하면 본문을
+              <H> 접고 펼칠</H> 수 있어요. 더 이상 필요 없으면 X 로 닫습니다.
+            </p>
+            <GuideBox label="팁">
+              <p>참고 문서가 너무 많아 답답하면 잠시 접어두세요. 핀은 유지됩니다.</p>
+            </GuideBox>
+          </>
+        ),
+      },
+    ],
+  },
+
+  idea: {
+    title: '아이디어',
+    steps: [
+      {
+        title: '떠오를 때 바로 적기',
+        body: (
+          <>
+            <p>
+              아이디어 탭은 <H>휘발되는 생각을 잡아두는 공간</H>이에요. 입력란에 한 줄 적고
+              <K>Enter</K> 만 누르면 카드로 저장됩니다.
+            </p>
+            <GuideBox label="태그로 분류">
+              <p>
+                상단의 <H>태그 칩</H>을 누르면 같은 태그의 아이디어만 모아 볼 수 있어요.
+                태그를 누른 상태에서 작성하면 새 카드도 같은 태그로 저장됩니다.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '정리·삭제',
+        body: (
+          <>
+            <p>
+              카드에 마우스를 올리면 우상단에 <H>휴지통</H>이 나타나요. <H>우클릭</H>으로
+              위/아래로 이동하거나 삭제할 수 있어요.
+            </p>
+            <GuideBox label="정렬">
+              <p>
+                상단의 정렬 아이콘으로 가나다·생성순·최근 변경순으로 보기를 바꿀 수 있어요.
+                기본 정렬에서는 우클릭 → <H>위로/아래로 이동</H>으로 순서를 직접 조정합니다.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+    ],
+  },
+
+  ai: {
+    title: 'AI 도구',
+    steps: [
+      {
+        title: '메뉴 — 4가지 도구 한눈에',
+        body: (
+          <>
+            <p>
+              AI 탭은 <H>도구 메뉴</H>의 4개 카드로 시작합니다. 목적에 맞는 카드를 누르면
+              해당 도구 화면으로 들어가요.
+            </p>
+            <GuideBox label="4가지 도구">
+              <ul className="list-disc space-y-1.5 pl-4">
+                <li><H>문서 생성</H> — 자유 프롬프트로 회차 초안·인물·세계관·플롯 등 새 문서를 작성</li>
+                <li><H>원고 검수</H> — 단일 회차의 인물·복선·시간선·설정 충돌·맞춤법을 종합 점검</li>
+                <li><H>맞춤법 검사</H> — 회차 전체 또는 본문에서 드래그 선택한 영역만 빠르게 검사</li>
+                <li><H>회차 요약 생성</H> — 한 줄 요약·등장인물·핵심 사건 등 12개 항목 자동 추출</li>
+              </ul>
+            </GuideBox>
+            <GuideBox label="공통 흐름">
+              <p>
+                AI 결과는 본문에 자동 반영되지 않고 <H>작업물 탭</H>의 카드로 쌓입니다.
+                <H> [적용]/[거절]</H> 으로 직접 결정하세요.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '문서 생성 — 자유 프롬프트',
+        body: (
+          <>
+            <p>
+              만들고 싶은 문서를 자연어로 적으면 AI 가 종류를 자동 분류해 회차 본문·인물
+              카드·세계관 노트·플롯 트리 중 적절한 형태로 생성합니다.
+            </p>
+            <GuideBox label="잘 적는 법">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>대상</H> 명시 — "다음 화", "새 인물", "세계관 노트"</li>
+                <li><H>맥락</H> 포함 — 등장인물, 시간/장소, 분위기, 분량</li>
+                <li><H>참고 자료</H> 칸에 회차 범위·문서명을 적으면 AI 가 자동으로 찾아 참고</li>
+              </ul>
+            </GuideBox>
+            <GuideBox label="결과 확인">
+              <p>
+                생성 시작 후 스트리밍으로 작성됩니다. 완료되면 작업물 탭에서 카드로 확인 →
+                <H> 적용</H> 시 해당 위치에 새 문서가 만들어집니다.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '원고 검수 — 종합 점검',
+        body: (
+          <>
+            <p>
+              좌측 사이드바에서 회차를 선택하면 자동으로 <H>검수 대상</H>으로 등록돼요.
+              필요하면 상단 박스에서 다른 회차로 교체할 수 있습니다.
+            </p>
+            <GuideBox label="중점 사항(선택)">
+              <p>
+                특정 부분에만 집중시키고 싶다면 자유롭게 적어주세요. 비워두면
+                <H> 일반 검수</H> (인물·복선·시간선·설정 충돌·맞춤법 모두) 가 진행됩니다.
+              </p>
+            </GuideBox>
+            <GuideBox label="결과 보기">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>점수</H> — 100점 만점, 80↑ 양호 · 50↑ 보통 · 미만 주의</li>
+                <li><H>이슈 목록</H> — 위치/근거/제안. 본문에 형광펜으로 자동 표시</li>
+                <li>각 이슈는 <H> [적용]/[거절]</H> 로 개별 처리</li>
+                <li>이전 검수는 <H>검수 기록</H> 에서 다시 열어볼 수 있어요 (최근 10건)</li>
+              </ul>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '맞춤법 검사 — 빠른 검토',
+        body: (
+          <>
+            <p>
+              회차 전체 또는 일부분만 빠르게 맞춤법·띄어쓰기를 검사합니다. 의미 검수가 아닌
+              <H> 표기 위주</H> 의 가벼운 점검이에요.
+            </p>
+            <GuideBox label="두 가지 모드">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>회차 전체</H> — 등록된 회차의 본문 전부 검사</li>
+                <li><H>선택 영역만</H> — 본문에서 텍스트를 드래그 선택한 뒤 누르면 그 부분만 검사 (긴 회차에서 부분만 보고 싶을 때)</li>
+              </ul>
+            </GuideBox>
+            <GuideBox label="결과 처리">
+              <p>
+                발견된 표기 이슈가 카드로 표시되고, 각 항목을 개별
+                <H> 적용/거절</H> 할 수 있어요. 일괄 적용도 지원합니다.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '회차 요약 생성 — 12 항목 추출',
+        body: (
+          <>
+            <p>
+              회차 본문에서 한 줄 요약·등장인물·핵심 사건·복선·정서 등
+              <H> 12개 항목</H>을 자동 추출합니다. 다음 화 작성이나 다른 AI 도구의 컨텍스트로
+              유용하게 쓸 수 있어요.
+            </p>
+            <GuideBox label="캐시로 무료 재호출">
+              <p>
+                이미 요약된 회차의 본문이 변경되지 않았다면 <H>크레딧 0회</H> 로 캐시에서 즉시
+                반환됩니다. 동일 회차를 여러 번 열어봐도 안전해요.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '채팅 모드 — 복합 작업',
+        body: (
+          <>
+            <p>
+              헤더 우측 <H>채팅</H> 스위치를 켜면 자유 대화로 Folio 에게 여러 작업을 한 번에
+              요청할 수 있어요. (예: "5화 초안 작성하고, 새 인물 카드도 같이 만들어줘")
+            </p>
+            <GuideBox label="크레딧 사용">
+              <p>
+                모든 AI 응답은 크레딧을 소모합니다. 잔량과 사용량은
+                <H> 설정 → 결제</H> 에서 확인할 수 있어요.
+              </p>
+            </GuideBox>
+          </>
+        ),
+      },
+    ],
+  },
+
+  inbox: {
+    title: '작업물',
+    steps: [
+      {
+        title: 'AI 결과는 여기로',
+        body: (
+          <>
+            <p>
+              AI 가 만든 초안·검수 의견·맞춤법 수정·요약 등은 모두 <H>작업물 탭</H>의 카드로
+              들어와요. 본문은 자동 변경되지 않습니다.
+            </p>
+            <GuideBox label="기본 동작">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>적용</H> — 본문에 반영</li>
+                <li><H>거절</H> — 카드 닫기</li>
+              </ul>
+            </GuideBox>
+          </>
+        ),
+      },
+      {
+        title: '비워두지 말기',
+        body: (
+          <>
+            <p>
+              쌓인 작업물 카드가 많아지면 정작 필요한 것을 놓치기 쉬워요. 적용·거절을 그때그때
+              결정해서 <H>큐를 비워두는 습관</H>이 좋아요.
+            </p>
+          </>
+        ),
+      },
+    ],
+  },
+};
+
+export const RIGHT_TAB_HELP: Partial<Record<RightPanelTab, TabHelp>> = RIGHT_HELP;
+
+/** 해당 우측 탭의 도움말이 정의돼 있는지 */
+export function hasRightTabHelp(tab: RightPanelTab): boolean {
+  return RIGHT_TAB_HELP[tab] !== undefined;
+}
+
 /**
- * 모든 탭 도움말의 "1회 자동 노출" 플래그(localStorage)를 삭제.
+ * 모든 탭 도움말(좌측 활동 + 우측 사이드바)의 "1회 자동 노출" 플래그(localStorage)를 삭제.
  * 튜토리얼 가이드 다시 시작 시 호출 — 다음 진입한 탭부터 도움말이 다시 자동으로 1회 뜨도록 함.
  */
 export function resetTabHelpShownFlags(): void {
   for (const activity of Object.keys(TAB_HELP) as Activity[]) {
     localStorage.removeItem(`folio.tabHelp.${activity}.shown`);
+  }
+  for (const tab of Object.keys(RIGHT_TAB_HELP) as RightPanelTab[]) {
+    localStorage.removeItem(`folio.rightTabHelp.${tab}.shown`);
   }
 }

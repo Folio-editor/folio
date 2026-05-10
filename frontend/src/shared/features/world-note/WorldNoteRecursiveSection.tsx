@@ -291,19 +291,26 @@ function NodeBody({
             </div>
           )}
 
-          {/* root 전용: 본문 하단 "+ 하위 문서 추가" 버튼 — 헤더에 행을 노출하지 않으므로 분명한 진입점 제공 */}
-          {isRoot && !creatingChild && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setCreatingChild(true);
-              }}
-              className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Plus size={12} strokeWidth={1.75} />
-              하위 문서 추가
-            </button>
+          {/* root 전용: 본문 하단 "하위 문서" 섹션 헤더 + 우측 "+ 추가" — 캐릭터 문서 패턴 통일 */}
+          {isRoot && (
+            <div className="mt-3 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                하위 문서
+              </h3>
+              {!creatingChild && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCreatingChild(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Plus size={12} strokeWidth={1.75} />
+                  추가
+                </button>
+              )}
+            </div>
           )}
 
           {/* 인라인 자식 추가 input */}

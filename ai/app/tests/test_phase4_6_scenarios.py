@@ -198,9 +198,10 @@ def test_scenario_4_query_episodes_decrypts_chunks_for_haiku(monkeypatch):
     monkeypatch.setattr(esrch, "get_embedder",
                         lambda: SimpleNamespace(embed_batch=AsyncMock(return_value=[[0.5] * 1536])))
 
+    # SELECT 순서 (4 cols): ep.id, ep.sort_order, ec.content, similarity
     fake_rows = [
-        ("v1:CT_앤이 일기를 발견했다.", 1, 0.92),
-        ("v1:CT_마릴라가 침묵했다.", 1, 0.87),
+        ("ep-uuid-1", 1, "v1:CT_앤이 일기를 발견했다.", 0.92),
+        ("ep-uuid-1", 1, "v1:CT_마릴라가 침묵했다.", 0.87),
     ]
     class FakeResult:
         def fetchall(self): return fake_rows
@@ -368,11 +369,13 @@ def test_scenario_6_search_summaries_finds_inflected_form(monkeypatch):
     """검색어 '발견' 으로 본문 '발견했다' 가진 회차 매칭 (Option A 의 강점)."""
     from app.mcp.tools import episode_summary as es_mod
 
+    # SELECT 순서 (12 cols): ep.id, sort_order, ep.title, oneline_summary,
+    #   pov, tone, present_chars, cliffhanger, summary, present_locs, key_events, keywords
     rows = [
-        (1, "v1:CT_앤이 발견", "앤", "충격", ["앤"], "v1:CT_침묵",
+        ("ep-uuid-1", 1, "v1:CT_1화", "v1:CT_앤이 발견", "앤", "충격", ["앤"], "v1:CT_침묵",
          "v1:CT_앤이 다락방에서 어머니의 일기를 발견했다.",
          ["다락방"], [{"order":1,"event":"발견"}], ["편지"]),
-        (2, "v1:CT_평범 일상", "앤", "평온", ["앤"], None,
+        ("ep-uuid-2", 2, "v1:CT_2화", "v1:CT_평범 일상", "앤", "평온", ["앤"], None,
          "v1:CT_앤이 학교에 갔다.",
          ["학교"], [{"order":1,"event":"등교"}], ["일상"]),
     ]

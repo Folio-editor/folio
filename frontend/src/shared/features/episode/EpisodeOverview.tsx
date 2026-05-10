@@ -13,7 +13,6 @@ import {
 import { Button } from '../../components/ui/Button';
 import { ViewToggle } from '../../components/ui/ViewToggle';
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
-import { ExportButton } from '../workspace/ExportButton';
 import { cn } from '../../lib/cn';
 import { parseServerDate } from '../../lib/dateTime';
 import { contentToHtml } from '../../lib/tiptapPreview';
@@ -123,7 +122,6 @@ export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
               </span>
             )}
             <ViewToggle mode={viewMode} onChange={setViewMode} />
-            <ExportButton workId={workId} />
             <Button size="sm" onClick={() => void handleNew()}>
               <Plus className="h-4 w-4" />새 원고
             </Button>

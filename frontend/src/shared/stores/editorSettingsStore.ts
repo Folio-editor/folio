@@ -45,7 +45,7 @@ const DEFAULTS: EditorSettings = {
   autoIndent: true,
   indentSize: '1em',
   nameTagEnabled: true,
-  showLineNumbers: false,
+  showLineNumbers: true,
   showParagraphMarks: false,
   typewriterMode: false,
   typewriterPosition: 50,

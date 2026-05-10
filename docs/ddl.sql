@@ -362,7 +362,14 @@ CREATE TABLE extraction_suggestion (
     work_id             UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
     episode_id          UUID REFERENCES episode(id) ON DELETE SET NULL,
     entity_type         VARCHAR(30) NOT NULL
-        CHECK (entity_type IN ('character','world_note','term')),
+        CHECK (entity_type IN (
+            'character','world_note','term',
+            'character_update','character_delete',
+            'world_note_update','world_note_delete',
+            'plot_create','plot_tree','plot_revision','plot_delete',
+            'episode_draft','episode_update','episode_delete',
+            'review_issue','spelling_fix'
+        )),
     suggested_name      VARCHAR(200) NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
     status              VARCHAR(20) NOT NULL DEFAULT 'pending'

@@ -47,14 +47,14 @@ async def track_foreshadow(
     """
     sql = (
         "WITH planted AS ("
-        "  SELECT ep.sort_order AS planted_sort, fp.value->>'name' AS name, "
-        "         fp.value->>'description' AS description "
+        "  SELECT ep.id AS episode_id, ep.sort_order AS planted_sort, "
+        "         fp.value->>'name' AS name, fp.value->>'description' AS description "
         "  FROM episode_summary es "
         "  JOIN episode ep ON ep.id = es.episode_id "
         "  CROSS JOIN LATERAL jsonb_array_elements(coalesce(es.foreshadow_planted,'[]'::jsonb)) fp "
         "  WHERE es.work_id = :wid AND es.writer_id = :wr "
         "), paid AS ("
-        "  SELECT ep.sort_order AS paid_sort, "
+        "  SELECT ep.id AS episode_id, ep.sort_order AS paid_sort, "
         "         CASE WHEN jsonb_typeof(fo.value)='string' THEN fo.value#>>'{}' "
         "              ELSE fo.value->>'name' END AS name "
         "  FROM episode_summary es "
@@ -62,9 +62,13 @@ async def track_foreshadow(
         "  CROSS JOIN LATERAL jsonb_array_elements(coalesce(es.foreshadow_paid_off,'[]'::jsonb)) fo "
         "  WHERE es.work_id = :wid AND es.writer_id = :wr "
         ") "
-        "SELECT planted.planted_sort, planted.name, planted.description, "
+        "SELECT planted.episode_id AS planted_episode_id, "
+        "       planted.planted_sort, planted.name, planted.description, "
         "       (SELECT min(paid_sort) FROM paid WHERE paid.name = planted.name "
-        "         AND paid.paid_sort >= planted.planted_sort) AS paid_off_sort "
+        "         AND paid.paid_sort >= planted.planted_sort) AS paid_off_sort, "
+        "       (SELECT episode_id FROM paid WHERE paid.name = planted.name "
+        "         AND paid.paid_sort >= planted.planted_sort "
+        "         ORDER BY paid_sort ASC LIMIT 1) AS paid_off_episode_id "
         "FROM planted "
         + ("WHERE planted.name = :name " if name else "")
         + "ORDER BY planted.planted_sort ASC"
@@ -75,11 +79,13 @@ async def track_foreshadow(
     r = await session.execute(sa_text(sql), params)
     return [
         {
-            "planted_sort": row[0],
-            "name": row[1],
-            "description": row[2],
-            "paid_off_sort": row[3],
-            "is_resolved": row[3] is not None,
+            "planted_episode_id": str(row[0]) if row[0] else None,
+            "planted_sort": row[1],
+            "name": row[2],
+            "description": row[3],
+            "paid_off_sort": row[4],
+            "paid_off_episode_id": str(row[5]) if row[5] else None,
+            "is_resolved": row[4] is not None,
         }
         for row in r.fetchall()
     ]
@@ -112,7 +118,7 @@ async def character_arc(
         params["e"] = end_sort
 
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.tone, "
+        "SELECT ep.id, ep.sort_order, es.oneline_summary, es.tone, "
         "       (es.pov_character = :name) AS is_pov, es.key_events, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
@@ -122,12 +128,13 @@ async def character_arc(
     r = await session.execute(sa_text(sql), params)
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "tone": row[2],
-            "is_pov": bool(row[3]),
-            "key_events": row[4],
-            "cliffhanger": row[5],
+            "episode_id": str(row[0]),
+            "sort_order": row[1],
+            "oneline_summary": row[2],
+            "tone": row[3],
+            "is_pov": bool(row[4]),
+            "key_events": row[5],
+            "cliffhanger": row[6],
         }
         for row in r.fetchall()
     ]
@@ -153,7 +160,7 @@ async def timeline_scan(
         params["e"] = end_sort
 
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.time_progression, es.cliffhanger "
+        "SELECT ep.id, ep.sort_order, es.oneline_summary, es.time_progression, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
         f"WHERE {' AND '.join(where)} "
@@ -162,10 +169,11 @@ async def timeline_scan(
     r = await session.execute(sa_text(sql), params)
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "time_progression": row[2],
-            "cliffhanger": row[3],
+            "episode_id": str(row[0]),
+            "sort_order": row[1],
+            "oneline_summary": row[2],
+            "time_progression": row[3],
+            "cliffhanger": row[4],
         }
         for row in r.fetchall()
     ]

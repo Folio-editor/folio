@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BookOpen, FileText, Globe2, Sparkles, X } from 'lucide-react';
+import { BookOpen, FileText, Globe2, Lightbulb, Sparkles, X } from 'lucide-react';
 import { PLAN_TEMPLATES, type PlanTemplate } from './planTemplates';
 
 interface PlanTemplatePickerModalProps {
@@ -96,5 +96,7 @@ function TemplateIcon({ iconKey }: { iconKey: PlanTemplate['iconKey'] }) {
       return <BookOpen {...props} />;
     case 'globe':
       return <Globe2 {...props} />;
+    case 'lightbulb':
+      return <Lightbulb {...props} />;
   }
 }

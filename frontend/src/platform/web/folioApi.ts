@@ -269,6 +269,16 @@ export function createWebFolioApi(): FolioApi {
       isMaximized: async () => false,
       onMaximizeChanged: () => () => {},
       platform: 'web',
+      openExternal: async (url: string) => {
+        // http/https 만 허용 — javascript:/data: 등 차단
+        try {
+          const u = new URL(url);
+          if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+          window.open(u.toString(), '_blank', 'noopener,noreferrer');
+        } catch {
+          /* ignore */
+        }
+      },
     },
     spellcheck: {
       // 웹은 OS spellchecker 사전 동기화 불가 — no-op (브라우저 native spellcheck로 fallback)
