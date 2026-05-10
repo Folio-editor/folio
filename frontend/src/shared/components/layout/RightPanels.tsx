@@ -26,11 +26,15 @@ import {
   History,
   Info,
   Lightbulb,
+  ListChecks,
   Loader2,
   OctagonAlert,
+  PenSquare,
+  ScrollText,
   Search,
+  SearchCheck,
   Send,
-  Sparkles,
+  SpellCheck,
   Square,
   Trash2,
   X,
@@ -56,6 +60,13 @@ import { analytics, charCountBucket, durationBucket } from '../../lib/analytics'
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useAgentChatStore } from '../../stores/agentChatStore';
 import { AgentChatPanel } from '../../features/agent/AgentChatPanel';
+import { ChatMarkdown } from '../../features/agent/ChatMarkdown';
+import {
+  entityLabel,
+  useDecryptedSuggestion,
+} from '../../features/agent/suggestionPreview';
+import { toolLabel } from '../../features/agent/toolLabels';
+import type { AgentSuggestion } from '../../api/agent';
 import { SuggestionInbox } from '../../features/agent/SuggestionInbox';
 import { useAuthStore } from '../../stores/authStore';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
@@ -67,14 +78,6 @@ import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 const INSUFFICIENT_CREDITS_PREFIX = '__INSUFFICIENT_CREDITS__:';
 const INSUFFICIENT_CREDITS_MESSAGE =
   '크레딧이 부족합니다. 설정 → 결제에서 충전 후 다시 시도해주세요.';
-
-const REVIEW_PROGRESS_STAGES: ProgressStage[] = [
-  { at: 0, message: '원고를 분석하고 있어요...' },
-  { at: 5000, message: '설정집과 대조하는 중...' },
-  { at: 15000, message: '이전 회차 맥락을 확인하는 중...' },
-  { at: 30000, message: '이슈를 정리하는 중...' },
-  { at: 45000, message: '거의 다 됐어요...' },
-];
 
 function describeAiError(err: unknown, fallback: string): string {
   if (err instanceof ApiError && err.status === 402) {
@@ -1012,14 +1015,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   const setPinnedEpisodeId = useAiSessionStore((s) => s.setPinnedEpisodeId);
   const clearPinnedEpisodeId = useAiSessionStore((s) => s.clearPinnedEpisodeId);
 
-  // 자동 등록: pin이 비어있고 메인 탭이 episode이며 같은 원고를 X로 해제한 게
-  // 아니면 현재 메인 탭의 원고를 자동으로 등록한다. 메인 탭 변경으로
-  // mainItemId가 바뀌어도 pin이 이미 있으면 자동 변경하지 않는다.
+  // 자동 등록 + 자동 전환: 사용자가 좌측 사이드바에서 원고를 선택하면(=mainItemId 변경)
+  // 카드의 검수/맞춤법/요약 대상 원고도 부드럽게 따라간다. X 버튼으로 직전에 해제한
+  // 원고에 그대로 머무는 경우만 자동 재pin 차단(사용자 명시 의지 존중).
   useEffect(() => {
     if (!isEpisode || !mainItemId) return;
-    if (pinnedEpisodeId) return;
-    if (mainItemId === unpinnedFromEpisodeId) return;
-    setPinnedEpisodeId(mainItemId);
+    if (mainItemId === pinnedEpisodeId) return;          // 이미 동기화됨
+    if (mainItemId === unpinnedFromEpisodeId) return;    // 직전에 X 로 해제한 그 원고 — 자동 재pin 차단
+    setPinnedEpisodeId(mainItemId);                      // 사이드바 선택 → 즉시 카드 대상 전환
   }, [isEpisode, mainItemId, pinnedEpisodeId, unpinnedFromEpisodeId, setPinnedEpisodeId]);
 
   // 쿼리 대상 = pin된 episode (없으면 빈 결과)
@@ -1083,150 +1086,62 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
 
   const refreshWalletAfterUsage = useWalletStore((s) => s.refreshAfterUsage);
 
-  const handleGenerate = useCallback(async () => {
-    if (!storyline.trim() || !pinnedEpisode) return;
-    if (isStreaming) return;
-    // PR5 — 페이로드가 아직 조립 중이면 호출 보류 (KEK/work_key 복호화 대기).
-    if (aiContextLoading || !aiContextPayload) {
-      toast.error('AI 컨텍스트 준비 중', {
-        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
-      });
-      return;
-    }
-    // 복호화 실패 잔재(v1:)가 페이로드에 남아 있으면 호출 자체를 차단한다.
-    // LLM이 못 읽는 데이터를 보내고 토큰만 태우는 사고 방지.
-    if (aiContextHasUndecrypted) {
-      toast.error('암호화된 자료를 복호화하지 못했어요', {
-        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
-      });
-      return;
-    }
-    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
-      id: pinnedEpisode.id,
-      workId: pinnedEpisode.work_id,
-      title: pinnedEpisode.title,
-      sortOrder: pinnedEpisode.sort_order,
-    };
+  // Phase 7: handleGenerate (legacy /ai/drafts SSE streaming → 본문 직접 적용) 제거됨.
+  // 모든 생성형 작업은 CreateInputScreen → agent thread (auto) 흐름으로 통합되었으며,
+  // 결과는 extraction_suggestion 큐로 적재 후 사용자가 [적용]/[거절] 결정.
 
-    startGeneration(episode);
-
-    const controller = await apiClient.streamSSE(
-      '/ai/drafts',
-      {
-        workId: episode.workId,
-        episodeId: episode.id,
-        storyline: storyline.trim(),
-        currentEpisodeNum: episode.sortOrder + 1,
-        model,
-        userPrompt: userPrompt.trim() || null,
-        context: aiContextPayload,
-      },
-      (data: unknown) => {
-        const d = data as { type?: string; content?: string };
-        if (d.type === 'done') {
-          finishGeneration();
-          return true;
-        }
-        if (d.type === 'chunk' && d.content) {
-          appendChunk(d.content);
-        }
-      },
-      () => {
-        // SSE 정상 종료 (early-done 또는 stream end) — 차감 반영 위한 즉시+지연 refresh
-        finishGeneration();
-        refreshWalletAfterUsage();
-      },
-      (err) => failGeneration(describeAiError(err, 'AI 서버 오류가 발생했습니다.')),
-    );
-    setAbort(controller);
-  }, [pinnedEpisode, storyline, userPrompt, model, isStreaming, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startGeneration, appendChunk, finishGeneration, failGeneration, setAbort, refreshWalletAfterUsage]);
-
-  const handleStop = () => stopGeneration();
-
-  const startReview = useAiSessionStore((s) => s.startReview);
-  const finishReview = useAiSessionStore((s) => s.finishReview);
-  const failReview = useAiSessionStore((s) => s.failReview);
+  // Phase 7: legacy review state actions 제거됨.
+  // 검수는 handleReview 가 agent thread (consistency_check) 호출 + create-streaming 결과 표시.
   const startSpellcheck = useAiSessionStore((s) => s.startSpellcheck);
   const finishSpellcheck = useAiSessionStore((s) => s.finishSpellcheck);
   const failSpellcheck = useAiSessionStore((s) => s.failSpellcheck);
 
+  // 원고 검수 — agent thread (consistency_check) 1회 실행. 좌측 사이드바에서 선택한 단일 회차
+  // (pinnedEpisode) + focus prompt 자동 조립. 맞춤법/요약 카드와 동일한 진입 패턴 (UI 통일성).
+  // 결과는 propose_review_issue + spelling_batch 큐로 적재 → create-streaming 화면이 인라인 검토.
+  const reviewFocusPrompt = useAiSessionStore((s) => s.reviewFocusPrompt);
+  const startCreateAction = useAiSessionStore((s) => s.startCreate);
+  const failCreateAction = useAiSessionStore((s) => s.failCreate);
+
   const handleReview = useCallback(async () => {
-    if (!pinnedEpisode) return;
-    // 평문 본문이 준비된 상태(plain or decrypted)에서만 검수 가능.
-    // 'no-kek' / 'no-work-key' / 'failed' / loading 상태에서는 LLM에 보낼 평문이 없다.
-    if (!decryptedContent || (decryptStatus !== 'plain' && decryptStatus !== 'decrypted')) {
-      toast.error('본문을 불러오지 못했습니다', {
-        description: decryptStatus === 'no-kek'
-          ? '암호화 키 정보가 없어 본문을 복호화할 수 없습니다. 다시 로그인 후 시도해주세요.'
-          : '본문 복호화가 끝난 뒤 다시 시도해주세요.',
-      });
-      return;
-    }
-    // PR5 — RAG 페이로드도 평문으로 준비된 상태여야 한다.
-    if (aiContextLoading || !aiContextPayload) {
-      toast.error('AI 컨텍스트 준비 중', {
-        description: '본문 복호화가 끝난 뒤 다시 시도해주세요.',
-      });
-      return;
-    }
-    if (aiContextHasUndecrypted) {
-      toast.error('암호화된 자료를 복호화하지 못했어요', {
-        description: '다시 로그인하거나 작품을 다시 불러온 뒤 시도해주세요. (KEK 복원 실패)',
-      });
-      return;
-    }
+    if (!selectedWorkId || !pinnedEpisode) return;
+    // 검수 prompt 자동 조립 — 단일 회차 + 중점 사항.
+    const targetLabel = `${pinnedEpisode.sort_order + 1}화`;
+    const focusBlock = reviewFocusPrompt.trim()
+      ? `\n중점 사항: ${reviewFocusPrompt.trim()}`
+      : '';
+    const fullPrompt =
+      `[검수 대상] ${targetLabel}\n` +
+      `해당 회차의 본문/요약을 살펴 의미 모순(인물·복선·시간선·설정)과 맞춤법 오류를 함께 점검해줘.${focusBlock}`;
 
-    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
-      id: pinnedEpisode.id,
-      workId: pinnedEpisode.work_id,
-      title: pinnedEpisode.title,
-      sortOrder: pinnedEpisode.sort_order,
-    };
-
-    startReview(episode);
-    const startedAt = Date.now();
     void analytics.track('ai_review_requested', {
       doc_type: 'episode',
-      char_count_bucket: charCountBucket(decryptedContent.length),
+      char_count_bucket: charCountBucket(1000),
     });
 
     try {
-      const data = await apiClient.post<import('../../stores/aiSessionStore').ReviewResult>('/ai/reviews', {
-        workId: episode.workId,
-        episodeId: episode.id,
-        content: decryptedContent,
-        episodeNumber: episode.sortOrder + 1,
-        context: aiContextPayload,
-      });
-      const reviewResult = data ?? { issues: [], summary: '검수가 완료되었습니다.', score: 100 };
-      finishReview(reviewResult);
-      void analytics.track('ai_review_succeeded', {
-        doc_type: 'episode',
-        duration_bucket: durationBucket(Date.now() - startedAt),
-      });
-      refreshWalletAfterUsage();
-      const issueCount = reviewResult.issues.length;
-      toast.success(
-        issueCount === 0
-          ? '검수 완료 — 발견된 이슈가 없어요'
-          : `검수 완료 — 이슈 ${issueCount}건 발견`,
-        { description: `점수 ${reviewResult.score}/100` },
+      const r = await (await import('../../api/agent')).createAgentThread(
+        selectedWorkId,
+        'consistency_check',
       );
-    } catch (err) {
-      const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
-      failReview(message);
+      const tid = r?.thread_id;
+      if (!tid) throw new Error('thread_id 누락');
+      // create-streaming 화면이 takePendingFirstPrompt 로 SSE 시작 — 같은 인프라 재사용.
+      startCreateAction(tid);
+      setPendingFirstPrompt(tid, fullPrompt);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failCreateAction(`검수 시작 실패: ${msg}`);
+      const display = msg.startsWith(INSUFFICIENT_CREDITS_PREFIX)
+        ? msg.slice(INSUFFICIENT_CREDITS_PREFIX.length)
+        : msg;
+      toast.error('검수 시작 실패', { description: display });
       void analytics.track('ai_review_failed', {
         doc_type: 'episode',
-        reason_code: err instanceof ApiError ? String(err.status) : 'unknown',
+        reason_code: e instanceof ApiError ? String(e.status) : 'unknown',
       });
-      // 부분 차감 가능성 — 실패해도 잔액 갱신
-      refreshWalletAfterUsage();
-      const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
-        ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
-        : message;
-      toast.error('검수 실패', { description: display });
     }
-  }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startReview, finishReview, failReview, refreshWalletAfterUsage]);
+  }, [selectedWorkId, pinnedEpisode, reviewFocusPrompt, startCreateAction, failCreateAction]);
 
   const handleSpellcheck = useCallback(async (mode: 'episode' | 'selection' = 'episode') => {
     if (!pinnedEpisode) return;
@@ -1289,7 +1204,15 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     startSpellcheck(episode, selectionRange);
 
     try {
-      const data = await apiClient.post<import('../../stores/aiSessionStore').SpellcheckResult>('/ai/spellcheck', {
+      // 카드 모드 = 큐 적재 통합 endpoint (/ai/quick/spellcheck) — issues + suggestion_id 반환.
+      // suggestion_id 가 있으면 SuggestionInbox / 카드 인라인 표시에서 [적용]/[거절] 가능.
+      // 응답 필드는 기존 SpellcheckResult 와 호환 (issues, summary, usage). suggestion_id 는 부가.
+      const data = await apiClient.post<
+        import('../../stores/aiSessionStore').SpellcheckResult & {
+          suggestion_id?: string | null;
+          suggestion_error?: string;
+        }
+      >('/ai/quick/spellcheck', {
         workId: episode.workId,
         episodeId: episode.id,
         content: contentToSend,
@@ -1298,6 +1221,16 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
       const spellcheckResult = data ?? { issues: [], summary: '맞춤법 검사가 완료되었습니다.' };
       finishSpellcheck(spellcheckResult);
       refreshWalletAfterUsage();
+      // 큐 적재 알림 — 0건이면 무관, 적재 실패 시 inline UI 만 사용.
+      if (data?.suggestion_id) {
+        toast.success(`맞춤법 ${spellcheckResult.issues.length}건 발견`, {
+          description: '작업물 탭의 [작업 보관함] 에서 묶음 적용도 가능합니다.',
+        });
+      } else if (data?.suggestion_error) {
+        toast.warning('큐 적재 실패 — 인라인 적용은 정상 동작', {
+          description: data.suggestion_error,
+        });
+      }
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSpellcheck(message);
@@ -1309,74 +1242,50 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     }
   }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startSpellcheck, finishSpellcheck, failSpellcheck, refreshWalletAfterUsage]);
 
-  // 히스토리 뷰: 과거 생성 결과 열람
-  if (screen === 'history-view') {
-    return (
-      <DraftViewScreen
-        result={draftResult}
-        state={draftState}
-        error={draftError}
-        targetEpisode={targetEpisode}
-        isHistoryView
-        onStop={handleStop}
-        onBack={() => setScreen('draft-input')}
-      />
-    );
-  }
+  // 회차 요약 생성 — Sonnet 우회, AI 측이 본문 직접 fetch (decrypt 검사 불필요).
+  const startSummarize = useAiSessionStore((s) => s.startSummarize);
+  const finishSummarize = useAiSessionStore((s) => s.finishSummarize);
+  const failSummarize = useAiSessionStore((s) => s.failSummarize);
 
-  // 생성 뷰: 스트리밍/완료/에러 상태에서 항상 표시 (메인 화면 이동과 무관)
-  if (screen === 'draft-view') {
-    return (
-      <DraftViewScreen
-        result={draftResult}
-        state={draftState}
-        error={draftError}
-        targetEpisode={targetEpisode}
-        onStop={handleStop}
-        onBack={() => setScreen('draft-input')}
-      />
-    );
-  }
+  const handleSummarize = useCallback(async () => {
+    if (!pinnedEpisode) return;
+    const episode: import('../../stores/aiSessionStore').DraftEpisodeInfo = {
+      id: pinnedEpisode.id,
+      workId: pinnedEpisode.work_id,
+      title: pinnedEpisode.title,
+      sortOrder: pinnedEpisode.sort_order,
+    };
 
-  if (screen === 'draft-input') {
-    return (
-      <DraftInputScreen
-        episode={pinnedEpisode}
-        hasPinned={hasPinned}
-        canRegisterCurrent={isEpisode && !!mainItemId && mainItemId !== pinnedEpisodeId}
-        onClearPinned={clearPinnedEpisodeId}
-        onRegisterCurrent={() => {
-          if (mainItemId) setPinnedEpisodeId(mainItemId);
-        }}
-        storyline={storyline}
-        userPrompt={userPrompt}
-        model={model}
-        isStreaming={isStreaming}
-        onStorylineChange={setStoryline}
-        onUserPromptChange={setUserPrompt}
-        onModelChange={setModel}
-        onGenerate={handleGenerate}
-        onBack={() => setScreen('menu')}
-      />
-    );
-  }
+    startSummarize(episode);
 
-  if (screen === 'review-history-view') {
-    return (
-      <ReviewResultScreen
-        onBack={() => setScreen('review-input')}
-        isHistoryView
-      />
-    );
-  }
+    try {
+      const data = await apiClient.post<import('../../stores/aiSessionStore').SummarizeResult>(
+        '/ai/quick/summarize',
+        {
+          workId: episode.workId,
+          sortOrder: episode.sortOrder,
+          forceRegenerate: false,
+        },
+      );
+      if (!data) {
+        throw new Error('빈 응답');
+      }
+      finishSummarize(data);
+      refreshWalletAfterUsage();
+    } catch (err) {
+      const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
+      failSummarize(message);
+      refreshWalletAfterUsage();
+      const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
+        ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
+        : message;
+      toast.error('회차 요약 생성 실패', { description: display });
+    }
+  }, [pinnedEpisode, startSummarize, finishSummarize, failSummarize, refreshWalletAfterUsage]);
 
-  if (screen === 'review-result') {
-    return (
-      <ReviewResultScreen
-        onBack={() => setScreen('review-input')}
-      />
-    );
-  }
+  // Phase 7: legacy 직접 streaming/직접 review 흐름 라우팅 제거됨.
+  // (draft-input/draft-view/history-view/review-result/review-history-view 화면들은 도달 불가)
+  // 모든 생성형 작업은 create-input → create-streaming 으로, 검수는 review-input → create-streaming 으로.
 
   if (screen === 'review-input') {
     return (
@@ -1428,6 +1337,38 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
           onBack={() => setScreen('spellcheck-input')}
         />
       )}
+      {screen === 'create-input' && (
+        <CreateInputScreen
+          selectedWorkId={selectedWorkId}
+        />
+      )}
+      {screen === 'create-streaming' && (
+        <CreateStreamingScreen />
+      )}
+      {screen === 'summarize-history-view' && (
+        <SummarizeResultScreen
+          onBack={() => setScreen('summarize-input')}
+          isHistoryView
+        />
+      )}
+      {screen === 'summarize-result' && (
+        <SummarizeResultScreen
+          onBack={() => setScreen('summarize-input')}
+        />
+      )}
+      {screen === 'summarize-input' && (
+        <SummarizeInputScreen
+          episode={pinnedEpisode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={isEpisode && !!mainItemId && mainItemId !== pinnedEpisodeId}
+          onClearPinned={clearPinnedEpisodeId}
+          onRegisterCurrent={() => {
+            if (mainItemId) setPinnedEpisodeId(mainItemId);
+          }}
+          selectedWorkId={selectedWorkId}
+          onStartSummarize={handleSummarize}
+        />
+      )}
       {screen === 'spellcheck-input' && (
         <SpellcheckInputScreen
           episode={pinnedEpisode}
@@ -1445,14 +1386,14 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <button
         type="button"
-        onClick={() => setScreen('draft-input')}
+        onClick={() => setScreen('create-input')}
         className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
-        <Sparkles size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <PenSquare size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
-          <p className="text-sm font-medium text-foreground">초안 생성</p>
+          <p className="text-sm font-medium text-foreground">문서 생성</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            AI가 작품 설정과 이전 맥락을 참고하여 다음 회차 원고를 생성합니다.
+            회차 초안·인물·세계관·플롯 등 원하는 문서를 자유 프롬프트로 생성합니다.
           </p>
         </div>
       </button>
@@ -1462,11 +1403,11 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         onClick={() => setScreen('review-input')}
         className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
-        <Search size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <SearchCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
           <p className="text-sm font-medium text-foreground">원고 검수</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            설정집과 이전 맥락을 대조하여 모순이나 오류를 검출합니다.
+            설정집과 이전 맥락을 대조하여 모순·복선·시간선 등 의미 오류를 검출합니다.
           </p>
         </div>
       </button>
@@ -1476,11 +1417,25 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         onClick={() => setScreen('spellcheck-input')}
         className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
-        <Check size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <SpellCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
         <div>
           <p className="text-sm font-medium text-foreground">맞춤법 검사</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             맞춤법, 띄어쓰기, 오탈자, 문장부호만 따로 확인합니다.
+          </p>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setScreen('summarize-input')}
+        className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
+      >
+        <ScrollText size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
+        <div>
+          <p className="text-sm font-medium text-foreground">회차 요약 생성</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            회차 본문에서 한 줄 요약·등장인물·핵심 사건·복선 등 12개 항목을 자동 추출합니다.
           </p>
         </div>
       </button>
@@ -1563,301 +1518,9 @@ function PinnedEpisodeBox({
   );
 }
 
-/* ── 초안 생성: 입력 화면 ── */
+/* Phase 7: DraftInputScreen / textToTipTapJson / DraftViewScreen 제거됨 — legacy /ai/drafts 흐름 폐기. */
 
-function DraftInputScreen({
-  episode,
-  hasPinned,
-  canRegisterCurrent,
-  onClearPinned,
-  onRegisterCurrent,
-  storyline,
-  userPrompt,
-  model,
-  isStreaming,
-  onStorylineChange,
-  onUserPromptChange,
-  onModelChange,
-  onGenerate,
-  onBack,
-}: {
-  episode: EpisodeInfo | null;
-  hasPinned: boolean;
-  canRegisterCurrent: boolean;
-  onClearPinned: () => void;
-  onRegisterCurrent: () => void;
-  storyline: string;
-  userPrompt: string;
-  model: string;
-  isStreaming: boolean;
-  onStorylineChange: (v: string) => void;
-  onUserPromptChange: (v: string) => void;
-  onModelChange: (v: string) => void;
-  onGenerate: () => void;
-  onBack: () => void;
-}) {
-  const history = useAiSessionStore((s) => s.history);
-  const viewHistory = useAiSessionStore((s) => s.viewHistory);
-  const deleteHistory = useAiSessionStore((s) => s.deleteHistory);
-
-  const canGenerate = hasPinned && episode != null && storyline.trim().length > 0 && !isStreaming;
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더는 RightPanelHeader가 통합 처리 (← + AI 도구 > 초안 생성) */}
-
-      {/* 폼 */}
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {/* 등록된 대상 원고 */}
-        <PinnedEpisodeBox
-          episode={episode}
-          hasPinned={hasPinned}
-          canRegisterCurrent={canRegisterCurrent}
-          onClearPinned={onClearPinned}
-          onRegisterCurrent={onRegisterCurrent}
-        />
-
-        {/* 이번 회차 방향 */}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            이번 회차 방향 <span className="text-destructive">*</span>
-          </label>
-          <textarea
-            value={storyline}
-            onChange={(e) => onStorylineChange(e.target.value)}
-            placeholder="이번 회차에서 전개할 내용을 설명해주세요..."
-            rows={3}
-            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
-
-        {/* 추가 지시사항 */}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            추가 지시사항 (선택)
-          </label>
-          <textarea
-            value={userPrompt}
-            onChange={(e) => onUserPromptChange(e.target.value)}
-            placeholder="문체, 톤, 특별 요구사항 등..."
-            rows={2}
-            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
-
-        {/* 모델 선택 + 생성 버튼 */}
-        <div className="flex items-center gap-2">
-          <select
-            value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-xs focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="sonnet">Sonnet</option>
-            <option value="opus">Opus</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={onGenerate}
-            disabled={!canGenerate}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Sparkles size={13} strokeWidth={1.75} />
-            초안 생성
-          </button>
-        </div>
-
-        {isStreaming && (
-          <p className="text-xs text-warning">
-            현재 초안이 생성 중입니다. 중단 후 새로운 생성을 시작할 수 있습니다.
-          </p>
-        )}
-
-        {/* 히스토리 목록 */}
-        {history.length > 0 && (
-          <div className="mt-2">
-            <div className="flex items-center gap-1.5 px-1 pb-1.5">
-              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
-              <span className="text-xs font-medium text-muted-foreground">최근 생성 기록</span>
-              <span className="text-xs text-muted-foreground/60">{history.length}/{10}</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              {history.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
-                >
-                  <button
-                    type="button"
-                    onClick={() => viewHistory(entry.id)}
-                    className="flex min-w-0 flex-1 flex-col text-left"
-                  >
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {entry.episode.sortOrder + 1}화: {entry.episode.title || '(제목 없음)'}
-                    </span>
-                    <span className="truncate text-[11px] text-muted-foreground">
-                      {entry.storyline.slice(0, 40)}{entry.storyline.length > 40 ? '...' : ''}
-                    </span>
-                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
-                      <span className="flex items-center gap-0.5">
-                        <Clock size={9} />
-                        {formatHistoryTime(entry.createdAt)}
-                      </span>
-                      <span>{entry.result.length.toLocaleString()}자</span>
-                      <span className="uppercase">{entry.model}</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteHistory(entry.id)}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                    title="삭제"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── 초안 생성: 읽기전용 에디터 뷰 ── */
-
-function textToTipTapJson(text: string) {
-  const paragraphs = text.split('\n\n').filter(Boolean);
-  if (paragraphs.length === 0) {
-    return { type: 'doc' as const, content: [{ type: 'paragraph' as const }] };
-  }
-  return {
-    type: 'doc' as const,
-    content: paragraphs.map((p) => ({
-      type: 'paragraph' as const,
-      content: [{ type: 'text' as const, text: p }],
-    })),
-  };
-}
-
-function DraftViewScreen({
-  result,
-  state,
-  error,
-  targetEpisode,
-  isHistoryView = false,
-  onStop,
-  onBack,
-}: {
-  result: string;
-  state: import('../../stores/aiSessionStore').DraftState;
-  error: string;
-  targetEpisode: import('../../stores/aiSessionStore').DraftEpisodeInfo | null;
-  isHistoryView?: boolean;
-  onStop: () => void;
-  onBack: () => void;
-}) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
-
-  const editor = useEditor({
-    immediatelyRender: false,
-    editable: false,
-    extensions: [
-      StarterKit.configure({ code: false, codeBlock: false }),
-      Typography,
-    ],
-    content: '',
-  }, []);
-
-  // 결과 텍스트가 업데이트될 때마다 에디터에 반영 + 자동 스크롤
-  useEffect(() => {
-    if (!editor || editor.isDestroyed) return;
-    if (result) {
-      editor.commands.setContent(textToTipTapJson(result));
-      // 자동 스크롤
-      requestAnimationFrame(() => {
-        editorRef.current?.scrollTo(0, editorRef.current.scrollHeight);
-      });
-    }
-  }, [editor, result]);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(result);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 액션바 — 헤더(← + AI 도구 > 초안 생성)는 RightPanelHeader가 담당.
-          이 영역엔 상태 라벨 + 우측 액션(중단/복사) 만 노출. */}
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-3">
-        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          {state === 'streaming' && (
-            <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
-          )}
-          <span className="truncate text-[11px] text-muted-foreground">
-            {isHistoryView
-              ? '생성 기록'
-              : state === 'streaming'
-                ? 'AI 생성 중…'
-                : state === 'done'
-                  ? '생성 완료'
-                  : state === 'error'
-                    ? '생성 오류'
-                    : '대기'}
-            {targetEpisode && ` · ${targetEpisode.sortOrder + 1}화`}
-          </span>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {state === 'streaming' && (
-            <button
-              type="button"
-              onClick={onStop}
-              className="flex h-7 items-center gap-1 rounded-md bg-destructive px-2 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
-            >
-              <Square size={10} strokeWidth={2.5} />
-              중단
-            </button>
-          )}
-          {result && state !== 'streaming' && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex h-7 items-center gap-1 rounded-md border border-input px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ClipboardCopy size={11} strokeWidth={1.75} />
-              {copied ? '복사됨' : '복사'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 에러 */}
-      {state === 'error' && error && (
-        <div className="shrink-0 border-b border-destructive/20 px-4 py-2">
-          <AiErrorBlock message={error} />
-        </div>
-      )}
-
-      {/* 읽기전용 에디터 뷰 */}
-      <div
-        ref={editorRef}
-        className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
-      >
-        <EditorContent
-          editor={editor}
-          className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed"
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ── 원고 검수: 입력 화면 (검수 버튼 + 히스토리 목록) ── */
+/* ── 원고 검수: 입력 화면 (다회차 선택 + 자유 prompt → agent thread) ── */
 
 function ReviewInputScreen({
   episode,
@@ -1867,7 +1530,7 @@ function ReviewInputScreen({
   onRegisterCurrent,
   selectedWorkId,
   onStartReview,
-  onBack,
+  onBack: _onBack,
 }: {
   episode: EpisodeInfo | null;
   hasPinned: boolean;
@@ -1881,7 +1544,11 @@ function ReviewInputScreen({
   const reviewHistory = useAiSessionStore((s) => s.reviewHistory);
   const viewReviewHistory = useAiSessionStore((s) => s.viewReviewHistory);
   const deleteReviewHistory = useAiSessionStore((s) => s.deleteReviewHistory);
-  const reviewState = useAiSessionStore((s) => s.reviewState);
+
+  const focusPrompt = useAiSessionStore((s) => s.reviewFocusPrompt);
+  const setFocusPrompt = useAiSessionStore((s) => s.setReviewFocusPrompt);
+
+  const canStart = !!episode && !!selectedWorkId;
 
   const filteredHistory = selectedWorkId
     ? reviewHistory.filter((h) => h.workId === selectedWorkId)
@@ -1889,9 +1556,8 @@ function ReviewInputScreen({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더는 RightPanelHeader가 통합 처리 (← + AI 도구 > 원고 검수) */}
-
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* 검수 대상 원고 — 맞춤법/요약 카드와 동일한 PinnedEpisodeBox (좌측 사이드바 선택 자동 동기화) */}
         <PinnedEpisodeBox
           episode={episode}
           hasPinned={hasPinned}
@@ -1900,22 +1566,43 @@ function ReviewInputScreen({
           onRegisterCurrent={onRegisterCurrent}
         />
 
+        {/* 중점 사항 — 자유 prompt (외곽 카드 X, 깔끔한 input-only) */}
         {hasPinned && episode && (
-          !episode.content ? (
-            <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
-              원고 내용이 없습니다. 먼저 원고를 작성해주세요.
-            </div>
-          ) : (
+          <CardlessInput
+            label="검수 시 중점 사항 (선택)"
+            help="비워두면 일반 검수 (인물·복선·시간선·설정 충돌·맞춤법 모두) 를 진행합니다."
+          >
+            <textarea
+              value={focusPrompt}
+              onChange={(e) => setFocusPrompt(e.target.value)}
+              rows={4}
+              maxLength={1500}
+              placeholder={
+                '예시:\n' +
+                '• 인물 \'리화\' 의 말투 일관성에 특히 신경 써줘.\n' +
+                '• 1막 도입 복선이 제대로 회수됐는지 확인.\n' +
+                '• 시간선 모순이 있는지 점검.'
+              }
+              className={CARDLESS_INPUT_CLASS}
+            />
+          </CardlessInput>
+        )}
+
+        {hasPinned && episode && (
+          <>
             <button
               type="button"
               onClick={onStartReview}
-              disabled={reviewState === 'loading'}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+              disabled={!canStart}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              <Search size={13} strokeWidth={1.75} />
+              <SearchCheck size={14} strokeWidth={1.75} />
               검수 시작
             </button>
-          )
+            <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
+              AI 가 의미 검수 + 맞춤법 검사를 함께 진행합니다. 발견된 이슈는 [적용]/[거절] 버튼으로 검토 후 본문에 반영할지 결정할 수 있어요.
+            </p>
+          </>
         )}
 
         {/* 검수 히스토리 목록 */}
@@ -2046,7 +1733,7 @@ function SpellcheckInputScreen({
                 disabled={spellcheckState === 'loading'}
                 className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
-                <Check size={13} strokeWidth={1.75} />
+                <SpellCheck size={13} strokeWidth={1.75} />
                 회차 전체 맞춤법 검사
               </button>
               <button
@@ -2056,7 +1743,7 @@ function SpellcheckInputScreen({
                 title={hasNonEmptySelection ? '선택한 영역만 검사' : '본문에서 검사할 텍스트를 드래그로 선택하세요'}
                 className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Check size={13} strokeWidth={1.75} />
+                <SpellCheck size={13} strokeWidth={1.75} />
                 {hasNonEmptySelection ? '선택 영역만 검사' : '선택 영역만 검사 (드래그 필요)'}
               </button>
             </div>
@@ -2116,183 +1803,14 @@ function circledNumber(n: number): string {
   return `(${n})`;
 }
 
-const SEVERITY_STYLE: Record<string, { bg: string; icon: typeof Info; label: string }> = {
-  critical: { bg: 'bg-danger-soft border-danger/30', icon: OctagonAlert, label: '심각' },
-  warning: { bg: 'bg-warning-soft border-warning/30', icon: AlertTriangle, label: '주의' },
-  info: { bg: 'bg-info-soft border-info/30', icon: Info, label: '참고' },
-};
-
-function ReviewResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
-  const reviewState = useAiSessionStore((s) => s.reviewState);
-  const result = useAiSessionStore((s) => s.reviewResult);
-  const error = useAiSessionStore((s) => s.reviewError);
-  const targetEpisode = useAiSessionStore((s) => s.reviewTargetEpisode);
-  const focusedIndex = useReviewHighlightStore((s) => s.focusedIndex);
-  const progressMessage = useProgressMessage(reviewState === 'loading', REVIEW_PROGRESS_STAGES);
-
-  // 하이라이트 연동: 결과가 있으면 하이라이트 스토어에 이슈 전달
-  useEffect(() => {
-    if (reviewState === 'done' && result && result.issues.length > 0) {
-      useReviewHighlightStore.getState().setIssues(
-        result.issues.map((issue, i) => ({
-          index: i,
-          type: issue.type,
-          severity: issue.severity,
-          lines: issue.lines ?? [],
-          location: issue.location,
-          description: issue.description,
-        })),
-      );
-    }
-    return () => useReviewHighlightStore.getState().clearIssues();
-  }, [reviewState, result]);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 헤더는 RightPanelHeader가 통합 처리 — clearIssues는 RightPanelHeader.handleBack에서 호출 */}
-
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {/* 대상 에피소드 */}
-        {targetEpisode && (
-          <div className="rounded-md bg-muted/50 px-3 py-2">
-            <span className="text-xs text-muted-foreground">대상 원고</span>
-            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
-              {targetEpisode.sortOrder + 1}화: {targetEpisode.title || '(제목 없음)'}
-            </p>
-          </div>
-        )}
-
-        {/* 로딩 */}
-        {reviewState === 'loading' && (
-          <div className="flex flex-col gap-3">
-            {/* 점수 카드 자리 */}
-            <div className="rounded-md border border-border bg-background p-3">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-6 w-14" />
-              </div>
-              <Skeleton className="mt-3 h-3 w-full" />
-              <Skeleton className="mt-1.5 h-3 w-4/5" />
-            </div>
-
-            {/* 이슈 카드 자리 — 3개 */}
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-3 w-24" />
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-background p-3">
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-3 w-20" />
-                  </div>
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-3/4" />
-                </div>
-              ))}
-            </div>
-
-            {/* 진행 메시지 */}
-            <div className="flex items-center justify-center gap-2 pt-1">
-              <Loader2 size={14} className="animate-spin text-primary" />
-              <span className="text-xs text-muted-foreground">{progressMessage}</span>
-            </div>
-          </div>
-        )}
-
-        {/* 검수 결과 */}
-        {reviewState === 'done' && result && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-md border border-border bg-background p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">검수 점수</span>
-                <span className={cn(
-                  'text-lg font-bold',
-                  result.score >= 80 ? 'text-success' : result.score >= 50 ? 'text-warning' : 'text-danger',
-                )}>
-                  {result.score}
-                  <span className="text-xs font-normal text-muted-foreground">/100</span>
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">{result.summary}</p>
-            </div>
-
-            {result.issues.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-md bg-success-soft px-3 py-3 text-sm text-success">
-                <Check size={16} strokeWidth={2} />
-                검수에서 발견된 문제가 없습니다.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-muted-foreground">
-                  발견된 이슈 ({result.issues.length}건)
-                </span>
-                {result.issues.map((issue, i) => {
-                  const severity = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.info;
-                  const SeverityIcon = severity.icon;
-                  const isFocused = focusedIndex === i;
-                  return (
-                    <button
-                      type="button"
-                      key={i}
-                      onClick={() => useReviewHighlightStore.getState().focusIssue(i)}
-                      className={cn(
-                        'rounded-md border p-3 text-left transition-all',
-                        severity.bg,
-                        isFocused && 'ring-2 ring-primary/50',
-                        issue.lines.length > 0 && 'cursor-pointer hover:brightness-95',
-                      )}
-                    >
-                      <div className="mb-1.5 flex items-center gap-1.5">
-                        <span className={cn(
-                          'flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-                          issue.severity === 'critical' && 'bg-danger text-danger-foreground',
-                          issue.severity === 'warning' && 'bg-warning text-warning-foreground',
-                          issue.severity === 'info' && 'bg-info text-info-foreground',
-                        )}>
-                          {circledNumber(i + 1)}
-                        </span>
-                        <SeverityIcon size={14} strokeWidth={1.75} />
-                        <span className="text-xs font-semibold">{severity.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
-                        </span>
-                      </div>
-                      {issue.location && (
-                        <p className="mb-1 rounded bg-background/60 px-2 py-1 text-xs italic text-foreground/80">
-                          &ldquo;{issue.location}&rdquo;
-                        </p>
-                      )}
-                      <p className="text-xs text-foreground">{issue.description}</p>
-                      {issue.reference && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          <span className="font-medium">근거:</span> {issue.reference}
-                        </p>
-                      )}
-                      {issue.suggestion && (
-                        <p className="mt-1 text-xs text-primary">
-                          <span className="font-medium">제안:</span> {issue.suggestion}
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {reviewState === 'error' && error && (
-          <AiErrorBlock message={error} />
-        )}
-      </div>
-    </div>
-  );
-}
-
+/** SpellcheckIssue.type → 사용자에게 보여줄 한글 라벨. ai/app/api/v1/spellcheck.py 의 _TYPE_LABEL 과 정합. */
 const SPELLCHECK_TYPE_LABELS: Record<string, string> = {
   typo: '오탈자',
   spacing: '띄어쓰기',
   punctuation: '문장부호',
 };
+
+/* Phase 7: SEVERITY_STYLE + ReviewResultScreen 제거됨 — legacy /ai/reviews 흐름 폐기. */
 
 /**
  * 블록별로 내부 text node 들을 한 문자열로 평탄화한 뒤 search.
@@ -2730,6 +2248,887 @@ function VerticalResizeHandle({ onResize }: { onResize: (deltaPx: number) => voi
       aria-label="패널 높이 조절"
     >
       <div className="h-0.5 w-8 rounded-full bg-border group-hover:bg-primary/40 transition-colors" />
+    </div>
+  );
+}
+
+/* ── 회차 요약 생성: 입력 화면 (회차 등록 + 즉시 실행 버튼) ── */
+
+function SummarizeInputScreen({
+  episode,
+  hasPinned,
+  canRegisterCurrent,
+  onClearPinned,
+  onRegisterCurrent,
+  selectedWorkId,
+  onStartSummarize,
+}: {
+  episode: EpisodeInfo | null;
+  hasPinned: boolean;
+  canRegisterCurrent: boolean;
+  onClearPinned: () => void;
+  onRegisterCurrent: () => void;
+  selectedWorkId: string | null;
+  onStartSummarize: () => void;
+}) {
+  const summarizeHistory = useAiSessionStore((s) => s.summarizeHistory);
+  const viewSummarizeHistory = useAiSessionStore((s) => s.viewSummarizeHistory);
+  const deleteSummarizeHistory = useAiSessionStore((s) => s.deleteSummarizeHistory);
+  const summarizeState = useAiSessionStore((s) => s.summarizeState);
+
+  const filteredHistory = selectedWorkId
+    ? summarizeHistory.filter((h) => h.workId === selectedWorkId)
+    : [];
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        <PinnedEpisodeBox
+          episode={episode}
+          hasPinned={hasPinned}
+          canRegisterCurrent={canRegisterCurrent}
+          onClearPinned={onClearPinned}
+          onRegisterCurrent={onRegisterCurrent}
+        />
+
+        {hasPinned && episode && (
+          !episode.content ? (
+            <div className="rounded-md bg-muted/50 px-3 py-4 text-center text-xs text-muted-foreground">
+              원고 내용이 없습니다. 먼저 원고를 작성해주세요.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onStartSummarize}
+                disabled={summarizeState === 'loading'}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                <ScrollText size={13} strokeWidth={1.75} />
+                {summarizeState === 'loading' ? '요약 생성 중...' : '회차 요약 생성'}
+              </button>
+              <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
+                한 줄 요약·등장인물·핵심 사건·복선 등 12개 항목을 자동 추출합니다.
+                이미 생성된 요약이 있고 본문이 변경되지 않았으면 캐시(Haiku 0회)로 즉시 반환됩니다.
+              </p>
+            </div>
+          )
+        )}
+
+        {filteredHistory.length > 0 && (
+          <div className="mt-2">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5">
+              <History size={13} className="text-muted-foreground" strokeWidth={1.75} />
+              <span className="text-xs font-medium text-muted-foreground">요약 생성 기록</span>
+              <span className="text-xs text-muted-foreground/60">{filteredHistory.length}/{10}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {filteredHistory.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:border-border hover:bg-accent/20"
+                >
+                  <button
+                    type="button"
+                    onClick={() => viewSummarizeHistory(entry.id)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {entry.episode.sortOrder + 1}화 {entry.episode.title || '(제목 없음)'}
+                    </span>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/60">
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} />
+                        {formatHistoryTime(entry.createdAt)}
+                      </span>
+                      <span className="truncate">{entry.result.oneline_summary || ''}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteSummarizeHistory(entry.id)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                    title="삭제"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── 회차 요약 생성: 결과 화면 (12-필드 카드 표시) ── */
+
+function SummarizeResultScreen({ onBack, isHistoryView }: { onBack: () => void; isHistoryView?: boolean }) {
+  const state = useAiSessionStore((s) => s.summarizeState);
+  const result = useAiSessionStore((s) => s.summarizeResult);
+  const error = useAiSessionStore((s) => s.summarizeError);
+  const targetEpisode = useAiSessionStore((s) => s.summarizeTargetEpisode);
+  void onBack; // 헤더가 처리
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {targetEpisode && (
+          <div className="rounded-md bg-muted/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">대상 원고</span>
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {targetEpisode.sortOrder + 1}화: {targetEpisode.title || '(제목 없음)'}
+            </p>
+          </div>
+        )}
+
+        {state === 'loading' && (
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-md border border-border bg-background p-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+            ))}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              <span className="text-xs text-muted-foreground">요약을 생성하는 중...</span>
+            </div>
+          </div>
+        )}
+
+        {state === 'error' && (
+          <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2.5 text-xs text-danger">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="leading-relaxed">{error || '요약 생성에 실패했습니다.'}</span>
+          </div>
+        )}
+
+        {state === 'done' && result && (
+          <SummarizeResultBody result={result} isHistoryView={isHistoryView} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SummarizeResultBody({
+  result,
+  isHistoryView,
+}: {
+  result: import('../../stores/aiSessionStore').SummarizeResult;
+  isHistoryView?: boolean;
+}) {
+  const cached = result.cached === true;
+  return (
+    <div className="flex flex-col gap-3">
+      {!isHistoryView && cached && (
+        <div className="rounded-md bg-info-soft px-3 py-2 text-[11px] text-info">
+          본문이 변경되지 않아 저장된 요약을 즉시 불러왔습니다 (크레딧 0).
+        </div>
+      )}
+
+      {/* 한 줄 요약 — 강조 박스 */}
+      {result.oneline_summary && (
+        <SummaryField label="한 줄 요약" emphasis>
+          {result.oneline_summary}
+        </SummaryField>
+      )}
+
+      {/* 본문 요약 (3 문장) */}
+      {result.summary && (
+        <SummaryField label="요약">
+          <p className="whitespace-pre-wrap leading-relaxed">{result.summary}</p>
+        </SummaryField>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        {result.pov_character && (
+          <SummaryField label="시점 인물">{result.pov_character}</SummaryField>
+        )}
+        {result.tone && <SummaryField label="톤">{result.tone}</SummaryField>}
+      </div>
+
+      {result.present_characters?.length > 0 && (
+        <SummaryField label="등장 인물">
+          <SummaryChips items={result.present_characters} />
+        </SummaryField>
+      )}
+
+      {result.present_locations?.length > 0 && (
+        <SummaryField label="등장 장소">
+          <SummaryChips items={result.present_locations} />
+        </SummaryField>
+      )}
+
+      {result.key_events?.length > 0 && (
+        <SummaryField label="핵심 사건">
+          <ol className="ml-3 list-decimal space-y-1">
+            {[...result.key_events]
+              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+              .map((ev, i) => (
+                <li key={i} className="text-xs leading-relaxed">{ev.event}</li>
+              ))}
+          </ol>
+        </SummaryField>
+      )}
+
+      {result.time_progression && (
+        <SummaryField label="시간 진행">{result.time_progression}</SummaryField>
+      )}
+
+      {result.cliffhanger && (
+        <SummaryField label="끝점 / 절정">
+          <p className="whitespace-pre-wrap leading-relaxed">{result.cliffhanger}</p>
+        </SummaryField>
+      )}
+
+      {result.foreshadow_planted?.length > 0 && (
+        <SummaryField label="심어진 복선">
+          <ul className="space-y-1">
+            {result.foreshadow_planted.map((f, i) => (
+              <li key={i} className="text-xs leading-relaxed">
+                <span className="font-medium">{f.name}</span>
+                {f.description ? <span className="text-muted-foreground"> — {f.description}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </SummaryField>
+      )}
+
+      {result.foreshadow_paid_off?.length > 0 && (
+        <SummaryField label="회수된 복선">
+          <SummaryChips items={result.foreshadow_paid_off.map((f) => f.name)} />
+        </SummaryField>
+      )}
+
+      {result.keywords?.length > 0 && (
+        <SummaryField label="키워드">
+          <SummaryChips items={result.keywords} />
+        </SummaryField>
+      )}
+    </div>
+  );
+}
+
+function SummaryField({
+  label,
+  children,
+  emphasis,
+}: {
+  label: string;
+  children: React.ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={
+        emphasis
+          ? 'rounded-md border border-primary/30 bg-primary/5 p-3'
+          : 'rounded-md border border-border bg-background p-3'
+      }
+    >
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <div className={emphasis ? 'mt-1 text-sm font-medium text-foreground' : 'mt-1 text-xs text-foreground'}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SummaryChips({ items }: { items: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {items.filter(Boolean).map((item, i) => (
+        <span
+          key={i}
+          className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* ── 문서 생성: 입력 화면 (자유 프롬프트 + 참고 회차 선택) ── */
+
+function CreateInputScreen({
+  selectedWorkId,
+}: {
+  selectedWorkId: string | null;
+}) {
+  const prompt = useAiSessionStore((s) => s.createPrompt);
+  const setPrompt = useAiSessionStore((s) => s.setCreatePrompt);
+  const referencePrompt = useAiSessionStore((s) => s.createReferencePrompt);
+  const setReferencePrompt = useAiSessionStore((s) => s.setCreateReferencePrompt);
+  const startCreate = useAiSessionStore((s) => s.startCreate);
+  const failCreate = useAiSessionStore((s) => s.failCreate);
+  const setScreen = useAiSessionStore((s) => s.setScreen);
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const canSubmit = !!selectedWorkId && prompt.trim().length >= 4 && !submitting;
+
+  async function handleSubmit() {
+    if (!selectedWorkId || !canSubmit) return;
+    setSubmitting(true);
+    try {
+      // agent 'auto' 시나리오로 thread 생성 — 사용자 의도를 LLM 이 자동 분류
+      const r = await (await import('../../api/agent')).createAgentThread(selectedWorkId, 'auto');
+      const tid = r?.thread_id;
+      if (!tid) throw new Error('thread_id 누락');
+      // 참고 자료 자유 프롬프트 — agent 가 list_episodes / list_world_notes / list_characters 등으로 alf 자체 해석
+      const refBlock = referencePrompt.trim()
+        ? `[참고 자료]\n${referencePrompt.trim()}\n\n`
+        : '';
+      const fullPrompt = refBlock + prompt.trim();
+      startCreate(tid);
+      // streamMessage 는 useEffect 안에서 시작 — startCreate 가 screen 을 'create-streaming' 으로 전환
+      // 그 화면이 마운트되면서 createThreadId + prompt 로 SSE 시작.
+      setPendingFirstPrompt(tid, fullPrompt);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failCreate(`대화 생성 실패: ${msg}`);
+      setScreen('create-input');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <CardlessInput
+          label={<>어떤 문서를 만들까요? <span className="text-danger">*</span></>}
+          help="구체적으로 적을수록 정확한 결과가 나옵니다 — 등장 인물·시간·분위기·분량 같은 정보를 함께 적어주세요."
+        >
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={6}
+            maxLength={2000}
+            placeholder={
+              '예시:\n' +
+              '• 다음 화 초안을 만들어줘. 주인공이 좌주를 처음 만나는 장면, 긴장감 고조.\n' +
+              '• 새 인물 \'리화\' 추가 — 상인 출신, 23세, 호기심 많고 밝은 성격.\n' +
+              '• 마법 길드 입회 의식에 대한 세계관 노트 작성.\n' +
+              '• 1막 플롯 트리 — 메인 챕터 + 자식 노드 5개.'
+            }
+            className={CARDLESS_INPUT_CLASS}
+          />
+        </CardlessInput>
+
+        <CardlessInput
+          label="참고 자료 지시 (선택)"
+          help="AI 가 자동으로 해당 자료를 찾아 참고합니다. 회차 범위, 세계관·인물 문서명을 자유롭게 적어주세요."
+        >
+          <textarea
+            value={referencePrompt}
+            onChange={(e) => setReferencePrompt(e.target.value)}
+            rows={3}
+            maxLength={1000}
+            placeholder={
+              '예시:\n' +
+              '• 1~10화 참고\n' +
+              '• 세계관의 \'마법 길드 체계\' 문서 참고\n' +
+              '• 인물 \'리화\' 와 \'좌주\' 의 관계 참고'
+            }
+            className={CARDLESS_INPUT_CLASS}
+          />
+        </CardlessInput>
+
+        <button
+          type="button"
+          onClick={() => void handleSubmit()}
+          disabled={!canSubmit}
+          className="flex h-10 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          <PenSquare size={14} strokeWidth={1.75} />
+          {submitting ? '생성 시작 중...' : '생성 시작'}
+        </button>
+        <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
+          AI 가 결과를 스트리밍으로 작성합니다. 완료 후 [적용]/[거절] 버튼으로 본문에 반영할지 직접 결정할 수 있어요.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** AI 도구 카드 입력 영역 공통 디자인 — 외곽 카드 X, 라벨 + 입력 + 도움말 만 깔끔하게. */
+function CardlessInput({
+  label,
+  help,
+  children,
+}: {
+  label: React.ReactNode;
+  help?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="px-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      {children}
+      {help && (
+        <p className="px-0.5 text-[11px] leading-relaxed text-muted-foreground/70">
+          {help}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** 입력 컨트롤 (textarea/input) 공통 클래스 — 외곽 borderless, focus 시 underline 강조. */
+const CARDLESS_INPUT_CLASS =
+  'w-full resize-none rounded-md border border-border/40 bg-background/50 px-2.5 py-2 text-sm transition-colors focus:border-primary/60 focus:bg-background focus:outline-none focus:ring-0';
+
+/* 첫 프롬프트를 streaming 화면으로 전달하는 임시 채널 — store 에 더 두기보단
+ * module-level mutable 로 한 번만 쓰고 휘발 (페이지 nav 시 리셋 보장). */
+let pendingFirstPrompt: { threadId: string; prompt: string } | null = null;
+function setPendingFirstPrompt(threadId: string, prompt: string) {
+  pendingFirstPrompt = { threadId, prompt };
+}
+function takePendingFirstPrompt(threadId: string): string | null {
+  if (pendingFirstPrompt && pendingFirstPrompt.threadId === threadId) {
+    const p = pendingFirstPrompt.prompt;
+    pendingFirstPrompt = null;
+    return p;
+  }
+  return null;
+}
+
+function ReferenceEpisodePicker({
+  workId,
+  selected,
+  onChange,
+}: {
+  workId: string | null;
+  selected: number[];
+  onChange: (orders: number[]) => void;
+}) {
+  // PowerSync 로 episode 목록 — sort_order 만 선택 picker 로 노출. 본문/제목 평문은 필요 X.
+  const episodesQuery = useQuery<{ id: string; sort_order: number; title: string | null }>(
+    workId
+      ? `SELECT id, sort_order, title FROM episode WHERE work_id = ? AND status != 'trashed' ORDER BY sort_order DESC LIMIT 20`
+      : `SELECT id, sort_order, title FROM episode WHERE 1=0`,
+    workId ? [workId] : [],
+  );
+  const rows = episodesQuery.data ?? [];
+  const [open, setOpen] = useState(false);
+
+  function toggle(order: number) {
+    if (selected.includes(order)) onChange(selected.filter((n) => n !== order));
+    else onChange([...selected, order]);
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          참고 회차 (선택)
+        </span>
+        {selected.length > 0 && (
+          <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {selected.length}
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          {open ? '접기' : '펼치기'}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 max-h-48 overflow-y-auto rounded border border-border/40 bg-muted/20 p-1.5">
+          {rows.length === 0 ? (
+            <p className="p-2 text-center text-[11px] text-muted-foreground">
+              회차가 없습니다.
+            </p>
+          ) : (
+            <div className="flex flex-col">
+              {rows.map((ep) => (
+                <label
+                  key={ep.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(ep.sort_order)}
+                    onChange={() => toggle(ep.sort_order)}
+                    className="h-3.5 w-3.5"
+                  />
+                  <span className="font-medium">{ep.sort_order + 1}화</span>
+                  <span className="truncate text-muted-foreground">
+                    {ep.title || '(제목 없음)'}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 문서 생성: 스트리밍 화면 (SSE 표시 → 완료 시 제안 큐) ── */
+
+function CreateStreamingScreen() {
+  const threadId = useAiSessionStore((s) => s.createThreadId);
+  const state = useAiSessionStore((s) => s.createState);
+  const steps = useAiSessionStore((s) => s.createSteps);
+  const suggestionIds = useAiSessionStore((s) => s.createSuggestionIds);
+  const error = useAiSessionStore((s) => s.createError);
+  const toolStream = useAiSessionStore((s) => s.createToolStream);
+
+  const appendChunk = useAiSessionStore((s) => s.appendCreateChunk);
+  const addStep = useAiSessionStore((s) => s.addCreateStep);
+  const startCreateToolStream = useAiSessionStore((s) => s.startCreateToolStream);
+  const appendCreateToolPartial = useAiSessionStore((s) => s.appendCreateToolPartial);
+  const finishCreate = useAiSessionStore((s) => s.finishCreate);
+  const failCreate = useAiSessionStore((s) => s.failCreate);
+  const setScreen = useAiSessionStore((s) => s.setScreen);
+  const resetCreate = useAiSessionStore((s) => s.resetCreate);
+
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 첫 프롬프트 SSE 시작 — threadId 변경 시 1회만.
+  useEffect(() => {
+    if (!threadId || state !== 'streaming') return;
+    const firstPrompt = takePendingFirstPrompt(threadId);
+    if (!firstPrompt) return; // 이미 시작했거나 prompt 없음
+
+    let done = false;
+    apiClient
+      .streamSSE(
+        `/agent/threads/${threadId}/messages/stream`,
+        { message: firstPrompt },
+        (parsed: unknown) => {
+          const evt = parsed as {
+            type: string;
+            text?: string;
+            error_type?: string;
+            error_message?: string;
+            suggestion_ids?: string[];
+            tool_name?: string;
+            step_type?: string;
+            user_tokens?: number;
+            iterations?: number;
+            cum_user_tokens?: number;
+            seq?: number;
+            field?: string;
+            chunk?: string;
+            partial_json?: string;
+            block_index?: number;
+          };
+          // ── 진단용 console.log — SSE 가 chunk 별로 도착하는지 확인 ──
+          // eslint-disable-next-line no-console
+          console.log('[SSE]', new Date().toISOString().slice(11, 23), evt.type, {
+            tool_name: evt.tool_name,
+            partial_json_len: evt.partial_json?.length,
+            text_len: evt.text?.length,
+            block_index: evt.block_index,
+          });
+          if (evt.type === 'step') {
+            addStep({
+              step_type: evt.step_type ?? 'unknown',
+              tool_name: evt.tool_name ?? null,
+              user_tokens: evt.user_tokens,
+              iterations: evt.iterations,
+              cum_user_tokens: evt.cum_user_tokens,
+              seq: evt.seq,
+            });
+          } else if (evt.type === 'text_delta' && evt.text) {
+            // 사고 과정 텍스트 — 카드 모드 화면엔 표시 안 하지만 store 누적은 유지 (디버그/향후 활용).
+            appendChunk(evt.text);
+          } else if (evt.type === 'tool_input_start') {
+            // propose_* 도구 시작 — streaming 박스 reset (이전 도구 결과는 done 시 큐로 이동).
+            // field 는 input_json 누적 buffer 에서 progressive 추출.
+            startCreateToolStream(evt.tool_name ?? '', '');
+          } else if (evt.type === 'tool_input_delta' && evt.partial_json) {
+            // tool_input_start 가 누락됐다면 (이벤트 순서 흔들림) 안전장치로 첫 chunk 시 stream 시작.
+            const cur = useAiSessionStore.getState().createToolStream;
+            if (!cur || cur.toolName !== (evt.tool_name ?? '')) {
+              startCreateToolStream(evt.tool_name ?? '', '');
+            }
+            appendCreateToolPartial(evt.partial_json);
+          } else if (evt.type === 'tool_input_stop') {
+            // 단일 도구 호출 종료 — 누적된 toolStream 은 유지 (다음 tool_input_start 시 reset).
+          } else if (evt.type === 'done') {
+            done = true;
+            finishCreate(evt.suggestion_ids ?? []);
+            return true;
+          } else if (evt.type === 'error') {
+            done = true;
+            failCreate(`${evt.error_type ?? 'error'}: ${evt.error_message ?? ''}`);
+            return true;
+          }
+        },
+        () => {
+          if (!done) finishCreate([]);
+        },
+        (err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.toLowerCase().includes('abort')) failCreate(`전송 실패: ${msg}`);
+        },
+      )
+      .then((controller) => {
+        abortRef.current = controller;
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        failCreate(`연결 실패: ${msg}`);
+      });
+
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
+
+  function handleAbort() {
+    abortRef.current?.abort();
+  }
+
+  function handleStartOver() {
+    resetCreate();
+    setScreen('create-input');
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* 진행 표시 — 도구 호출 step */}
+        {state === 'streaming' && (
+          <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-[11px]">
+            <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
+            <span className="truncate text-muted-foreground">
+              {steps.length === 0
+                ? '의도를 분석 중...'
+                : labelCreateStep(steps[steps.length - 1])}
+            </span>
+            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">
+              step {steps[steps.length - 1]?.iterations ?? 0} ·{' '}
+              {steps[steps.length - 1]?.cum_user_tokens ?? 0} 크레딧
+            </span>
+          </div>
+        )}
+
+        {/* AI 사고과정 텍스트는 카드 모드에서 숨김. 대신 propose_* 도구의 결과물 본문 (content/intro 등)
+            을 SSE 누적해 실시간 표시 — 도구 호출 진행 → 결과물 생성을 작가가 라이브로 본다. */}
+        {toolStream && toolStream.text && (
+          <div className="rounded-md border border-primary/40 bg-primary/5 p-3 shadow-sm">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <PenSquare size={12} className="shrink-0 text-primary" />
+              <span className="text-[10px] font-medium uppercase tracking-wider text-primary">
+                작성 중 — {toolLabel(toolStream.toolName)}
+              </span>
+            </div>
+            <div
+              ref={(el) => {
+                if (el && state === 'streaming') el.scrollTop = el.scrollHeight;
+              }}
+              className="max-h-[40vh] overflow-y-auto text-xs leading-relaxed text-foreground"
+            >
+              <ChatMarkdown text={toolStream.text} variant="assistant" />
+              {state === 'streaming' && (
+                <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current opacity-60" />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 에러 */}
+        {state === 'error' && (
+          <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2.5 text-xs text-danger">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="leading-relaxed">{error || '생성에 실패했습니다.'}</span>
+          </div>
+        )}
+
+        {/* 완료 후 제안 큐 안내 */}
+        {state === 'done' && (
+          <CreateSuggestionsReview suggestionIds={suggestionIds} />
+        )}
+      </div>
+
+      {/* 하단 액션 — streaming 중엔 중지 / done|error 시 다시 만들기 */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
+        {state === 'streaming' ? (
+          <button
+            type="button"
+            onClick={handleAbort}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-accent"
+          >
+            <Square size={12} strokeWidth={2} />
+            중지
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleStartOver}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-accent"
+          >
+            <ArrowLeft size={12} strokeWidth={2} />
+            다시 만들기
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function labelCreateStep(s: CreateStreamStepLite | undefined): string {
+  if (!s) return '대기 중...';
+  // 도구명/시스템 명칭 raw 노출 금지 — toolLabel 매핑 미존재 시 일반 라벨로 마스킹.
+  if (s.step_type === 'tool_call') return `🔧 ${toolLabel(s.tool_name)}`;
+  if (s.step_type === 'planner_call') return '💭 답변 구상 중';
+  if (s.step_type === 'worker_call') return '🛠 보조 에이전트 분석 중';
+  if (s.step_type === 'compression') return '📦 이전 대화 압축 중';
+  return '⚙ 처리 중';
+}
+
+interface CreateStreamStepLite {
+  step_type: string;
+  tool_name?: string | null;
+  user_tokens?: number;
+  iterations?: number;
+  cum_user_tokens?: number;
+  seq?: number;
+}
+
+/** 완료 후 제안 카드들을 인라인으로 렌더 — SuggestionInbox 진입 없이 카드 안에서 적용/거절 */
+function CreateSuggestionsReview({ suggestionIds }: { suggestionIds: string[] }) {
+  const [suggestions, setSuggestions] = useState<
+    Awaited<ReturnType<typeof import('../../api/agent').listSuggestions>>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (suggestionIds.length === 0) {
+      setLoading(false);
+      return;
+    }
+    void (async () => {
+      try {
+        const all = await (await import('../../api/agent')).listSuggestions();
+        const wanted = new Set(suggestionIds);
+        setSuggestions(all.filter((s) => wanted.has(s.id)));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [suggestionIds]);
+
+  async function act(id: string, status: 'confirmed' | 'rejected') {
+    setBusyId(id);
+    try {
+      const api = await import('../../api/agent');
+      await api.patchSuggestion(id, status);
+      setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <Loader2 size={12} className="animate-spin" />
+        제안 불러오는 중...
+      </div>
+    );
+  }
+
+  if (suggestions.length === 0) {
+    return (
+      <div className="rounded-md bg-muted/40 px-3 py-3 text-center text-xs text-muted-foreground">
+        생성된 제안이 없습니다. 답변 텍스트를 참고하거나 다시 만들기를 눌러 시도해주세요.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-foreground">
+        <ListChecks size={12} className="text-primary" />
+        제안 {suggestions.length}건 — 적용 여부를 선택하세요
+      </div>
+      {suggestions.map((s) => (
+        <CreateSuggestionItem
+          key={s.id}
+          suggestion={s}
+          busy={busyId === s.id}
+          onApprove={() => void act(s.id, 'confirmed')}
+          onReject={() => void act(s.id, 'rejected')}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** 단일 제안 카드 — useDecryptedSuggestion 으로 suggested_name cipher 복호화 + skeleton 가드. */
+function CreateSuggestionItem({
+  suggestion: s,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  suggestion: AgentSuggestion;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const decoded = useDecryptedSuggestion(s);
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-border bg-background p-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {entityLabel(s.entity_type)}
+          </span>
+          {decoded.ready ? (
+            <span className="truncate text-xs font-medium">{decoded.suggested_name}</span>
+          ) : (
+            <span className="h-3 w-32 animate-pulse rounded bg-muted/60" />
+          )}
+        </div>
+        {s.status !== 'pending' && (
+          <span className="mt-1 inline-block text-[10px] text-muted-foreground">
+            {s.status === 'confirmed' ? '✓ 적용됨' : '✗ 거절됨'}
+          </span>
+        )}
+      </div>
+      {s.status === 'pending' && (
+        <div className="flex shrink-0 gap-1">
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={busy}
+            className="flex h-7 items-center gap-0.5 rounded border border-border px-2 text-[11px] hover:bg-accent disabled:opacity-50"
+          >
+            <X size={11} /> 거절
+          </button>
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={busy}
+            className="flex h-7 items-center gap-0.5 rounded bg-primary px-2 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Check size={11} /> 적용
+          </button>
+        </div>
+      )}
     </div>
   );
 }

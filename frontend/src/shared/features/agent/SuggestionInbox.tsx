@@ -210,7 +210,11 @@ function SuggestionCard({
         ) : (
           <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
         )}
-        <span className="flex-1 truncate font-medium">{decoded.suggested_name}</span>
+        {decoded.ready ? (
+          <span className="flex-1 truncate font-medium">{decoded.suggested_name}</span>
+        ) : (
+          <span className="h-3 flex-1 animate-pulse rounded bg-muted/60" />
+        )}
       </button>
       {previewOpen && (
         <div className="mt-1 border-t border-border/40 pt-2">

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -133,23 +134,153 @@ async def run_planner_loop(
                 # 새 assistant turn 시작 신호 — 프론트가 새 메시지 버블 띄우도록
                 if event_emit:
                     event_emit({"event_type": "assistant_start"})
-                async with client.messages.stream(
+                # low-level streaming — messages.create(stream=True) 가 raw HTTP SSE 이벤트
+                # (RawMessageStartEvent / RawContentBlockStartEvent / RawContentBlockDeltaEvent /
+                #  RawContentBlockStopEvent / RawMessageDeltaEvent / RawMessageStopEvent) 를 그대로
+                # yield 한다. messages.stream() 의 high-level helper 는 raw 가 아닌 가공된 wrapper
+                # event (TextEvent/InputJsonEvent 등) 를 yield 하므로 우리 raw 패턴 매칭이 동작 안 함.
+                stream_resp = await client.messages.create(
                     model=sonnet_model,
                     max_tokens=PLANNER_MAX_TOKENS,
                     system=system_blocks,
                     tools=tools,
                     messages=history,
-                    # Sonnet 4 의 XML hallucination 빈도 감소 + tool 결정 안정성 ↑
                     temperature=0.2,
-                ) as stream:
-                    async for ev in stream:
-                        if getattr(ev, "type", None) == "content_block_delta":
-                            delta = getattr(ev, "delta", None)
-                            if delta is not None and getattr(delta, "type", None) == "text_delta":
-                                chunk = getattr(delta, "text", "") or ""
-                                if chunk and event_emit:
-                                    event_emit({"event_type": "text_delta", "text": chunk})
-                    response = await stream.get_final_message()
+                    stream=True,
+                    # NOTE — fine-grained-tool-streaming-2025-05-14 beta header 는 시도했으나
+                    # 우리 환경 (Sonnet 4 + 우리 SDK 0.40+) 에서 stream 도중 비정상 종료시키는
+                    # 회귀 발생 (assistant_end 미발생, partial input json 으로 도구 실행 실패).
+                    # 원인 미확정 (계정/요금제 미지원? SDK extra_headers merge issue?) — 우선
+                    # rollback. 진짜 라이브 streaming 은 frontend typewriter trick 으로 대체.
+                )
+
+                # 직접 누적 — get_final_message() 대체. 이후 코드가 response.content/usage/stop_reason
+                # 으로 접근하므로 호환 SimpleNamespace 합성.
+                content_blocks: list[dict[str, Any]] = []
+                input_buffers: dict[int, list[str]] = {}
+                block_tool_names: dict[int, str] = {}
+                final_usage: Any = None
+                final_stop_reason: str | None = None
+
+                async for ev in stream_resp:
+                    ev_type = getattr(ev, "type", None)
+
+                    if ev_type == "message_start":
+                        msg = getattr(ev, "message", None)
+                        if msg is not None:
+                            final_usage = getattr(msg, "usage", None)
+                        continue
+
+                    if ev_type == "content_block_start":
+                        cb = getattr(ev, "content_block", None)
+                        idx = getattr(ev, "index", None)
+                        if cb is None or idx is None:
+                            continue
+                        cb_type = getattr(cb, "type", None)
+                        # content_blocks 가 idx 까지 채워져 있도록 패딩
+                        while len(content_blocks) <= idx:
+                            content_blocks.append({"type": "text", "text": ""})
+                        if cb_type == "text":
+                            content_blocks[idx] = {"type": "text", "text": ""}
+                        elif cb_type == "tool_use":
+                            tname = getattr(cb, "name", "") or ""
+                            tid = getattr(cb, "id", "") or ""
+                            block_tool_names[idx] = tname
+                            input_buffers[idx] = []
+                            content_blocks[idx] = {"type": "tool_use", "id": tid, "name": tname, "input": {}}
+                            if event_emit:
+                                event_emit({
+                                    "event_type": "tool_input_start",
+                                    "block_index": idx,
+                                    "tool_name": tname,
+                                })
+                        else:
+                            content_blocks[idx] = {"type": cb_type or "unknown"}
+                        continue
+
+                    if ev_type == "content_block_delta":
+                        delta = getattr(ev, "delta", None)
+                        idx = getattr(ev, "index", None)
+                        if delta is None or idx is None:
+                            continue
+                        delta_type = getattr(delta, "type", None)
+
+                        if delta_type == "text_delta":
+                            chunk = getattr(delta, "text", "") or ""
+                            if idx < len(content_blocks) and content_blocks[idx].get("type") == "text":
+                                content_blocks[idx]["text"] = (content_blocks[idx].get("text") or "") + chunk
+                            if chunk and event_emit:
+                                event_emit({"event_type": "text_delta", "text": chunk})
+                        elif delta_type == "input_json_delta":
+                            partial = getattr(delta, "partial_json", "") or ""
+                            if not partial:
+                                continue
+                            input_buffers.setdefault(idx, []).append(partial)
+                            if event_emit:
+                                event_emit({
+                                    "event_type": "tool_input_delta",
+                                    "block_index": idx,
+                                    "tool_name": block_tool_names.get(idx, ""),
+                                    "partial_json": partial,
+                                })
+                            # ★ asyncio cooperative yield — anthropic 이 input_json_delta 를
+                            # burst 로 보내면 await 가 즉시 resolve 해서 SSE generator 가 깨어날
+                            # 기회를 못 얻는다. sleep(0) 으로 강제 yield → 매 chunk 마다 SSE
+                            # generator 가 queue 에서 꺼내 즉시 client 로 forward.
+                            await asyncio.sleep(0)
+                        continue
+
+                    if ev_type == "content_block_stop":
+                        idx = getattr(ev, "index", None)
+                        if idx is None or idx >= len(content_blocks):
+                            continue
+                        block = content_blocks[idx]
+                        if block.get("type") == "tool_use":
+                            full = "".join(input_buffers.get(idx, []))
+                            try:
+                                block["input"] = __import__("json").loads(full) if full else {}
+                            except (ValueError, TypeError):
+                                block["input"] = {}
+                            if event_emit:
+                                event_emit({
+                                    "event_type": "tool_input_stop",
+                                    "block_index": idx,
+                                    "tool_name": block.get("name", ""),
+                                })
+                        continue
+
+                    if ev_type == "message_delta":
+                        d = getattr(ev, "delta", None)
+                        if d is not None:
+                            sr = getattr(d, "stop_reason", None)
+                            if sr:
+                                final_stop_reason = sr
+                        u = getattr(ev, "usage", None)
+                        if u is not None:
+                            # output_tokens 누적 — message_start usage 의 input_tokens 와 합산
+                            try:
+                                cur_out = int(getattr(final_usage, "output_tokens", 0) or 0) if final_usage else 0
+                                new_out = int(getattr(u, "output_tokens", 0) or 0)
+                                if final_usage is not None:
+                                    setattr(final_usage, "output_tokens", cur_out + new_out)
+                            except Exception:
+                                pass
+                        continue
+
+                # response 합성 — 기존 코드가 response.content[i].type 등으로 접근.
+                # SimpleNamespace 가 가장 호환적이지만 dict list 그대로 두고 _block_to_dict 가 처리.
+                from types import SimpleNamespace as _SimpleNS
+
+                class _BlockNS:
+                    def __init__(self, d: dict[str, Any]) -> None:
+                        for k, v in d.items():
+                            setattr(self, k, v)
+
+                response = _SimpleNS(
+                    content=[_BlockNS(b) for b in content_blocks],
+                    usage=final_usage,
+                    stop_reason=final_stop_reason,
+                )
                 if event_emit:
                     event_emit({"event_type": "assistant_end"})
                 break

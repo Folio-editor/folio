@@ -12,6 +12,8 @@ import com.storyzip.ai.client.dto.EpisodePipelineResponse;
 import com.storyzip.ai.client.dto.HealthResponse;
 import com.storyzip.ai.client.dto.PingEnqueuedResponse;
 import com.storyzip.ai.client.dto.PingResultResponse;
+import com.storyzip.ai.client.dto.QuickSpellcheckRequest;
+import com.storyzip.ai.client.dto.QuickSummarizeRequest;
 import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.ai.client.dto.SpellcheckRequest;
 import com.storyzip.common.exception.AiException;
@@ -54,6 +56,8 @@ public class AiClient {
     /** 리뷰는 LLM 한 번 호출이라 길다. 30초 넘으면 사용자 경험 망가지므로 WARN. */
     private static final long AI_REVIEW_SLA_MS = 30_000L;
     private static final long AI_SPELLCHECK_SLA_MS = 20_000L;
+    /** 회차 요약은 본문 길이에 따라 변동 — Haiku 1회 + DB UPSERT 한 번. */
+    private static final long AI_SUMMARIZE_SLA_MS = 30_000L;
     /** 초안 SSE 스트림 전체 — 5분이 한계 (timeout 설정과 동일). */
     private static final long AI_DRAFT_STREAM_SLA_MS = 60_000L;
 
@@ -591,6 +595,102 @@ public class AiClient {
                     String body = response.body();
                     int bodyLen = body == null ? 0 : body.length();
                     log.warn("AI spellcheck non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+
+                return mapper.readValue(response.body(), Map.class);
+            });
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        }
+    }
+
+    /** 맞춤법 검사 + 큐 적재 통합 — FastAPI /v1/quick/spellcheck 프록시. spellcheck 와 동일하게 Haiku 1회. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestQuickSpellcheck(QuickSpellcheckRequest request) {
+        try {
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestQuickSpellcheck", AI_SPELLCHECK_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/quick/spellcheck"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(2))
+                        .build();
+
+                HttpClient client = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<String> response = client.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    log.warn("AI quick spellcheck non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+
+                return mapper.readValue(response.body(), Map.class);
+            });
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        }
+    }
+
+    /** 회차 요약 단발 생성 — FastAPI /v1/quick/summarize 프록시 (동기 JSON, Haiku 1회). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestQuickSummarize(QuickSummarizeRequest request) {
+        try {
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestQuickSummarize", AI_SUMMARIZE_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/quick/summarize"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(2))
+                        .build();
+
+                HttpClient summarizeClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<String> response = summarizeClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    log.warn("AI quick summarize non-200: status={} bodyLen={}",
                             response.statusCode(), bodyLen);
                     throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
                 }

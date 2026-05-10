@@ -222,6 +222,38 @@ async def _agent_sse_generator(thread_id: str, user_message: str):
             except asyncio.QueueFull:
                 pass
             return
+        # tool_use input json 점진 누적 streaming — 카드 모드의 결과물 실시간 표시용.
+        if ev_type == "tool_input_start":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_start",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
+        if ev_type == "tool_input_stop":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_stop",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
+        if ev_type == "tool_input_delta":
+            try:
+                queue.put_nowait({
+                    "type": "tool_input_delta",
+                    "block_index": meta.get("block_index"),
+                    "tool_name": meta.get("tool_name"),
+                    "partial_json": meta.get("partial_json", ""),
+                })
+            except asyncio.QueueFull:
+                pass
+            return
         # 2) BudgetTracker 가 보내는 step 메타
         recent = meta.get("recent_lines", [])
         if recent:

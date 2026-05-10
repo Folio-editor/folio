@@ -40,6 +40,31 @@ export function entityLabel(entityType: string): string {
   return ENTITY_LABEL[entityType] ?? entityType;
 }
 
+/** 복호화 진행 중 placeholder. cipher 가 절대 그대로 표시되지 않도록 한다. */
+const CIPHER_PLACEHOLDER = '⋯ 복호화 중';
+
+/** payload 안의 v1: ciphertext 필드를 placeholder 로 deep-walk 마스킹. */
+function maskCiphers(value: unknown): unknown {
+  if (typeof value === 'string') return isCipher(value) ? CIPHER_PLACEHOLDER : value;
+  if (Array.isArray(value)) return value.map(maskCiphers);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, maskCiphers(v)]),
+    );
+  }
+  return value;
+}
+
+/** value (string/array/object) 안에 v1: ciphertext 가 하나라도 있는지 deep-walk 검사. */
+function containsCipher(value: unknown): boolean {
+  if (typeof value === 'string') return isCipher(value);
+  if (Array.isArray(value)) return value.some(containsCipher);
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some(containsCipher);
+  }
+  return false;
+}
+
 /**
  * payload 안의 v1: 문자열을 재귀적으로 평문화.
  * 폴백: KEK 부재 / encrypted_dek 부재 / 복호화 실패 → ciphertext 그대로 두어 UI 깨짐 방지.
@@ -50,7 +75,7 @@ export function entityLabel(entityType: string): string {
 export function useDecryptedSuggestionPayload(
   workId: string,
   payload: Record<string, unknown>,
-): Record<string, unknown> {
+): { data: Record<string, unknown>; ready: boolean } {
   const { data: workRows = [] } = useQuery<{ encrypted_dek: string | null }>(
     `SELECT encrypted_dek FROM work WHERE id = ?`,
     [workId],
@@ -67,10 +92,29 @@ export function useDecryptedSuggestionPayload(
     }
   }, [payload]);
 
-  const [decrypted, setDecrypted] = useState<Record<string, unknown>>(payload);
+  // payload 안에 cipher 가 처음부터 없으면 즉시 ready=true (skeleton 안 띄움).
+  const initialHasCipher = useMemo(() => containsCipher(payload), [payloadKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 첫 마운트 + payload 변경 시 cipher 마스킹된 sanitized 객체를 즉시 set —
+  // 복호화 완료 전 한 프레임도 v1: ciphertext 가 사용자에게 노출되지 않게 하는 가드.
+  const [decrypted, setDecrypted] = useState<Record<string, unknown>>(
+    () => maskCiphers(payload) as Record<string, unknown>,
+  );
+  const [ready, setReady] = useState<boolean>(!initialHasCipher);
+
+  // KEK 가 페이지 로드 직후 아직 메모리에 없으면 decryptWorkFieldOnce 가 cipher 를 그대로 반환한다.
+  // 그래서 walk 가 끝났는데도 결과에 cipher 가 남아있을 수 있다 — 이 경우 ready=false 유지 +
+  // 짧은 backoff 로 재시도해 KEK 복원 시점에 자동 평문화한다.
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
+    // payload reference 변경 시에도 마스킹된 상태로 즉시 리셋 → 비동기 walk 결과로 평문 채워짐
+    const hasCipher = containsCipher(payload);
+    setDecrypted(maskCiphers(payload) as Record<string, unknown>);
+    setReady(!hasCipher);
+
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function walk(value: unknown): Promise<unknown> {
       if (typeof value === 'string') {
@@ -93,27 +137,47 @@ export function useDecryptedSuggestionPayload(
 
     (async () => {
       const next = (await walk(payload)) as Record<string, unknown>;
-      if (!cancelled) setDecrypted(next);
+      if (cancelled) return;
+      // walk 결과에 여전히 cipher 가 남아있다 = KEK 미준비. 마스킹 유지하고 짧은 backoff 후 재시도.
+      // 25회 × 200ms = 5초 안에 KEK 복원 안 되면 그 후엔 cipher 그대로 노출 (encryptedDek/KEK 자체 부재 가능성).
+      if (containsCipher(next)) {
+        if (retryTick < 25) {
+          retryTimer = setTimeout(() => {
+            if (!cancelled) setRetryTick((t) => t + 1);
+          }, 200);
+        } else {
+          // 5초 retry 소진 — 더 이상 막을 방법 없음. 받은 그대로 (cipher 포함) 노출.
+          setDecrypted(next);
+          setReady(true);
+        }
+        return;
+      }
+      setDecrypted(next);
+      setReady(true);
     })();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-    // payloadKey (JSON 직렬화) 만 deps — payload reference 변경 무시. workId/encryptedDek 추가.
+    // payloadKey (JSON 직렬화) 만 deps — payload reference 변경 무시. workId/encryptedDek/retryTick 추가.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payloadKey, workId, encryptedDek]);
+  }, [payloadKey, workId, encryptedDek, retryTick]);
 
-  return decrypted;
+  return { data: decrypted, ready };
 }
 
 /**
  * suggestion 의 모든 ciphertext 필드 (suggested_name + payload + reviewer_note) 를
  * 한 번에 deep-walk 복호화. listSuggestion 의 카드 헤더용으로도 사용.
+ *
+ * ready=false 인 동안엔 placeholder/skeleton 으로 카드를 표시해 cipher 노출 + 깜빡임 차단.
  */
 export function useDecryptedSuggestion(s: AgentSuggestion): {
   suggested_name: string;
   payload: Record<string, unknown>;
   reviewer_note: string | null;
+  ready: boolean;
 } {
   // wrapper 객체 reference 안정화 — 무한 렌더 루프 차단 (deps 비교는 hook 내부 JSON 키로도
   // 보호되지만 1차로 reference 안정화하면 stringify 자체도 1회만 수행).
@@ -125,13 +189,14 @@ export function useDecryptedSuggestion(s: AgentSuggestion): {
     }),
     [s.suggested_name, s.payload, s.reviewer_note],
   );
-  const wrapped = useDecryptedSuggestionPayload(s.work_id, wrapper);
+  const { data: wrapped, ready } = useDecryptedSuggestionPayload(s.work_id, wrapper);
   return {
     suggested_name:
       typeof wrapped.suggested_name === 'string' ? wrapped.suggested_name : s.suggested_name,
     payload: (wrapped.payload as Record<string, unknown>) ?? s.payload,
     reviewer_note:
       typeof wrapped.reviewer_note === 'string' ? wrapped.reviewer_note : s.reviewer_note,
+    ready,
   };
 }
 
@@ -177,7 +242,17 @@ export function SuggestionBodyPreview({
   batchChecked?: Set<number>;
   onBatchCheckedChange?: (next: Set<number>) => void;
 }) {
-  const p = useDecryptedSuggestionPayload(workId, s.payload);
+  const { data: p, ready } = useDecryptedSuggestionPayload(workId, s.payload);
+  if (!ready) {
+    // 복호화 완료 전 — cipher 1프레임도 노출 안 되도록 skeleton 만 표시.
+    return (
+      <div className="space-y-1.5">
+        <div className="h-3 w-1/3 animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-full animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-4/5 animate-pulse rounded bg-muted/60" />
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5 text-[11px]">
       {s.entity_type === 'episode_draft' && (
