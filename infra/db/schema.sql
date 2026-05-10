@@ -37,18 +37,22 @@ CREATE TABLE audit_log (
 );
 
 CREATE TABLE payment (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    order_id        VARCHAR(100) NOT NULL UNIQUE,
-    payment_key     VARCHAR(200),
-    amount          INTEGER NOT NULL,
-    token_qty       INTEGER NOT NULL,
-    status          VARCHAR(20) NOT NULL,
-    method          VARCHAR(20),
-    approved_at     TIMESTAMP,
-    failure_reason  TEXT,
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id                UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    order_id                 VARCHAR(100) NOT NULL UNIQUE,
+    payment_key              VARCHAR(200),
+    amount                   INTEGER NOT NULL,
+    token_qty                INTEGER NOT NULL,
+    status                   VARCHAR(20) NOT NULL,
+    method                   VARCHAR(20),
+    approved_at              TIMESTAMP,
+    failure_reason           TEXT,
+    -- 결제 시 사용자가 동의한 환불 규정 버전 (현재 'v1'). 약관 변경 시 추적용 — 분쟁 시 법적 증거.
+    -- 전자상거래법 거래 기록 5년 보관 의무 대응. CreatePaymentRequest 에서 명시 동의 받음.
+    refund_policy_version    VARCHAR(20) NOT NULL,
+    refund_policy_agreed_at  TIMESTAMP NOT NULL,
+    created_at               TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE subscription (
@@ -417,9 +421,11 @@ CREATE TABLE extraction_suggestion (
             'world_note_update','world_note_delete',
             'plot_create','plot_tree','plot_revision','plot_delete',
             'episode_draft','episode_update','episode_delete',
-            'review_issue'
+            'review_issue',
+            'spelling_fix','spelling_batch'
         )),
-    suggested_name      VARCHAR(200) NOT NULL,
+    -- TEXT: 2026-05-09 cipher 도입으로 200자 제한이 base64 + AES-GCM 오버헤드 초과 가능 → TEXT.
+    suggested_name      TEXT NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
     source_agent        VARCHAR(40),                  -- 'sonnet_planner' / 'haiku_worker' / NULL(자동 추출 task)
     source_thread_id    UUID,                         -- agent_session.thread_id (FK 미설정: agent_session 후순위 생성)
@@ -476,7 +482,8 @@ CREATE TABLE agent_session (
             'draft_next','consistency_check','revision',
             'extraction','qa','ideation'
         )),
-    title            VARCHAR(200),
+    -- TEXT: 2026-05-09 cipher 도입으로 200자 제한이 base64 + AES-GCM 오버헤드 초과 가능 → TEXT.
+    title            TEXT,
     messages         JSONB NOT NULL DEFAULT '[]'::jsonb,
     summary_so_far   TEXT,                           -- N-5 자동 압축 결과 보관
     status           VARCHAR(20) NOT NULL DEFAULT 'active'
