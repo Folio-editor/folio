@@ -1,0 +1,643 @@
+/* Folio · Guide page — 서비스 소개/사용 안내 */
+
+.folio-landing .guide-main {
+  min-height: 100vh;
+  padding: 4rem 2rem 6rem;
+}
+
+.folio-landing .guide-container {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* ── Hero ─────────────────────────────────────────────── */
+.folio-landing .guide-hero {
+  text-align: center;
+  padding: 3rem 0 4rem;
+}
+.folio-landing .guide-hero-rule {
+  width: 38px;
+  height: 1px;
+  background: var(--ink-mid);
+  margin: 0 auto 2rem;
+}
+.folio-landing .guide-eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 1.5rem;
+}
+.folio-landing .guide-h1 {
+  font-family: var(--serif);
+  font-size: 38px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 1.5rem;
+}
+.folio-landing .guide-lede {
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 2;
+  color: var(--ink-mid);
+  font-weight: 300;
+  max-width: 540px;
+  margin: 0 auto;
+}
+
+/* ── TOC ──────────────────────────────────────────────── */
+.folio-landing .guide-toc {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--ink-border);
+  border-bottom: 1px solid var(--ink-border);
+  margin: 0 auto 5rem;
+}
+.folio-landing .guide-toc-item {
+  padding: 18px 22px;
+  border-right: 1px solid var(--ink-faint);
+  border-bottom: 1px solid var(--ink-faint);
+  text-decoration: none;
+  color: var(--ink-mid);
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  transition: background-color 0.2s ease;
+}
+.folio-landing .guide-toc-item:nth-child(2n) { border-right: none; }
+.folio-landing .guide-toc-item:nth-last-child(-n+2) { border-bottom: none; }
+.folio-landing .guide-toc-item:hover { background: rgba(0,0,0,0.02); }
+.folio-landing .guide-toc-num {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--ink-faint);
+  min-width: 26px;
+}
+.folio-landing .guide-toc-label {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+/* ── Section ──────────────────────────────────────────── */
+.folio-landing .guide-section {
+  margin: 0 auto;
+  padding-bottom: 4.5rem;
+}
+.folio-landing .guide-chapter-mark {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  text-align: center;
+  margin-bottom: 12px;
+}
+.folio-landing .guide-chapter-rule {
+  width: 24px;
+  height: 1px;
+  background: var(--ink-mid);
+  margin: 0 auto 28px;
+}
+.folio-landing .guide-h2 {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  text-align: center;
+  margin: 0 0 2.5rem;
+}
+.folio-landing .guide-h3 {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 2.2rem 0 0.8rem;
+  letter-spacing: -0.005em;
+}
+.folio-landing .guide-h3:first-child { margin-top: 0; }
+.folio-landing .guide-section p {
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.95;
+  color: var(--ink-mid);
+  margin: 0 0 1rem;
+}
+.folio-landing .guide-section p strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+.folio-landing .guide-section ol,
+.folio-landing .guide-section ul {
+  margin: 0.8rem 0 1.2rem;
+  padding-left: 0;
+  list-style: none;
+}
+.folio-landing .guide-section ol li,
+.folio-landing .guide-section ul li {
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 0.4rem;
+  font-family: var(--sans);
+  font-size: 14.5px;
+  color: var(--ink-mid);
+  line-height: 1.85;
+}
+.folio-landing .guide-section ol { counter-reset: oli; }
+.folio-landing .guide-section ol li { counter-increment: oli; }
+.folio-landing .guide-section ol li::before {
+  content: counter(oli);
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+.folio-landing .guide-section ul li::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 14px;
+  width: 4px;
+  height: 1px;
+  background: var(--ink-faint);
+}
+.folio-landing .guide-section code {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--ink-faint);
+  border-radius: 3px;
+  color: var(--ink);
+}
+
+/* Eyebrow inside section */
+.folio-landing .guide-mini-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--ink-mid);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+}
+
+/* ── Section divider ──────────────────────────────────── */
+.folio-landing .guide-divider {
+  text-align: center;
+  padding: 0.5rem 0 3rem;
+}
+.folio-landing .guide-divider span {
+  color: var(--ink-faint);
+  font-size: 11px;
+  letter-spacing: 1em;
+}
+
+/* ── Start cards (시작 방법) ──────────────────────────── */
+.folio-landing .guide-start-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--ink-border);
+  background: #ffffff;
+  margin: 1.5rem 0 2rem;
+}
+.folio-landing .guide-start-card {
+  padding: 26px 24px;
+  border-right: 1px solid var(--ink-faint);
+}
+.folio-landing .guide-start-card:last-child { border-right: none; }
+.folio-landing .guide-start-card-num {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: var(--ink-faint);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.folio-landing .guide-start-card-num::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ink-faint);
+}
+.folio-landing .guide-start-card h4 {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 0.5rem;
+}
+.folio-landing .guide-start-card-desc {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink-mid);
+  margin: 0 0 1.2rem;
+  line-height: 1.7;
+}
+.folio-landing .guide-start-preview {
+  background: rgba(0, 0, 0, 0.025);
+  border: 1px solid var(--ink-faint);
+  padding: 14px 16px;
+  margin-bottom: 1.2rem;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink-mid);
+  line-height: 1.85;
+}
+.folio-landing .guide-start-preview-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+  font-size: 13.5px;
+}
+.folio-landing .guide-start-preview-meta {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+.folio-landing .guide-start-preview-blank {
+  background: rgba(0, 0, 0, 0.025);
+  border: 1px dashed var(--ink-border);
+  padding: 28px 18px;
+  text-align: center;
+  font-family: var(--serif);
+  color: var(--ink-mid);
+  font-size: 13.5px;
+  line-height: 1.7;
+  margin-bottom: 1.2rem;
+}
+.folio-landing .guide-start-preview-plus {
+  font-size: 22px;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+  display: block;
+}
+.folio-landing .guide-start-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.folio-landing .guide-start-bullets li {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink-mid);
+  padding: 4px 0 4px 16px;
+  margin: 0;
+  position: relative;
+  line-height: 1.7;
+}
+.folio-landing .guide-start-bullets li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  color: var(--ink-faint);
+  background: none;
+  width: auto;
+  height: auto;
+}
+
+/* ── 4-tab grid (구조) ────────────────────────────────── */
+.folio-landing .guide-tabs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--ink-border);
+  border: 1px solid var(--ink-border);
+  margin: 2rem 0 2rem;
+}
+.folio-landing .guide-tab-cell {
+  background: #ffffff;
+  padding: 24px 16px;
+  text-align: center;
+}
+.folio-landing .guide-tab-num {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+  letter-spacing: 0.08em;
+}
+.folio-landing .guide-tab-name {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.folio-landing .guide-tab-desc {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-mid);
+  line-height: 1.55;
+}
+
+/* ── Pull quote ───────────────────────────────────────── */
+.folio-landing .guide-pull-quote {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--ink);
+  text-align: center;
+  padding: 28px 24px;
+  margin: 2.2rem 0;
+  border-top: 1px solid var(--ink-border);
+  border-bottom: 1px solid var(--ink-border);
+  letter-spacing: -0.005em;
+  line-height: 1.7;
+}
+
+/* ── Stage flow chips (복선) ──────────────────────────── */
+.folio-landing .guide-stages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 0;
+  border-top: 1px solid var(--ink-border);
+  border-bottom: 1px solid var(--ink-border);
+  margin: 2rem 0;
+  flex-wrap: wrap;
+}
+.folio-landing .guide-stage-chip {
+  font-family: var(--serif);
+  font-size: 14.5px;
+  color: var(--ink-mid);
+  padding: 6px 16px;
+  border: 1px solid var(--ink-border);
+  border-radius: 999px;
+}
+.folio-landing .guide-stage-chip.active {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.folio-landing .guide-stage-arrow {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+/* ── Shortcut group ───────────────────────────────────── */
+.folio-landing .guide-shortcut-group {
+  margin-bottom: 2rem;
+}
+.folio-landing .guide-shortcut-title {
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: 0;
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ink-border);
+}
+.folio-landing .guide-shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ink-faint);
+}
+.folio-landing .guide-shortcut-row:last-child { border-bottom: none; }
+.folio-landing .guide-shortcut-label {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink-mid);
+}
+.folio-landing .guide-keys {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.folio-landing .guide-key {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  padding: 3px 8px;
+  background: #ffffff;
+  border: 1px solid var(--ink-border);
+  border-bottom-width: 1.5px;
+  border-radius: 3px;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.folio-landing .guide-key-plus {
+  color: var(--ink-faint);
+  font-size: 11px;
+  margin: 0 1px;
+}
+.folio-landing .guide-key.guide-key-syntax {
+  font-size: 11.5px;
+  padding: 4px 9px;
+  min-width: 64px;
+  text-align: center;
+}
+
+/* ── Tabbed (단축키 / 마크다운) ──────────────────────── */
+.folio-landing .guide-help-tabs {
+  display: flex;
+  gap: 32px;
+  border-bottom: 1px solid var(--ink-border);
+  margin: 1rem 0 0;
+}
+.folio-landing .guide-help-tab {
+  background: none;
+  border: none;
+  padding: 12px 2px 14px;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink-mid);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+  letter-spacing: -0.005em;
+  -webkit-tap-highlight-color: transparent;
+}
+.folio-landing .guide-help-tab:hover { color: var(--ink); }
+.folio-landing .guide-help-tab.active {
+  color: var(--ink);
+  font-weight: 500;
+}
+.folio-landing .guide-help-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+}
+.folio-landing .guide-help-panel { display: none; padding-top: 1.5rem; }
+.folio-landing .guide-help-panel.active { display: block; }
+.folio-landing .guide-markdown-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-mid);
+  margin: 0 0 1rem;
+  letter-spacing: 0.01em;
+}
+
+/* ── F1 callout ───────────────────────────────────────── */
+.folio-landing .guide-callout {
+  margin-top: 2.5rem;
+  padding: 22px 26px;
+  background: #ffffff;
+  border: 1px solid var(--ink-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.folio-landing .guide-callout-key {
+  flex-shrink: 0;
+}
+.folio-landing .guide-callout-key .guide-key {
+  font-size: 15px;
+  padding: 11px 17px;
+  border-radius: 4px;
+  box-shadow: 0 2px 0 var(--ink-faint);
+  font-weight: 500;
+}
+.folio-landing .guide-callout-body {
+  flex: 1;
+  min-width: 0;
+}
+.folio-landing .guide-callout-title {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.folio-landing .guide-callout-desc {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  line-height: 1.7;
+}
+.folio-landing .guide-callout-sub {
+  font-size: 12px;
+  color: var(--ink-faint);
+  display: block;
+  margin-top: 2px;
+}
+
+/* ── Next-list ────────────────────────────────────────── */
+.folio-landing .guide-next-list {
+  border-top: 1px solid var(--ink-border);
+  margin-top: 2rem;
+}
+.folio-landing .guide-next-item {
+  display: flex;
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--ink-faint);
+  align-items: baseline;
+}
+.folio-landing .guide-next-num {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-faint);
+  min-width: 28px;
+  letter-spacing: 0.04em;
+}
+.folio-landing .guide-next-body { flex: 1; }
+.folio-landing .guide-next-title {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.folio-landing .guide-next-desc {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-mid);
+  line-height: 1.7;
+}
+
+/* ── Footer CTA ───────────────────────────────────────── */
+.folio-landing .guide-bottom-cta {
+  text-align: center;
+  padding: 3.5rem 0 1rem;
+  border-top: 1px solid var(--ink-border);
+  margin-top: 4rem;
+}
+.folio-landing .guide-bottom-cta-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  margin-bottom: 1rem;
+}
+.folio-landing .guide-bottom-cta-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 1.5rem;
+  letter-spacing: -0.01em;
+}
+.folio-landing .guide-bottom-cta-buttons {
+  display: inline-flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.folio-landing .guide-bottom-cta-button {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 30px;
+  border: 1px solid var(--ink);
+  text-decoration: none;
+  color: var(--ink);
+  background: transparent;
+  letter-spacing: 0.04em;
+  transition: all 0.2s;
+}
+.folio-landing .guide-bottom-cta-button:hover {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 720px) {
+  .folio-landing .guide-main { padding: 2.5rem 1.25rem 5rem; }
+  .folio-landing .guide-h1 { font-size: 28px; }
+  .folio-landing .guide-h2 { font-size: 22px; }
+  .folio-landing .guide-h3 { font-size: 16px; }
+  .folio-landing .guide-toc { grid-template-columns: 1fr; margin-bottom: 3rem; }
+  .folio-landing .guide-toc-item { border-right: none; }
+  .folio-landing .guide-toc-item:nth-last-child(-n+2) { border-bottom: 1px solid var(--ink-faint); }
+  .folio-landing .guide-toc-item:last-child { border-bottom: none; }
+  .folio-landing .guide-start-cards { grid-template-columns: 1fr; }
+  .folio-landing .guide-start-card { border-right: none; border-bottom: 1px solid var(--ink-faint); }
+  .folio-landing .guide-start-card:last-child { border-bottom: none; }
+  .folio-landing .guide-tabs-grid { grid-template-columns: repeat(2, 1fr); }
+  .folio-landing .guide-pull-quote { font-size: 16px; }
+  .folio-landing .guide-callout { flex-direction: column; align-items: flex-start; gap: 14px; padding: 20px; }
+}

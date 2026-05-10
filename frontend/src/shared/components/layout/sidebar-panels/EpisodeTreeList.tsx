@@ -60,7 +60,7 @@ interface EpisodeTreeListProps {
 }
 
 const STATUS_DOT: Record<string, string> = {
-  '미작성': 'bg-muted-foreground/40',
+  '예정': 'bg-muted-foreground/40',
   '초고': 'bg-warning',
   '퇴고': 'bg-info',
   '완성': 'bg-success',

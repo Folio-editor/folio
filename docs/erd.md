@@ -151,7 +151,7 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 | writer_id | UUID | FK → Writer | |
 | parent_id | UUID | FK → Episode, NULL | NULL이면 최상위 |
 | title | VARCHAR(200) | NOT NULL | 회차 제목 |
-| status | VARCHAR(20) | NOT NULL | 미작성/초고/퇴고/완성/trashed |
+| status | VARCHAR(20) | NOT NULL | 예정/초고/퇴고/완성/trashed |
 | content | TEXT | | TipTap JSON 원고 본문 |
 | word_count | INTEGER | NOT NULL DEFAULT 0 | 자동 계산 글자수 |
 | sort_order | INTEGER | NOT NULL | |
@@ -266,28 +266,32 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 
 ### 2.3 Payment (결제)
 
-토스페이먼츠 결제 1건 단위. 1회성(토큰 충전)과 정기결제(프로 구독)의 매 회차 결제가 모두 기록된다.
+PortOne(포트원) V2 결제 1건 단위. 1회성(토큰 충전)과 정기결제(프로 구독)의 매 회차 결제가 모두 기록된다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | UUID | PK | |
 | writer_id | UUID | FK → Writer | |
-| order_id | VARCHAR(100) | NOT NULL, UNIQUE | 우리가 발급하는 주문 고유번호 (토스 전달용, 중복 방지 위해 UNIQUE) |
-| payment_key | VARCHAR(200) | | 토스가 발급하는 결제 식별자 (승인 완료 시 채워짐) |
+| order_id | VARCHAR(100) | NOT NULL, UNIQUE | 우리가 발급하는 주문 고유번호. 종량제 `SZ-`, 구독 `SUB-` 프리픽스 |
+| payment_key | VARCHAR(200) | | PortOne이 발급하는 결제 식별자 (승인 완료 시 채워짐) |
 | amount | INTEGER | NOT NULL | 결제 금액 (원) |
 | token_qty | INTEGER | NOT NULL | 충전될 토큰 수량 |
 | status | VARCHAR(20) | NOT NULL | READY / IN_PROGRESS / DONE / CANCELED / FAILED |
 | method | VARCHAR(20) | | 결제수단 (CARD / VIRTUAL_ACCOUNT / EASY_PAY 등) |
-| approved_at | TIMESTAMP | | 토스 승인 완료 시각 (승인 전에는 NULL) |
-| failure_reason | TEXT | | 실패 시 토스가 반환한 원인 코드·메시지 |
+| approved_at | TIMESTAMP | | PortOne 승인 완료 시각 (승인 전에는 NULL) |
+| failure_reason | TEXT | | 실패 시 PortOne이 반환한 원인 코드·메시지 |
+| refund_policy_version | VARCHAR(20) | NOT NULL | 결제 시 사용자가 동의한 환불 규정 버전 (현재 `v1`) |
+| refund_policy_agreed_at | TIMESTAMP | NOT NULL | 환불 규정 동의 시각 (결제 생성 시점) |
 | created_at | TIMESTAMP | NOT NULL | 결제 요청 생성 시각 |
 | updated_at | TIMESTAMP | NOT NULL | |
 
 **추가 필드 이유**:
 - `order_id UNIQUE`: 코드 버그로 같은 주문번호가 중복 INSERT되면 DB가 차단
+- `order_id` 프리픽스: 환불 처리 시 종량제(`SZ-`) / 구독(`SUB-`) 분기에 사용
 - `method`: 가상계좌는 입금 전까지 PENDING 유지 등 결제수단별 분기에 필요
 - `approved_at`: 요청·승인 시각이 다르므로 환불 기한·세무 대응에 필요
 - `failure_reason`: CS 대응 (작가 "왜 결제 안 됐어요?" 문의)
+- `refund_policy_version`/`refund_policy_agreed_at`: 약관 변경 시 결제 시점에 어떤 약관에 동의했는지 추적. 분쟁 시 법적 증거 (전자상거래법 거래 기록 5년 보관 의무)
 
 ---
 
@@ -314,6 +318,52 @@ Character와 WorldNote 간 다대다 연결. 통합 태그 시스템.
 - `customer_key`: 토스 정기결제 API가 필수로 요구. 내부 `writer.id`를 그대로 노출하지 않기 위해 별도 식별자 사용 (토스 보안 가이드)
 - `last_payment_at`: 결제 실패 재시도 스케줄러가 "이미 처리된 건지" 판단
 - `retry_count`: 3일 간격 3회 재시도 정책 구현용
+
+---
+
+### 2.4-1 Refund (환불 신청 / 승인)
+
+환불 1건 단위. 약관 제5조에 따라 환불은 즉시 처리되지 않고 **이메일 기반 운영자 검토** 후 승인된다.
+
+`Payment ↔ Refund`는 1:N 관계 — 거절 후 1회 재신청을 허용하기 위함. 단 active(`REQUESTED`/`APPROVED`) 상태 환불은 결제당 최대 1건.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | UUID | PK | |
+| payment_id | UUID | NOT NULL, FK → Payment, INDEX | 어떤 결제에 대한 환불인지 |
+| status | VARCHAR(20) | NOT NULL, INDEX | REQUESTED / APPROVED / REJECTED / CANCELED |
+| reason | VARCHAR(30) | NOT NULL | 사유 코드: CUSTOMER_CHANGE_OF_MIND / SERVICE_ISSUE / PAYMENT_ERROR / COMPANY_FAULT / OTHER |
+| detail | VARCHAR(500) | | 사용자가 입력한 자유 사유 |
+| refund_type | VARCHAR(20) | NOT NULL | FULL / PARTIAL_USED / PARTIAL_DAYS / COMPANY_FAULT / COMPANY_FAULT_CREDIT |
+| refund_amount | INTEGER | NOT NULL | 환불 금액 (원). COMPANY_FAULT_CREDIT은 0 |
+| token_deducted | INTEGER | NOT NULL | 회수할 토큰 (또는 보상 크레딧 양) |
+| requested_at | TIMESTAMP | NOT NULL, INDEX | 사용자 신청 시각 |
+| processed_at | TIMESTAMP | | 운영자 승인/거절/사용자 취소 시각. REQUESTED일 땐 NULL |
+| admin_note | VARCHAR(500) | | 운영자가 승인/거절 시 입력한 메모 |
+| created_at | TIMESTAMP | NOT NULL | |
+| updated_at | TIMESTAMP | NOT NULL | |
+
+**환불 흐름**:
+1. **신청** (`POST /api/v1/payments/{paymentId}/refund`) — 정책 검증 후 `REQUESTED`로 INSERT, 운영자 이메일 발송 (`2square.f203@gmail.com`).
+2. **운영자 검토** — 이메일 확인 후 정책 충족 여부 판단.
+3. **승인** — `APPROVED`. 현금 환불은 PortOne `cancelPayment` + `Payment.status=CANCELED` + 토큰 회수. 회사 귀책 종량제 보상은 `chargePurchase`로 크레딧 다시 지급 (PortOne 호출 없음).
+4. **거절** — `REJECTED`. 결제 상태 그대로 두고 `admin_note`만 기록. 거절 1회까지 재신청 가능.
+5. **사용자 취소** — `CANCELED`. `REQUESTED` 상태에서만 가능.
+
+**왜 Payment에 묻지 않고 별도 테이블?**:
+- 거절 후 재신청 1회 허용 — 1:N 관계 필요
+- CS 통계 / 환불률 분석 쿼리 깔끔 (`SELECT reason, COUNT(*) FROM refund GROUP BY reason`)
+- 회계·감사·분쟁 표준 형식 (환불은 결제와 분리된 별도 트랜잭션)
+- 전자상거래법 거래 기록 5년 보관 의무 충족
+
+**정책 분기 (신청 시 검증)**:
+- **종량제 미사용 + 7일 이내**: `FULL` (전액 현금 환불 가능)
+- **종량제 일부 사용 + 단순 변심**: 신청 차단 (`REFUND_REQUEST_DENIED`)
+- **종량제 + 회사 귀책**: `COMPANY_FAULT_CREDIT` (현금 X, 결제 시 받은 크레딧 전액을 보너스로 다시 지급)
+- **구독 미사용 + 7일 이내**: `FULL`
+- **구독 일부 사용 + 단순 변심**: 신청 차단
+- **구독 + 회사 귀책**: `FULL`
+- **7일 경과 + 단순 변심**: 신청 차단 (구독은 차월 해지 안내)
 
 ---
 

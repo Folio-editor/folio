@@ -79,6 +79,10 @@ app.include_router(reviews.router, prefix="/v1")
 app.include_router(spellcheck.router, prefix="/v1")
 app.include_router(extract_settings.router, prefix="/v1")
 
+from app.api.v1 import agent as agent_router  # noqa: E402
+
+app.include_router(agent_router.router, prefix="/v1")
+
 # Dev 전용
 if settings.app_env != "prod":
     app.include_router(_dev_ping.router, prefix="/v1")

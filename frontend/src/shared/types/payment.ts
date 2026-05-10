@@ -3,6 +3,19 @@
  * 백엔드 DTO (com.storyzip.payment.dto.*) 와 1:1 대응.
  */
 
+/**
+ * 페이지네이션 응답 — 백엔드 {@code com.storyzip.common.dto.PageResponse} 와 1:1.
+ * page 는 0-based.
+ */
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}
+
 export interface TokenWalletResponse {
   balance: number;
   subscriptionBalance: number;
@@ -13,7 +26,7 @@ export interface TokenWalletResponse {
   totalUsed: number;
 }
 
-export type TokenPackageCode = 'TOKEN_300' | 'TOKEN_550' | 'TOKEN_1200';
+export type TokenPackageCode = 'TOKEN_3000' | 'TOKEN_5500' | 'TOKEN_12000';
 
 export interface TokenPackageInfo {
   code: TokenPackageCode;
@@ -23,9 +36,9 @@ export interface TokenPackageInfo {
 }
 
 export const TOKEN_PACKAGES: TokenPackageInfo[] = [
-  { code: 'TOKEN_300', amount: 300, tokenQty: 300, label: '300 크레딧' },
-  { code: 'TOKEN_550', amount: 500, tokenQty: 550, label: '550 크레딧' },
-  { code: 'TOKEN_1200', amount: 1_000, tokenQty: 1_200, label: '1,200 크레딧' },
+  { code: 'TOKEN_3000', amount: 300, tokenQty: 3_000, label: '3,000 크레딧' },
+  { code: 'TOKEN_5500', amount: 500, tokenQty: 5_500, label: '5,500 크레딧' },
+  { code: 'TOKEN_12000', amount: 1_000, tokenQty: 12_000, label: '12,000 크레딧' },
 ];
 
 export interface CreatePaymentResponse {
@@ -36,8 +49,22 @@ export interface CreatePaymentResponse {
   tokenQty: number;
 }
 
-export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+export type PaymentStatus = 'READY' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'CANCELED' | 'REFUNDED';
 export type PaymentMethod = 'CARD' | 'VIRTUAL_ACCOUNT' | 'EASY_PAY' | 'TRANSFER' | 'MOBILE_PHONE' | 'CULTURE_GIFT_CERTIFICATE';
+
+/** 백엔드 RefundPolicy.CURRENT_VERSION 과 동기화. */
+export const REFUND_POLICY_VERSION = 'v1';
+
+export interface RefundSummary {
+  refundId: string;
+  status: RefundStatus;
+  refundType: RefundType;
+  reason: RefundReason;
+  refundAmount: number;
+  tokenDeducted: number;
+  requestedAt: string;
+  processedAt: string | null;
+}
 
 export interface PaymentResponse {
   id: string;
@@ -49,6 +76,31 @@ export interface PaymentResponse {
   method: PaymentMethod | null;
   approvedAt: string | null;
   createdAt: string;
+  refundPolicyVersion: string | null;
+  refundPolicyAgreedAt: string | null;
+  /** 가장 최근 환불 신청 — 환불 가능 여부 / 상태 배지 표시에 사용. */
+  latestRefund: RefundSummary | null;
+}
+
+export type RefundType =
+  | 'FULL'
+  | 'PARTIAL_USED'
+  | 'PARTIAL_DAYS'
+  | 'COMPANY_FAULT'
+  | 'COMPANY_FAULT_CREDIT';
+
+export type RefundStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+
+export type RefundReason =
+  | 'CUSTOMER_CHANGE_OF_MIND'
+  | 'SERVICE_ISSUE'
+  | 'PAYMENT_ERROR'
+  | 'COMPANY_FAULT'
+  | 'OTHER';
+
+export interface RefundRequest {
+  reason: RefundReason;
+  detail?: string;
 }
 
 export interface RefundResponse {
@@ -57,7 +109,10 @@ export interface RefundResponse {
   originalAmount: number;
   refundAmount: number;
   tokenDeducted: number;
-  refundType: string;
+  refundType: RefundType;
+  reason: RefundReason;
+  refundId: string;
+  status: RefundStatus;
 }
 
 export type SubscriptionPlanCode = 'PRO_MONTHLY';
@@ -71,7 +126,7 @@ export interface SubscriptionPlanInfo {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlanInfo[] = [
-  { code: 'PRO_MONTHLY', amount: 990, monthlyTokens: 1_300, displayName: 'Folio Pro 월간' },
+  { code: 'PRO_MONTHLY', amount: 990, monthlyTokens: 13_000, displayName: 'Folio Pro 월간' },
 ];
 
 export interface BillingAuthPrepareResponse {

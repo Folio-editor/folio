@@ -24,6 +24,9 @@ export function TopNav() {
           <a href="/#faq" className="nav-link">
             문답
           </a>
+          <Link to="/guide" className="nav-link">
+            가이드
+          </Link>
           {isAuthenticated && writer ? (
             <UserProfileMenu writer={writer} />
           ) : (

@@ -145,7 +145,7 @@ services:
   fastapi-test:
     build:
       context: ../../ai
-      dockerfile: Dockerfile
+      dockerfile: ../infra/dockerfiles/Dockerfile.fastapi
     container_name: folio-ai-test
     ports:
       - "8000:8000"
@@ -178,7 +178,7 @@ services:
   celery-worker-test:
     build:
       context: ../../ai
-      dockerfile: Dockerfile.worker
+      dockerfile: ../infra/dockerfiles/Dockerfile.celery-worker
     container_name: folio-celery-worker-test
     environment:
       APP_ENV: test

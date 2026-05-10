@@ -54,6 +54,11 @@ import { apiClient, ApiError } from '../../lib/apiClient';
 import { getRegisteredEditor } from '../../lib/activeEditorRegistry';
 import { analytics, charCountBucket, durationBucket } from '../../lib/analytics';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { useAgentChatStore } from '../../stores/agentChatStore';
+import { AgentChatPanel } from '../../features/agent/AgentChatPanel';
+import { SuggestionInbox } from '../../features/agent/SuggestionInbox';
+import { useAuthStore } from '../../stores/authStore';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 
 /**
  * 402(크레딧 부족) 에러를 다른 일반 에러와 구분하기 위한 sentinel 접두사.
@@ -883,6 +888,27 @@ function formatHistoryTime(ts: number): string {
 function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
   const isEpisode = mainSection === 'episode' && mainItemId != null;
 
+  // AI 기능 사용 가능 조건: 로그인된 정식 사용자 + 온라인.
+  // 게스트(로컬 SQLite-only) / 오프라인 / 미로그인은 AI 호출 시 402/404/네트워크 에러로 이어진다.
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const isOnline = useNetworkStatus();
+  const aiEligible = isAuthenticated && !isGuest && isOnline;
+
+  // Phase 4 — Agent 모드 토글 (작품별)
+  const agentMode = useAgentChatStore((s) =>
+    selectedWorkId ? s.agentModeByWork[selectedWorkId] ?? false : false,
+  );
+  const setAgentMode = useAgentChatStore((s) => s.setAgentMode);
+  const [agentSection, setAgentSection] = useState<'chat' | 'inbox'>('chat');
+
+  // 자격 상실 시 agent 모드 자동 OFF (오프라인 전환·로그아웃 등)
+  useEffect(() => {
+    if (!aiEligible && agentMode && selectedWorkId) {
+      setAgentMode(selectedWorkId, false);
+    }
+  }, [aiEligible, agentMode, selectedWorkId, setAgentMode]);
+
   // 전역 AI 세션 스토어 — pinned episode 우선
   const pinnedEpisodeId = useAiSessionStore((s) => s.pinnedEpisodeId);
   const unpinnedFromEpisodeId = useAiSessionStore((s) => s.unpinnedFromEpisodeId);
@@ -1273,8 +1299,78 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
   }
 
   // 메뉴 화면
+  const ineligibleReason = !isOnline
+    ? '오프라인 상태입니다. 네트워크에 연결한 뒤 사용해주세요.'
+    : isGuest
+      ? '게스트 모드에서는 AI 기능을 사용할 수 없습니다. 로그인 후 이용해주세요.'
+      : !isAuthenticated
+        ? '로그인이 필요합니다.'
+        : null;
+
   return (
     <>
+      {ineligibleReason && (
+        <div className="shrink-0 border-b border-border/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400">
+          ⚠ {ineligibleReason}
+        </div>
+      )}
+      {/* Phase 4 — Agent 토글 + 모드 분기 (작품 선택된 경우만) */}
+      {selectedWorkId && aiEligible && (
+        <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-1.5 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-muted-foreground">AI 도구 기능</span>
+            {agentMode && (
+              <div className="flex gap-0.5 rounded-md border border-border bg-background p-0.5">
+                <button
+                  onClick={() => setAgentSection('chat')}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    agentSection === 'chat'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  채팅
+                </button>
+                <button
+                  onClick={() => setAgentSection('inbox')}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    agentSection === 'inbox'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  받은 편지함
+                </button>
+              </div>
+            )}
+          </div>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">Agent</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={agentMode}
+              onClick={() => setAgentMode(selectedWorkId, !agentMode)}
+              className={`relative h-4 w-7 rounded-full transition-colors ${
+                agentMode ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+              title={agentMode ? 'Agent 모드 ON' : 'Agent 모드 OFF'}
+            >
+              <span
+                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+                  agentMode ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </label>
+        </div>
+      )}
+      {aiEligible && agentMode && selectedWorkId && agentSection === 'chat' && (
+        <AgentChatPanel workId={selectedWorkId} />
+      )}
+      {aiEligible && agentMode && selectedWorkId && agentSection === 'inbox' && <SuggestionInbox />}
+      {aiEligible && !agentMode && (
+        <>
       {screen === 'spellcheck-history-view' && (
         <SpellcheckResultScreen
           onBack={() => setScreen('spellcheck-input')}
@@ -1343,6 +1439,8 @@ function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentP
         </div>
       </button>
     </div>
+      )}
+        </>
       )}
     </>
   );

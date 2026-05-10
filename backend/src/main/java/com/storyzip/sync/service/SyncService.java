@@ -1,28 +1,15 @@
 package com.storyzip.sync.service;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.storyzip.ai.client.AiClient;
-import com.storyzip.ai.client.dto.EpisodePipelineRequest;
-import com.storyzip.ai.client.dto.EpisodePipelineResponse;
-import com.storyzip.common.exception.AiException;
-import com.storyzip.payment.domain.SubscriptionStatus;
-import com.storyzip.payment.repository.SubscriptionRepository;
+import com.storyzip.ai.client.EpisodeIndexingTrigger;
 import com.storyzip.sync.domain.*;
 import com.storyzip.sync.domain.Character;
 import com.storyzip.sync.dto.SyncUploadRequest;
 import com.storyzip.sync.repository.*;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-
-import java.time.Duration;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -67,31 +54,10 @@ public class SyncService {
     private final IdeaArchiveRepository ideaArchiveRepo;
 
     /**
-     * Vault Transit 인덱싱 트리거 (curious-wiggling-thacker plan V-6).
-     * server_encrypted_dek 가 발급된 작품의 episode 가 변경되면 AI 인덱싱 자동 호출.
-     * AiClient 빈이 없는 환경 (test profile 등) 에서도 SyncService 가 기동되도록 ObjectProvider.
+     * Episode 인덱싱 + 요약 파이프라인 트리거 (curious-wiggling-thacker plan V-6, R-9).
+     * SyncService 와 SuggestionApplier 가 공유. afterCommit 등록·디바운스·구독 게이트·dek 검증 일체 위임.
      */
-    private final ObjectProvider<AiClient> aiClientProvider;
-
-    /**
-     * 프리미엄 구독 게이팅 (curious-wiggling-thacker R-9).
-     * episode_summary 자동 생성은 ACTIVE 구독자에 한해 발화. ObjectProvider 로 test profile 호환.
-     */
-    private final ObjectProvider<SubscriptionRepository> subscriptionRepoProvider;
-
-    /**
-     * 동일 episode 5초 내 재호출 무시 — 한 번의 sync batch 에 episode PUT + 다른 PATCH 가
-     * 같이 도착해도 인덱싱은 1회만 수행.
-     */
-    private Cache<UUID, Long> episodeIndexDebounce;
-
-    @PostConstruct
-    void initDebounce() {
-        episodeIndexDebounce = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofSeconds(5))
-                .maximumSize(10_000)
-                .build();
-    }
+    private final EpisodeIndexingTrigger episodeIndexingTrigger;
 
     /**
      * entry 1건을 독립 트랜잭션으로 처리.
@@ -427,7 +393,7 @@ public class SyncService {
         applyDt(data,    "created_at", e::setCreatedAt);
         e.setUpdatedAt(LocalDateTime.now());
         if (e.getTitle() == null) e.setTitle("제목 없음");
-        if (e.getStatus() == null) e.setStatus("미작성");
+        if (e.getStatus() == null) e.setStatus("예정");
         if (e.getWordCount() == null) e.setWordCount(0);
         if (e.getSortOrder() == null) e.setSortOrder(0);
         if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
@@ -448,141 +414,8 @@ public class SyncService {
         // - 동일 episode 5초 내 재호출 디바운스 (PUT + PATCH 연속 도착 흡수)
         log.info("[AI-TRACE] processEpisode saved episode={} prevStatus={} newStatus={} workId={} writerId={}",
                 id, prevStatus, e.getStatus(), e.getWorkId(), writerId);
-        triggerEpisodeIndexingAfterCommit(id, e.getWorkId(), writerId);
-        triggerEpisodeSummaryAfterCommit(id, e.getWorkId(), writerId, prevStatus, e.getStatus());
-    }
-
-    /**
-     * R-6 / R-9 — episode.status 가 'completed' 로 새로 진입한 경우만 episode_summary 발화.
-     * 가드:
-     *  - prev != 'completed' && new == 'completed' (status 변경 시점만)
-     *  - ACTIVE 구독자 (프리미엄 게이팅)
-     *  - server_encrypted_dek 발급 완료 (Vault 복호화 가능)
-     */
-    private void triggerEpisodeSummaryAfterCommit(
-            UUID episodeId, UUID workId, UUID writerId,
-            String prevStatus, String newStatus) {
-        if (workId == null) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=workId_null", episodeId);
-            return;
-        }
-        // 프론트 STATUS_OPTIONS (EpisodeEditScreen.tsx:39-44) 와 동일한 한글 값 사용:
-        //   미작성 / 초고 / 퇴고 / 완성  → '완성' 진입 시점 1회만 요약 트리거.
-        if (!"완성".equals(newStatus)) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=newStatus_not_완성 actual={}", episodeId, newStatus);
-            return;
-        }
-        if ("완성".equals(prevStatus)) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=already_완성", episodeId);
-            return;
-        }
-
-        AiClient aiClient = aiClientProvider.getIfAvailable();
-        if (aiClient == null) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=AiClient_bean_missing", episodeId);
-            return;
-        }
-
-        // 프리미엄 구독 체크 (R-9)
-        SubscriptionRepository subRepo = subscriptionRepoProvider.getIfAvailable();
-        if (subRepo == null) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=SubscriptionRepo_missing", episodeId);
-            return;
-        }
-        boolean active = subRepo.findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE).isPresent();
-        if (!active) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=subscription_inactive writer={}", episodeId, writerId);
-            return;
-        }
-
-        // server_encrypted_dek 발급 여부 (B-4)
-        Boolean ready = workRepo.findById(workId)
-                .map(w -> w.getServerEncryptedDek() != null)
-                .orElse(false);
-        if (!Boolean.TRUE.equals(ready)) {
-            log.info("[AI-TRACE] pipeline=summary skip episode={} reason=server_encrypted_dek_null work={}", episodeId, workId);
-            return;
-        }
-        log.info("[AI-TRACE] pipeline=summary trigger episode={} workId={}", episodeId, workId);
-
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { invokeAiSummary(aiClient, episodeId, workId, writerId); }
-            });
-        } else {
-            invokeAiSummary(aiClient, episodeId, workId, writerId);
-        }
-    }
-
-    private void invokeAiSummary(AiClient aiClient, UUID episodeId, UUID workId, UUID writerId) {
-        try {
-            // content 는 null — AI 서버가 internal decrypt API 로 평문 fetch
-            EpisodePipelineResponse resp = aiClient.triggerEpisodeSummary(new EpisodePipelineRequest(
-                    episodeId.toString(), workId.toString(), writerId.toString(), null));
-            log.info("[AI-TRACE] pipeline=summary {} episode={} taskId={} reason={}",
-                    "skipped".equals(resp.status()) ? "skipped" : "success",
-                    episodeId, resp.taskId(), resp.reason());
-        } catch (AiException e) {
-            log.warn("[AI-TRACE] pipeline=summary fail episode={} errType=AiException errMsg={}",
-                    episodeId, e.getMessage());
-        } catch (Exception e) {
-            log.warn("[AI-TRACE] pipeline=summary fail episode={} errType={} errMsg={}",
-                    episodeId, e.getClass().getSimpleName(), e.getMessage());
-        }
-    }
-
-    private void triggerEpisodeIndexingAfterCommit(UUID episodeId, UUID workId, UUID writerId) {
-        if (workId == null) {
-            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=workId_null", episodeId);
-            return;
-        }
-        AiClient aiClient = aiClientProvider.getIfAvailable();
-        if (aiClient == null) {
-            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=AiClient_bean_missing", episodeId);
-            return;
-        }
-        Long last = episodeIndexDebounce.getIfPresent(episodeId);
-        long now = System.currentTimeMillis();
-        if (last != null && (now - last) < 5_000) {
-            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=debounce_5s", episodeId);
-            return;
-        }
-        episodeIndexDebounce.put(episodeId, now);
-
-        // server_encrypted_dek 발급 여부 확인 (없으면 AI 서버가 본문 복호화 불가)
-        Boolean ready = workRepo.findById(workId)
-                .map(w -> w.getServerEncryptedDek() != null)
-                .orElse(false);
-        if (!Boolean.TRUE.equals(ready)) {
-            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=server_encrypted_dek_null work={}", episodeId, workId);
-            return;
-        }
-        log.info("[AI-TRACE] pipeline=indexing trigger episode={} workId={}", episodeId, workId);
-
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { invokeAi(aiClient, episodeId, workId, writerId); }
-            });
-        } else {
-            invokeAi(aiClient, episodeId, workId, writerId);
-        }
-    }
-
-    private void invokeAi(AiClient aiClient, UUID episodeId, UUID workId, UUID writerId) {
-        try {
-            // content 는 null — AI 서버가 internal decrypt API 로 평문 fetch (V-7)
-            EpisodePipelineResponse resp = aiClient.triggerEpisodePipeline(new EpisodePipelineRequest(
-                    episodeId.toString(), workId.toString(), writerId.toString(), null));
-            log.info("[AI-TRACE] pipeline=indexing {} episode={} taskId={} reason={}",
-                    "skipped".equals(resp.status()) ? "skipped" : "success",
-                    episodeId, resp.taskId(), resp.reason());
-        } catch (AiException e) {
-            log.warn("[AI-TRACE] pipeline=indexing fail episode={} errType=AiException errMsg={}",
-                    episodeId, e.getMessage());
-        } catch (Exception e) {
-            log.warn("[AI-TRACE] pipeline=indexing fail episode={} errType={} errMsg={}",
-                    episodeId, e.getClass().getSimpleName(), e.getMessage());
-        }
+        episodeIndexingTrigger.fireIndexing(id, e.getWorkId(), writerId);
+        episodeIndexingTrigger.fireSummary(id, e.getWorkId(), writerId, prevStatus, e.getStatus());
     }
 
     // ── plot_episode_link ─────────────────────────────────────────

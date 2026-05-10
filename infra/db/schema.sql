@@ -321,9 +321,10 @@ CREATE TABLE episode_chunk (
     work_id       UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
     writer_id     UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
     chunk_index   INTEGER NOT NULL,
-    content       TEXT NOT NULL,
+    content       TEXT NOT NULL,                  -- v1: ciphertext (Phase 4.6)
     embedding     VECTOR(1536) NOT NULL,
     token_count   INTEGER NOT NULL,
+    content_hash  CHAR(64),                       -- 평문 본문 SHA256 (Phase 4.6 idempotency)
     created_at    TIMESTAMP NOT NULL DEFAULT now(),
     UNIQUE (episode_id, chunk_index)
 );
@@ -341,7 +342,8 @@ CREATE TABLE episode_summary (
     present_characters     JSONB,                   -- ["앤","마릴라"]
     present_locations      JSONB,                   -- ["초록지붕집"]
     key_events             JSONB,                   -- [{order,event}]
-    time_progression       VARCHAR(50),
+    -- Phase 4.6: 자유형 텍스트 암호화 대상 — ciphertext 가 항상 50자 초과 → TEXT 필수
+    time_progression       TEXT,
     tone                   VARCHAR(50),
     cliffhanger            TEXT,
     referenced_world_notes JSONB,                   -- world_note id[]
@@ -358,31 +360,39 @@ CREATE TABLE episode_summary (
     generation_count       INTEGER NOT NULL DEFAULT 0,
     last_generated_at      TIMESTAMP,
     created_at             TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at             TIMESTAMP NOT NULL DEFAULT now(),
-    -- FTS — 'simple' 토크나이저 (한국어 정확도 한계는 keywords JSONB + JSONB 컨테인 검색으로 보완)
-    summary_tsv            tsvector GENERATED ALWAYS AS (
-        to_tsvector('simple',
-            coalesce(oneline_summary,'') || ' ' ||
-            coalesce(summary,'')         || ' ' ||
-            coalesce(keywords::text,''))
-    ) STORED
+    updated_at             TIMESTAMP NOT NULL DEFAULT now()
+    -- Phase 4.6: summary_tsv GENERATED 컬럼 제거. oneline_summary/summary 가 v1: ciphertext
+    -- 로 적재되면서 tsvector 가 무의미해짐. search_episode_summaries 는 Option A
+    -- (평문 일괄 복호화 + Python substring) 로 동작.
 );
 
+-- Phase 4 확장: agent 가 제안하는 작가 승인 큐.
+-- entity_type 확대 (character_update / plot_revision / episode_draft 추가),
+-- source_agent + source_thread_id 로 agent_session 연결,
+-- 동일 (work, entity_type, suggested_name) 중복 제안 허용 (UNIQUE 제거).
 CREATE TABLE extraction_suggestion (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     writer_id           UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
     work_id             UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
     episode_id          UUID REFERENCES episode(id) ON DELETE SET NULL,
     entity_type         VARCHAR(30) NOT NULL
-        CHECK (entity_type IN ('character','world_note','term')),
+        CHECK (entity_type IN (
+            'character','world_note','term',
+            'character_update','character_delete',
+            'world_note_update','world_note_delete',
+            'plot_create','plot_tree','plot_revision','plot_delete',
+            'episode_draft','episode_update','episode_delete'
+        )),
     suggested_name      VARCHAR(200) NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source_agent        VARCHAR(40),                  -- 'sonnet_planner' / 'haiku_worker' / NULL(자동 추출 task)
+    source_thread_id    UUID,                         -- agent_session.thread_id (FK 미설정: agent_session 후순위 생성)
+    reviewer_note       TEXT,
     status              VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','confirmed','rejected')),
     confirmed_target_id UUID,
     created_at          TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMP NOT NULL DEFAULT now(),
-    UNIQUE (work_id, entity_type, suggested_name)
+    updated_at          TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE ai_job (
@@ -410,6 +420,71 @@ CREATE TRIGGER trg_extraction_suggestion_updated_at
 CREATE TRIGGER trg_ai_job_updated_at
     BEFORE UPDATE ON ai_job
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- Phase 4: Agent 서비스 (대화 세션 + 토큰 영수증)
+-- ============================================================
+
+-- agent_session: Sonnet planner thread. messages JSONB 누적, 메시지 20개 도달 시 압축.
+CREATE TABLE agent_session (
+    thread_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    work_id          UUID NOT NULL REFERENCES work(id) ON DELETE CASCADE,
+    writer_id        UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    scenario         VARCHAR(40) NOT NULL
+        CHECK (scenario IN (
+            'auto',
+            'draft_next','consistency_check','revision',
+            'extraction','qa','ideation'
+        )),
+    title            VARCHAR(200),
+    messages         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    summary_so_far   TEXT,                           -- N-5 자동 압축 결과 보관
+    status           VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active','closed')),
+    last_activity_at TIMESTAMP NOT NULL DEFAULT now(),
+    created_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- agent_session 은 updated_at 컬럼이 없고 last_activity_at 을 코드에서 명시 갱신.
+-- 따라서 set_updated_at() 트리거는 적용하지 않는다 (적용 시 NEW.updated_at 참조 실패).
+
+-- token_receipt: 호출 1건 = 영수증 1건 (agent / episode_summary / episode_indexing 공통).
+CREATE TABLE token_receipt (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id           UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    work_id             UUID REFERENCES work(id) ON DELETE SET NULL,
+    feature             VARCHAR(40) NOT NULL,        -- 'agent' / 'episode_summary' / 'episode_indexing'
+    scenario            VARCHAR(40) NOT NULL,        -- agent: scenario, ai task: 'auto_summary' 등
+    reference_type      VARCHAR(40) NOT NULL,        -- 'agent_thread' / 'episode'
+    reference_id        UUID NOT NULL,
+    total_user_tokens   INTEGER NOT NULL DEFAULT 0,  -- 사용자 차감 합계
+    total_input_raw     INTEGER NOT NULL DEFAULT 0,  -- LLM 원시 input 합 (캐시 미적중분 기준)
+    total_output_raw    INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens   INTEGER NOT NULL DEFAULT 0,
+    cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+    status              VARCHAR(20) NOT NULL
+        CHECK (status IN ('success','partial','failed')),
+    abort_reason        VARCHAR(40),                 -- scenario_budget / max_iterations / tool_category_quota / balance_exhausted
+    duration_ms         INTEGER,
+    idempotency_key     VARCHAR(200) UNIQUE,         -- AI 서버 callback 멱등 키
+    created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- token_receipt_line: 호출 내 step 별 라인. planner/tool/worker/compression 각각 1줄.
+CREATE TABLE token_receipt_line (
+    id              BIGSERIAL PRIMARY KEY,
+    receipt_id      UUID NOT NULL REFERENCES token_receipt(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    step_type       VARCHAR(40) NOT NULL
+        CHECK (step_type IN ('planner_call','tool_call','worker_call','compression')),
+    actor           VARCHAR(40) NOT NULL,            -- 'sonnet' / 'haiku' / 'tool:<name>'
+    tool_name       VARCHAR(60),
+    input_tokens    INTEGER NOT NULL DEFAULT 0,
+    output_tokens   INTEGER NOT NULL DEFAULT 0,
+    user_tokens     INTEGER NOT NULL DEFAULT 0,
+    detail          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMP NOT NULL DEFAULT now()
+);
 
 -- ────────────────────────────────────────────────────────────
 -- 서버 전용이지만 동기화 테이블 참조
@@ -496,19 +571,48 @@ CREATE INDEX idx_episode_chunk_embedding
 CREATE INDEX idx_episode_chunk_work     ON episode_chunk(work_id);
 CREATE INDEX idx_episode_chunk_writer   ON episode_chunk(writer_id);
 CREATE INDEX idx_episode_chunk_episode  ON episode_chunk(episode_id);
+CREATE INDEX idx_episode_chunk_episode_hash
+    ON episode_chunk(episode_id, content_hash);    -- Phase 4.6 idempotency skip
 CREATE INDEX idx_episode_summary_work_confirmed
     ON episode_summary(work_id, is_confirmed);
 CREATE INDEX idx_episode_summary_writer ON episode_summary(writer_id);
-CREATE INDEX idx_episode_summary_tsv
-    ON episode_summary USING GIN (summary_tsv);
+-- Phase 4.6: idx_episode_summary_tsv 제거 (summary_tsv 컬럼 드롭과 함께)
 CREATE INDEX idx_episode_summary_pov
     ON episode_summary (work_id, pov_character);
 CREATE INDEX idx_episode_summary_episode_hash
     ON episode_summary (episode_id, content_hash);
+-- Phase 3 R-I: JSONB containment 검색 가속 (300화+ 운영 진입 대비)
+-- MCP search_episode_summaries(scope='character:앤'/'location:...') 가 시퀀셜 스캔 방지.
+CREATE INDEX idx_episode_summary_present_chars
+    ON episode_summary USING GIN (present_characters);
+CREATE INDEX idx_episode_summary_keywords
+    ON episode_summary USING GIN (keywords);
+CREATE INDEX idx_episode_summary_present_locs
+    ON episode_summary USING GIN (present_locations);
 CREATE INDEX idx_extraction_suggestion_work_status
     ON extraction_suggestion(work_id, status);
 CREATE INDEX idx_extraction_suggestion_writer  ON extraction_suggestion(writer_id);
 CREATE INDEX idx_extraction_suggestion_episode ON extraction_suggestion(episode_id);
+-- Phase 4: agent thread 별 제안 조회
+CREATE INDEX idx_extraction_suggestion_thread
+    ON extraction_suggestion(source_thread_id) WHERE source_thread_id IS NOT NULL;
+
+-- Phase 4: agent_session 인덱스
+CREATE INDEX idx_agent_session_writer_active
+    ON agent_session(writer_id, last_activity_at DESC);
+CREATE INDEX idx_agent_session_work
+    ON agent_session(work_id, last_activity_at DESC);
+
+-- Phase 4: token_receipt 인덱스 (사용자 영수증 조회)
+CREATE INDEX idx_token_receipt_writer_time
+    ON token_receipt(writer_id, created_at DESC);
+CREATE INDEX idx_token_receipt_ref
+    ON token_receipt(reference_type, reference_id);
+CREATE INDEX idx_token_receipt_feature
+    ON token_receipt(writer_id, feature, created_at DESC);
+CREATE INDEX idx_token_receipt_line_seq
+    ON token_receipt_line(receipt_id, seq);
+
 CREATE INDEX idx_ai_job_work    ON ai_job(work_id);
 CREATE INDEX idx_ai_job_episode ON ai_job(episode_id);
 CREATE INDEX idx_ai_job_writer  ON ai_job(writer_id);

@@ -23,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.celery_app import celery_app
 from app.config import settings
 from app.db.models.episode_summary import EpisodeSummary
+from app.services.encrypt_resolver import (
+    EncryptResolverError,
+    encrypt_summary_text_fields,
+)
 from app.services.providers import get_llm
 from app.services.text_extractor import extract_plain_text
 from app.services.work_key_resolver import (
@@ -40,21 +44,25 @@ SYSTEM_PROMPT = (
     "- 본문에 명시된 정보만 사용 (추측·확장 금지)\n"
     "- 인물·장소 이름은 본문 표기 그대로 (별칭 매핑 금지)\n"
     "- 핵심 사건은 시간순 정렬\n"
-    "- 복선 candidates 는 작가 의도 명확한 것만 (모호한 묘사 제외)"
+    "- 복선 candidates 는 작가 의도 명확한 것만 (모호한 묘사 제외)\n"
+    # Phase 3 R-K — 노이즈 제거 정책
+    "- present_characters: 고유 명칭 있는 인물만. '도사들'·'시녀들' 같은 무명 군중 제외.\n"
+    "- present_locations: 작품 전개의 주요 무대만. '화장실'·'편의점' 같은 일상 공간 제외.\n"
+    "- summary: 3 문장 이내로 압축 (cliffhanger 가 끝점 별도 보존하므로 결말 반복 금지)."
 )
 
 SCHEMA_HINT = """{
-  "oneline_summary": "string (15~30자) — 회차 한 줄 요약",
-  "summary": "string — 3~5 문장 줄거리",
-  "pov_character": "string | null — 회차 시점 인물 (모호하면 null)",
-  "present_characters": ["등장 인물명"],
-  "present_locations": ["등장 장소"],
-  "key_events": [{"order": 1, "event": "사건 설명"}],
-  "time_progression": "string — 회차 내 시간 흐름 (예: '한 시간', '하루', '3년')",
-  "tone": "string — 회차 톤 (예: '잔잔한 일상', '긴장감 고조')",
-  "cliffhanger": "string | null — 회차 끝점 / 다음 화 hook",
-  "foreshadow_planted": [{"name": "복선 이름", "description": "설명"}],
-  "keywords": ["검색 키워드 5~10개"]
+  "oneline_summary": "string (15~30자)",
+  "summary": "string (3 문장)",
+  "pov_character": "string | null",
+  "present_characters": ["고유명 인물만"],
+  "present_locations": ["주요 무대만"],
+  "key_events": [{"order": 1, "event": "string"}],
+  "time_progression": "string",
+  "tone": "string",
+  "cliffhanger": "string | null",
+  "foreshadow_planted": [{"name": "string", "description": "string"}],
+  "keywords": ["5~10개"]
 }"""
 
 
@@ -103,6 +111,22 @@ async def _run(
     wr_uuid = uuid.UUID(writer_id)
     now = datetime.utcnow()
 
+    # Phase 4.6: 자유형 서사 텍스트만 암호화. pov_character / tone 은 SQL 매칭 의존 → 평문.
+    plain_text_fields = {
+        "oneline_summary": _extract_field(result, "oneline_summary"),
+        "summary": summary_text,
+        "time_progression": _extract_field(result, "time_progression"),
+        "cliffhanger": _extract_field(result, "cliffhanger"),
+    }
+    try:
+        enc_text = await encrypt_summary_text_fields(work_id, plain_text_fields)
+    except EncryptResolverError as e:
+        logger.warning(
+            "generate_summary.skip_no_encrypt",
+            extra={"episode_id": episode_id, "reason": str(e)},
+        )
+        return {"episode_id": episode_id, "status": "skipped", "reason": "no_encrypt"}
+
     engine = create_async_engine(settings.database_url, pool_size=1)
     try:
         async with AsyncSession(engine) as session:
@@ -111,22 +135,22 @@ async def _run(
                     "episode_id": ep_uuid,
                     "work_id": wk_uuid,
                     "writer_id": wr_uuid,
-                    "oneline_summary": _extract_field(result, "oneline_summary"),
-                    "summary": summary_text,
-                    "pov_character": _extract_field(result, "pov_character"),
+                    "oneline_summary": enc_text.get("oneline_summary"),
+                    "summary": enc_text.get("summary"),
+                    "pov_character": _extract_field(result, "pov_character"),  # 평문
                     "present_characters": _extract_field(result, "present_characters"),
                     "present_locations": _extract_field(result, "present_locations"),
                     "key_events": _extract_field(result, "key_events"),
-                    "time_progression": _extract_field(result, "time_progression"),
-                    "tone": _extract_field(result, "tone"),
-                    "cliffhanger": _extract_field(result, "cliffhanger"),
+                    "time_progression": enc_text.get("time_progression"),
+                    "tone": _extract_field(result, "tone"),                    # 평문
+                    "cliffhanger": enc_text.get("cliffhanger"),
                     "foreshadow_planted": _extract_field(result, "foreshadow_planted"),
                     "foreshadow_paid_off": _extract_field(result, "foreshadow_paid_off"),
                     "referenced_world_notes": _extract_field(result, "referenced_world_notes"),
                     "keywords": _extract_field(result, "keywords"),
                     "word_count": word_count,
                     "model_used": type(llm).__name__,
-                    "raw_result": result,
+                    "raw_result": None,    # Phase 4.6: 평문 dict 저장 금지
                     "content_hash": content_hash,
                     "generation_count": 1,
                     "last_generated_at": now,

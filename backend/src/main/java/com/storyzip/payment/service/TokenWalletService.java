@@ -32,7 +32,7 @@ import java.util.UUID;
 public class TokenWalletService {
 
     private static final int BONUS_VALIDITY_DAYS = 90;
-    private static final int SIGNUP_BONUS_AMOUNT = 300;
+    private static final int SIGNUP_BONUS_AMOUNT = 3_000;
 
     private final TokenWalletRepository walletRepository;
     private final TokenTransactionRepository transactionRepository;
@@ -78,7 +78,7 @@ public class TokenWalletService {
                 writerId, amount, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
-    /** 신규 가입 시 보너스 300 크레딧 지급 (90일 만료). */
+    /** 신규 가입 시 보너스 3,000 크레딧 지급 (90일 만료). */
     @Transactional
     public void grantSignupBonus(UUID writerId) {
         TokenWallet wallet = lockOrCreate(writerId);
@@ -118,6 +118,38 @@ public class TokenWalletService {
         log.info("[TOKEN_USAGE] writerId={} amount={} fromSubscription={} fromBonus={} fromPurchase={} balanceAfter={} reason={} referenceId={}",
                 writerId, amount, result.fromSubscription(), result.fromBonus(), result.fromPurchase(),
                 wallet.totalBalance(now), reason, referenceId);
+    }
+
+    /**
+     * Phase 4 — agent / 영수증 차감용. 잔액 부족이어도 가진 만큼만 차감.
+     * 반환: 실제 차감된 양. (요청 - 반환) = balance_exhausted shortfall.
+     *
+     * <p>3버킷 (SUBSCRIPTION → BONUS → PURCHASE) 우선순위는 use() 와 동일.
+     */
+    @Transactional
+    public int useBestEffort(UUID writerId, int amount, String reason, UUID referenceId) {
+        if (amount <= 0) return 0;
+        TokenWallet wallet = lockOrCreate(writerId);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        int total = wallet.totalBalance(now);
+        int actual = Math.min(amount, total);
+        if (actual <= 0) return 0;
+        TokenWallet.DeductResult result = wallet.deductForUsage(actual, now);
+        if (result.fromSubscription() > 0) {
+            recordTx(writerId, TokenBucket.SUBSCRIPTION, -result.fromSubscription(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        if (result.fromBonus() > 0) {
+            recordTx(writerId, TokenBucket.BONUS, -result.fromBonus(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        if (result.fromPurchase() > 0) {
+            recordTx(writerId, TokenBucket.PURCHASE, -result.fromPurchase(),
+                    TokenTransactionType.USAGE, reason, referenceId);
+        }
+        log.info("[TOKEN_USAGE_BEST_EFFORT] writerId={} requested={} actual={} balanceAfter={} reason={} referenceId={}",
+                writerId, amount, actual, wallet.totalBalance(now), reason, referenceId);
+        return actual;
     }
 
     /**

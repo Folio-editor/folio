@@ -12,6 +12,25 @@ import { WORLD_NOTE_TEMPLATES } from '../constants/worldNoteTemplates';
  */
 const CIPHERTEXT_PREFIX = 'v1:';
 
+/** TipTap doc JSON 또는 평문 → 글자수 (createEpisode 의 word_count 자동 계산용). */
+function extractPlainTextLen(raw: string | null): number {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as { text?: string; content?: unknown[] };
+    return flattenTiptapText(parsed).trim().length;
+  } catch {
+    return raw.trim().length;
+  }
+}
+
+function flattenTiptapText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const n = node as { text?: string; content?: unknown[] };
+  const own = typeof n.text === 'string' ? n.text : '';
+  const kids = Array.isArray(n.content) ? n.content.map(flattenTiptapText).join('') : '';
+  return own + kids;
+}
+
 /**
  * SQLite 직접 쓰기 유틸 훅.
  *
@@ -613,7 +632,7 @@ export function useLocalWrite() {
     // ── episode ─────────────────────────────────────────────
     /**
      * @param content 사전 채움 본문 (TipTap JSON). 미지정/null 시 빈 본문.
-     *                복제 시 원본 콘텐츠 보존 용도. status는 항상 '미작성'으로 reset
+     *                복제 시 원본 콘텐츠 보존 용도. status는 항상 '예정'으로 reset
      *                (사본은 신규 작성 의미라 출고 상태 초기화).
      */
     createEpisode: async (
@@ -636,10 +655,18 @@ export function useLocalWrite() {
         typeof content === 'string' && content.startsWith(CIPHERTEXT_PREFIX)
           ? content
           : await encryptWorkField(workId, content, now);
+      // 시드/템플릿 등에서 content 가 미리 채워진 경우 word_count 도 INSERT 시점에 계산
+      // (이전엔 항상 0 으로 박혀, 사용자가 에디터 입력을 안 하면 영원히 0 → AI agent 가
+      // word_count=0 만 보고 본문 빈 회차로 오판하는 회귀 발생).
+      // ciphertext 가 들어오는 복제 경로는 평문 추출 불가 → 0 유지 (기존 row 보존 의도).
+      const initialWordCount =
+        typeof content === 'string' && !content.startsWith(CIPHERTEXT_PREFIX)
+          ? extractPlainTextLen(content)
+          : 0;
       await db.execute(
         `INSERT INTO episode (id, work_id, writer_id, parent_id, title, status, content, word_count, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, '미작성', ?, 0, ?, ?, ?)`,
-        [id, workId, writerId, encTitle, encContent, sortOrder, now, now],
+         VALUES (?, ?, ?, NULL, ?, '예정', ?, ?, ?, ?, ?)`,
+        [id, workId, writerId, encTitle, encContent, initialWordCount, sortOrder, now, now],
       );
       trackCreated('episode', content ? 'template' : 'manual');
       return id;
@@ -713,11 +740,11 @@ export function useLocalWrite() {
       await db.execute(`DELETE FROM episode WHERE id = ?`, [id]);
       trackDeleted('episode');
     },
-    /** 휴지통에서 원고 복원 — status를 '미작성'으로 되돌린다. */
+    /** 휴지통에서 원고 복원 — status를 '예정'으로 되돌린다. */
     restoreEpisode: async (id: string): Promise<void> => {
       const now = new Date().toISOString();
       await db.execute(
-        `UPDATE episode SET status = '미작성', updated_at = ? WHERE id = ?`,
+        `UPDATE episode SET status = '예정', updated_at = ? WHERE id = ?`,
         [now, id],
       );
     },

@@ -77,7 +77,7 @@ PIDS+=($!)
 
 # --- 4. Celery Worker ---
 echo "[celery]   Starting Celery Worker..."
-(cd "$ROOT_DIR/ai" && BACKEND_INTERNAL_URL=http://localhost:8080 doppler run -- .venv/Scripts/python -m celery -A app.celery_app worker --loglevel=info --pool=solo -Q indexing,celery -n dev-worker@%h 2>&1 | sed 's/^/[celery]   /') &
+(cd "$ROOT_DIR/ai" && BACKEND_INTERNAL_URL=http://localhost:8080 doppler run -- .venv/Scripts/python -m celery -A app.celery_app worker --loglevel=info --pool=solo -Q indexing,celery,agent -n dev-worker@%h 2>&1 | sed 's/^/[celery]   /') &
 PIDS+=($!)
 
 # --- 5. Web Editor (port 5173) — 브라우저용 ---

@@ -26,7 +26,7 @@ interface EpisodeOverviewProps {
 type EpisodeRow = DecryptedEpisodeListRow;
 
 const STATUS_COLOR: Record<string, string> = {
-  '미작성': 'bg-muted text-muted-foreground',
+  '예정': 'bg-muted text-muted-foreground',
   '초고': 'bg-warning-soft text-warning',
   '퇴고': 'bg-info-soft text-info',
   '완성': 'bg-success-soft text-success',

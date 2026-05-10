@@ -48,7 +48,7 @@ const ACTIVITY_FILTER_SPEC: Partial<Record<Activity, ActivityFilterSpec[]>> = {
       panelKey: 'episode',
       groupLabel: '진행 상태',
       options: [
-        { value: '미작성', label: '미작성' },
+        { value: '예정', label: '예정' },
         { value: '초고', label: '초고' },
         { value: '퇴고', label: '퇴고' },
         { value: '완성', label: '완성' },
@@ -338,7 +338,15 @@ export function SecondarySidebar({
             {/* 프로필 — 닉네임 + 테마 + 로그아웃 */}
             <div className="flex items-center gap-2 px-2 py-1.5">
               {writer?.profileImageUrl ? (
-                <img src={writer.profileImageUrl} alt="" className="h-7 w-7 rounded-full" />
+                // referrerPolicy="no-referrer" — Google lh3.googleusercontent.com 이
+                // localhost / app:// referrer 에 대해 403/429 반환하는 회귀 차단.
+                // (landing 페이지와 동일 정책)
+                <img
+                  src={writer.profileImageUrl}
+                  alt=""
+                  className="h-7 w-7 rounded-full"
+                  referrerPolicy="no-referrer"
+                />
               ) : (
                 <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">
                   ●

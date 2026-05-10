@@ -22,6 +22,7 @@ import { reconcileMissingServerDeks } from '../crypto/serverDekReconciler';
 import { FolioConnector } from '../sync/connector';
 import { initNetworkListener, useNetworkStatus } from '../hooks/useNetworkStatus';
 import { analytics } from '../lib/analytics';
+import { isAdminEntryPointAccessible } from '../lib/adminApi';
 
 // 모듈 로드 시 1회 — online/offline 이벤트 바인딩
 initNetworkListener();
@@ -47,6 +48,23 @@ export function AppRoot({ router, basename }: AppRootProps) {
 
   useEffect(() => {
     analytics.init();
+
+    // 운영자 모드 진입 가능 시 DevTools 사회공학 방어 — 페이지/세션 단위가 아닌
+    // 앱 단위 1회 출력. 다른 페이지에서 콘솔 코드 붙여넣기 유도 시도도 방어.
+    // (일반 사용자 빌드에선 isAdminEntryPointAccessible 가 false 라 출력 안 됨.)
+    if (isAdminEntryPointAccessible()) {
+      const w = window as unknown as { __folioAdminWarned?: boolean };
+      if (!w.__folioAdminWarned) {
+        w.__folioAdminWarned = true;
+        // eslint-disable-next-line no-console
+        console.warn(
+          '%c[Folio 보안 경고]',
+          'color:#dc2626;font-size:14px;font-weight:bold',
+          '\n운영자 모드입니다. 누군가 이 콘솔에 코드를 붙여넣으라고 했다면 ' +
+            '계정 탈취 시도일 가능성이 높습니다. 절대 실행하지 마세요.',
+        );
+      }
+    }
 
     if (appOpenedTracked) return;
     appOpenedTracked = true;

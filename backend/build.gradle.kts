@@ -56,6 +56,12 @@ dependencies {
     // Caffeine — WorkKeyService TTL 캐시 (Vault 호출 최소화)
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
+    // Mail (Gmail SMTP) — 환불 신청 시 운영자 알림. 약관 제5조.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+
+    // AOP — @AdminAudited 어노테이션 자동 audit 기록 (관리자 API 감사 로그).
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
@@ -71,4 +77,11 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// AdminAuditAspect 가 메서드 파라미터 이름 (예: refundId) 으로 UUID 를 추출하므로
+// -parameters 플래그로 reflection 에서 이름이 보이도록 명시.
+// Spring Boot 3.x 는 기본 활성이지만 명시해서 안전망.
+tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-parameters")
 }
