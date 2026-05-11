@@ -109,9 +109,13 @@ public class PaymentService {
 
         PortOnePaymentResponse remote = portOneClient.getPayment(request.paymentId());
 
-        // 금액 위변조 검증 — SDK가 사용자 측에서 호출하므로 totalAmount가 조작될 수 있음
+        // 금액 위변조 검증 — SDK가 사용자 측에서 호출하므로 totalAmount가 조작될 수 있음.
+        // 가격표 배포 시점에 따라 신/구 프론트가 다른 금액으로 결제창을 띄울 수도 있어 자세한 로그를 남겨 사후 추적.
         Integer remoteTotal = remote.amount() != null ? remote.amount().total() : null;
         if (remoteTotal == null || !payment.getAmount().equals(remoteTotal)) {
+            log.warn("[PAYMENT_AMOUNT_MISMATCH] writerId={} paymentId={} expected={} actual={} policyVersion={}",
+                    writerId, payment.getOrderId(), payment.getAmount(), remoteTotal,
+                    payment.getRefundPolicyVersion());
             throw new PaymentException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
 

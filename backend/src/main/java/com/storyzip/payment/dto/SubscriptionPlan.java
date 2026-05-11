@@ -14,7 +14,7 @@ import java.util.Arrays;
  */
 @Getter
 public enum SubscriptionPlan {
-    PRO_MONTHLY("PRO_MONTHLY", "Folio Pro 월간", 990, 13_000);
+    PRO_MONTHLY("PRO_MONTHLY", "Folio Pro 월간", 19_800, 25_000);
 
     private final String code;
     private final String displayName;
