@@ -25,7 +25,7 @@ class TokenPackageTest {
                 });
         assertThat(TokenPackage.fromCode("TOKEN_12000"))
                 .satisfies(p -> {
-                    assertThat(p.getAmount()).isEqualTo(1_000);
+                    assertThat(p.getAmount()).isEqualTo(10_000);
                     assertThat(p.getTokenQty()).isEqualTo(12_000);
                 });
     }

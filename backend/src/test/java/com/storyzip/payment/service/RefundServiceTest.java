@@ -128,8 +128,8 @@ class RefundServiceTest {
     @Test
     @DisplayName("구독 7일 이내 미사용 신청: REQUESTED + FULL")
     void subscription_within7Days_unused_request() {
-        Payment payment = doneSubscription(990, 13_000, hoursAgo(24));
-        TokenWallet wallet = walletWithSubscription(13_000);
+        Payment payment = doneSubscription(19_800, 25_000, hoursAgo(24));
+        TokenWallet wallet = walletWithSubscription(25_000);
         given(paymentRepository.findWithLockByOrderId("SUB-1")).willReturn(Optional.of(payment));
         given(tokenWalletRepository.findById(writerId)).willReturn(Optional.of(wallet));
         given(refundRepository.findActiveByPaymentId(any())).willReturn(Optional.empty());
@@ -139,14 +139,14 @@ class RefundServiceTest {
                 new RefundRequest(RefundReason.CUSTOMER_CHANGE_OF_MIND, null));
 
         assertThat(res.refundType()).isEqualTo(RefundType.FULL);
-        assertThat(res.refundAmount()).isEqualTo(990);
+        assertThat(res.refundAmount()).isEqualTo(19_800);
         assertThat(res.status()).isEqualTo(RefundStatus.REQUESTED);
     }
 
     @Test
     @DisplayName("구독 7일 이내 일부 사용 신청 (단순변심): REFUND_REQUEST_DENIED")
     void subscription_within7Days_partialUsed_denied() {
-        Payment payment = doneSubscription(990, 13_000, hoursAgo(24));
+        Payment payment = doneSubscription(19_800, 25_000, hoursAgo(24));
         TokenWallet wallet = walletWithSubscription(10_000);
         given(paymentRepository.findWithLockByOrderId("SUB-1")).willReturn(Optional.of(payment));
         given(tokenWalletRepository.findById(writerId)).willReturn(Optional.of(wallet));
@@ -181,7 +181,7 @@ class RefundServiceTest {
     @Test
     @DisplayName("구독 회사 귀책: FULL 현금 환불 신청")
     void subscription_companyFault_fullCash() {
-        Payment payment = doneSubscription(990, 13_000, hoursAgo(24 * 30));
+        Payment payment = doneSubscription(19_800, 25_000, hoursAgo(24 * 30));
         given(paymentRepository.findWithLockByOrderId("SUB-1")).willReturn(Optional.of(payment));
         given(refundRepository.findActiveByPaymentId(any())).willReturn(Optional.empty());
         given(refundRepository.countByPayment_IdAndStatus(any(), eq(RefundStatus.REJECTED))).willReturn(0L);
@@ -190,7 +190,7 @@ class RefundServiceTest {
                 new RefundRequest(RefundReason.COMPANY_FAULT, "결제 후 서비스 접근 불가"));
 
         assertThat(res.refundType()).isEqualTo(RefundType.FULL);
-        assertThat(res.refundAmount()).isEqualTo(990);
+        assertThat(res.refundAmount()).isEqualTo(19_800);
     }
 
     // ─────────── 검증 / 동시성 ───────────
