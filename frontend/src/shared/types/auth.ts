@@ -98,6 +98,12 @@ export interface FolioOneTimePaymentParams {
   customerEmail: string;
   /** 구매자 이름(닉네임). PG 별로 영수증/매출전표에 표시. */
   customerFullName?: string;
+  /**
+   * 구매자 휴대폰 번호 — KG이니시스 V2 등 일부 PG 는 필수.
+   * 미전달 시 webCheckout 이 더미값(010-0000-0000) 으로 대체. 실거래 전환 시
+   * Writer 프로필에 휴대폰 추가 + 진짜 값 전달로 마이그레이션 필요.
+   */
+  customerPhoneNumber?: string;
 }
 
 export interface FolioOneTimePaymentResult {
@@ -112,6 +118,8 @@ export interface FolioBillingAuthParams {
   customerEmail?: string;
   /** 구매자 이름(닉네임). */
   customerFullName?: string;
+  /** 구매자 휴대폰 번호 — 일부 PG 가 빌링키 발급 시 요구할 수 있음. */
+  customerPhoneNumber?: string;
 }
 
 export interface FolioBillingAuthResult {

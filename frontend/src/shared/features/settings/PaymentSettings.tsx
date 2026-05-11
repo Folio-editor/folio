@@ -31,6 +31,11 @@ import {
 } from '../../types/payment';
 import { RefundDialog } from './RefundDialog';
 import { RefundPolicyAgreement } from './RefundPolicyAgreement';
+import {
+  PhoneNumberPromptDialog,
+  readSavedPhoneNumber,
+  savePhoneNumber,
+} from './PhoneNumberPromptDialog';
 
 /**
  * 결제·구독·환불 설정 화면.
@@ -86,6 +91,14 @@ export function PaymentSettings() {
   const [agreement, setAgreement] = useState<AgreementIntent | null>(null);
   const [refundTarget, setRefundTarget] = useState<PaymentResponse | null>(null);
   const [refundDialogError, setRefundDialogError] = useState<string | null>(null);
+
+  /**
+   * 휴대폰 번호 입력 모달 — KG이니시스가 결제 시 customer.phoneNumber 를 필수로 요구.
+   * Google OAuth 로 받지 못하므로 결제 직전에 직접 입력받고 localStorage 캐싱.
+   * pendingIntent 는 휴대폰 입력 완료 후 진행할 결제 의도(패키지 코드 또는 'subscribe').
+   */
+  const [phonePromptOpen, setPhonePromptOpen] = useState(false);
+  const [phonePendingIntent, setPhonePendingIntent] = useState<AgreementIntent | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -174,14 +187,39 @@ export function PaymentSettings() {
     const intent = agreement;
     setAgreement(null);
 
-    if (intent.kind === 'package') {
-      await runBuyPackage(intent.code);
+    // 결제 진행 전 휴대폰 번호 확보 — KG이니시스 필수. localStorage 에 캐시 있으면 즉시 진행,
+    // 없으면 입력 모달 열고 phonePendingIntent 에 의도 저장 → 입력 완료 시 재개.
+    const savedPhone = readSavedPhoneNumber();
+    if (savedPhone) {
+      await runIntent(intent, savedPhone);
     } else {
-      await runSubscribe();
+      setPhonePendingIntent(intent);
+      setPhonePromptOpen(true);
     }
   };
 
-  const runBuyPackage = async (code: TokenPackageCode) => {
+  const handlePhoneSubmit = async (phone: string, remember: boolean) => {
+    if (remember) savePhoneNumber(phone);
+    const intent = phonePendingIntent;
+    setPhonePromptOpen(false);
+    setPhonePendingIntent(null);
+    if (intent) await runIntent(intent, phone);
+  };
+
+  const handlePhoneCancel = () => {
+    setPhonePromptOpen(false);
+    setPhonePendingIntent(null);
+  };
+
+  const runIntent = async (intent: AgreementIntent, phone: string) => {
+    if (intent.kind === 'package') {
+      await runBuyPackage(intent.code, phone);
+    } else {
+      await runSubscribe(phone);
+    }
+  };
+
+  const runBuyPackage = async (code: TokenPackageCode, phone: string) => {
     if (!writer) return;
     setBusyPackage(code);
     try {
@@ -196,6 +234,7 @@ export function PaymentSettings() {
         customerKey: writer.id,
         customerEmail: writer.email,
         customerFullName: writer.nickname ?? undefined,
+        customerPhoneNumber: phone,
       });
       const confirmed = await paymentApi.confirmPayment({
         paymentId: checkout.paymentId,
@@ -212,7 +251,7 @@ export function PaymentSettings() {
     }
   };
 
-  const runSubscribe = async () => {
+  const runSubscribe = async (phone: string) => {
     if (!writer) return;
     setBusySubscription('subscribe');
     try {
@@ -224,6 +263,7 @@ export function PaymentSettings() {
         customerKey: prep.customerKey,
         customerEmail: writer.email,
         customerFullName: writer.nickname ?? undefined,
+        customerPhoneNumber: phone,
       });
       const sub = await subscriptionApi.create({
         planCode: 'PRO_MONTHLY',
@@ -589,6 +629,12 @@ export function PaymentSettings() {
         error={refundDialogError}
         onSubmit={(reason, detail) => void submitRefund(reason, detail)}
         onClose={() => setRefundTarget(null)}
+      />
+
+      <PhoneNumberPromptDialog
+        open={phonePromptOpen}
+        onSubmit={(phone, remember) => void handlePhoneSubmit(phone, remember)}
+        onCancel={handlePhoneCancel}
       />
     </div>
   );

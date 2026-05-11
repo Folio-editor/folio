@@ -55,9 +55,13 @@ export async function webOpenOneTime(
     payMethod: 'CARD',
     customer: {
       customerId: params.customerKey,
-      // KG이니시스 V2 일반결제는 email 을 필수로 요구. 미입력 시 "구매자 이메일은
-      // 필수 입력입니다" 에러로 결제창 호출 실패.
+      // KG이니시스 V2 일반결제는 email/phoneNumber 를 필수로 요구. 미입력 시
+      // "구매자 ... 필수 입력입니다" 에러로 결제창 호출 실패.
       email: params.customerEmail,
+      // Folio 는 Writer 엔티티에 휴대폰 번호를 갖지 않음 (가입 시 미수집).
+      // 호출자가 customerPhoneNumber 를 전달했으면 사용, 없으면 더미값.
+      // 향후 회원 프로필에 휴대폰 추가 시 진짜 번호로 대체 — Phase B 작업.
+      phoneNumber: params.customerPhoneNumber ?? '010-0000-0000',
       ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
     },
   } as Parameters<typeof PortOne.requestPayment>[0]);
@@ -93,6 +97,8 @@ export async function webOpenBillingAuth(
     customer: {
       customerId: params.customerKey,
       ...(params.customerEmail ? { email: params.customerEmail } : {}),
+      // 빌링키 발급도 KG이니시스 등 PG 가 휴대폰 번호를 요구할 수 있어 함께 전달.
+      phoneNumber: params.customerPhoneNumber ?? '010-0000-0000',
       ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
     },
     issueName: 'Folio Pro 정기결제 카드 등록',
