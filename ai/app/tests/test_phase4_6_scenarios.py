@@ -293,7 +293,7 @@ def test_scenario_5_summarize_then_cache_hit_round_trip(monkeypatch):
     class FakeSession:
         async def execute(self, stmt, params=None):
             # SELECT (params 있는 분기) — episode + summary join
-            if params and "so" in params:
+            if params and "eid" in params:
                 if call_state["call"] == 0:
                     # cache miss row
                     class Row:
@@ -337,7 +337,7 @@ def test_scenario_5_summarize_then_cache_hit_round_trip(monkeypatch):
     sess = FakeSession()
 
     # === 1회차 호출 (cache miss) ===
-    r1 = asyncio.run(ep_mod.summarize_episode(sess, ctx, sort_order=1))
+    r1 = asyncio.run(ep_mod.summarize_episode(sess, ctx, episode_id=str(EPISODE_ID)))
     assert r1["cached"] is False
     assert haiku_call_count["n"] == 1
     # 반환은 평문 (LLM 즉시 사용)
@@ -351,7 +351,7 @@ def test_scenario_5_summarize_then_cache_hit_round_trip(monkeypatch):
 
     # === 2회차 호출 (cache hit) ===
     call_state["call"] = 1
-    r2 = asyncio.run(ep_mod.summarize_episode(sess, ctx, sort_order=1))
+    r2 = asyncio.run(ep_mod.summarize_episode(sess, ctx, episode_id=str(EPISODE_ID)))
     assert r2["cached"] is True
     assert haiku_call_count["n"] == 1     # Haiku 재호출 안 됨
     # cache 에서 ciphertext 읽어 복호화 후 반환 → 평문
@@ -369,13 +369,13 @@ def test_scenario_6_search_summaries_finds_inflected_form(monkeypatch):
     """검색어 '발견' 으로 본문 '발견했다' 가진 회차 매칭 (Option A 의 강점)."""
     from app.mcp.tools import episode_summary as es_mod
 
-    # SELECT 순서 (12 cols): ep.id, sort_order, ep.title, oneline_summary,
+    # SELECT 순서 (11 cols, sort_order 제거 후): ep.id, ep.title, oneline_summary,
     #   pov, tone, present_chars, cliffhanger, summary, present_locs, key_events, keywords
     rows = [
-        ("ep-uuid-1", 1, "v1:CT_1화", "v1:CT_앤이 발견", "앤", "충격", ["앤"], "v1:CT_침묵",
+        ("ep-uuid-1", "v1:CT_1화", "v1:CT_앤이 발견", "앤", "충격", ["앤"], "v1:CT_침묵",
          "v1:CT_앤이 다락방에서 어머니의 일기를 발견했다.",
          ["다락방"], [{"order":1,"event":"발견"}], ["편지"]),
-        ("ep-uuid-2", 2, "v1:CT_2화", "v1:CT_평범 일상", "앤", "평온", ["앤"], None,
+        ("ep-uuid-2", "v1:CT_2화", "v1:CT_평범 일상", "앤", "평온", ["앤"], None,
          "v1:CT_앤이 학교에 갔다.",
          ["학교"], [{"order":1,"event":"등교"}], ["일상"]),
     ]
@@ -391,9 +391,9 @@ def test_scenario_6_search_summaries_finds_inflected_form(monkeypatch):
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
     result = asyncio.run(es_mod.search_episode_summaries(FS(), ctx, keyword="발견", scope="all", limit=10))
 
-    sort_orders = [r["sort_order"] for r in result]
-    assert 1 in sort_orders, "어형 변화 매칭 실패 — '발견했다' 못 찾음"
-    assert 2 not in sort_orders
+    ids = [r["id"] for r in result]
+    assert "ep-uuid-1" in ids, "어형 변화 매칭 실패 — '발견했다' 못 찾음"
+    assert "ep-uuid-2" not in ids
 
 
 # ════════════════════════════════════════════════════════════════
@@ -431,7 +431,7 @@ def test_scenario_7_summarize_episode_no_plaintext_returns_error(monkeypatch):
             return R()
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
-    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, sort_order=1))
+    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, episode_id=str(EPISODE_ID)))
 
     assert result.get("error") == "no_plaintext"
     assert enc_calls["n"] == 0, "평문 fetch 실패했는데 encrypt 호출됨 — 흐름 오류"
