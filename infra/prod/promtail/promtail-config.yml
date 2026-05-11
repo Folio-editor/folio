@@ -37,8 +37,10 @@ scrape_configs:
         regex: '/(.*)'
         target_label: container
       # folio-<service>-<color> 패턴에서 service 추출
+      # 신규 컨테이너 추가 시 화이트리스트 갱신 필수 — 누락 시 service='' 로 푸시되어
+      # Grafana log volume 패널에 익명 {} 시계열로 표시됨.
       - source_labels: ['__meta_docker_container_name']
-        regex: '/folio-(backend|ai|celery-worker|web|landing|nginx|postgresql|redis|mongo|powersync|loki|promtail|grafana|certbot).*'
+        regex: '/folio-(backend|ai|celery-worker|web|landing|nginx|postgresql|redis|mongo|powersync|loki|promtail|grafana|certbot|vault).*'
         target_label: service
       # Blue/Green 색상 추출
       - source_labels: ['__meta_docker_container_name']
