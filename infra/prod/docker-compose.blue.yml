@@ -71,6 +71,14 @@ services:
       MAIL_OPERATOR_TO: ${MAIL_OPERATOR_TO:-2square.f203@gmail.com}
       # 관리자 API 인증 토큰 (X-Admin-Token 헤더). 미설정 시 admin API 전부 401 차단.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      # GA4 Measurement Protocol — 서버사이드 GA4 (클라 직접 호출 X, backend Ga4Client 가 forward).
+      # MEASUREMENT_ID / API_SECRET 누락 시 Ga4Properties.canSend()=false 로 silently skip → 이벤트 0건.
+      GA4_ENABLED: ${GA4_ENABLED:-true}
+      GA4_MEASUREMENT_ID: ${GA4_MEASUREMENT_ID:?GA4_MEASUREMENT_ID must be set in Doppler}
+      GA4_API_SECRET: ${GA4_API_SECRET:?GA4_API_SECRET must be set in Doppler}
+      GA4_ENDPOINT: ${GA4_ENDPOINT:-https://www.google-analytics.com/mp/collect}
+      GA4_DEBUG_ENDPOINT: ${GA4_DEBUG_ENDPOINT:-https://www.google-analytics.com/debug/mp/collect}
+      GA4_DEBUG_MODE: ${GA4_DEBUG_MODE:-false}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
     depends_on:
       postgresql:
