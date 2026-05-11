@@ -6,8 +6,6 @@
 // ============================================================
 
 import { PowerSyncDatabase } from '@powersync/web';
-import { resetTabHelpShownFlags } from '../constants/tabHelpContent';
-import { kekStorage } from '../crypto/kekStorage';
 import { AppSchema } from './schema';
 
 export const db = new PowerSyncDatabase({
@@ -60,58 +58,30 @@ const ALPHA_RESET_FLAG_KEY = 'folio.alpha.reset.v6.done';
  *
  * 반환값: true 면 wipe 가 수행됐다 (호출자에서 sync 다운로드 인디케이터 표시 권장).
  */
+/**
+ * ★ 2026-05-11 자동 wipe 폐기 — no-op 로 전환.
+ *
+ * <p>배경: 알파 단계 종료 후, 신규 사용자가 첫 OAuth 로그인 직후 본 함수의 자동 wipe
+ * 로직(disconnectAndClear + auth.logout)에 의해 곧바로 강제 logout 당해 "한 번 더
+ * 로그인해야 인증됨" 증상을 유발하는 회귀가 확인됨.
+ *
+ * <p>알파 빌드 잔존 데이터가 있는 기존 사용자도 이 시점에는 자연스럽게 정리됐을 것으로
+ * 판단하여 자동 wipe 를 완전 폐기. 향후 비슷한 일괄 정리가 필요해지면:
+ * <ol>
+ *   <li>별도 함수 이름 + 별도 flag 키로 신규 함수 작성 (절대 본 함수 재활성화 금지)</li>
+ *   <li>Settings UI 의 명시적 사용자 trigger 권장 (예: "데이터 초기화")</li>
+ * </ol>
+ *
+ * @return 항상 false — wipe 가 수행되지 않음을 의미. 호출자(AppRoot)는 이 반환값을
+ *         보지 않으므로 무해. flag 는 호환용으로만 세팅.
+ */
 export async function ensureSchemaVersion(): Promise<boolean> {
-  try {
-    // 이미 알파 리셋 완료된 사용자 — 즉시 단락. 어떤 향후 변경에도 wipe 재발화 X.
-    if (localStorage.getItem(ALPHA_RESET_FLAG_KEY) === 'true') {
-      return false;
-    }
-
-    console.info('[alpha-reset] 알파 리셋 시작 — 로컬 데이터 일괄 정리');
-
-    // 1. PowerSync SQLite — 모든 동기화 테이블 + ps_crud 큐 비우기
-    await db.disconnectAndClear();
-
-    // 2. 사용자 안내 플래그 초기화 — 새 환경에 첫 진입한 것처럼 환영 다이얼로그 / 도움말 자동 노출
+  if (localStorage.getItem(ALPHA_RESET_FLAG_KEY) !== 'true') {
     try {
-      localStorage.removeItem('folio.onboarding.guideOffered');
-      localStorage.removeItem('folio.welcomeTour.completed');
-      // 옛 SCHEMA_VERSION 키는 더 이상 사용 안 함 — 잔존 정리
-      localStorage.removeItem('folio.schema.version');
-      resetTabHelpShownFlags();
-    } catch (e) {
-      console.warn('[alpha-reset] localStorage flag clear 실패', e);
+      localStorage.setItem(ALPHA_RESET_FLAG_KEY, 'true');
+    } catch {
+      /* storage 접근 실패는 부팅을 막지 않음 */
     }
-
-    // 3. KEK 재료 (Plan C) — safeStorage / IndexedDB 영속본 폐기. 새 backend 의 pepper
-    //    material 로 다음 로그인 시 자동 재발급. 옛 재료 잔존 시 새 backend 의 sub
-    //    매핑 충돌로 복호화 실패 가능.
-    try {
-      await kekStorage.clear();
-    } catch (e) {
-      console.warn('[alpha-reset] KEK material clear 실패', e);
-    }
-
-    // 4. Auth 토큰 / lastKnownWriterId — 새 backend 에 옛 토큰 무효 → 401 noisy 회피.
-    //    재로그인 흐름으로 깨끗하게 진입.
-    try {
-      const folio = (window as { folio?: { auth?: { logout?: () => Promise<void> } } }).folio;
-      if (folio?.auth?.logout) {
-        await folio.auth.logout();
-      }
-    } catch (e) {
-      console.warn('[alpha-reset] auth logout 실패 (이미 로그아웃 상태일 수 있음)', e);
-    }
-
-    // 5. 마지막 — 알파 리셋 완료 flag 영속화. 이 시점 이후 본 함수는 절대 wipe 재발화 X.
-    //    중간 단계 실패 시 flag 미설정 → 다음 부팅에서 재시도 (idempotent).
-    localStorage.setItem(ALPHA_RESET_FLAG_KEY, 'true');
-    console.info('[alpha-reset] 완료 — 향후 자동 wipe 비활성화');
-    return true;
-  } catch (err) {
-    // 부분 wipe 만 됐거나 전체 실패 — 앱 부팅 자체는 막지 않는다.
-    // ALPHA_RESET_FLAG_KEY 가 미설정이면 다음 부팅에서 재시도.
-    console.error('[alpha-reset] failed', err);
-    return false;
   }
+  return false;
 }

@@ -126,7 +126,7 @@ export interface SubscriptionPlanInfo {
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlanInfo[] = [
-  { code: 'PRO_MONTHLY', amount: 19_900, monthlyTokens: 25_000, displayName: 'Folio Pro 월간' },
+  { code: 'PRO_MONTHLY', amount: 19_800, monthlyTokens: 25_000, displayName: 'Folio Pro 월간' },
 ];
 
 export interface BillingAuthPrepareResponse {
