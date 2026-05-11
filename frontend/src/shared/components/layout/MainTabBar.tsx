@@ -47,6 +47,7 @@ import type { MainDoc, MainTab, WorkspaceSection } from '../../types/workspace';
 import { cn } from '../../lib/cn';
 import { useDecryptedCharacterList } from '../../hooks/useDecryptedCharacter';
 import { useDecryptedCharacterNoteList } from '../../hooks/useDecryptedCharacterNote';
+import { useHorizontalWheelScroll } from '../../hooks/useHorizontalWheelScroll';
 import { useDecryptedPlanNoteList } from '../../hooks/useDecryptedPlanNote';
 import { useDecryptedWorldNoteList } from '../../hooks/useDecryptedWorldNote';
 import { useDecryptedPlotList } from '../../hooks/useDecryptedPlot';
@@ -321,12 +322,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
     reorderTabs(next.map((t) => t.id));
   };
 
-  // 휠 deltaY → 가로 스크롤
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (e.deltaY === 0) return;
-    if (!scrollerRef.current) return;
-    scrollerRef.current.scrollLeft += e.deltaY;
-  };
+  useHorizontalWheelScroll(scrollerRef);
 
   const tabIds = useMemo(() => tabs.map((t) => t.id), [tabs]);
   const rightPanel = useRightPanelToggle();
@@ -360,8 +356,7 @@ export function MainTabBar({ onActiveSectionChange }: MainTabBarProps) {
       {/* 탭 리스트 + 마지막 탭 옆 + 버튼 */}
       <div
         ref={scrollerRef}
-        onWheel={handleWheel}
-        className="scrollbar-none flex min-w-0 flex-1 items-stretch overflow-x-auto"
+        className="scrollbar-none flex min-w-0 flex-1 items-stretch overflow-x-auto scroll-smooth"
       >
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
