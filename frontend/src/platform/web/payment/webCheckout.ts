@@ -87,6 +87,14 @@ export async function webOpenOneTime(
  * 네이버페이 등 간편결제는 빌링키 발급이 지원되지 않는 경우가 많고, 사용자 입장에서도 정기결제
  * 는 카드 등록이 가장 직관적.
  */
+/**
+ * KG이니시스 V2 빌링키 발급은 issueId(고유 발급 ID) 가 필수. paymentId 와 같은 역할로,
+ * 발급 요청별로 unique 해야 한다. 짧고 안정적인 ID 를 즉석 생성.
+ */
+function generateBillingIssueId(customerKey: string): string {
+  return `BILL-${customerKey.slice(0, 8)}-${Date.now()}`;
+}
+
 export async function webOpenBillingAuth(
   params: FolioBillingAuthParams,
 ): Promise<FolioBillingAuthResult> {
@@ -94,6 +102,9 @@ export async function webOpenBillingAuth(
     storeId: params.storeId,
     channelKey: params.channelKey,
     billingKeyMethod: 'CARD',
+    // KG이니시스 V2 등 일부 PG 는 빌링키 발급 요청별 고유 식별자(issueId) 를 필수로 요구.
+    // 미입력 시 "issueId 는 필수 입력입니다" 에러로 발급창 호출 실패.
+    issueId: generateBillingIssueId(params.customerKey),
     customer: {
       customerId: params.customerKey,
       ...(params.customerEmail ? { email: params.customerEmail } : {}),
