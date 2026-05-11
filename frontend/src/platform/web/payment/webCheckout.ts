@@ -38,9 +38,12 @@ function toCheckoutError(code: string, message: string): Error {
 /**
  * 일회성 결제 — 신용카드 결제창.
  *
- * <p>채널: KG이니시스 V2 (테스트 모드). PG 가 카드 인증 결제창을 띄워 사용자가 카드사 선택 →
- * 카드사 인증 → 결제 완료 흐름으로 진행. 다양한 결제수단(카카오페이/네이버페이/계좌이체 등)
- * 동시 노출은 후속 PR 에서 {@code loadPaymentUI} 기반으로 도입.
+ * <p>채널: 토스페이먼츠 V2 (테스트 모드). PG 가 chapter8 처럼 깔끔한 카드사 그리드 UI 를
+ * 띄우고 사용자가 카드사 선택 → 카드 정보 입력 → 결제 완료. 토스페이먼츠는 KG이니시스와
+ * 달리 customer.email/phoneNumber 가 필수가 아니므로 최소 필드만 전달.
+ *
+ * <p>전달하는 customer.customerId 는 백엔드가 결제 webhook 수신 시 사용자 매칭용으로
+ * 사용하므로 유지.
  */
 export async function webOpenOneTime(
   params: FolioOneTimePaymentParams,
@@ -53,17 +56,7 @@ export async function webOpenOneTime(
     totalAmount: params.amount,
     currency: 'KRW',
     payMethod: 'CARD',
-    customer: {
-      customerId: params.customerKey,
-      // KG이니시스 V2 일반결제는 email/phoneNumber 를 필수로 요구. 미입력 시
-      // "구매자 ... 필수 입력입니다" 에러로 결제창 호출 실패.
-      email: params.customerEmail,
-      // Folio 는 Writer 엔티티에 휴대폰 번호를 갖지 않음 (가입 시 미수집).
-      // 호출자가 customerPhoneNumber 를 전달했으면 사용, 없으면 더미값.
-      // 향후 회원 프로필에 휴대폰 추가 시 진짜 번호로 대체 — Phase B 작업.
-      phoneNumber: params.customerPhoneNumber ?? '010-0000-0000',
-      ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
-    },
+    customer: { customerId: params.customerKey },
   } as Parameters<typeof PortOne.requestPayment>[0]);
 
   // SDK가 modal close에서 undefined를 반환하는 케이스 — 사용자 취소로 간주.
@@ -102,16 +95,9 @@ export async function webOpenBillingAuth(
     storeId: params.storeId,
     channelKey: params.channelKey,
     billingKeyMethod: 'CARD',
-    // KG이니시스 V2 등 일부 PG 는 빌링키 발급 요청별 고유 식별자(issueId) 를 필수로 요구.
-    // 미입력 시 "issueId 는 필수 입력입니다" 에러로 발급창 호출 실패.
+    // 빌링키 발급 요청별 고유 식별자(issueId) — PortOne V2 빌링키 발급의 필수 필드.
     issueId: generateBillingIssueId(params.customerKey),
-    customer: {
-      customerId: params.customerKey,
-      ...(params.customerEmail ? { email: params.customerEmail } : {}),
-      // 빌링키 발급도 KG이니시스 등 PG 가 휴대폰 번호를 요구할 수 있어 함께 전달.
-      phoneNumber: params.customerPhoneNumber ?? '010-0000-0000',
-      ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
-    },
+    customer: { customerId: params.customerKey },
     issueName: 'Folio Pro 정기결제 카드 등록',
   } as Parameters<typeof PortOne.requestIssueBillingKey>[0]);
 
