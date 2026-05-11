@@ -478,7 +478,7 @@ CREATE TABLE agent_session (
     writer_id        UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
     scenario         VARCHAR(40) NOT NULL
         CHECK (scenario IN (
-            'auto',
+            'auto', 'card_auto',
             'draft_next','consistency_check','revision',
             'extraction','qa','ideation'
         )),
