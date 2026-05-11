@@ -15,7 +15,7 @@ import java.util.Arrays;
 public enum TokenPackage {
     SMALL("TOKEN_3000", 300, 3_000),
     MEDIUM("TOKEN_5500", 500, 5_500),
-    LARGE("TOKEN_12000", 1_000, 12_000);
+    LARGE("TOKEN_12000", 10_000, 12_000);
 
     private final String code;
     private final int amount;
