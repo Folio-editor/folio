@@ -132,8 +132,16 @@ build-electron-windows:
       # 누락되면 코드 default(localhost:8080)로 fallback → 데스크탑 앱이 본인 PC
       # 로컬호스트로 호출 → 연결 실패 + 백엔드 로그 0건. deploy-production의
       # web/landing 빌드와 동일한 prod URL을 컨테이너에 주입.
-      # PortOne 변수는 client-side SDK 가 사용하는 public key (서버 secret 아님 — 빌드 산출물
-      # 노출 무관). 다른 VITE_* 와 동일하게 CI hardcode.
+      #
+      # PortOne storeId/channelKey 는 Doppler prd 의 단일 진실에서 가져온다 — 채널 교체
+      # 시 Doppler 만 갱신하면 deploy-production 은 자동 반영되지만, 이 release job 은
+      # Doppler 호출이 없는 별도 trigger(tag push) 라 직접 fetch 한다.
+      # 토큰 변수가 비어 있으면 Doppler CLI 가 즉시 fail-fast 하므로 결제 실패 회귀 차단.
+      export DOPPLER_TOKEN="${DOPPLER_TOKEN_PRD}"
+      VITE_PORTONE_STORE_ID=$(doppler secrets get VITE_PORTONE_STORE_ID --project folio --config prd --plain)
+      VITE_PORTONE_CHANNEL_KEY_ONETIME=$(doppler secrets get VITE_PORTONE_CHANNEL_KEY_ONETIME --project folio --config prd --plain)
+      VITE_PORTONE_CHANNEL_KEY_BILLING=$(doppler secrets get VITE_PORTONE_CHANNEL_KEY_BILLING --project folio --config prd --plain)
+
       docker run --rm \
         --user "${RUNNER_UID}:${RUNNER_GID}" \
         -v "$CI_PROJECT_DIR":/workspace \
@@ -147,9 +155,9 @@ build-electron-windows:
         -e VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
         -e VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
         -e VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
-        -e VITE_PORTONE_STORE_ID=store-e96824b8-46d0-4ff1-ad7d-6246394a3fb8 \
-        -e VITE_PORTONE_CHANNEL_KEY_ONETIME=channel-key-f01baff1-ee03-4006-a568-c0000739996a \
-        -e VITE_PORTONE_CHANNEL_KEY_BILLING=channel-key-77d977ca-618c-4707-b7c5-a03c64bcc343 \
+        -e VITE_PORTONE_STORE_ID="${VITE_PORTONE_STORE_ID}" \
+        -e VITE_PORTONE_CHANNEL_KEY_ONETIME="${VITE_PORTONE_CHANNEL_KEY_ONETIME}" \
+        -e VITE_PORTONE_CHANNEL_KEY_BILLING="${VITE_PORTONE_CHANNEL_KEY_BILLING}" \
         electronuserland/builder:wine \
         bash -c "
           set -Eeuo pipefail
@@ -251,17 +259,18 @@ deploy-production:
         docker build -f infra/dockerfiles/Dockerfile.spring -t folio-backend:$CI_COMMIT_SHORT_SHA -t folio-backend:latest ./backend
         docker build -f infra/dockerfiles/Dockerfile.fastapi -t folio-ai:$CI_COMMIT_SHORT_SHA -t folio-ai:latest ./ai
         docker build -f infra/dockerfiles/Dockerfile.celery-worker -t folio-celery-worker:$CI_COMMIT_SHORT_SHA -t folio-celery-worker:latest ./ai
-        # VITE_* 모두 client-side public 정보 (빌드 산출물 노출 무관) — CI hardcode 단일화.
-        # PortOne storeId/channelKey 는 SDK 식별자라 client 에 노출되어야 동작 (server secret 아님).
+        # VITE_* 중 거의 변경되지 않는 값(API URL, Google client id, landing URL) 은 hardcode.
+        # PortOne storeId/channelKey 는 PG 채널 교체 시 자주 바뀌므로 Doppler prd 에서 주입 —
+        # Doppler 만 갱신하면 다음 배포에서 자동 반영, yaml 갱신 누락으로 인한 결제 실패 회귀 차단.
         docker build -f infra/dockerfiles/Dockerfile.web \
           --build-arg VITE_API_URL=https://folio-editor.co.kr/api/v1 \
           --build-arg VITE_POWERSYNC_URL=https://folio-editor.co.kr/sync \
           --build-arg VITE_GOOGLE_CLIENT_ID=671225006090-dll3oqd60cd5cmrgr2uc27ssti12utiu.apps.googleusercontent.com \
           --build-arg VITE_GOOGLE_DESKTOP_CLIENT_ID=671225006090-rtgpq7hlhomiql0qtqmgevbrbquhqqjk.apps.googleusercontent.com \
           --build-arg VITE_LANDING_URL=https://folio-editor.co.kr/ \
-          --build-arg VITE_PORTONE_STORE_ID=store-e96824b8-46d0-4ff1-ad7d-6246394a3fb8 \
-          --build-arg VITE_PORTONE_CHANNEL_KEY_ONETIME=channel-key-f01baff1-ee03-4006-a568-c0000739996a \
-          --build-arg VITE_PORTONE_CHANNEL_KEY_BILLING=channel-key-77d977ca-618c-4707-b7c5-a03c64bcc343 \
+          --build-arg VITE_PORTONE_STORE_ID=\${VITE_PORTONE_STORE_ID} \
+          --build-arg VITE_PORTONE_CHANNEL_KEY_ONETIME=\${VITE_PORTONE_CHANNEL_KEY_ONETIME} \
+          --build-arg VITE_PORTONE_CHANNEL_KEY_BILLING=\${VITE_PORTONE_CHANNEL_KEY_BILLING} \
           -t folio-web:$CI_COMMIT_SHORT_SHA -t folio-web:latest .
         # 랜딩 빌드: VITE_API_URL + VITE_EDITOR_URL 추가 (이전 누락 정정)
         docker build -f infra/dockerfiles/Dockerfile.landing \
