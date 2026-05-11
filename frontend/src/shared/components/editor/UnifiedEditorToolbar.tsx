@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   Bold,
@@ -22,6 +22,7 @@ import { HighlightColorPalette } from './HighlightColorPalette';
 import { TextColorPalette } from './TextColorPalette';
 import { FontFamilyDropdown } from './FontFamilyDropdown';
 import { FontSizeDropdown } from './FontSizeDropdown';
+import { useHorizontalWheelScroll } from '../../hooks/useHorizontalWheelScroll';
 
 interface UnifiedEditorToolbarProps {
   /** single: props.editor 사용 (단일 ContentEditor 화면)
@@ -107,6 +108,8 @@ export function UnifiedEditorToolbar({
   const sharedVisible = useEditorToolbarStore((s) => s.visible);
   const editor = mode === 'single' ? propEditor ?? null : sharedEditor;
   useForce(editor);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useHorizontalWheelScroll(scrollerRef);
 
   if (mode === 'shared' && !sharedVisible) return null;
 
@@ -117,7 +120,7 @@ export function UnifiedEditorToolbar({
   };
   const c = () => editor!.chain().focus();
 
-  // overflow-x-auto + scrollbar-none: 시각적 스크롤바 숨김 + 휠/트랙패드 가로 스크롤 유지
+  // overflow-x-auto + scrollbar-none + 휠 매핑: 시각적 스크롤바 숨김 + 마우스 휠로 가로 스크롤
   // justify-start + min-w-max(내부): 폭 부족 시 버튼이 양끝으로 늘어나지 않고 자연 폭 유지
   const containerClass =
     mode === 'shared'
@@ -125,7 +128,7 @@ export function UnifiedEditorToolbar({
       : 'flex h-9 items-center overflow-x-auto scrollbar-none border-b border-border bg-background';
 
   return (
-    <div className={containerClass}>
+    <div ref={scrollerRef} className={containerClass}>
       <div className="flex h-full min-w-max items-center gap-0.5 px-2">
       {/* Text formatting */}
       <Btn

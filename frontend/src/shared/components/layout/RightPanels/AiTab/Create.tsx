@@ -503,13 +503,15 @@ export function CreateStreamingScreen() {
           </div>
         )}
 
-        {/* 완료 시 — 본문 카드(propose_episode_draft) 가 없으면 마지막 사고 응답을 "AI 결과" 카드로
-            메인 노출. 검수/요약/맞춤법 등 텍스트 결론이 진행 헤더 안에만 묻혀 사용자가 확인 어려운
-            케이스 보완. 색상은 중립 — 결론이 이슈 보고일 수도 있고 무이슈 보고일 수도 있어 성공
-            (emerald) 으로 단정하지 않는다. 제안 카드 존재 여부와 무관하게 노출. */}
+        {/* 완료 시 — 본문 카드(propose_episode_draft) 가 없으면 "AI 결과" 카드로 노출.
+            ★ lastThinking (마지막 turn) 이 아니라 lastTurnWithText (텍스트 있는 마지막 turn) 사용.
+            AI 가 검수 보고서 출력 → propose_review_issue tool_use → 종료 순서로 응답하면
+            마지막 thinking turn 은 propose 호출만 들어있는 빈 turn 이 된다 (text=''). 그대로 두면
+            'done' 전환 직후 카드가 증발 — streaming 중엔 lastTurnWithText 폴백으로 보이다가
+            state 가 'done' 되는 순간 사라지는 버그가 났다. 캐싱된 직전 텍스트로 복원. */}
         {state === 'done' &&
           bodyTurns.length === 0 &&
-          (lastThinking?.text.trim() ?? '') !== '' && (
+          (lastTurnWithText?.text.trim() ?? '') !== '' && (
             <div className="rounded-md border border-border bg-muted/30 p-3 shadow-sm">
               <div className="mb-1.5 flex items-center gap-1.5">
                 <Info size={12} className="shrink-0 text-muted-foreground" />
@@ -518,7 +520,7 @@ export function CreateStreamingScreen() {
                 </span>
               </div>
               <div className="max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-foreground">
-                <ChatMarkdown text={lastThinking!.text.trim()} variant="assistant" />
+                <ChatMarkdown text={lastTurnWithText!.text.trim()} variant="assistant" />
               </div>
             </div>
           )}

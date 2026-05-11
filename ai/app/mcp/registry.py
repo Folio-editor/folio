@@ -134,8 +134,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "query_episodes_by_chunks",
         "description": (
-            "**자유 텍스트 질의** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
-            "고정 ~10 크레딧, 회차 수 무관. 예: '주인공의 트라우마 묘사', '한중 이주 장면'. "
+            "**자유 텍스트 질의 (벡터)** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
+            "★고정 ~10 크레딧, 회차 수 무관★ — 50화+ 작품 검수/탐색 시 read_summary 보다 압도적으로 싸다. "
+            "검수 시 모순 후보 추적 적극 활용: '앤의 머리색 묘사', '주인공 부친 사망 언급', 'X 사건 회상'. "
+            "예: 인물 외형 모순 의심 → query 로 모든 묘사 모아 비교 → 모순 회차 식별 → 그 회차만 fetch. "
             "기준 회차에서 출발하는 관련성 탐색은 find_relevant_episodes (~1 크레딧)."
         ),
         "input_schema": {
@@ -294,8 +296,12 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "find_relevant_episodes",
         "description": (
-            "**peek 용** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
-            "DB-only ~1 크레딧 (Haiku·임베딩 호출 0회). 다음 화 초안 시 직전 화 기준으로 호출 → "
+            "**peek 용 (벡터)** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
+            "★DB-only ~1 크레딧★ (Haiku·임베딩 호출 0회) — 50화+ 검수/초안 시 부담 0에 가깝다.\n"
+            "유스케이스:\n"
+            "  - 다음 화 초안: 직전 화 기준 → 연관 과거 회차 5개 발굴 → drill\n"
+            "  - 회차 검수: 대상 회차 기준 → 의미상 인접 회차 자동 발굴 → 모순 후보지로 우선 drill\n"
+            "  - 즉, 작품 회차 많을 때 list_all_oneline_summaries 로 다 훑지 말고 이 도구로 관련만 좁혀라.\n"
             "관련 있는 회차만 골라 summarize_episode/get_episode_summary 로 drill. "
             "**전제: reference_sort_order 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
             "list_episodes 결과의 word_count 또는 has_summary 로 사전 확인. "
