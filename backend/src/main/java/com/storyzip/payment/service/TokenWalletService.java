@@ -153,7 +153,7 @@ public class TokenWalletService {
     }
 
     /**
-     * 환불로 인한 회수 — 종량제 버킷에서만 차감.
+     * 종량제 환불 회수 — 종량제 버킷에서만 차감.
      * 이미 사용한 유저도 환불 가능해야 하므로 잔액 부족 시 에러 없이 가진 만큼만 차감.
      */
     @Transactional
@@ -166,6 +166,27 @@ public class TokenWalletService {
         }
         log.info("[REFUND_DEDUCT] writerId={} requested={} actual={} balanceAfter={} reason={} referenceId={}",
                 writerId, amount, actual, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
+    }
+
+    /**
+     * 구독 환불 회수 — 구독 버킷 전액 소멸.
+     *
+     * <p>약관 제4조 3항 + 제8조 2항: 구독 크레딧은 환불·해지 시 잔여분이 소멸되며 별도 환불
+     * 대상이 아니다. 구독 환불 승인은 "현금 환불 + 잔여 크레딧 소멸" 형태이므로 차감이 아니라
+     * {@link TokenWallet#expireSubscription()} 로 전액 회수한다.
+     *
+     * <p>원장에는 EXPIRE 가 아닌 REFUND 타입으로 기록 — 환불 트리거로 인한 소멸임을 추적.
+     */
+    @Transactional
+    public void refundSubscription(UUID writerId, String reason, UUID referenceId) {
+        TokenWallet wallet = lockOrCreate(writerId);
+        int expired = wallet.expireSubscription();
+        if (expired > 0) {
+            recordTx(writerId, TokenBucket.SUBSCRIPTION, -expired,
+                    TokenTransactionType.REFUND, reason, referenceId);
+        }
+        log.info("[REFUND_SUBSCRIPTION_EXPIRE] writerId={} expired={} balanceAfter={} reason={} referenceId={}",
+                writerId, expired, wallet.totalBalance(LocalDateTime.now(ZoneOffset.UTC)), reason, referenceId);
     }
 
     // ─────────────── 만료 ───────────────
