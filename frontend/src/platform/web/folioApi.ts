@@ -82,10 +82,21 @@ function bounceToLandingIfRequested(fromLanding: boolean): void {
   window.location.replace(target);
 }
 
-export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
+/**
+ * 동시 호출 가드 — connector.fetchCredentials 와 authStore.restore 가
+ * 같은 tick에 tryRestore() 를 호출하면 exchangeAuthCodeIfPresent 가 두 번 실행되어
+ * 두 번째 호출이 이미 1회 소비된 auth_code 로 백엔드를 호출 → 실패 분기에서
+ * bounceToLandingIfRequested 가 트리거되어 첫 호출의 localStorage 저장 완료 전에
+ * 랜딩으로 튕기는 race condition 발생. 모듈 스코프 Promise 로 한 번만 실행 보장.
+ */
+let exchangeInflight: Promise<LoginResult | null> | null = null;
+
+export function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
+  if (exchangeInflight) return exchangeInflight;
+
   const params = new URLSearchParams(window.location.search);
   const code = params.get('auth_code');
-  if (!code) return null;
+  if (!code) return Promise.resolve(null);
 
   // URL 정리 전에 fromLanding 플래그 캡처 — 교환 후 랜딩으로 bounce 여부 결정
   const fromLanding = params.get('fromLanding') === '1';
@@ -100,46 +111,52 @@ export async function exchangeAuthCodeIfPresent(): Promise<LoginResult | null> {
     window.location.hash;
   window.history.replaceState({}, '', newUrl);
 
-  try {
-    const res = await fetch(
-      `${apiUrl()}/auth/web/exchange?code=${encodeURIComponent(code)}`,
-      { method: 'POST' },
-    );
-    if (!res.ok) {
-      console.warn('[web/folioApi] auth_code 교환 실패:', res.status);
-      // 실패해도 랜딩으로 돌려보내 사용자가 다시 시도할 수 있게 함
+  exchangeInflight = (async () => {
+    try {
+      const res = await fetch(
+        `${apiUrl()}/auth/web/exchange?code=${encodeURIComponent(code)}`,
+        { method: 'POST' },
+      );
+      if (!res.ok) {
+        console.warn('[web/folioApi] auth_code 교환 실패:', res.status);
+        // 실패해도 랜딩으로 돌려보내 사용자가 다시 시도할 수 있게 함
+        bounceToLandingIfRequested(fromLanding);
+        return null;
+      }
+      const payload = (await res.json()) as {
+        accessToken: string;
+        refreshToken: string;
+        deviceId: string;
+        writer: Writer;
+        isNewUser: boolean;
+        encryption: LoginEncryptionMaterial | null;
+      };
+
+      accessToken = payload.accessToken;
+      localStorage.setItem(RT_KEY, payload.refreshToken);
+      localStorage.setItem(DEVICE_ID_KEY, payload.deviceId);
+      localStorage.setItem(WRITER_KEY, JSON.stringify(payload.writer));
+      localStorage.setItem(LAST_WRITER_ID_KEY, payload.writer.id);
+
+      // 교환 성공 — 랜딩으로 돌아가야 한다면 즉시 bounce.
+      // localStorage 저장이 위에서 동기 완료된 직후 호출되므로, bounce 후 도착한
+      // 랜딩 SPA 의 useLandingAuth 가 첫 렌더에서 인증 상태로 읽는다.
+      bounceToLandingIfRequested(fromLanding);
+
+      return {
+        accessToken: payload.accessToken,
+        writer: payload.writer,
+        isNewUser: payload.isNewUser,
+        encryption: payload.encryption ?? null,
+      };
+    } catch (e) {
+      console.warn('[web/folioApi] auth_code 교환 에러:', e);
       bounceToLandingIfRequested(fromLanding);
       return null;
     }
-    const payload = (await res.json()) as {
-      accessToken: string;
-      refreshToken: string;
-      deviceId: string;
-      writer: Writer;
-      isNewUser: boolean;
-      encryption: LoginEncryptionMaterial | null;
-    };
+  })();
 
-    accessToken = payload.accessToken;
-    localStorage.setItem(RT_KEY, payload.refreshToken);
-    localStorage.setItem(DEVICE_ID_KEY, payload.deviceId);
-    localStorage.setItem(WRITER_KEY, JSON.stringify(payload.writer));
-    localStorage.setItem(LAST_WRITER_ID_KEY, payload.writer.id);
-
-    // 교환 성공 — 랜딩으로 돌아가야 한다면 즉시 bounce
-    bounceToLandingIfRequested(fromLanding);
-
-    return {
-      accessToken: payload.accessToken,
-      writer: payload.writer,
-      isNewUser: payload.isNewUser,
-      encryption: payload.encryption ?? null,
-    };
-  } catch (e) {
-    console.warn('[web/folioApi] auth_code 교환 에러:', e);
-    bounceToLandingIfRequested(fromLanding);
-    return null;
-  }
+  return exchangeInflight;
 }
 
 function readWriterFromStorage(): Writer | null {
