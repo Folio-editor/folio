@@ -169,15 +169,21 @@ public class GoogleWebOAuthController {
         );
         oauthAuthCodeRedisService.saveCode(authCode, payload);
 
-        // 에디터로 ?auth_code=xxx로 redirect
-        URI editorUri = UriComponentsBuilder
-                .fromUriString(stripTrailingSlash(webProperties.getEditorUrl()) + storedReturnTo)
+        // returnTo 가 fromLanding=1 을 포함하면 랜딩으로 직접 redirect — 에디터를 거쳐
+        // bounce 하는 race condition 회피. 그 외엔 기존대로 에디터로 redirect.
+        boolean toLanding = storedReturnTo.contains("fromLanding=1");
+        String baseUrl = toLanding
+                ? stripTrailingSlash(webProperties.getLandingUrl())
+                : stripTrailingSlash(webProperties.getEditorUrl());
+        URI targetUri = UriComponentsBuilder
+                .fromUriString(baseUrl + storedReturnTo)
                 .queryParam("auth_code", authCode)
                 .build()
                 .toUri();
-        log.info("[OAuth callback] 로그인 성공 → {} (writer={})", editorUri, login.writer().id());
+        log.info("[OAuth callback] 로그인 성공 → {} (writer={}, toLanding={})",
+                targetUri, login.writer().id(), toLanding);
 
-        response.setHeader(HttpHeaders.LOCATION, editorUri.toString());
+        response.setHeader(HttpHeaders.LOCATION, targetUri.toString());
         response.setStatus(HttpStatus.FOUND.value());
     }
 
