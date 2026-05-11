@@ -152,13 +152,15 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     //   thread 의 setPendingFirstPrompt 를 덮어써 첫 SSE 가 prompt 없이 무한 대기.
     if (createState === 'streaming') return;
     // 검수 prompt 자동 조립 — 단일 회차 + 중점 사항.
+    // ★ episode_id (UUID) 만 식별자로 명시. sort_order 는 작가 임의 정렬값이라 절대 노출 X.
     const targetLabel = pinnedEpisode.title?.trim() || '(제목 없음)';
     const focusBlock = reviewFocusPrompt.trim()
       ? `\n중점 사항: ${reviewFocusPrompt.trim()}`
       : '';
     const fullPrompt =
-      `[검수 대상] ${targetLabel}\n` +
-      `해당 회차의 본문/요약을 살펴 의미 모순(인물·복선·시간선·설정)과 맞춤법 오류를 함께 점검해줘.${focusBlock}`;
+      `[검수 대상] ${targetLabel} (episode_id=${pinnedEpisode.id})\n` +
+      `해당 회차의 본문/요약을 살펴 의미 모순(인물·복선·시간선·설정)과 맞춤법 오류를 함께 점검해줘. ` +
+      `★ 도구 호출 시 위 episode_id 그대로 사용 — 추측 금지.${focusBlock}`;
 
     void analytics.track('ai_review_requested', {
       doc_type: 'episode',

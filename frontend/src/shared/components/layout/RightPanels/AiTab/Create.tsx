@@ -49,8 +49,9 @@ export function CreateInputScreen({
     if (!selectedWorkId || !canSubmit) return;
     setSubmitting(true);
     try {
-      // agent 'auto' 시나리오로 thread 생성 — 사용자 의도를 LLM 이 자동 분류
-      const r = await (await import('../../../../api/agent')).createAgentThread(selectedWorkId, 'auto');
+      // agent 'card_auto' 시나리오로 thread 생성 — 'auto' 와 동작 동일 (모든 도구 + 의도 자동 분류).
+      // 별도 식별자로 분리해 list_threads (채팅 모드 목록) 에 카드 단발 세션이 노출 안 되도록 함.
+      const r = await (await import('../../../../api/agent')).createAgentThread(selectedWorkId, 'card_auto');
       const tid = r?.thread_id;
       if (!tid) throw new Error('thread_id 누락');
       // 참고 자료 자유 프롬프트 — agent 가 list_episodes / list_world_notes / list_characters 등으로 alf 자체 해석
@@ -254,14 +255,6 @@ export function CreateStreamingScreen() {
             partial_json?: string;
             block_index?: number;
           };
-          // ── 진단용 console.log — SSE 가 chunk 별로 도착하는지 확인 ──
-          // eslint-disable-next-line no-console
-          console.log('[SSE]', new Date().toISOString().slice(11, 23), evt.type, {
-            tool_name: evt.tool_name,
-            partial_json_len: evt.partial_json?.length,
-            text_len: evt.text?.length,
-            block_index: evt.block_index,
-          });
           if (evt.type === 'step') {
             addStep({
               step_type: evt.step_type ?? 'unknown',

@@ -224,6 +224,14 @@ deploy-production:
         cd /opt/folio/S14P31F203/infra/prod
         doppler secrets download --project folio --config prd --no-file --format env > .env
         echo "IMAGE_TAG=$CI_COMMIT_SHORT_SHA" >> .env
+
+        # GA4 — Measurement Protocol 키. Doppler 의존성 차단을 위해 CI hardcode 로 .env 덮어쓰기.
+        # backend Ga4Client 가 서버에서만 사용 (클라 노출 X). client_id/api_secret 모두 서버 시크릿이라
+        # repo 공개되면 위험하지만 현재 private repo + 신뢰 가능한 협업자 기준 acceptable.
+        # 키 회전 시: 이 부분 값만 갱신 + 재배포.
+        echo "GA4_MEASUREMENT_ID=G-L7FS4FD61M" >> .env
+        echo "GA4_API_SECRET=FlLVQ8tfSVyRRWuwvdTrkg" >> .env
+
         set -a; source .env; set +a
 
         # 2.5. PLG + Metrics 데이터 디렉토리 보장 (Loki/Grafana/Prometheus 첫 기동 시 필요)

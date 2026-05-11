@@ -135,7 +135,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "name": "query_episodes_by_chunks",
         "description": (
             "**자유 텍스트 질의 (벡터)** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
-            "★고정 ~10 크레딧, 회차 수 무관★ — 50화+ 작품 검수/탐색 시 read_summary 보다 압도적으로 싸다. "
+            "★고정 ~10 크레딧, 회차 수 무관★ — 50화+ 작품 검수/탐색 시 압도적으로 싸다. "
             "검수 시 모순 후보 추적 적극 활용: '앤의 머리색 묘사', '주인공 부친 사망 언급', 'X 사건 회상'. "
             "예: 인물 외형 모순 의심 → query 로 모든 묘사 모아 비교 → 모순 회차 식별 → 그 회차만 fetch. "
             "기준 회차에서 출발하는 관련성 탐색은 find_relevant_episodes (~1 크레딧)."
@@ -145,8 +145,6 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string", "description": "검색 + 합성 질의 (한국어)"},
                 "k": {"type": "integer", "description": "검색 chunk 수 (기본 10, 상한 30)", "default": 10},
-                "sort_order_min": {"type": "integer", "description": "(옵션) 회차 범위 시작"},
-                "sort_order_max": {"type": "integer", "description": "(옵션) 회차 범위 끝"},
             },
             "required": ["query"],
         },
@@ -176,24 +174,22 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_all_oneline_summaries",
         "description": (
-            "작품 전체 회차의 한 줄 요약·시점·톤만 sort_order 순서로 1회 호출 반환. "
-            "agent 가 작품 흐름 / 일관성 검수 시작점에 활용 (300화 ≈ 13.5K tok). "
-            "상세 필요 시 get_episode_summary(sort_order) 또는 list_episode_summaries 로 drill-down."
+            "작품 전체 회차의 한 줄 요약·시점·톤만 시간 순으로 1회 호출 반환. "
+            "★배열 순서 자체가 시간 순★ (회차 번호·sort_order 같은 별도 정렬값 노출 X). "
+            "각 행은 episode_id (UUID) 와 title 보유. 300화 ≈ 13.5K tok. "
+            "상세 필요 시 get_episode_summary(episode_id) 로 drill-down."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "list_episode_summaries",
         "description": (
-            "회차 요약 목록을 sort_order 순서로 조회합니다. "
-            "각 행은 한 줄 요약·시점 인물·톤·등장 인물·끝점만 담은 간략 정보. "
-            "회차 흐름을 빠르게 스캔할 때 사용합니다."
+            "회차 요약 목록을 시간 순으로 조회 (페이지네이션). "
+            "각 행은 한 줄 요약·시점 인물·톤·등장 인물·끝점 + episode_id (UUID) + title."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "start_sort": {"type": "integer", "description": "시작 sort_order (포함)"},
-                "end_sort": {"type": "integer", "description": "끝 sort_order (포함)"},
                 "limit": {"type": "integer", "description": "최대 결과 수 (기본 20, 상한 100)", "default": 20},
                 "offset": {"type": "integer", "description": "오프셋 (기본 0)", "default": 0},
             },
@@ -203,15 +199,15 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_episode_summary",
         "description": (
-            "**캐시 hit 용** — episode_summary 행 존재 시 (list_episodes 의 has_summary=True) "
-            "단건 12-필드 메타 반환 (Haiku 0회). 행 없으면 null → summarize_episode 호출 필요."
+            "**캐시 hit 용** — episode_summary 행 존재 시 단건 12-필드 메타 반환 (Haiku 0회). "
+            "행 없으면 null → summarize_episode 호출 필요."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID (list_episodes 등의 id)"},
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     {
@@ -240,8 +236,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "track_foreshadow",
         "description": (
-            "심어진 복선과 회수된 회차를 짝지어 반환합니다. "
-            "paid_off_sort 가 NULL 이면 미회수. 검수 시 1회 호출로 회수 누락 점검."
+            "심어진 복선과 회수된 회차를 짝지어 반환. paid_off_episode_id 가 NULL 이면 미회수. "
+            "검수 시 1회 호출로 회수 누락 점검."
         ),
         "input_schema": {
             "type": "object",
@@ -254,15 +250,13 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "character_arc",
         "description": (
-            "특정 인물의 회차별 변화 시계열 반환. "
-            "sort_order, oneline_summary, tone, is_pov, key_events, cliffhanger."
+            "특정 인물의 회차별 변화 시계열 반환 (배열 시간 순). "
+            "각 행: {episode_id, title, oneline_summary, tone, is_pov, key_events, cliffhanger}."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "추적할 인물 이름"},
-                "start_sort": {"type": "integer"},
-                "end_sort": {"type": "integer"},
             },
             "required": ["name"],
         },
@@ -270,24 +264,18 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "timeline_scan",
         "description": (
-            "회차별 time_progression 과 cliffhanger 만 sort_order 순서로 반환. "
-            "시간선 일관성 검수에 사용."
+            "회차별 time_progression 과 cliffhanger 만 시간 순으로 반환 (시간선 일관성 검수용). "
+            "각 행: {episode_id, title, oneline_summary, time_progression, cliffhanger}."
         ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "start_sort": {"type": "integer"},
-                "end_sort": {"type": "integer"},
-            },
-            "required": [],
-        },
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     # ───────── Phase 4: episode 직접 조회 ─────────
     {
         "name": "list_episodes",
         "description": (
             "**peek 용** — 회차 존재·has_summary 확인. 모든 회차 작업의 첫 단계. "
-            "각 행: {sort_order, title, status, word_count, has_summary}. "
+            "★반환 배열은 시간 순★ — 회차 번호·sort_order 노출 X. 각 행: {id, title, status, word_count, has_summary}. "
+            "id 가 episode_id (UUID) — 후속 도구 호출 시 식별자. "
             "drill: has_summary=True 면 get_episode_summary, False 면 summarize_episode."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -297,24 +285,19 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "name": "find_relevant_episodes",
         "description": (
             "**peek 용 (벡터)** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
-            "★DB-only ~1 크레딧★ (Haiku·임베딩 호출 0회) — 50화+ 검수/초안 시 부담 0에 가깝다.\n"
-            "유스케이스:\n"
-            "  - 다음 화 초안: 직전 화 기준 → 연관 과거 회차 5개 발굴 → drill\n"
-            "  - 회차 검수: 대상 회차 기준 → 의미상 인접 회차 자동 발굴 → 모순 후보지로 우선 drill\n"
-            "  - 즉, 작품 회차 많을 때 list_all_oneline_summaries 로 다 훑지 말고 이 도구로 관련만 좁혀라.\n"
-            "관련 있는 회차만 골라 summarize_episode/get_episode_summary 로 drill. "
-            "**전제: reference_sort_order 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
-            "list_episodes 결과의 word_count 또는 has_summary 로 사전 확인. "
-            "본문 비어있는 회차를 reference 로 주면 결과 0 + suggested_reference 반환 — 그걸로 재호출."
+            "★DB-only ~1 크레딧★ — 50화+ 검수/초안 시 부담 0에 가깝다.\n"
+            "유스케이스: 회차 검수 시 대상 회차 기준 → 의미상 인접 회차 자동 발굴 → 모순 후보지로 우선 drill.\n"
+            "**전제: reference_episode_id 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
+            "본문 비어있으면 결과 0 + suggested_reference_episode_id 반환 — 그걸로 재호출."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "reference_sort_order": {"type": "integer", "description": "기준 회차 sort_order"},
+                "reference_episode_id": {"type": "string", "description": "기준 회차 UUID"},
                 "k": {"type": "integer", "description": "top-k (기본 5, 상한 20)", "default": 5},
                 "exclude_self": {"type": "boolean", "description": "기준 회차 자기 자신 제외 (기본 true)", "default": True},
             },
-            "required": ["reference_sort_order"],
+            "required": ["reference_episode_id"],
         },
     },
     # ───────── Phase 4: 평문 fetch ─────────
@@ -329,58 +312,53 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
                 "force_regenerate": {
                     "type": "boolean",
                     "description": "캐시 무시하고 재생성 (기본 false)",
                     "default": False,
                 },
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     {
         "name": "analyze_episode",
         "description": (
             "**drill 용 (자유 task)** — 단건 회차 본문에서 task 별 추출. "
-            "12-필드 표준 요약은 summarize_episode 사용. 본 도구는 양식 외 분석 (예: '복선 회차별 추적', "
+            "12-필드 표준 요약은 summarize_episode 사용. 양식 외 분석 (예: '복선 회차별 추적', "
             "'특정 인물 대사만 추출') 에 한정. Haiku 결과 1회성 — episode_summary 적재 X."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
-                "task": {
-                    "type": "string",
-                    "description": "Haiku 가 본문에서 추출할 작업 지시 (한국어)",
-                },
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
+                "task": {"type": "string", "description": "Haiku 가 본문에서 추출할 작업 지시 (한국어)"},
             },
-            "required": ["sort_order", "task"],
+            "required": ["episode_id", "task"],
         },
     },
     {
         "name": "fetch_episode_plaintext",
         "description": (
             "**drill 용 (raw)** — 회차 평문 그대로 fetch (Vault Transit). "
-            "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode 또는 "
-            "analyze_episode 가 ~70% 저렴. 토큰 비용 큼 — 호출 제한적. "
-            "검수 (propose_review_issue) 시엔 with_line_numbers=true 로 호출 — [N] 라인 번호 prefix 형식 본문 반환."
+            "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode/analyze_episode 가 더 저렴. "
+            "검수 (propose_review_issue) 시엔 with_line_numbers=true — [N] 라인 prefix 형식 본문 반환."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
                 "with_line_numbers": {
                     "type": "boolean",
                     "description": (
                         "true 면 본문을 '[1] ...\\n[2] ...' 형식으로 반환. propose_review_issue 의 "
-                        "lines 필드와 1:1 매칭되는 인덱스. 검수 목적이면 반드시 true. "
-                        "재작성·인용 등 평문 그대로 필요할 땐 false (기본값)."
+                        "lines 필드와 1:1 매칭. 검수 목적이면 반드시 true."
                     ),
                     "default": False,
                 },
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     # ───────── Phase 4.5: 요약 일괄 백필 ─────────
@@ -388,15 +366,11 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "name": "request_episode_summary_backfill",
         "description": (
             "**사용자 명시 요청 + 확답 후만** — status='완성' + 미요약/stale 회차들의 요약 task 를 "
-            "Celery 큐에 적재. 작가에게 회차당 Haiku 비용 청구되므로 임의 트리거 X. "
-            "단발 회차 요약은 summarize_episode (agent run 내 처리) 가 더 가벼움. "
-            "300화 일괄 백필처럼 명시적 요청에만 사용."
+            "Celery 큐에 적재. 작가에게 회차당 Haiku 비용 청구되므로 임의 트리거 X."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "start_sort": {"type": "integer", "description": "(옵션) 시작 sort_order (포함)"},
-                "end_sort": {"type": "integer", "description": "(옵션) 끝 sort_order (포함)"},
                 "limit": {
                     "type": "integer",
                     "description": "한 번에 적재 max (기본 50, 상한 200)",
@@ -570,8 +544,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 "parent_id": {"type": "string", "description": "분기/외전인 경우 부모 episode id"},
                 "reference_episodes": {
                     "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "참조한 회차 sort_order 들",
+                    "items": {"type": "string"},
+                    "description": "참조한 회차 episode_id (UUID) 들",
                 },
             },
             "required": ["title"],
@@ -740,13 +714,12 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "description": "검사 대상 회차 순번 (list_episodes 의 sort_order).",
+                "episode_id": {
+                    "type": "string",
+                    "description": "검사 대상 회차 UUID (list_episodes 의 id).",
                 },
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     # ───────── Phase 5: 맞춤법 자동 수정 (즉시 반영) ─────────
@@ -860,7 +833,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "회차 검수 결과로 발견한 이슈 1건을 작가 승인 큐에 적재. 본 도구는 자동 수정 적용을 "
             "하지 않고, 프론트 채팅 응답에서 '본문에서 보기' 버튼으로 본문 위치 점프 + 흐릿한 "
             "하이라이트를 제공한다. 작가가 직접 본문을 고친 뒤 승인/거절로 닫음. "
-            "★ 호출 전 fetch_episode_plaintext(sort_order=N, with_line_numbers=True) 로 라인 "
+            "★ 호출 전 fetch_episode_plaintext(episode_id=UUID, with_line_numbers=True) 로 라인 "
             "번호 형식 ([1] ...) 본문을 fetch 해야 lines 정확. 모호한 추측 금지 — 본문에 명시적 "
             "근거가 있는 발견만."
         ),
@@ -871,8 +844,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "검수 대상 회차의 id (uuid 36자). list_episodes / fetch_episode_plaintext / "
-                        "get_episode_summary 응답의 id 필드를 그대로 사용. sort_order 숫자나 "
-                        "'9화' 같은 title 절대 금지 — UUID 형식 검증 실패."
+                        "get_episode_summary 응답의 id 필드를 그대로 사용. 회차 번호나 '9화' 같은 "
+                        "title 절대 금지 — UUID 형식 검증 실패."
                     ),
                 },
                 "lines": {

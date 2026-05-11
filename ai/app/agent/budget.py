@@ -14,20 +14,41 @@ from app.agent.scenarios import TOOL_CATEGORY_BUDGET
 from app.mcp.registry import TOOL_CATEGORY
 
 
-# Anthropic 가격 (per 1M tokens, USD) — 2026-05 기준.
-# 프로젝트 표준 정책 = backend/.../payment/pricing/CreditCalculator.java (단일 진실 출처).
-#   1 credit = 0.8원 (10000원 / 13000 credits)
-#   차감 = round(USD * USD_TO_KRW * MARGIN_RATIO / CREDIT_VALUE_KRW)
-# prompt caching: cache_read = 0.1× input, cache_create = 1.25× input.
+# LLM 단가 (per 1M tokens, USD).
+# ★ 환경 변수로 override 가능★ — Anthropic 직접 호출 시 정가, GMS 등 게이트웨이 경유 시 협상가
+# 매핑. 게이트웨이 단가 모를 경우 정가 그대로 사용 (over-estimate 가능 — 사용자 영수증 ≥ 실청구).
+#
+# 2026-05-11 관찰: GMS 빌링은 output-dominant (input/cache 비중 거의 0, output ~$100/M USD 상당
+# 계산). Anthropic 정가 모델은 input/cache-dominant 라 cache_create 큰 호출에서 우리 영수증이
+# 실청구의 5~10× 가 될 수 있다. 환경 변수로 보정.
+import os as _os
+def _env_float(key: str, default: float) -> float:
+    try:
+        v = _os.environ.get(key)
+        return float(v) if v is not None and v.strip() else default
+    except (TypeError, ValueError):
+        return default
+
 _PRICE_USD_PER_M = {
-    "sonnet": {"in": 3.0,  "out": 15.0, "cache_read": 0.3,  "cache_create": 3.75},
-    "haiku":  {"in": 0.8,  "out":  4.0, "cache_read": 0.08, "cache_create": 1.0},
+    "sonnet": {
+        "in":           _env_float("LLM_PRICE_SONNET_IN_USD_PER_M",          3.0),
+        "out":          _env_float("LLM_PRICE_SONNET_OUT_USD_PER_M",         15.0),
+        "cache_read":   _env_float("LLM_PRICE_SONNET_CACHE_READ_USD_PER_M",  0.3),
+        "cache_create": _env_float("LLM_PRICE_SONNET_CACHE_CREATE_USD_PER_M", 3.75),
+    },
+    "haiku": {
+        # Haiku 4.5 (claude-haiku-4-5-*) 공식 단가 — 2026-05 확정.
+        # ⚠ 이전: Haiku 3.5 deprecated 단가 ($0.8/$4) 박혀있어 25% under-bill 버그였음.
+        "in":           _env_float("LLM_PRICE_HAIKU_IN_USD_PER_M",          1.0),
+        "out":          _env_float("LLM_PRICE_HAIKU_OUT_USD_PER_M",         5.0),
+        "cache_read":   _env_float("LLM_PRICE_HAIKU_CACHE_READ_USD_PER_M",  0.10),
+        "cache_create": _env_float("LLM_PRICE_HAIKU_CACHE_CREATE_USD_PER_M", 1.25),
+    },
 }
-USD_TO_KRW = 1450.0
-MARGIN_RATIO = 1.3     # 2026-05-11: 정상 서비스 가격 복귀 (1.1 → 1.3). backend CreditCalculator 와 동기 필수.
-# Phase: 결제 단위 재구성 (10000원 = 1300 → 13000 credits).
-# backend CreditCalculator.CREDIT_VALUE_KRW 와 항상 동일 유지 — 한쪽만 바꾸면 청구 mismatch.
-CREDIT_VALUE_KRW = 0.8
+USD_TO_KRW = _env_float("USD_TO_KRW", 1450.0)
+MARGIN_RATIO = _env_float("LLM_MARGIN_RATIO", 1.3)
+# 1 credit = 0.8원 — backend CreditCalculator.CREDIT_VALUE_KRW 와 항상 동기 (한쪽만 바꾸면 청구 mismatch)
+CREDIT_VALUE_KRW = _env_float("CREDIT_VALUE_KRW", 0.8)
 
 
 class BudgetExceeded(Exception):
@@ -43,6 +64,13 @@ def _convert(model: str, usage: dict[str, int]) -> int:
         cost_krw = USD * 1450      # 환율
         charged  = cost_krw * 1.3   # 마진 (2026-05-11: 정상 서비스 가격 복귀)
         credits  = round(charged / 0.8)   # 1 크레딧 = 0.8 원 (10000원 = 12500 credits 기본)
+
+    ⚠ Anthropic SDK 컨벤션은 SDK 버전/프록시(GMS) 별로 다를 수 있다:
+       - 신 컨벤션: usage.input_tokens = miss only (cache 제외)
+       - 구 컨벤션 / 일부 프록시: usage.input_tokens = 전체 입력 (cache 포함)
+    안전책으로 max(0, in_tok - cache_*) 적용 — 신 컨벤션이면 0 클램프되고,
+    구 컨벤션이면 정확한 miss. 어느 쪽이든 over-bill 위험은 없음.
+    (단 신 컨벤션 + cache_read 양쪽 다 양수면 진짜 miss 분이 누락 — under-bill).
     """
     p = _PRICE_USD_PER_M.get(model, _PRICE_USD_PER_M["sonnet"])
     in_tok = int(usage.get("input_tokens", 0) or 0)
@@ -61,6 +89,12 @@ def _convert(model: str, usage: dict[str, int]) -> int:
 
     charged_krw = cost_usd * USD_TO_KRW * MARGIN_RATIO
     credits = round(charged_krw / CREDIT_VALUE_KRW)
+    # 진단용 단발 로그 — GMS 영수증 vs 우리 계산 비교 가능. 매 LLM 호출마다 출력.
+    import logging
+    logging.getLogger("agent.budget").info(
+        "billing model=%s in=%d cache_r=%d cache_c=%d out=%d cost_usd=%.6f credits=%d",
+        model, in_tok, cache_read, cache_create, out_tok, cost_usd, credits,
+    )
     return max(credits, 0)
 
 

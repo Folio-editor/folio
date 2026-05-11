@@ -56,6 +56,9 @@ SCENARIO_BUDGET: dict[str, dict[str, int]] = {
     # 세션 한도 확장 (2026-05-08): 1화 본문(~5K) + 인물·세계관 + 초안 본문(~5K) + 다회차 분석
     # 까지 한 호출에 처리 가능하도록 충분히 여유.
     "auto":              {"max_total": 200_000, "max_iterations": 20, "max_per_step": 12_000, "min_balance": 200},
+    # card_auto: 카드 모드 "자유 문서 생성" 단발 호출 — auto 와 동일 동작/도구/예산 alias.
+    # 단일 진입점 분리해 list_threads (채팅 모드 목록) 에서 카드 단발 세션 제외 가능.
+    "card_auto":         {"max_total": 200_000, "max_iterations": 20, "max_per_step": 12_000, "min_balance": 200},
     # ── 레거시 (수동 선택 시 호환용 — 1차 MVP 후 유지) ──
     "draft_next":        {"max_total": 150_000, "max_iterations": 15, "max_per_step": 10_000, "min_balance": 800},
     "revision":          {"max_total": 100_000, "max_iterations": 12, "max_per_step": 8_000, "min_balance": 600},
@@ -86,6 +89,10 @@ _SHARED_RULES = (
     "  백엔드가 위지윅(TipTap) doc 으로 자동 변환. 지원: 제목(#~###), **굵게**, *기울임*,\n"
     "  ~~취소선~~, `인라인 코드`, 코드블록(백틱 3), - 불릿/1. 번호, > 인용, --- 구분선,\n"
     "  빈 줄로 단락 분리. 미지원: 표/이미지/링크/HTML.\n"
+    "- 사용자에게 보여지는 응답·보고서 텍스트는 작가가 읽는 콘텐츠다. 내부 도구 함수명/식별자\n"
+    "  (character_arc, timeline_scan, track_foreshadow, fetch_episode_plaintext, UUID 등) 그대로\n"
+    "  노출 금지. 도구 진행 표시는 SSE UI 가 별도 한글 라벨로 보여준다. 분석 결과를 인용할 땐\n"
+    "  자연스러운 한국어 표현으로 (예: 'character_arc 분석 결과' → '인물 행적을 살펴본 결과').\n"
 )
 
 SCENARIOS: dict[str, dict] = {
@@ -111,24 +118,22 @@ SCENARIOS: dict[str, dict] = {
             "'챕터 트리'→propose_plot_tree (1회 승인=부모+자식).\n\n"
             "## 회차 검수 — 자율 조사 4단계 (Plan → Drill → Verify → Report)\n"
             "절차 추종이 아닌 가설 주도. 직전화 1:1 비교 X — 작품 전체 맥락에서 모순 검출.\n"
-            "[1.Plan] list_all_oneline_summaries 1회 + 대상 회차 fetch_episode_plaintext(with_line_numbers=True)\n"
-            "  + ★직전화 fetch (참고 기준선)★ — title 패턴 매칭으로 식별 ('8화'→'7화'). sort_order N-1 가정 X.\n"
-            "  비숫자 title/매칭 실패 시 생략. 직전화는 연속성 참고용 — 모순 단독 출처 X (추적은 작품 전체로).\n"
+            "[1.Plan] list_all_oneline_summaries 1회 + 대상 회차 fetch_episode_plaintext(with_line_numbers=True).\n"
+            "  + (선택) 직전화 — 작가의 회차 작성 순서는 임의. 작가가 title/본문 안에 적은 회차 번호 단서로\n"
+            "  논리적 직전화를 추론 가능하면 그 회차 fetch. 단서 약하면 생략하고 전체 맥락으로 진행.\n"
             "  → 5축(인물/시간선/설정/복선/표기) 의심 가설 메모. 가설 0개여도 OK.\n"
-            "[2.Drill] 가설마다 ★최소 비용 도구★ 자율 선택 — 직전화 한정 X, 가설이 가리키는 회차로 자유 이동:\n"
+            "[2.Drill] 가설마다 ★최소 비용 도구★ 자율 선택 — 가설이 가리키는 회차로 자유 이동:\n"
             "  ※ ★대량 회차(30화+) 때는 벡터 우선★ — find_relevant_episodes(대상화)로 관련 회차 좁히고,\n"
             "    의미 단위 모순(외형/사건/표현)은 query_episodes_by_chunks(~10크레딧 고정, 회차 수 무관).\n"
             "  인물 행적→character_arc / 복선→track_foreshadow / 시간선→timeline_scan /\n"
-            "  설정→get_world_note / 흐름 흐릿→get_episode_summary(N) 가설당 1~3건 /\n"
-            "  prose 확증→해당 N화 fetch_episode_plaintext (1회만 — 대상 회차 외 직전화 fetch 금지).\n"
-            "  ★총 도구 호출 8~10회 목표. 도달 시 즉시 [4.Report] 진입. iter 13 도달 시 강제 종료.\n"
-            "  ※ '직전화' 필요 시 list_episodes → title 패턴 매칭 ('8화'→'7화'). sort_order N-1 가정 절대 금지.\n"
-            "    비숫자 title 이면 직전화 fetch 생략.\n"
-            "[3.Verify] 가설마다 근거 인용 1개 이상 모이면 채택. 못 모으면 폐기 또는 info.\n"
-            "  critical=본문↔본문 모순 확증 / warning=본문↔요약 불일치 / info=단일 회차 의심.\n"
-            "  채택만 propose_review_issue. description 근거 인용 필수 ('L12 + 7화 L34' 식). 라인은 [N] 결과만.\n"
-            "  마지막에 check_spelling → propose_spelling_fix_batch 1회.\n"
-            "[4.Report] 1회 turn 종합 보고서. 5섹션 고정 형식 (해당 항목 없으면 '발견 없음'):\n"
+            "  설정→get_world_note / 흐름 흐릿→get_episode_summary 가설당 1~3건 /\n"
+            "  prose 확증→해당 회차 fetch_episode_plaintext (필요한 회차만) / 표기→check_spelling 1회.\n"
+            "  ★총 도구 호출 8~10회 목표.\n"
+            "[3.Verify & Register] ★ 발견한 사항은 propose_* 도구로 등록해야 작가가 적용 가능. 보고서\n"
+            "  텍스트만으로는 작가 입장에서 아무 것도 못한다.\n"
+            "  의미 모순 (가설 채택): propose_review_issue — severity critical/warning/info, description 에 근거 인용.\n"
+            "  맞춤법: check_spelling 결과 issues 가 있으면 propose_spelling_fix_batch 1회 호출 (fixes 배열에 전달).\n"
+            "[4.Report] propose_* 등록 완료 후 1회 turn 종합 보고서. 5섹션 고정 형식 (해당 항목 없으면 '발견 없음'):\n"
             "  머리줄: 직전화 비교 = \"<title>\" (직전화 fetch 안 했으면: 생략 — 전체 맥락 기반)\n"
             "  1.**인물 일관성** / 2.**시간선 일관성** / 3.**설정 일관성** / 4.**복선 연결** / 5.**맞춤법**: N건\n"
             "  끝줄: 의미 X건 + 맞춤법 Y건. ★ 추가 turn 텍스트 출력 금지.\n"
@@ -147,7 +152,7 @@ SCENARIOS: dict[str, dict] = {
             + "\n## 응답\n"
             "- 도구 결과만 근거. 추출/초안/재작성/삭제는 propose_* 로 승인 큐 등록 (자동 적용 X).\n"
             "- 자연스러운 한국어 요약만. 도구명/raw 함수명/`tool_use` 라벨/UUID/내부 ID 노출 X "
-            "(도구 진행은 SSE UI 가 별도 표시. 작가는 sort_order(N화)/제목/인물 이름으로 대상 인지)."
+            "(도구 진행은 SSE UI 가 별도 표시. 작가는 제목·회차 번호·인물 이름으로 대상 인지 — 내부 식별자 episode_id 는 작가에게 노출 X)."
         ),
     },
     "draft_next": {
@@ -157,8 +162,9 @@ SCENARIOS: dict[str, dict] = {
             "당신은 작가의 글쓰기 파트너로서 '다음 회차 초안' 을 생성하는 agent 입니다.\n"
             + _SHARED_RULES
             + "\n## 컨텍스트 수집 — 계층화 (고정 회차 수 X)\n"
-            "  **T0 (필수)** 직전화 풀텍스트 — list_episodes 의 word_count>0 중 가장 큰 sort_order 1화\n"
-            "     → fetch_episode_plaintext(with_line_numbers=False). **문체·말투·호흡 직접 흡수용**.\n"
+            "  **T0 (필수)** 문체 흡수용 직전화 풀텍스트 — list_episodes 의 word_count>0 행 중 작가가 의도한\n"
+            "     '다음 화 직전' 회차로 합리적 판단되는 1화 (title 단서 또는 작품 흐름으로 추론).\n"
+            "     → fetch_episode_plaintext. **문체·말투·호흡 직접 흡수용**.\n"
             "  **T1 (권장)** 최근 흐름 요약 — list_all_oneline_summaries (전체 한 줄) +\n"
             "     예산 허락 시 최근 5~10화 get_episode_summary (캐시 hit, 없으면 summarize_episode).\n"
             "  **T2 (필요 시만)** 거슬러 가는 단서 — 특정 사건/복선 spot-query 가 필요할 때만\n"
@@ -179,13 +185,14 @@ SCENARIOS: dict[str, dict] = {
             "대상 회차의 작품 전체 일관성 점검 — 5축: 인물·시간선·설정·복선·표기.\n"
             "직전화 1:1 비교가 아닌 작품 전체 맥락에서 모순 검출.\n\n"
             "## 자율 조사 4단계 — Plan → Drill → Verify → Report\n\n"
-            "[1. Plan] 시작 시 작품 전경 스냅샷 + 직전화 기준선 + 가설 5개 메모:\n"
+            "[1. Plan] 시작 시 작품 전경 스냅샷 + (가능하다면) 직전화 기준선 + 가설 5개 메모:\n"
+            "  - 사용자 메시지의 episode_id 가 대상 회차의 식별자.\n"
             "  - list_all_oneline_summaries 1회 (전체 한 줄, 가장 싼 시야 확보 도구)\n"
             "  - 대상 회차 fetch_episode_plaintext(with_line_numbers=True)\n"
-            "  - ★직전화 fetch_episode_plaintext (참고 기준선)★ — 톤·연속성·바로 앞 사건 맥락\n"
-            "    식별: list_episodes → title 패턴 매칭 ('8화'→'7화'). sort_order N-1 가정 절대 금지.\n"
-            "    비숫자 title 또는 매칭 실패 시 생략 가능.\n"
-            "    ※ 직전화는 '연속성 참고' 용도이지 모순 단독 출처 X — 모순 추적은 작품 전체로 확장.\n"
+            "  - (선택) 직전화 — list_episodes 의 배열 순서나 sort_order 는 작가가 임의로 작성/정렬하기\n"
+            "    때문에 '시간상 직전' 을 보장하지 않는다. 가용 정보 (대상 회차 title·본문, 다른 회차 title,\n"
+            "    작품 흐름 등) 로 작가가 의도한 직전화를 자율 판단해라. 확신 못 하면 직전화 fetch 자체를\n"
+            "    생략하고 '직전화 식별 불가' 명시 후 진행. 직전화는 연속성 참고용 — 모순 단독 출처 X.\n"
             "  → 위 결과로 5축 각각 의심 정황 가설 메모 (\"L24 머리색이 어딘가와 모순?\",\n"
             "    \"복선 X 미회수?\", \"인물 A 행적 N화에서 모순?\" 등). 가설 0개여도 OK.\n\n"
             "[2. Drill] 가설마다 ★최소 비용 도구★ 자율 선택. 직전화 한정 X — 가설이\n"
@@ -199,25 +206,24 @@ SCENARIOS: dict[str, dict] = {
             "  - 설정 모순 의심  → get_world_note(name)\n"
             "  - 흐름 흐릿     → get_episode_summary(N) — 가설당 1~3건. 캐시 hit (Haiku 0회).\n"
             "  - prose 모순 확증 → 해당 회차 fetch_episode_plaintext (직전·직후·임의 N화)\n"
-            "  - 표기 점검     → 마지막에 check_spelling 1회\n"
-            "  ※ '직전화' 가 필요해지면 list_episodes → title 패턴 매칭 (예: '8화' → '7화')\n"
-            "    으로 식별. sort_order N-1 가정 절대 금지. 비숫자 title 이면 직전화 fetch 생략.\n\n"
-            "[3. Verify] 가설마다 근거 인용 1개 이상 모이면 채택, 못 모으면 폐기 또는 info.\n"
-            "  - critical : 본문↔본문 직접 인용 가능 (서로 다른 회차 라인 매칭)\n"
-            "  - warning  : 본문↔요약 불일치 (사건/시간선)\n"
-            "  - info     : 단일 회차 단독 의심 (확증 못 함)\n"
-            "  → 채택된 가설만 propose_review_issue 호출. description 에 근거 인용 필수\n"
-            "    ('L12 \"앤의 검정 머리\" + 7화 L34 \"앤의 빨간 머리\"' 식).\n\n"
-            "[4. Report] ★도구 호출 8~10회 도달 또는 가설 모두 처리 시 즉시 진입★.\n"
-            "1회 turn 종합 보고서. 5섹션 고정 형식 (해당 항목 없으면 '발견 없음'):\n"
+            "  - 표기 점검     → 마지막에 check_spelling 1회 (결과는 Verify 단계에서 propose_spelling_fix_batch 로 등록)\n"
+            "  ※ '직전화' 가 필요해지면 list_episodes 결과 배열에서 대상의 바로 직전 위치 행 → episode_id 사용.\n\n"
+            "[3. Verify & Register] 발견한 사항을 작가가 실제로 적용할 수 있는 형태로 등록.\n"
+            "  ★ 핵심 원칙: 보고서 텍스트만으로는 작가가 아무것도 할 수 없다. 발견한 사항은 반드시\n"
+            "    propose_* 도구로 등록해야 작가 승인 큐에 카드로 표시되어 적용/거절 가능해진다.\n"
+            "  의미 모순 발견 (가설 채택 — 근거 1개 이상):\n"
+            "    severity: critical(본문↔본문 직접 인용) / warning(본문↔요약 불일치) / info(단일 회차 의심)\n"
+            "    → propose_review_issue 호출. description 에 근거 인용 ('L12 + 7화 L34' 식).\n"
+            "  맞춤법 오류 발견 (check_spelling 결과):\n"
+            "    → propose_spelling_fix_batch 1회 호출 (issues 배열을 fixes 인자로 전달).\n"
+            "    빈 배열이면 호출 생략. 단건이라도 발견되면 호출 필수.\n\n"
+            "[4. Report] 모든 propose_* 등록 완료 후 진입. 1회 turn 종합 보고서.\n"
+            "5섹션 고정 형식 (해당 항목 없으면 '발견 없음'):\n"
             "  머리줄: 직전화 비교 = \"<title>\"  (직전화 fetch 안 했으면: 생략 — 전체 맥락 기반)\n"
-            "  1. **인물 일관성**: ...\n"
-            "  2. **시간선 일관성**: ...\n"
-            "  3. **설정 일관성**: ...\n"
-            "  4. **복선 연결**: ...\n"
+            "  1. **인물 일관성** / 2. **시간선 일관성** / 3. **설정 일관성** / 4. **복선 연결** /\n"
             "  5. **맞춤법**: N건 발견\n"
-            "  끝줄: 의미 X건 + 맞춤법 Y건\n"
-            "  ★ 추가 turn 텍스트 출력 금지 — 보고서 1회 후 도구 호출 외 텍스트 X.\n\n"
+            "  끝줄: 의미 X건 + 맞춤법 Y건 (각 숫자는 ★실제 호출한 propose_* 건수★ 와 일치해야 함)\n"
+            "  보고서 후 추가 텍스트 turn 금지 — 종료.\n\n"
             "## 안티 패턴 (반드시 피할 것)\n"
             "  1. 직전화 본문만 들여다보며 모순 짚기 — 직전화는 가설 출발점일 뿐 답이 아님\n"
             "  2. list_all_oneline_summaries 안 보고 작품 흐름 추측 — 가장 싼 시야 도구 필수\n"
@@ -242,7 +248,7 @@ SCENARIOS: dict[str, dict] = {
             "당신은 기존 회차의 재작성을 도와주는 agent 입니다.\n"
             + _SHARED_RULES
             + "\n## 컨텍스트 수집 — 계층화\n"
-            "  **T0 (필수)** 대상 회차 풀텍스트 — fetch_episode_plaintext(sort_order).\n"
+            "  **T0 (필수)** 대상 회차 풀텍스트 — fetch_episode_plaintext(episode_id).\n"
             "  **T0' (대상이 1화 아니면)** 직전화 풀텍스트 — 문체 기준선 확보용.\n"
             "  **T1** 흐름 요약 — list_all_oneline_summaries + 최근 5~10화 get_episode_summary.\n"
             "  **T2 (필요 시만)** 거슬러 가는 단서 spot-query — query_episodes_by_chunks /\n"
@@ -294,6 +300,9 @@ SCENARIOS: dict[str, dict] = {
         ),
     },
 }
+
+# card_auto = auto alias (카드 단발 진입점 분리용 — list_threads 필터에서 채팅 모드만 노출 가능)
+SCENARIOS["card_auto"] = SCENARIOS["auto"]
 
 
 def get_scenario(name: str) -> dict:

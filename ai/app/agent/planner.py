@@ -268,11 +268,14 @@ async def run_planner_loop(
                 # 인데 summary_so_far 없으면 4개, 있으면 5개라 마지막 system 캐시 마킹은 summary 가
                 # 있을 때 빼고 모두 안전. summary 있을 때도 messages 캐시가 가장 큰 비용 절감이라
                 # priority 적용. Anthropic 은 마커 4개까지 — 초과 시 가장 이전 마커 무시.)
-                # ① 오래된 tool_result 본문을 placeholder 로 치환 (페어 ID 유지) — 토큰 절감
-                # ② 마지막 메시지에 cache_control 마커 — prefix cache_read 회수
+                # 마지막 메시지에 cache_control 마커 — prefix cache_read 회수.
                 # 원본 history (DB 영속) 는 그대로 두고 stream 호출용 복제만 가공.
-                decayed = _decay_old_tool_results(history)
-                cached_messages = _with_messages_cache(decayed)
+                # ⚠ 이전에 _decay_old_tool_results (오래된 tool_result 본문 치환) 을 거쳤으나,
+                # 매 iter decay boundary 가 1 씩 밀려 직전까지 verbatim 이던 tool_result 가
+                # placeholder 로 바뀌면 prefix cache 가 그 지점부터 무효화 → cache_create 폭발.
+                # token 절감 효과보다 cache 무효화 손실이 훨씬 큼 → 비활성. 컨텍스트 초과는
+                # PLANNER_MAX_HISTORY_TOKENS 가드 + maybe_compress 가 책임진다.
+                cached_messages = _with_messages_cache(history)
                 async with client.messages.stream(
                     model=sonnet_model,
                     max_tokens=PLANNER_MAX_TOKENS,

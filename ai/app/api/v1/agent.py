@@ -58,7 +58,7 @@ class CreateThreadRequest(BaseModel):
     work_id: str
     writer_id: str
     scenario: Literal[
-        "auto",
+        "auto", "card_auto",
         "draft_next", "consistency_check", "revision", "extraction", "qa", "ideation"
     ] = "auto"
     title: str | None = None

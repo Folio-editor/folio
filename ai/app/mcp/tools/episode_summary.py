@@ -47,13 +47,13 @@ async def list_all_oneline_summaries(
     session: AsyncSession,
     ctx: WriterContext,
 ) -> list[dict[str, Any]]:
-    """작품 전체 회차의 oneline_summary 만 sort_order 순서로 반환.
+    """작품 전체 회차의 oneline_summary 만 시간 순으로 반환.
 
-    토큰 효율: 회차당 ~45 tok × 300화 = ~13.5K tok (agent context 1회 진입에 충분).
-    상세 필요 시 list_episode_summaries / get_episode_summary 로 drill-down.
+    배열 순서 자체가 시간 순 (내부 sort_order 로 정렬되지만 외부엔 노출 X).
+    상세 필요 시 get_episode_summary(episode_id) 로 drill-down.
     """
     sql = (
-        "SELECT ep.id, ep.sort_order, es.oneline_summary, es.pov_character, es.tone "
+        "SELECT ep.id, ep.title, es.oneline_summary, es.pov_character, es.tone "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
         "WHERE es.work_id = :wid AND es.writer_id = :wr "
@@ -65,8 +65,8 @@ async def list_all_oneline_summaries(
     )
     rows = [
         {
-            "id": str(row[0]),    # 후속 propose_* 호출 시 episode_id 인자
-            "sort_order": row[1],
+            "id": str(row[0]),
+            "title": row[1],
             "oneline_summary": row[2],
             "pov_character": row[3],
             "tone": row[4],
@@ -81,7 +81,7 @@ async def list_all_oneline_summaries(
 # ============================================================
 
 LIST_FIELDS = (
-    "ep.id, ep.sort_order, ep.title, "
+    "ep.id, ep.title, "
     "es.oneline_summary, es.pov_character, es.tone, "
     "es.present_characters, es.cliffhanger"
 )
@@ -91,44 +91,36 @@ async def list_episode_summaries(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    start_sort: int | None = None,
-    end_sort: int | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    where = ["es.work_id = :wid", "es.writer_id = :wr"]
-    params: dict[str, Any] = {
-        "wid": ctx.work_id,
-        "wr": ctx.writer_id,
-        "limit": min(limit, 100),
-        "offset": max(offset, 0),
-    }
-    if start_sort is not None:
-        where.append("ep.sort_order >= :start_sort")
-        params["start_sort"] = start_sort
-    if end_sort is not None:
-        where.append("ep.sort_order <= :end_sort")
-        params["end_sort"] = end_sort
-
+    """요약 목록 (시간 순). 페이지네이션은 limit/offset 기반. 범위 검색은 search_episode_summaries 사용."""
     sql = (
         f"SELECT {LIST_FIELDS} "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
-        f"WHERE {' AND '.join(where)} "
+        "WHERE es.work_id = :wid AND es.writer_id = :wr "
         "ORDER BY ep.sort_order ASC "
         "LIMIT :limit OFFSET :offset"
     )
-    r = await session.execute(sa_text(sql), params)
+    r = await session.execute(
+        sa_text(sql),
+        {
+            "wid": ctx.work_id,
+            "wr": ctx.writer_id,
+            "limit": min(limit, 100),
+            "offset": max(offset, 0),
+        },
+    )
     rows = [
         {
             "id": str(row[0]),
-            "sort_order": row[1],
-            "title": row[2],
-            "oneline_summary": row[3],
-            "pov_character": row[4],
-            "tone": row[5],
-            "present_characters": row[6],
-            "cliffhanger": row[7],
+            "title": row[1],
+            "oneline_summary": row[2],
+            "pov_character": row[3],
+            "tone": row[4],
+            "present_characters": row[5],
+            "cliffhanger": row[6],
         }
         for row in r.fetchall()
     ]
@@ -140,7 +132,7 @@ async def list_episode_summaries(
 # ============================================================
 
 DETAIL_FIELDS = (
-    "ep.id, ep.sort_order, ep.title, "
+    "ep.id, ep.title, "
     "es.oneline_summary, es.summary, es.pov_character, "
     "es.present_characters, es.present_locations, es.key_events, "
     "es.time_progression, es.tone, es.cliffhanger, "
@@ -153,41 +145,40 @@ async def get_episode_summary(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    sort_order: int,
+    episode_id: str,
 ) -> dict[str, Any] | None:
     sql = (
         f"SELECT {DETAIL_FIELDS} "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
-        "WHERE es.work_id = :wid AND es.writer_id = :wr AND ep.sort_order = :sort_order "
+        "WHERE es.work_id = :wid AND es.writer_id = :wr AND ep.id = :eid "
         "LIMIT 1"
     )
     r = await session.execute(
         sa_text(sql),
-        {"wid": ctx.work_id, "wr": ctx.writer_id, "sort_order": sort_order},
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "eid": episode_id},
     )
     row = r.fetchone()
     if row is None:
         return None
     out = {
-        "id": str(row[0]),    # propose_review_issue 등의 episode_id 인자에 사용
-        "sort_order": row[1],
-        "title": row[2],
-        "oneline_summary": row[3],
-        "summary": row[4],
-        "pov_character": row[5],
-        "present_characters": row[6],
-        "present_locations": row[7],
-        "key_events": row[8],
-        "time_progression": row[9],
-        "tone": row[10],
-        "cliffhanger": row[11],
-        "foreshadow_planted": row[12],
-        "foreshadow_paid_off": row[13],
-        "referenced_world_notes": row[14],
-        "keywords": row[15],
-        "word_count": row[16],
-        "is_confirmed": row[17],
+        "id": str(row[0]),
+        "title": row[1],
+        "oneline_summary": row[2],
+        "summary": row[3],
+        "pov_character": row[4],
+        "present_characters": row[5],
+        "present_locations": row[6],
+        "key_events": row[7],
+        "time_progression": row[8],
+        "tone": row[9],
+        "cliffhanger": row[10],
+        "foreshadow_planted": row[11],
+        "foreshadow_paid_off": row[12],
+        "referenced_world_notes": row[13],
+        "keywords": row[14],
+        "word_count": row[15],
+        "is_confirmed": row[16],
     }
     decrypted = await _decrypt_summary_rows(ctx.work_id, [out])
     return decrypted[0]
@@ -242,7 +233,7 @@ async def search_episode_summaries(
     # SELECT 시 keyword fallback 매칭에 필요한 모든 컬럼 fetch
     # (자유형 텍스트는 ciphertext 가능, JSONB 는 평문)
     sql = (
-        "SELECT ep.id, ep.sort_order, ep.title, "
+        "SELECT ep.id, ep.title, "
         "       es.oneline_summary, es.pov_character, es.tone, "
         "       es.present_characters, es.cliffhanger, es.summary, "
         "       es.present_locations, es.key_events, es.keywords "
@@ -256,17 +247,16 @@ async def search_episode_summaries(
     rows = [
         {
             "id": str(row[0]),
-            "sort_order": row[1],
-            "title": row[2],               # ciphertext 가능
-            "oneline_summary": row[3],     # ciphertext 가능
-            "pov_character": row[4],       # 평문
-            "tone": row[5],                # 평문
-            "present_characters": row[6],  # JSONB 평문
-            "cliffhanger": row[7],         # ciphertext 가능
-            "summary": row[8],             # ciphertext 가능
-            "present_locations": row[9],   # JSONB 평문
-            "key_events": row[10],         # JSONB 평문
-            "keywords": row[11],           # JSONB 평문
+            "title": row[1],
+            "oneline_summary": row[2],
+            "pov_character": row[3],
+            "tone": row[4],
+            "present_characters": row[5],
+            "cliffhanger": row[6],
+            "summary": row[7],
+            "present_locations": row[8],
+            "key_events": row[9],
+            "keywords": row[10],
         }
         for row in r.fetchall()
     ]
