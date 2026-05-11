@@ -194,6 +194,8 @@ export function PaymentSettings() {
         amount: created.amount,
         orderName: created.orderName,
         customerKey: writer.id,
+        customerEmail: writer.email,
+        customerFullName: writer.nickname ?? undefined,
       });
       const confirmed = await paymentApi.confirmPayment({
         paymentId: checkout.paymentId,
@@ -220,6 +222,8 @@ export function PaymentSettings() {
         storeId: env.storeId,
         channelKey: env.channelKeyBilling,
         customerKey: prep.customerKey,
+        customerEmail: writer.email,
+        customerFullName: writer.nickname ?? undefined,
       });
       const sub = await subscriptionApi.create({
         planCode: 'PRO_MONTHLY',

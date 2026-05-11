@@ -94,6 +94,10 @@ export interface FolioOneTimePaymentParams {
   amount: number;
   orderName: string;
   customerKey: string;
+  /** 구매자 이메일 — KG이니시스 V2 일반결제 등 일부 PG 는 필수. */
+  customerEmail: string;
+  /** 구매자 이름(닉네임). PG 별로 영수증/매출전표에 표시. */
+  customerFullName?: string;
 }
 
 export interface FolioOneTimePaymentResult {
@@ -104,6 +108,10 @@ export interface FolioBillingAuthParams {
   storeId: string;
   channelKey: string;
   customerKey: string;
+  /** 구매자 이메일 — KG이니시스 등 PG 가 빌링키 발급 시 요구할 수 있음. */
+  customerEmail?: string;
+  /** 구매자 이름(닉네임). */
+  customerFullName?: string;
 }
 
 export interface FolioBillingAuthResult {

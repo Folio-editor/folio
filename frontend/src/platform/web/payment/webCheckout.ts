@@ -53,7 +53,13 @@ export async function webOpenOneTime(
     totalAmount: params.amount,
     currency: 'KRW',
     payMethod: 'CARD',
-    customer: { customerId: params.customerKey },
+    customer: {
+      customerId: params.customerKey,
+      // KG이니시스 V2 일반결제는 email 을 필수로 요구. 미입력 시 "구매자 이메일은
+      // 필수 입력입니다" 에러로 결제창 호출 실패.
+      email: params.customerEmail,
+      ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
+    },
   } as Parameters<typeof PortOne.requestPayment>[0]);
 
   // SDK가 modal close에서 undefined를 반환하는 케이스 — 사용자 취소로 간주.
@@ -84,7 +90,11 @@ export async function webOpenBillingAuth(
     storeId: params.storeId,
     channelKey: params.channelKey,
     billingKeyMethod: 'CARD',
-    customer: { customerId: params.customerKey },
+    customer: {
+      customerId: params.customerKey,
+      ...(params.customerEmail ? { email: params.customerEmail } : {}),
+      ...(params.customerFullName ? { fullName: params.customerFullName } : {}),
+    },
     issueName: 'Folio Pro 정기결제 카드 등록',
   } as Parameters<typeof PortOne.requestIssueBillingKey>[0]);
 
