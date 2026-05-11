@@ -49,6 +49,19 @@ export function getWebAccessToken(): string | null {
  * 백엔드 callback이 redirect URL에 박은 ?auth_code=xxx를 1회 교환하여
  * AT/RT/writer/deviceId를 받아 저장한다.
  *
+ * <p><b>⚠️ Sibling 함수 동기화 필요:</b>
+ * {@code landing/src/lib/auth.ts} 의 {@code exchangeAuthCodeIfPresent} 가 같은
+ * 백엔드 API({@code POST /auth/web/exchange}) 응답을 소비한다. 한쪽을 수정할 때
+ * 다음 항목을 양쪽에서 함께 검토:
+ * <ul>
+ *   <li>응답 payload 필드(accessToken/refreshToken/deviceId/writer/encryption…)</li>
+ *   <li>localStorage 키 이름 (RT_KEY/WRITER_KEY/DEVICE_ID_KEY/LAST_WRITER_ID_KEY)</li>
+ *   <li>URL query 파라미터 정리 규칙 (auth_code/fromLanding 제거)</li>
+ *   <li>실패 시 fallback 동작</li>
+ * </ul>
+ * 랜딩 측은 API 호출을 직접 하지 않으므로 accessToken 메모리 저장 / encryption
+ * material / fromLanding bounce 가 생략돼 있음.
+ *
  * @returns 로그인 성공 시 Writer, 그 외 (auth_code 없음/만료/네트워크 실패) null
  */
 function landingUrl(): string {

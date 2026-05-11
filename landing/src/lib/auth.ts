@@ -28,6 +28,23 @@ const WRITER_KEY = 'folio:web:writer';
 const DEVICE_ID_KEY = 'folio:web:device-id';
 const LAST_WRITER_ID_KEY = 'folio:web:last-writer-id';
 
+/**
+ * auth_code 교환 실패 시 sessionStorage 에 박는 1회성 플래그.
+ * 다음 마운트에서 토스트 표시 후 즉시 제거 — 새로고침으로 사라지는 게 정상.
+ */
+const AUTH_EXCHANGE_FAILED_FLAG = 'folio:web:auth-exchange-failed';
+
+/** 교환 실패 플래그 읽고 즉시 제거 (consume). 토스트 1회 표시에 사용. */
+export function consumeAuthExchangeFailure(): string | null {
+  try {
+    const reason = sessionStorage.getItem(AUTH_EXCHANGE_FAILED_FLAG);
+    if (reason) sessionStorage.removeItem(AUTH_EXCHANGE_FAILED_FLAG);
+    return reason;
+  } catch {
+    return null;
+  }
+}
+
 export interface LandingAuth {
   writer: Writer | null;
   isAuthenticated: boolean;
@@ -76,12 +93,25 @@ export function clearLandingAuth(): void {
  * OAuth callback redirect 직후 URL 의 {@code ?auth_code=xxx} 를 1회 백엔드에서
  * AT/RT/writer/deviceId 로 교환하여 localStorage 에 채운다.
  *
- * <p>에디터({@code frontend/src/platform/web/folioApi.ts}) 의
- * {@code exchangeAuthCodeIfPresent} 와 동일한 흐름이지만, 랜딩은 API 호출을 직접
- * 하지 않으므로 accessToken 메모리 저장은 생략한다. 다음 페이지(에디터 등)로
- * 이동 시 동일 localStorage 의 RT 로 {@code /auth/web/refresh} 가 새 AT 를 발급.
+ * <p><b>⚠️ Sibling 함수 동기화 필요:</b>
+ * {@code frontend/src/platform/web/folioApi.ts} 의 {@code exchangeAuthCodeIfPresent}
+ * 와 동일한 백엔드 API({@code POST /auth/web/exchange}) 응답을 소비한다. 한쪽을
+ * 수정할 때 다음 항목을 양쪽에서 함께 검토:
+ * <ul>
+ *   <li>응답 payload 필드(accessToken/refreshToken/deviceId/writer/encryption…)</li>
+ *   <li>localStorage 키 이름 (RT_KEY/WRITER_KEY/DEVICE_ID_KEY/LAST_WRITER_ID_KEY)</li>
+ *   <li>URL query 파라미터 정리 규칙 (auth_code/fromLanding 제거)</li>
+ *   <li>실패 시 fallback 동작</li>
+ * </ul>
+ *
+ * <p><b>의도된 차이:</b> 랜딩은 API 호출을 직접 하지 않으므로 accessToken 메모리
+ * 저장 / encryption material 처리는 생략. 다음 페이지(에디터 등)로 이동 시
+ * 동일 localStorage 의 RT 로 {@code /auth/web/refresh} 가 새 AT 를 발급한다.
  *
  * <p>새로고침 시 재교환되지 않도록 성공/실패와 무관하게 URL 에서 즉시 제거.
+ *
+ * <p>실패 시 sessionStorage 에 {@link AUTH_EXCHANGE_FAILED_FLAG} 를 세팅 —
+ * 다음 렌더에서 토스트로 사용자에게 안내.
  *
  * @returns 교환 성공 시 true (이때 localStorage 가 채워지고 useLandingAuth 가 인증 상태로 인식)
  */
@@ -107,6 +137,7 @@ export async function exchangeAuthCodeIfPresent(): Promise<boolean> {
     );
     if (!res.ok) {
       console.warn('[landing/auth] auth_code 교환 실패:', res.status);
+      markAuthExchangeFailed(res.status === 410 ? 'expired' : 'server');
       return false;
     }
     const payload = (await res.json()) as {
@@ -122,7 +153,16 @@ export async function exchangeAuthCodeIfPresent(): Promise<boolean> {
     return true;
   } catch (e) {
     console.warn('[landing/auth] auth_code 교환 에러:', e);
+    markAuthExchangeFailed('network');
     return false;
+  }
+}
+
+function markAuthExchangeFailed(reason: 'expired' | 'server' | 'network'): void {
+  try {
+    sessionStorage.setItem(AUTH_EXCHANGE_FAILED_FLAG, reason);
+  } catch {
+    /* sessionStorage 접근 실패 — 토스트 표시는 포기, 로그만 남음 */
   }
 }
 

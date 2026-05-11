@@ -6,6 +6,7 @@ import { Privacy } from './pages/Privacy';
 import { Refund } from './pages/Refund';
 import { Guide } from './pages/Guide';
 import { exchangeAuthCodeIfPresent } from './lib/auth';
+import { AuthFailureToast } from './components/landing/AuthFailureToast';
 
 /**
  * URL 에 {@code ?auth_code} 가 박혀 있는 OAuth callback 직후만 교환 완료를
@@ -38,6 +39,7 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <AuthFailureToast />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/terms" element={<Terms />} />
