@@ -295,9 +295,21 @@ async def _agent_sse_generator(thread_id: str, user_message: str):
             await queue.put(DONE)
 
     task = asyncio.create_task(run_task())
+    # SSE heartbeat — agent 가 긴 도구 (check_spelling, list_all_oneline 등) 실행 중
+    # 트래픽 침묵 시 nginx/Cloudflare idle timeout (기본 60s) 으로 연결이 강제 종료되어
+    # 클라이언트가 'fetch network error' 를 받고 propose 도구 호출 전에 스트림이 끊기는
+    # 회귀를 차단. SSE 주석(`: ping\n\n`) 은 EventSource/fetch reader 가 무시하므로
+    # 프론트 핸들러 변경 불필요. 15초 간격이면 대부분 프록시 idle timeout (보통 30~60s)
+    # 보다 충분히 짧다.
+    HEARTBEAT_INTERVAL_S = 15.0
     try:
         while True:
-            evt = await queue.get()
+            try:
+                evt = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL_S)
+            except asyncio.TimeoutError:
+                # 큐가 N초간 비어있으면 keepalive 1회 송신 후 다시 대기
+                yield ": ping\n\n"
+                continue
             if evt is DONE:
                 break
             yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
