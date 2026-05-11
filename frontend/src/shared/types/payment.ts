@@ -36,8 +36,8 @@ export interface TokenPackageInfo {
 }
 
 export const TOKEN_PACKAGES: TokenPackageInfo[] = [
-  { code: 'TOKEN_3000', amount: 300, tokenQty: 3_000, label: '3,000 크레딧' },
-  { code: 'TOKEN_5500', amount: 500, tokenQty: 5_500, label: '5,500 크레딧' },
+  { code: 'TOKEN_3000', amount: 3_000, tokenQty: 3_000, label: '3,000 크레딧' },
+  { code: 'TOKEN_5500', amount: 5_000, tokenQty: 5_500, label: '5,500 크레딧' },
   { code: 'TOKEN_12000', amount: 10_000, tokenQty: 12_000, label: '12,000 크레딧' },
 ];
 
