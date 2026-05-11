@@ -10,11 +10,14 @@ import com.storyzip.payment.domain.Refund;
 import com.storyzip.payment.domain.RefundReason;
 import com.storyzip.payment.domain.RefundStatus;
 import com.storyzip.payment.domain.RefundType;
+import com.storyzip.payment.domain.Subscription;
+import com.storyzip.payment.domain.SubscriptionStatus;
 import com.storyzip.payment.domain.TokenWallet;
 import com.storyzip.payment.dto.RefundRequest;
 import com.storyzip.payment.dto.RefundResponse;
 import com.storyzip.payment.repository.PaymentRepository;
 import com.storyzip.payment.repository.RefundRepository;
+import com.storyzip.payment.repository.SubscriptionRepository;
 import com.storyzip.payment.repository.TokenWalletRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +63,7 @@ public class RefundService {
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
     private final TokenWalletRepository tokenWalletRepository;
+    private final SubscriptionRepository subscriptionRepository;
     private final PortOneClient portOneClient;
     private final TokenWalletService tokenWalletService;
     private final EmailNotifier emailNotifier;
@@ -209,8 +213,15 @@ public class RefundService {
             refund.approve(adminNote);
             // 2) Payment 상태 변경
             payment.markCanceled("환불 승인 (" + refund.getRefundAmount() + "원) [" + refund.getReason() + "]");
-            // 3) 토큰 회수 (TokenWallet + TokenTransaction 원장)
-            if (refund.getTokenDeducted() > 0) {
+            // 3) 토큰 회수 + 구독이면 구독 자체 만료
+            if (payment.isSubscription()) {
+                // 약관 제4조 3항 / 제8조 2항: 구독 크레딧은 환불 시 잔여분 전액 소멸.
+                // 종량제와 달리 purchaseBalance 가 아닌 subscriptionBalance 를 비워야 한다.
+                tokenWalletService.refundSubscription(
+                        writerId, "REFUND_" + payment.getOrderId(), payment.getId());
+                // 환불된 구독은 즉시 만료 — cancelledAt 만 찍는 일반 해지와 달리 자동 갱신 차단.
+                expireSubscriptionForRefund(writerId, payment);
+            } else if (refund.getTokenDeducted() > 0) {
                 tokenWalletService.deductForRefund(
                         writerId, refund.getTokenDeducted(),
                         "REFUND_" + payment.getOrderId(), payment.getId());
@@ -241,6 +252,17 @@ public class RefundService {
 
     // ─────────────── 정책 계산 (신청 시점) ───────────────
 
+    /**
+     * 종량제 신청 — 약관 제4조 1항.
+     *
+     * <ul>
+     *   <li>7일 이내 미사용 → 전액 현금 환불 ({@link RefundType#FULL}).</li>
+     *   <li>7일 이내 일부 사용 → 미사용 크레딧 비율로 부분 현금 환불 + 잔여 크레딧 회수
+     *       ({@link RefundType#PARTIAL_USED}). 계산 예시(약관): 5,000원 / 5,500 크레딧,
+     *       1,000 사용, 5일 경과 → 환불액 5,000 × (4,500/5,500) ≈ 4,091원.</li>
+     *   <li>7일 경과 → 단순 변심 환불 불가 (회사 귀책만 별도 분기에서 허용).</li>
+     * </ul>
+     */
     private RefundCalculation calcOnetimeRequest(Payment payment, UUID writerId, long daysElapsed) {
         if (daysElapsed >= WITHDRAWAL_DAYS) {
             throw new PaymentException(ErrorCode.REFUND_REQUEST_DENIED,
@@ -248,14 +270,22 @@ public class RefundService {
         }
         int granted = payment.getTokenQty();
         int remaining = remainingPurchaseTokens(writerId, granted);
-        int used = granted - remaining;
 
-        if (used > 0) {
-            // 정책: 7일 이내라도 종량제 일부 사용은 일반 사유로는 환불 불가, 회사 귀책만 허용.
-            throw new PaymentException(ErrorCode.REFUND_REQUEST_DENIED,
-                    "크레딧을 일부라도 사용한 경우 단순 변심 환불은 불가합니다");
+        if (remaining == granted) {
+            // 미사용 — 전액 환불.
+            return new RefundCalculation(payment.getAmount(), granted, RefundType.FULL);
         }
-        return new RefundCalculation(payment.getAmount(), granted, RefundType.FULL);
+        if (remaining <= 0) {
+            // 전부 사용 — 환불 불가 (제6조 2항).
+            throw new PaymentException(ErrorCode.REFUND_REQUEST_DENIED,
+                    "크레딧을 모두 사용한 결제는 환불할 수 없습니다");
+        }
+        // 일부 사용 — 미사용 크레딧 비율로 비례 환불.
+        // 계산: floor(amount * remaining / granted). 사용자에게 유리하지 않더라도 회사에 손해
+        // 없도록 floor; 1원 단위 오차는 무시 (금액 분배의 일반적인 처리).
+        long prorated = (long) payment.getAmount() * remaining / granted;
+        int refundAmount = (int) prorated;
+        return new RefundCalculation(refundAmount, remaining, RefundType.PARTIAL_USED);
     }
 
     private RefundCalculation calcSubscriptionRequest(Payment payment, UUID writerId, long daysElapsed) {
@@ -303,6 +333,22 @@ public class RefundService {
     }
 
     // ─────────────── 헬퍼 ───────────────
+
+    /**
+     * 구독 환불 승인 시 자동 갱신 차단. 활성 구독이 있으면 즉시 {@link SubscriptionStatus#CANCELLED}.
+     *
+     * <p>과거 월에 결제된 결제를 뒤늦게 환불하는 케이스도 무해 — 활성 구독이 없으면 조용히 건너뜀.
+     * 활성 구독이 다른 결제 사이클로 진행 중이어도 (이론상 가능) 환불 대상 결제 = 가장 최근
+     * 결제 시점에서 발급된 같은 카드 사이클이므로 종료 처리.
+     */
+    private void expireSubscriptionForRefund(UUID writerId, Payment payment) {
+        subscriptionRepository.findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE)
+                .ifPresent(subscription -> {
+                    subscription.expire();
+                    log.info("[SUBSCRIPTION_EXPIRED] writerId={} subscriptionId={} reason=REFUND_APPROVED paymentId={}",
+                            writerId, subscription.getId(), payment.getOrderId());
+                });
+    }
 
     private boolean isFullCash(Refund refund) {
         return refund.getRefundType() == RefundType.FULL
