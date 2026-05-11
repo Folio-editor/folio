@@ -331,6 +331,19 @@ public class AiClient {
                             } catch (Exception sendErr) {
                                 log.debug("agent SSE downstream disconnected; drain upstream");
                             }
+                        } else if (line.startsWith(":")) {
+                            // SSE 주석 (heartbeat) 그대로 forward — nginx/Cloudflare idle timeout
+                            // 으로 다운스트림 연결이 끊기는 것을 방지. AI 서버가 15초 간격으로
+                            // ': ping' 을 보내며, Spring 도 해당 frame 을 클라이언트까지 중계해야
+                            // 양 구간 모두 keepalive 효과를 얻는다.
+                            String commentBody = line.startsWith(": ")
+                                    ? line.substring(2)
+                                    : line.substring(1);
+                            try {
+                                emitter.send(SseEmitter.event().comment(commentBody));
+                            } catch (Exception sendErr) {
+                                log.debug("agent SSE heartbeat forward failed (downstream gone)");
+                            }
                         }
                     }
                 }
