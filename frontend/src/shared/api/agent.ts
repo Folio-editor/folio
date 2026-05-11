@@ -11,7 +11,8 @@
 import { apiClient } from '../lib/apiClient';
 
 export type AgentScenario =
-  | 'auto'
+  | 'auto'         // 채팅 모드 (다회 turn, list_threads 에 노출)
+  | 'card_auto'    // 카드 모드 자유 문서 생성 (단발, list_threads 에서 제외 — auto 와 동일 동작 alias)
   | 'draft_next'
   | 'consistency_check'
   | 'revision'
@@ -24,6 +25,7 @@ export type AgentScenario =
 // 비동기는 'auto' 1종에 통합 (모든 호출 Celery 경유 → 진행률 폴링).
 export const ASYNC_SCENARIOS = new Set<AgentScenario>([
   'auto',
+  'card_auto',
   'draft_next',
   'revision',
   'consistency_check',

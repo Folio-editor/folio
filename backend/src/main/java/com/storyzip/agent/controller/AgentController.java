@@ -50,6 +50,8 @@ public class AgentController {
     /** 시나리오별 진입 최소 잔액 (ai/app/agent/scenarios.py SCENARIO_BUDGET 의 min_balance 와 정합). */
     private static final Map<String, Integer> MIN_BALANCE = Map.ofEntries(
             Map.entry("auto", 200),
+            // card_auto: 카드 모드 자유 문서 생성 — auto 와 동등 동작 (단발 진입점 분리용 alias).
+            Map.entry("card_auto", 200),
             Map.entry("draft_next", 800),
             Map.entry("revision", 600),
             Map.entry("consistency_check", 400),
@@ -60,7 +62,7 @@ public class AgentController {
 
     // Phase 4 — auto 모드는 모든 의도를 포괄하므로 항상 비동기.
     private static final Set<String> ASYNC_SCENARIOS =
-            Set.of("auto", "draft_next", "revision", "consistency_check", "extraction");
+            Set.of("auto", "card_auto", "draft_next", "revision", "consistency_check", "extraction");
 
     private final AiClient aiClient;
     private final TokenWalletService walletService;

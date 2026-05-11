@@ -294,7 +294,7 @@ def test_summarize_episode_encrypts_text_fields_in_upsert(monkeypatch):
     class FakeSession:
         async def execute(self, stmt, params=None):
             # SELECT 분기: episode + summary join — None summary (cache miss)
-            if params and "so" in params:
+            if params and "eid" in params:
                 # cache miss row: episode 존재, summary 없음
                 class Row:
                     def __getitem__(self, i):
@@ -318,7 +318,7 @@ def test_summarize_episode_encrypts_text_fields_in_upsert(monkeypatch):
             return None
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
-    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, sort_order=1))
+    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, episode_id=str(EPISODE_ID)))
 
     # 반환값은 평문 유지 (Sonnet 즉시 사용)
     assert result["oneline_summary"] == "앤이 일기 발견"            # 평문
@@ -394,7 +394,7 @@ def test_summarize_episode_cache_hit_decrypts(monkeypatch):
             return R()
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
-    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, sort_order=1))
+    result = asyncio.run(ep_mod.summarize_episode(FakeSession(), ctx, episode_id=str(EPISODE_ID)))
 
     assert result["cached"] is True
     fake_llm.generate_json.assert_not_called()        # Haiku 미호출 보장
@@ -418,20 +418,20 @@ def test_search_episode_summaries_option_a_substring(monkeypatch):
     """SQL 1차 필터 → batch 복호화 → Python substring 매칭. 어형 변화도 hit."""
     from app.mcp.tools import episode_summary as es_mod
 
-    # SELECT 순서 (12 cols): ep.id, sort_order, ep.title,
+    # SELECT 순서 (11 cols, sort_order 제거 후): ep.id, ep.title,
     #   oneline_summary, pov_character, tone, present_characters, cliffhanger, summary,
     #   present_locations, key_events, keywords
     fake_rows_db = [
         # 회차 1: 본문에 "발견했다" → "발견" 검색 시 hit (Option A 만 가능)
-        ("ep-uuid-1", 1, "v1:CT_1화", "v1:CT_앤이 발견했다", "앤", "충격",
+        ("ep-uuid-1", "v1:CT_1화", "v1:CT_앤이 발견했다", "앤", "충격",
          ["앤"], "v1:CT_침묵", "v1:CT_앤이 다락방에서 어머니의 일기를 발견했다.",
          ["다락방"], [{"order":1,"event":"발견"}], ["편지"]),
         # 회차 2: 무관
-        ("ep-uuid-2", 2, "v1:CT_2화", "v1:CT_평범한 일상", "앤", "평온",
+        ("ep-uuid-2", "v1:CT_2화", "v1:CT_평범한 일상", "앤", "평온",
          ["앤"], None, "v1:CT_앤이 학교에 갔다.",
          ["학교"], [{"order":1,"event":"등교"}], ["일상"]),
         # 회차 3: keywords 매칭
-        ("ep-uuid-3", 3, "v1:CT_3화", "v1:CT_새로운 만남", "마릴라", "긴장",
+        ("ep-uuid-3", "v1:CT_3화", "v1:CT_새로운 만남", "마릴라", "긴장",
          ["마릴라"], None, "v1:CT_마릴라가 새 친구를 만났다.",
          ["거실"], [{"order":1,"event":"만남"}], ["우정", "비밀"]),
     ]
@@ -461,15 +461,15 @@ def test_search_episode_summaries_option_a_substring(monkeypatch):
     # 케이스 1: "발견" 검색 — 회차 1 의 "발견했다" 어형 변화 잡힘
     result1 = asyncio.run(es_mod.search_episode_summaries(
         FakeSession(), ctx, keyword="발견", scope="all", limit=10))
-    sort_orders = [r["sort_order"] for r in result1]
-    assert 1 in sort_orders, f"회차 1의 '발견했다' substring 매칭 실패. result={result1}"
-    assert 2 not in sort_orders     # 무관 회차 제외
+    ids = [r["id"] for r in result1]
+    assert "ep-uuid-1" in ids, f"회차 1의 '발견했다' substring 매칭 실패. result={result1}"
+    assert "ep-uuid-2" not in ids     # 무관 회차 제외
 
     # 케이스 2: "비밀" 검색 — keywords JSONB 평문 매칭
     result2 = asyncio.run(es_mod.search_episode_summaries(
         FakeSession(), ctx, keyword="비밀", scope="all", limit=10))
-    sort_orders2 = [r["sort_order"] for r in result2]
-    assert 3 in sort_orders2, f"회차 3의 keywords '비밀' 매칭 실패. result={result2}"
+    ids2 = [r["id"] for r in result2]
+    assert "ep-uuid-3" in ids2, f"회차 3의 keywords '비밀' 매칭 실패. result={result2}"
 
     # 케이스 3: "ㄱㄴㄷ존재안함" 검색 — 0건
     result3 = asyncio.run(es_mod.search_episode_summaries(
@@ -485,11 +485,11 @@ def test_search_episode_summaries_empty_keyword(monkeypatch):
     """keyword 비어있으면 scope 필터만 적용된 결과 반환."""
     from app.mcp.tools import episode_summary as es_mod
 
-    # SELECT 순서 (12 cols): ep.id, sort_order, ep.title, ...
+    # SELECT 순서 (11 cols, sort_order 제거 후): ep.id, ep.title, ...
     fake_rows_db = [
-        ("ep-uuid-1", 1, "v1:CT_1화", "v1:CT_요약1", "앤", "충격", ["앤"], None, "v1:CT_본문1",
+        ("ep-uuid-1", "v1:CT_1화", "v1:CT_요약1", "앤", "충격", ["앤"], None, "v1:CT_본문1",
          ["다락방"], [], []),
-        ("ep-uuid-2", 2, "v1:CT_2화", "v1:CT_요약2", "앤", "평온", ["앤"], None, "v1:CT_본문2",
+        ("ep-uuid-2", "v1:CT_2화", "v1:CT_요약2", "앤", "평온", ["앤"], None, "v1:CT_본문2",
          ["학교"], [], []),
     ]
 
@@ -520,16 +520,16 @@ def test_find_relevant_episodes_db_only(monkeypatch):
     """
     from app.mcp.tools import episode_search as esrch
 
-    # 메인 쿼리 결과: (episode_id, sort_order, title, max_sim, avg_sim, chunk_count)
+    # 메인 쿼리 결과 (5 cols, sort_order 제거 후): (episode_id, title, max_sim, avg_sim, chunk_count)
     fake_main_rows = [
-        ("ep-uuid-3", 3, "3화 회상", 0.92, 0.85, 5),
-        ("ep-uuid-1", 1, "1화 시작", 0.81, 0.72, 4),
-        ("ep-uuid-6", 6, "v1:title_ciphertext", 0.78, 0.65, 6),    # 암호화된 title
+        ("ep-uuid-3", "3화 회상", 0.92, 0.85, 5),
+        ("ep-uuid-1", "1화 시작", 0.81, 0.72, 4),
+        ("ep-uuid-6", "v1:title_ciphertext", 0.78, 0.65, 6),    # 암호화된 title
     ]
 
     class DiagRow:
-        """진단 쿼리 결과: ref_chunks=10, other_chunks=15, prev_with_chunks=5"""
-        def __getitem__(self, i): return [10, 15, 5][i]
+        """진단 쿼리 결과: ref_chunks=10, other_chunks=15, prev_with_chunks_id='ep-uuid-prev'"""
+        def __getitem__(self, i): return [10, 15, "ep-uuid-prev"][i]
 
     class DiagResult:
         def fetchone(self): return DiagRow()
@@ -555,11 +555,10 @@ def test_find_relevant_episodes_db_only(monkeypatch):
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
     result = asyncio.run(esrch.find_relevant_episodes(
-        FakeSession(), ctx, reference_sort_order=7, k=5))
+        FakeSession(), ctx, reference_episode_id="ep-uuid-7", k=5))
 
-    assert result["reference_sort_order"] == 7
+    assert result["reference_episode_id"] == "ep-uuid-7"
     assert len(result["top"]) == 3
-    assert result["top"][0]["sort_order"] == 3
     assert result["top"][0]["max_sim"] == 0.92
     assert result["top"][0]["id"] == "ep-uuid-3"     # episode_id 노출 검증
     # 암호화된 title 은 placeholder (decrypt_rows 가 raise 한 fallback)
@@ -571,8 +570,8 @@ def test_find_relevant_episodes_empty_reference_returns_diagnostic(monkeypatch):
     from app.mcp.tools import episode_search as esrch
 
     class DiagRow:
-        # ref_chunks=0 (비어있음), other_chunks=20, prev_with_chunks=1000
-        def __getitem__(self, i): return [0, 20, 1000][i]
+        # ref_chunks=0 (비어있음), other_chunks=20, prev_with_chunks_id='ep-uuid-prev'
+        def __getitem__(self, i): return [0, 20, "ep-uuid-prev"][i]
     class DiagResult:
         def fetchone(self): return DiagRow()
     class FakeSession:
@@ -580,13 +579,13 @@ def test_find_relevant_episodes_empty_reference_returns_diagnostic(monkeypatch):
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
     result = asyncio.run(esrch.find_relevant_episodes(
-        FakeSession(), ctx, reference_sort_order=2000, k=3))
+        FakeSession(), ctx, reference_episode_id="ep-uuid-target", k=3))
 
     assert result["top"] == []
     assert result["ref_chunks"] == 0
-    assert result["suggested_reference"] == 1000
+    assert result["suggested_reference_episode_id"] == "ep-uuid-prev"
     assert "본문이 비어있거나" in result["message"]
-    assert "sort_order=1000" in result["message"]
+    assert "ep-uuid-prev" in result["message"]
 
 
 def test_find_relevant_episodes_no_other_episodes(monkeypatch):
@@ -603,7 +602,7 @@ def test_find_relevant_episodes_no_other_episodes(monkeypatch):
 
     ctx = WriterContext(work_id=WORK_ID, writer_id=WRITER_ID)
     result = asyncio.run(esrch.find_relevant_episodes(
-        FakeSession(), ctx, reference_sort_order=1000, k=3))
+        FakeSession(), ctx, reference_episode_id="ep-uuid-target", k=3))
 
     assert result["top"] == []
     assert result["other_chunks"] == 0

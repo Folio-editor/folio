@@ -13,7 +13,17 @@ export default defineConfig(({ mode }) => ({
     },
     // React/Zustand 단일 인스턴스 강제 — @powersync/react 등 sub-dep가 별도 React를
     // 로드해 "Invalid hook call (more than one copy of React)" 발생 차단.
-    dedupe: ['react', 'react-dom', 'zustand'],
+    // ProseMirror (TipTap): selection class 가 전역 JSON ID 레지스트리에 자기 자신을
+    // 등록하므로 같은 패키지가 두 번 로드되면 "Duplicate use of selection JSON ID gapcursor"
+    // RangeError. dedupe 로 단일 인스턴스 보장.
+    dedupe: [
+      'react', 'react-dom', 'zustand',
+      'prosemirror-state', 'prosemirror-view', 'prosemirror-model',
+      'prosemirror-transform', 'prosemirror-commands', 'prosemirror-keymap',
+      'prosemirror-gapcursor', 'prosemirror-dropcursor', 'prosemirror-history',
+      'prosemirror-schema-list', 'prosemirror-inputrules',
+      '@tiptap/core', '@tiptap/pm', '@tiptap/react',
+    ],
   },
   // 운영 nginx는 /editor path에 에디터를 배치 (nginx.conf:94).
   // dev는 localhost:5173 root → '/'.
@@ -24,7 +34,19 @@ export default defineConfig(({ mode }) => ({
   // - js-logger는 nested include로 명시 (powersync 의존성 안의 deep ESM 처리)
   optimizeDeps: {
     exclude: ['@powersync/web', '@journeyapps/wa-sqlite'],
-    include: ['@powersync/web > js-logger'],
+    include: [
+      '@powersync/web > js-logger',
+      // 같은 prebundle 청크로 묶어 단일 인스턴스 유도.
+      // ⚠ @tiptap/pm 은 namespace-only 패키지 (subpath 만, 루트 entry 없음) — include 불가.
+      // dedupe 만으로 단일 인스턴스 보장 충분.
+      'prosemirror-state',
+      'prosemirror-view',
+      'prosemirror-model',
+      'prosemirror-gapcursor',
+      '@tiptap/core',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+    ],
   },
   worker: {
     format: 'es',

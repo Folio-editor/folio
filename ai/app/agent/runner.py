@@ -120,6 +120,16 @@ async def run_agent(
             or "529" in err_msg
             or err_type in ("APIStatusError", "InternalServerError")
         )
+        # GMS / LLM 게이트웨이 프록시는 요청 본문이 자기 한계 (200K 미만) 를 넘어가면
+        # 모델 호출조차 안 하고 generic 에러로 떨군다. "Model not found" / "GMS 에러" 같은
+        # 메시지가 대표 — 실제 모델명은 정상이라 사용자는 원인 파악 불가. 컨텍스트 과포화로 분류.
+        ml = err_msg.lower()
+        is_proxy_overflow = (
+            ("model not found" in ml and "anthropic" in ml)
+            or "[gms" in ml
+            or "request entity too large" in ml
+            or "413" in err_msg
+        )
         if is_rate_limit:
             budget.aborted = "rate_limited"
             answer = (
@@ -132,6 +142,13 @@ async def run_agent(
             answer = (
                 "[AGENT] Anthropic 서버 일시 과부하. 잠시 후 재시도해주세요. "
                 "(" + err_msg + ")"
+            )
+        elif is_proxy_overflow:
+            budget.aborted = "context_overflow"
+            answer = (
+                "[AGENT] 채팅이 누적되어 한 번에 보낼 수 있는 컨텍스트 한계를 넘었습니다. "
+                "같은 thread 의 [압축] 버튼으로 대화를 정리한 뒤 다시 보내주세요. "
+                "(원본 게이트웨이 에러: " + err_msg + ")"
             )
         else:
             budget.aborted = "internal_error"

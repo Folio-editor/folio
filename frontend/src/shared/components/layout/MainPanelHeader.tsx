@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { ArrowUpRight } from 'lucide-react';
+import { useHorizontalWheelScroll } from '../../hooks/useHorizontalWheelScroll';
 
 interface MainPanelHeaderProps {
   /** 좌측: 뒤로 버튼 등 네비게이션 (legacy) */
@@ -42,9 +43,14 @@ export function MainPanelHeader({
   meta,
   onSendToRight,
 }: MainPanelHeaderProps) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useHorizontalWheelScroll(scrollerRef);
   return (
     <div className="shrink-0">
-      <div className="flex h-10 items-center gap-3 overflow-x-auto scrollbar-none border-b border-border px-6">
+      <div
+        ref={scrollerRef}
+        className="flex h-10 items-center gap-3 overflow-x-auto scrollbar-none border-b border-border px-6"
+      >
         {leading}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className={subtitle ? 'shrink-0' : 'min-w-0 flex-1'}>{title}</div>
