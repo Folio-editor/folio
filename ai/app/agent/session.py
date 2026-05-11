@@ -32,12 +32,13 @@ log = logging.getLogger(__name__)
 COMPRESS_THRESHOLD = 40         # 메시지 N개 도달 시 첫 절반 압축 (1차 트리거)
 COMPRESS_HEAD_COUNT = 20
 
-# 토큰 기반 보수적 임계값 (2026-05-09 추가).
-# Sonnet 4.x context window = 200,000 tokens. 50% 지점에서 자동 압축 → 다음 turn 안전 마진 확보.
-# 한국어 평균 ~3.5 chars/token, 메시지 JSON 직렬화 길이로 근사 추정.
-COMPRESS_TOKEN_THRESHOLD = 100_000   # 자동 압축 발동
-COMPRESS_TOKEN_WARN = 150_000        # UI 경고 (오렌지)
-COMPRESS_TOKEN_CRITICAL = 180_000    # UI 빨강 — Anthropic 200K 한계 임박
+# 토큰 기반 보수적 임계값.
+# Sonnet 4.x context window = 200,000 tokens. GMS 등 게이트웨이는 더 작은 body 한계 가능.
+# planner loop 안 매 iter 호출되는 iterative 압축 패턴 — 일찍 발동시켜 누적 폭주 방지.
+# 60K = 200K 한계의 30% — 압축 후에도 한참 여유. 게이트웨이 한계 안전.
+COMPRESS_TOKEN_THRESHOLD = 60_000    # 자동 압축 발동 (iterative — 매 iter 검사)
+COMPRESS_TOKEN_WARN = 120_000        # UI 경고 (오렌지)
+COMPRESS_TOKEN_CRITICAL = 170_000    # UI 빨강 — Anthropic 200K 한계 임박
 ANTHROPIC_CONTEXT_LIMIT = 200_000    # 절대 한계 (참조용)
 _CHARS_PER_TOKEN = 3.5               # 한국어/혼합 콘텐츠 평균
 
@@ -306,22 +307,25 @@ def _has_unmatched_tool_use(msg: dict) -> bool:
 
 
 def _split_preserving_tool_pairs(messages: list[dict], cut_at: int) -> tuple[list[dict], list[dict]]:
-    """messages 를 cut_at 기준으로 head/tail 분리하되 tool_use ↔ tool_result 페어가
-    head/tail 경계에서 끊기지 않도록 cut_at 을 자동 조정한다.
+    """messages 를 cut_at 기준으로 head/tail 분리하되 Anthropic API 검증 규칙 보존:
 
-    Anthropic API 검증 규칙:
-      - assistant.content 안에 tool_use 가 있으면 다음 user 가 tool_result 로 응답해야 함
-      - user.content 의 tool_result.tool_use_id 는 직전 assistant 의 tool_use.id 와 매칭
-    압축이 페어 한가운데에서 자르면 tail 의 첫 user(tool_result) 가 orphan → 400 에러.
+      1) assistant.tool_use ↔ user.tool_result 페어가 경계에서 끊기지 않게
+         (tail 의 첫 user 가 orphan tool_result 면 head 로 흡수)
+      2) tail 의 첫 메시지는 user 역할 (Anthropic 요청 messages[0] = user 필수)
+         tail 이 assistant 로 시작하면 한 칸 더 advance — head 로 흡수
 
-    조정 전략: tail 첫 메시지가 user(tool_result_only) 인 한 cut_at 을 한 칸씩 뒤로 미뤄
-    head 에 흡수. (또는 head 마지막이 assistant(tool_use) 면 페어 둘 다 head 로.)
+    조정 후 tail 이 비면 (모든 메시지 head 흡수) 호출자가 처리.
     """
     n = len(messages)
+    # 1) orphan tool_result 흡수
     while cut_at < n and _is_tool_result_only_user(messages[cut_at]):
         cut_at += 1
-    # 추가: head 마지막이 tool_use 만 가진 assistant 면 그것도 head 로 가져감 (짝 user 가 이미 head 에)
-    # — 위 while 루프가 user(tool_result) 를 head 로 끌어들였으니 head 끝이 user(tool_result)
+    # 2) tail 첫 메시지가 assistant 면 head 로 흡수 (첫 메시지는 반드시 user)
+    while cut_at < n and messages[cut_at].get("role") == "assistant":
+        cut_at += 1
+    # 3) advance 후 다시 orphan tool_result 가능성 한 번 더 (assistant 흡수 후 다음이 tool_result 면)
+    while cut_at < n and _is_tool_result_only_user(messages[cut_at]):
+        cut_at += 1
     return messages[:cut_at], messages[cut_at:]
 
 
@@ -355,6 +359,14 @@ async def maybe_compress(
 
     head_target = min(COMPRESS_HEAD_COUNT, max(1, msg_count - 5))    # 최근 5개는 보존
     head, tail = _split_preserving_tool_pairs(messages, head_target)
+
+    # 안전 가드 — tail 비어있거나 (tool pair 흡수로 모두 head 로 갔거나) head 가 너무 작으면
+    # 압축 의미 X + Anthropic messages[0]=user 위반 위험. 압축 skip.
+    if not tail or len(head) < 4:
+        return messages, summary_so_far, False
+    # tail[0] 은 반드시 user (위 _split 가 보장하지만 방어적 재검증).
+    if tail[0].get("role") != "user":
+        return messages, summary_so_far, False
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)

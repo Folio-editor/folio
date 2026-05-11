@@ -236,10 +236,36 @@ async def run_planner_loop(
     final_text: str | None = None
 
     while True:
-        # ★ in-loop 컨텍스트 가드 — history 가 ceiling 넘으면 graceful 종료.
-        # tool_result 누적으로 200K 에 닿으면 Anthropic 또는 프록시(GMS 등) 가 generic
-        # 400 으로 거부 → 사용자에겐 의미 없는 "Model not found" 에러로 보인다. 사전 차단.
-        from app.agent.session import estimate_messages_tokens
+        # ★ iterative compression — 매 iter 시작에 maybe_compress 호출.
+        # DB 영속 history 와 별개로 ★요청 송신용 in-memory history 만★ 동적 축소.
+        # maybe_compress 내부 임계 (40 msg / 100K tok) 미만이면 즉시 no-op return (Haiku 호출 X).
+        # 임계 이상이면 옛 head 를 Haiku 1회 호출로 요약해서 summary_so_far 에 합치고
+        # tail (최근 메시지) 만 history 로 유지 — 즉 매번 다음 요청은 안전한 크기로 송신.
+        # tool_use ↔ tool_result 페어와 messages[0]=user 규칙은 _split_preserving_tool_pairs 가 보존.
+        from app.agent.session import estimate_messages_tokens, maybe_compress as _maybe_compress
+        try:
+            new_history, new_summary, did_compress = await _maybe_compress(
+                history, summary_so_far, budget
+            )
+            if did_compress:
+                history = new_history
+                summary_so_far = new_summary
+                # summary 가 갱신됐으니 system block 재빌드 — 새 summary 가 캐시 prefix 에 포함.
+                system_blocks = _build_system_blocks(
+                    scenario["system_prompt"], work_meta_block, summary_so_far
+                )
+                logger.info(
+                    "planner.iter_compress scenario=%s after_tokens=%d msgs=%d",
+                    scenario_name, estimate_messages_tokens(history), len(history),
+                )
+        except BudgetExceeded:
+            raise
+        except Exception as e:
+            # 압축 실패는 치명적 X — 다음 가드(ceiling) 가 차단. 로그만 남기고 계속.
+            logger.warning("planner.iter_compress_failed: %s", str(e)[:200])
+
+        # ★ in-loop 컨텍스트 가드 — 압축 후에도 ceiling 넘으면 graceful 종료.
+        # 압축 거부됐거나 (head 너무 작음, tail empty 등) 한 번 압축 후에도 큰 경우 사용자에게 안내.
         est_history_tokens = estimate_messages_tokens(history)
         if est_history_tokens > PLANNER_MAX_HISTORY_TOKENS:
             logger.warning(

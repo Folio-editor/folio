@@ -49,9 +49,10 @@ const EMPTY_THREADS: AgentThreadSummary[] = [];
 
 // ─── 컨텍스트 윈도우 가시화 (Sonnet 4.x: 200K 입력 한도) ──────────
 // 백엔드 ai/app/agent/session.py 의 동일 임계값과 정합.
-const CTX_AUTO_COMPRESS = 100_000;     // 자동 압축 발동선
-const CTX_WARN = 150_000;              // 오렌지 경고
-const CTX_CRITICAL = 180_000;          // 빨강 critical
+// iterative 압축 패턴 — planner loop 안 매 iter 자동 압축 시도 → 임계 일찍 발동.
+const CTX_AUTO_COMPRESS = 60_000;      // 자동 압축 발동선
+const CTX_WARN = 120_000;              // 오렌지 경고
+const CTX_CRITICAL = 170_000;          // 빨강 critical
 const CTX_HARD_LIMIT = 200_000;        // Anthropic 절대 한도
 const CHARS_PER_TOKEN = 3.5;           // 한국어 보수적 추정치 — 백엔드와 동일
 
