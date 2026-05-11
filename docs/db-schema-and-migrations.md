@@ -75,7 +75,7 @@
 
 ---
 
-## 3. 마이그레이션 인벤토리 (16개, 시간순)
+## 3. 마이그레이션 인벤토리 (19개, 시간순)
 
 | # | 파일 | 날짜 | 내용 | 멱등 |
 |---|---|---|---|---|
@@ -97,6 +97,7 @@
 | 16 | `2026-05-09_add_refund_and_admin_audit_log.sql` | 2026-05-09 | **신규 테이블 2개** — `refund` (환불 신청·승인 워크플로우) + `admin_audit_log` (관리자 API 감사). 환불 기능 머지 동반 | ✓ (CREATE TABLE IF NOT EXISTS) |
 | 17 | `2026-05-09_add_spelling_fix_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'spelling_fix'` 추가 (단건 자동 치환 — propose_spelling_fix MCP 도구) | ✓ |
 | 18 | `2026-05-09_add_spelling_batch_entity_type.sql` | 2026-05-09 | `extraction_suggestion.entity_type` CHECK 에 `'spelling_batch'` 추가 (다건 체크리스트 — propose_spelling_fix_batch MCP 도구. 작가가 항목 선택 후 일괄 적용) | ✓ |
+| 19 | `2026-05-10_add_payment_refund_policy_columns.sql` | 2026-05-10 | `payment` 테이블에 `refund_policy_version VARCHAR(20)` + `refund_policy_agreed_at TIMESTAMP` 추가 (NOT NULL). Payment.java 가 두 컬럼을 NOT NULL 로 요구하지만 schema/migrations 누락 상태였던 것을 schema 점검에서 발견. 기존 row 는 `'v1'` + `created_at` 로 backfill 후 NOT NULL 강화 | ✓ (ADD COLUMN IF NOT EXISTS + backfill) |
 
 ---
 
@@ -269,7 +270,7 @@ echo "OK $VER ($((END-START))ms)"
 | 1 | `ai_analysis` 테이블 — 스키마만 존재, 사용 코드 0건 | 무용. 빈 테이블 점유만 함 | 향후 review pipeline 구현 시 활용 또는 폐기 결정 |
 | 2 | 마이그레이션 추적 테이블 부재 | 어떤 환경에 어디까지 적용됐는지 수동 확인 필요 | §5.3 의 `schema_migrations` 테이블 도입 권장 |
 | 3 | character_note 의 `kind`, `gender`, `age` enum CHECK 제약 없음 | 잘못된 값이 DB 들어갈 수 있음 (frontend/agent 검증 의존) | proposals.py 의 `normalizeGender` 가 1차 방어 — DB CHECK 추가 검토 |
-| 4 | `extraction_suggestion.entity_type` CHECK 가 자주 변경됨 (3회: phase4 / suggestion_kinds_v2 / review_issue) | 새 entity_type 추가 시 CHECK 갱신 누락 가능 | 신규 propose_* 도구 추가 시 마이그레이션 동반 의무화 |
+| 4 | `extraction_suggestion.entity_type` CHECK 가 자주 변경됨 (5회: phase4 / suggestion_kinds_v2 / review_issue / spelling_fix / spelling_batch) | 새 entity_type 추가 시 CHECK 갱신 누락 가능 | 신규 propose_* 도구 추가 시 마이그레이션 동반 의무화 |
 | 5 | encrypted_dek (BYTEA) 유무 / server_encrypted_dek 발급 race | 오프라인 신규 work 는 NULL — server-dek pending queue 로 보강 | `serverDekReconciler` + `retryPendingServerDeks` 가 자동 보정 |
 
 ---
@@ -365,3 +366,6 @@ docker exec <pg> psql -tA -c "SELECT count(*) FROM pg_extension WHERE extname='v
 |---|---|
 | 2026-05-09 | 초판 — 15개 마이그레이션 + 32개 테이블 인벤토리, EC2 배포 절차, 정합성 검증 SQL |
 | 2026-05-09 | 환불 기능 머지 반영 — 16번 마이그레이션 추가 (`refund` + `admin_audit_log`). prod ddl-auto=validate 라 본 SQL 미적용 시 부팅 실패 — 운영 배포 전 필수 |
+| 2026-05-09 | 17·18번 마이그레이션 추가 — `extraction_suggestion.entity_type` CHECK 에 `'spelling_fix'` (단건 자동 치환) / `'spelling_batch'` (다건 체크리스트 일괄) 추가. propose_spelling_fix / propose_spelling_fix_batch MCP 도구 도입 동반 |
+| 2026-05-10 | `infra/db/schema.sql` 동기화 — entity_type CHECK 에 spelling_fix/spelling_batch 누락 분 반영, suggested_name + agent_session.title `VARCHAR(200)` → `TEXT` (#14 마이그레이션 결과). `docs/ddl.sql` 을 schema.sql 의 1:1 사본으로 갱신 (장기간 drift 정리) |
+| 2026-05-10 | 19번 마이그레이션 추가 — `payment.refund_policy_version` / `refund_policy_agreed_at` schema 누락 발견 (Payment.java 가 NOT NULL 요구, dev 는 ddl-auto=update 로 우연히 동작 중, prod 부팅 실패 위험). schema.sql 동시 반영 |
