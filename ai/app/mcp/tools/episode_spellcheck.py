@@ -79,45 +79,40 @@ async def check_spelling(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    sort_order: int,
+    episode_id: str,
 ) -> dict[str, Any]:
     """회차 본문 한국어 맞춤법·띄어쓰기·문장부호·오탈자 점검.
 
     Args:
-      sort_order: 검사 대상 회차 순번
+      episode_id: 검사 대상 회차 UUID
 
     Returns:
-      ``{id, sort_order, title, issues, summary, usage}``
+      ``{id, title, issues, summary, usage}``
         - id: episode UUID — 발견 시 propose_review_issue.episode_id 인자로 사용
         - issues: ``[{type, line, original, suggestion, reason}]``
-            - type: 'typo' | 'spacing' | 'punctuation'
-            - line: 1-based 줄 번호 (TipTap top-level block 인덱스)
-            - original / suggestion: 본문 그대로 / 교정 제안
         - summary: '띄어쓰기 3건, 오탈자 1건' 형식 한 줄 요약
     """
-    # 1) 회차 식별 + plaintext fetch
     r = await session.execute(
         sa_text(
             "SELECT id, title FROM episode "
-            "WHERE work_id = :wid AND writer_id = :wr AND sort_order = :so LIMIT 1"
+            "WHERE work_id = :wid AND writer_id = :wr AND id = :eid LIMIT 1"
         ),
-        {"wid": ctx.work_id, "wr": ctx.writer_id, "so": sort_order},
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "eid": episode_id},
     )
     row = r.fetchone()
     if row is None:
-        return {"error": "episode_not_found", "sort_order": sort_order}
-    episode_id, title = row[0], row[1]
+        return {"error": "episode_not_found", "episode_id": episode_id}
+    ep_id, title = row[0], row[1]
     plain_title = await _decrypt_title(ctx.work_id, title)
     try:
-        content = await resolve_episode_plaintext(str(episode_id), str(ctx.work_id))
+        content = await resolve_episode_plaintext(str(ep_id), str(ctx.work_id))
     except WorkKeyResolverError as e:
-        return {"error": "no_plaintext", "reason": str(e), "sort_order": sort_order}
+        return {"error": "no_plaintext", "reason": str(e), "episode_id": episode_id}
 
     numbered = extract_numbered_text(content)
     if not numbered.strip():
         return {
-            "id": str(episode_id),
-            "sort_order": sort_order,
+            "id": str(ep_id),
             "title": plain_title,
             "issues": [],
             "summary": "본문이 비어 있음",
@@ -151,17 +146,15 @@ async def check_spelling(
             max_tokens=3000,
         )
     except Exception as e:
-        return {"error": "haiku_spellcheck_failed", "reason": str(e)[:200], "sort_order": sort_order}
+        return {"error": "haiku_spellcheck_failed", "reason": str(e)[:200], "episode_id": episode_id}
 
-    # 4) 정규화 + 화이트리스트 필터
     normalized = _normalize_spellcheck_result(result)
     issues = filter_whitelisted_issues(list(normalized.get("issues", [])), whitelist)
     summary = _build_summary(issues)
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
 
     return {
-        "id": str(episode_id),
-        "sort_order": sort_order,
+        "id": str(ep_id),
         "title": plain_title,
         "issues": issues,
         "summary": summary,

@@ -236,11 +236,14 @@ async def list_threads(
     work_id: uuid.UUID,
     writer_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
+    # ★ 채팅 thread 만 노출 — 카드 모드 (consistency_check / card_auto / spelling 등 named scenario)
+    # 의 단발 thread 들이 채팅 리스트를 도배하는 사고 방지. 카드 세션은 DB 에 보존되어 영수증/감사
+    # 추적은 가능하지만 사용자 채팅 UI 에는 안 보인다.
     r = await session.execute(
         sa_text(
             "SELECT thread_id, scenario, title, status, last_activity_at, created_at "
             "FROM agent_session "
-            "WHERE work_id = :wid AND writer_id = :wr "
+            "WHERE work_id = :wid AND writer_id = :wr AND scenario = 'auto' "
             "ORDER BY last_activity_at DESC LIMIT 50"
         ),
         {"wid": work_id, "wr": writer_id},

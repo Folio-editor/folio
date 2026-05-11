@@ -1,4 +1,7 @@
-"""MCP 도구: 에피소드 청크 벡터 유사도 검색 + Haiku 합성 + 회차-기준 관련성 탐색."""
+"""MCP 도구: 에피소드 청크 벡터 유사도 검색 + Haiku 합성 + 회차-기준 관련성 탐색.
+
+외부 식별자는 episode_id (UUID) 만. 내부 sort_order 는 정렬에만 사용.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +16,6 @@ from app.services.providers import get_embedder, get_llm
 
 
 async def _decrypt_chunk_content(work_id, rows: list[dict]) -> list[dict]:
-    """chunk content 일괄 복호화. 실패 시 placeholder."""
     if not rows:
         return rows
     try:
@@ -30,65 +32,59 @@ async def find_relevant_episodes(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    reference_sort_order: int,
+    reference_episode_id: str,
     k: int = 5,
     exclude_self: bool = True,
 ) -> dict[str, Any]:
     """기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k 반환.
 
-    chunk_and_embed_task 가 회차마다 자동 임베딩한 벡터를 재사용 — 추가 임베딩 0회.
-    회차별 max-similarity (가장 가까운 chunk 1개의 유사도) 와 avg-similarity 집계.
-    DB-only — Haiku 호출 X. ~1 크레딧 수준.
-
-    반환: {reference_sort_order, top: [{sort_order, title, max_sim, avg_sim, chunk_count}]}
+    DB-only — Haiku 호출 X. ~1 크레딧.
+    반환: {reference_episode_id, top: [{id, title, max_sim, avg_sim, chunk_count}]}
     """
     capped_k = min(max(int(k), 1), 20)
 
-    # 사전 진단 — ref episode 의 chunk 수 / 다른 회차 의 chunk 수 별도 점검 (오진단 차단)
     diag_sql = (
         "SELECT "
         "  (SELECT COUNT(*) FROM episode_chunk ec "
-        "     JOIN episode ep ON ep.id = ec.episode_id "
-        "     WHERE ec.work_id = :wid AND ec.writer_id = :wr AND ep.sort_order = :ref) AS ref_chunks, "
+        "     WHERE ec.work_id = :wid AND ec.writer_id = :wr AND ec.episode_id = :ref) AS ref_chunks, "
         "  (SELECT COUNT(*) FROM episode_chunk ec "
-        "     JOIN episode ep ON ep.id = ec.episode_id "
         "     WHERE ec.work_id = :wid AND ec.writer_id = :wr "
-        "       AND (NOT :excl OR ep.sort_order <> :ref)) AS other_chunks, "
-        "  (SELECT MAX(ep.sort_order) FROM episode_chunk ec "
-        "     JOIN episode ep ON ep.id = ec.episode_id "
+        "       AND (NOT :excl OR ec.episode_id <> :ref)) AS other_chunks, "
+        "  (SELECT ep_prev.id FROM episode_chunk ec "
+        "     JOIN episode ep_prev ON ep_prev.id = ec.episode_id "
+        "     JOIN episode ep_ref ON ep_ref.id = :ref "
         "     WHERE ec.work_id = :wid AND ec.writer_id = :wr "
-        "       AND ep.sort_order < :ref) AS prev_with_chunks"
+        "       AND ep_prev.sort_order < ep_ref.sort_order "
+        "     ORDER BY ep_prev.sort_order DESC LIMIT 1) AS prev_with_chunks_id"
     )
     diag = (await session.execute(
         sa_text(diag_sql),
-        {"wid": ctx.work_id, "wr": ctx.writer_id, "ref": reference_sort_order, "excl": exclude_self},
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "ref": reference_episode_id, "excl": exclude_self},
     )).fetchone()
-    ref_chunks, other_chunks, prev_with_chunks = (
-        int(diag[0] or 0), int(diag[1] or 0),
-        int(diag[2]) if diag[2] is not None else None,
-    )
+    ref_chunks = int(diag[0] or 0)
+    other_chunks = int(diag[1] or 0)
+    suggested_ref_id = str(diag[2]) if diag[2] is not None else None
 
     if ref_chunks == 0:
-        # 기준 회차에 chunk 없음 — 본문 비어있거나 임베딩 미생성. agent 가 다른 reference 골라야.
         return {
-            "reference_sort_order": reference_sort_order,
+            "reference_episode_id": reference_episode_id,
             "top": [],
             "ref_chunks": 0,
             "other_chunks": other_chunks,
-            "suggested_reference": prev_with_chunks,
+            "suggested_reference_episode_id": suggested_ref_id,
             "message": (
-                f"기준 회차 sort_order={reference_sort_order} 본문이 비어있거나 임베딩 미생성. "
+                f"기준 회차 episode_id={reference_episode_id} 본문이 비어있거나 임베딩 미생성. "
                 + (
-                    f"이전 임베딩된 회차 sort_order={prev_with_chunks} 로 다시 호출하세요. "
-                    if prev_with_chunks is not None
-                    else "다른 회차들도 본문이 비어있습니다 — list_episodes 의 word_count>0 회차로 reference 변경. "
+                    f"이전 임베딩된 회차 id={suggested_ref_id} 로 다시 호출하세요. "
+                    if suggested_ref_id is not None
+                    else "다른 회차들도 본문 없음 — list_episodes 의 word_count>0 회차로 reference 변경. "
                 )
-                + f"(다른 회차 chunk 총 {other_chunks}개 존재)"
+                + f"(다른 회차 chunk 총 {other_chunks}개)"
             ),
         }
     if other_chunks == 0:
         return {
-            "reference_sort_order": reference_sort_order,
+            "reference_episode_id": reference_episode_id,
             "top": [],
             "ref_chunks": ref_chunks,
             "other_chunks": 0,
@@ -101,24 +97,22 @@ async def find_relevant_episodes(
     sql = (
         "WITH ref AS ("
         "  SELECT ec.embedding FROM episode_chunk ec "
-        "  JOIN episode ep ON ep.id = ec.episode_id "
-        "  WHERE ec.work_id = :wid AND ec.writer_id = :wr "
-        "    AND ep.sort_order = :ref"
+        "  WHERE ec.work_id = :wid AND ec.writer_id = :wr AND ec.episode_id = :ref"
         "), other AS ("
-        "  SELECT ep.id AS episode_id, ep.sort_order, ep.title, "
+        "  SELECT ep.id AS episode_id, ep.title, "
         "         1 - (ec.embedding <=> ref.embedding) AS sim "
         "  FROM episode_chunk ec "
         "  JOIN episode ep ON ep.id = ec.episode_id "
         "  CROSS JOIN ref "
         "  WHERE ec.work_id = :wid AND ec.writer_id = :wr "
-        "    AND (NOT :excl OR ep.sort_order <> :ref)"
+        "    AND (NOT :excl OR ec.episode_id <> :ref)"
         ") "
-        "SELECT episode_id, sort_order, title, "
+        "SELECT episode_id, title, "
         "       MAX(sim) AS max_sim, "
         "       AVG(sim) AS avg_sim, "
         "       COUNT(*) AS chunk_count "
         "FROM other "
-        "GROUP BY episode_id, sort_order, title "
+        "GROUP BY episode_id, title "
         "ORDER BY max_sim DESC "
         "LIMIT :k"
     )
@@ -127,30 +121,27 @@ async def find_relevant_episodes(
         {
             "wid": ctx.work_id,
             "wr": ctx.writer_id,
-            "ref": reference_sort_order,
+            "ref": reference_episode_id,
             "excl": exclude_self,
             "k": capped_k,
         },
     )
     rows = r.fetchall()
     if not rows:
-        # diag 통과했는데 결과 없음 — 이론상 도달 불가지만 안전 fallback
         return {
-            "reference_sort_order": reference_sort_order,
+            "reference_episode_id": reference_episode_id,
             "top": [],
             "ref_chunks": ref_chunks,
             "other_chunks": other_chunks,
             "message": "쿼리 결과 0 — 데이터 정합성 의심.",
         }
-    # id + title 모두 노출. title 은 batch 복호화 (placeholder 대신 평문).
     top = [
         {
             "id": str(row[0]),
-            "sort_order": row[1],
-            "title": row[2],
-            "max_sim": round(float(row[3]), 4),
-            "avg_sim": round(float(row[4]), 4),
-            "chunk_count": int(row[5]),
+            "title": row[1],
+            "max_sim": round(float(row[2]), 4),
+            "avg_sim": round(float(row[3]), 4),
+            "chunk_count": int(row[4]),
         }
         for row in rows
     ]
@@ -162,7 +153,7 @@ async def find_relevant_episodes(
             if isinstance(t, str) and t.startswith("v1:"):
                 r["title"] = "(제목 암호화 미해제)"
     return {
-        "reference_sort_order": reference_sort_order,
+        "reference_episode_id": reference_episode_id,
         "top": top,
     }
 
@@ -181,10 +172,9 @@ async def search_episode_chunks(
 
     vec_str = "[" + ",".join(str(v) for v in vecs[0]) + "]"
 
-    # episode_id, sort_order JOIN — 어느 회차의 chunk 인지 식별 가능해야 후속 도구 호출 가능
     r = await session.execute(
         sa_text(
-            "SELECT ep.id, ep.sort_order, ec.content, "
+            "SELECT ep.id, ep.title, ec.content, "
             "       1 - (ec.embedding <=> cast(:vec AS vector)) AS similarity "
             "FROM episode_chunk ec "
             "JOIN episode ep ON ep.id = ec.episode_id "
@@ -197,7 +187,7 @@ async def search_episode_chunks(
     rows = [
         {
             "episode_id": str(row[0]),
-            "sort_order": row[1],
+            "title": row[1],
             "content": row[2],
             "similarity": round(float(row[3]), 4),
         }
@@ -220,26 +210,11 @@ async def query_episodes_by_chunks(
     *,
     query: str,
     k: int = 10,
-    sort_order_min: int | None = None,
-    sort_order_max: int | None = None,
 ) -> dict[str, Any]:
     """벡터 검색으로 query 와 가장 유사한 회차 chunk N개를 찾아 Haiku 가 답변 합성.
 
-    300화 같은 대량 작품에서 회차마다 fetch + analyze 안 하고도 query 에 대한 답 가능.
-    chunk 자체가 청킹·임베딩 단계 (chunk_and_embed_task) 에서 자동 생성된 본문 조각.
-
-    절차:
-      1. embedder 로 query → 벡터
-      2. episode_chunk + episode JOIN — sort_order 범위 필터 (선택)
-      3. cosine 유사도 top-k chunks
-      4. Haiku 가 chunks 받아 answer 합성 (Sonnet 대신)
-
-    비용 (k=10 기준):
-      - 임베딩 1회 (text-embedding-3-small) ~$0.00002
-      - Haiku in 5~10K + out 1K ~10 크레딧
-      - Sonnet 은 압축된 answer (~1K) 만 받음
-
-    반환: {query, matched_chunks: [..], answer: str, episodes: [sort_order...], usage}
+    회차 범위 필터는 제거됨 — 작품 전체 대상으로 검색. 필요 시 별도 도구로 분리.
+    반환: {query, matched_chunks, answer, episodes: [{episode_id, title}], usage}
     """
     embedder = get_embedder()
     vecs = await embedder.embed_batch([query])
@@ -247,30 +222,24 @@ async def query_episodes_by_chunks(
         return {"error": "embedding_failed"}
     vec_str = "[" + ",".join(str(v) for v in vecs[0]) + "]"
 
-    where = ["ec.work_id = :wid", "ec.writer_id = :wr"]
-    params: dict[str, Any] = {
-        "vec": vec_str,
-        "wid": ctx.work_id,
-        "wr": ctx.writer_id,
-        "k": min(max(int(k), 1), 30),
-    }
-    if sort_order_min is not None:
-        where.append("ep.sort_order >= :smin")
-        params["smin"] = sort_order_min
-    if sort_order_max is not None:
-        where.append("ep.sort_order <= :smax")
-        params["smax"] = sort_order_max
-
     sql = (
-        "SELECT ep.id, ep.sort_order, ec.content, "
+        "SELECT ep.id, ep.title, ec.content, "
         "       1 - (ec.embedding <=> cast(:vec AS vector)) AS similarity "
         "FROM episode_chunk ec "
         "JOIN episode ep ON ep.id = ec.episode_id "
-        f"WHERE {' AND '.join(where)} "
+        "WHERE ec.work_id = :wid AND ec.writer_id = :wr "
         "ORDER BY ec.embedding <=> cast(:vec AS vector) "
         "LIMIT :k"
     )
-    r = await session.execute(sa_text(sql), params)
+    r = await session.execute(
+        sa_text(sql),
+        {
+            "vec": vec_str,
+            "wid": ctx.work_id,
+            "wr": ctx.writer_id,
+            "k": min(max(int(k), 1), 30),
+        },
+    )
     rows = r.fetchall()
     if not rows:
         return {
@@ -285,30 +254,24 @@ async def query_episodes_by_chunks(
     matched_chunks = [
         {
             "episode_id": str(row[0]),
-            "sort_order": row[1],
+            "title": row[1],
             "content": row[2],
             "similarity": round(float(row[3]), 4),
         }
         for row in rows
     ]
-    # Phase 4.6: chunk content 일괄 복호화 (Haiku 합성 입력은 평문 필수)
     matched_chunks = await _decrypt_chunk_content(ctx.work_id, matched_chunks)
-    # 회차별 (id, sort_order) 쌍 목록 — 후속 propose_* 도구 호출 시 episode_id 필요
-    seen_ids: dict[str, int] = {}
+    # 회차별 (id, title) 쌍 — 후속 propose_* 도구의 episode_id 인자에 사용
+    seen: dict[str, str] = {}
     for c in matched_chunks:
         eid = c.get("episode_id")
-        if isinstance(eid, str) and eid not in seen_ids:
-            seen_ids[eid] = c["sort_order"]
-    episodes = [
-        {"episode_id": eid, "sort_order": so}
-        for eid, so in sorted(seen_ids.items(), key=lambda kv: kv[1])
-    ]
+        if isinstance(eid, str) and eid not in seen:
+            seen[eid] = c.get("title")
+    episodes = [{"episode_id": eid, "title": title} for eid, title in seen.items()]
 
-    # Haiku 합성
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
     if haiku_model is None:
-        # Fake provider — chunks 그대로 반환
         return {
             "query": query,
             "matched_chunks": matched_chunks,
@@ -318,7 +281,7 @@ async def query_episodes_by_chunks(
         }
 
     chunks_text = "\n---\n".join(
-        f"[{c['sort_order']}화 chunk · sim={c['similarity']}]\n{c['content']}"
+        f"[{c.get('title')} · sim={c['similarity']}]\n{c['content']}"
         for c in matched_chunks
     )
     user_prompt = f"[질의]\n{query}\n\n[검색된 chunks]\n{chunks_text}"

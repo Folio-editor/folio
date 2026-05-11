@@ -22,32 +22,142 @@ logger = logging.getLogger(__name__)
 
 PLANNER_MAX_TOKENS = 6000     # 초안 본문 (3~5K tok) + tool_use 블록 동시 출력 여유
 
+# planner loop 안 history 가 누적되어 Anthropic 200K 한계 (또는 GMS 같은 프록시의
+# 더 작은 body 한계) 에 닿으면 stream 호출이 generic 400 ("Model not found" 등) 으로 떨어진다.
+# 매 iter 시작에 추정 토큰 가드 — 초과 시 graceful 종료.
+# Anthropic 200K - planner 응답 6K - system/tools margin 14K = 안전 ceiling 180K.
+PLANNER_MAX_HISTORY_TOKENS = 180_000
+
+# Tool result decay — 최근 N개 tool exchange 만 본문 유지, 그 이전은 placeholder 로 교체.
+# Anthropic 페어 검증 (assistant.tool_use ↔ user.tool_result 의 tool_use_id 매칭) 은 유지하면서
+# tool_result.content 본문만 짧은 메모로 치환 — 토큰 70~90% 절감, 페어 구조는 보존.
+# 모델은 자기 직전 답변에 결과를 이미 통합해 인용했으므로 옛 raw 결과 재참조 필요 빈도 낮음.
+KEEP_RECENT_TOOL_RESULTS = 6
+TOOL_RESULT_DECAY_PLACEHOLDER = (
+    "[이전 도구 결과는 컨텍스트 절약을 위해 요약 제거되었습니다. "
+    "재참조가 필요하면 도구를 다시 호출하세요.]"
+)
+
+
+def _with_tools_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """tools 배열의 마지막 항목에 ``cache_control: ephemeral`` 부착.
+
+    Anthropic 의 prompt caching 은 cache_control 이 붙은 블록과 그 이전 모든 블록을
+    캐시 단위로 본다. tools 배열에 한 번만 cache_control 을 마킹하면 전체 도구 스키마가
+    캐싱 대상이 되어, 첫 호출 후 (5분 TTL 내) 다음 호출 시 input_tokens 의 4~8K 분
+    (auto 시나리오 39개 도구 schema) 이 0.1× 단가로 청구된다.
+
+    공유 MCP_TOOLS 리스트를 직접 변형하지 않도록 항상 새 dict 로 복제 후 첨부.
+    """
+    if not tools:
+        return tools
+    out = list(tools)
+    last = dict(out[-1])
+    last["cache_control"] = {"type": "ephemeral"}
+    out[-1] = last
+    return out
+
+
+def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """오래된 user.tool_result 의 content 를 placeholder 로 교체.
+
+    Anthropic API 검증 규칙:
+      - assistant.tool_use ↔ user.tool_result.tool_use_id 페어 유지 필수.
+    이 함수는 페어 구조와 tool_use_id 는 그대로 두고 tool_result.content 본문만 치환 →
+    400 에러 없이 토큰만 줄임. 가장 최근 KEEP_RECENT_TOOL_RESULTS 개 tool_result 는 본문 유지.
+
+    파괴적 변경 방지 — 새 list/dict 로 복제. 원본 history 는 DB 저장된 그대로 보존.
+    """
+    if not messages:
+        return messages
+    # 1) tool_result 들의 (msg_idx, block_idx) 을 등장 순으로 수집
+    positions: list[tuple[int, int]] = []
+    for mi, m in enumerate(messages):
+        if m.get("role") != "user":
+            continue
+        c = m.get("content")
+        if not isinstance(c, list):
+            continue
+        for bi, b in enumerate(c):
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                positions.append((mi, bi))
+    if len(positions) <= KEEP_RECENT_TOOL_RESULTS:
+        return messages    # 충분히 적음 — 변경 불필요
+    # 2) 마지막 KEEP_RECENT_TOOL_RESULTS 개 제외, 그 이전은 decay 대상
+    decay_set = set(positions[: -KEEP_RECENT_TOOL_RESULTS])
+    if not decay_set:
+        return messages
+    # 3) 새 messages 합성 (얕은 복사 + 대상 block 만 치환)
+    out: list[dict[str, Any]] = []
+    for mi, m in enumerate(messages):
+        c = m.get("content")
+        if not isinstance(c, list):
+            out.append(m)
+            continue
+        new_c = list(c)
+        changed = False
+        for bi, b in enumerate(c):
+            if (mi, bi) in decay_set and isinstance(b, dict) and b.get("type") == "tool_result":
+                new_c[bi] = {
+                    "type": "tool_result",
+                    "tool_use_id": b.get("tool_use_id", ""),
+                    "content": TOOL_RESULT_DECAY_PLACEHOLDER,
+                }
+                changed = True
+        if changed:
+            out.append({**m, "content": new_c})
+        else:
+            out.append(m)
+    return out
+
+
+def _with_messages_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """가장 최근 메시지의 마지막 content block 에 ``cache_control: ephemeral`` 부착.
+
+    Anthropic prompt cache 는 cache_control 이 붙은 블록 + 그 직전 모든 블록을 한 캐시 단위로
+    본다. 매 iteration 마다 history 가 누적되는데 (system+tools 캐싱만으로는) 누적된 messages 는
+    매번 fresh input 으로 청구되어 비용이 quadratic 폭증한다. 마지막 메시지에 cache 마커를
+    찍어두면 다음 iter 의 stream() 호출 시 그 prefix 전체가 cache_read (0.1× 단가).
+
+    파괴적 변경 방지를 위해 마지막 메시지만 shallow copy. content 가 list 면 마지막 block 만,
+    string 이면 list 로 변환 후 마킹.
+    """
+    if not messages:
+        return messages
+    out = list(messages)
+    last = dict(out[-1])
+    content = last.get("content")
+    if isinstance(content, str):
+        # 문자열 → text block 리스트로 변환 + cache_control
+        last["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(content, list) and content:
+        new_content = list(content)
+        last_block = dict(new_content[-1]) if isinstance(new_content[-1], dict) else None
+        if last_block is not None:
+            last_block["cache_control"] = {"type": "ephemeral"}
+            new_content[-1] = last_block
+            last["content"] = new_content
+    out[-1] = last
+    return out
+
 
 def _build_system_blocks(
     scenario_prompt: str,
     work_meta_block: str,
     summary_so_far: str | None,
 ) -> list[dict[str, Any]]:
+    """system text 블록들. cache_control 은 ★마지막 블록 하나에만★ — Anthropic 의
+    cache marker 한도(요청당 4개) 절약. 마지막 블록에 마커가 있으면 그 직전 모든 블록까지
+    한 캐시 단위로 묶인다 (블록 단위 변하지 않으므로 단일 마커로 충분).
+    """
     blocks: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": scenario_prompt,
-            "cache_control": {"type": "ephemeral"},
-        },
-        {
-            "type": "text",
-            "text": work_meta_block,
-            "cache_control": {"type": "ephemeral"},
-        },
+        {"type": "text", "text": scenario_prompt},
+        {"type": "text", "text": work_meta_block},
     ]
     if summary_so_far:
-        blocks.append(
-            {
-                "type": "text",
-                "text": f"[이전 대화 요약]\n{summary_so_far}",
-                "cache_control": {"type": "ephemeral"},
-            }
-        )
+        blocks.append({"type": "text", "text": f"[이전 대화 요약]\n{summary_so_far}"})
+    # 마지막 블록에만 마커 부착
+    blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
     return blocks
 
 
@@ -106,7 +216,7 @@ async def run_planner_loop(
     """
     scenario = get_scenario(scenario_name)
     allowed = scenario["allowed_tools"]
-    tools = filter_tools(allowed)
+    tools = _with_tools_cache(filter_tools(allowed))
     system_blocks = _build_system_blocks(scenario["system_prompt"], work_meta_block, summary_so_far)
 
     llm = get_llm()
@@ -126,6 +236,21 @@ async def run_planner_loop(
     final_text: str | None = None
 
     while True:
+        # ★ in-loop 컨텍스트 가드 — history 가 ceiling 넘으면 graceful 종료.
+        # tool_result 누적으로 200K 에 닿으면 Anthropic 또는 프록시(GMS 등) 가 generic
+        # 400 으로 거부 → 사용자에겐 의미 없는 "Model not found" 에러로 보인다. 사전 차단.
+        from app.agent.session import estimate_messages_tokens
+        est_history_tokens = estimate_messages_tokens(history)
+        if est_history_tokens > PLANNER_MAX_HISTORY_TOKENS:
+            logger.warning(
+                "planner.context_ceiling_hit scenario=%s est_tokens=%d ceiling=%d — graceful break",
+                scenario_name, est_history_tokens, PLANNER_MAX_HISTORY_TOKENS,
+            )
+            final_text = (
+                f"(컨텍스트가 누적 한계({PLANNER_MAX_HISTORY_TOKENS:,} tok 추정)에 도달해 추가 추론을 중단했습니다. "
+                "현재까지 진행 결과를 반영하며, 같은 thread 의 [압축] 버튼으로 정리 후 이어주세요.)"
+            )
+            break
         response = None
         last_err: Exception | None = None
         # rate_limit / overload 시 최대 3회 backoff (2s → 5s → 10s)
@@ -138,12 +263,25 @@ async def run_planner_loop(
                 # text_delta 만 forward 하면 충분 (C-2: 본문은 자연어로 흐름. tool input json
                 # streaming 은 anthropic default buffering 이라 어차피 batch — forward 무의미).
                 # get_final_message() 가 response.content / usage / stop_reason 자동 합성.
+                # messages 마지막 블록에 cache_control 마킹 → 다음 iter 에서 prefix cache_read
+                # (system + tools 까지 합쳐 cache breakpoint 4개 한도 내 = system 3 + tools 1 + msg 1
+                # 인데 summary_so_far 없으면 4개, 있으면 5개라 마지막 system 캐시 마킹은 summary 가
+                # 있을 때 빼고 모두 안전. summary 있을 때도 messages 캐시가 가장 큰 비용 절감이라
+                # priority 적용. Anthropic 은 마커 4개까지 — 초과 시 가장 이전 마커 무시.)
+                # 마지막 메시지에 cache_control 마커 — prefix cache_read 회수.
+                # 원본 history (DB 영속) 는 그대로 두고 stream 호출용 복제만 가공.
+                # ⚠ 이전에 _decay_old_tool_results (오래된 tool_result 본문 치환) 을 거쳤으나,
+                # 매 iter decay boundary 가 1 씩 밀려 직전까지 verbatim 이던 tool_result 가
+                # placeholder 로 바뀌면 prefix cache 가 그 지점부터 무효화 → cache_create 폭발.
+                # token 절감 효과보다 cache 무효화 손실이 훨씬 큼 → 비활성. 컨텍스트 초과는
+                # PLANNER_MAX_HISTORY_TOKENS 가드 + maybe_compress 가 책임진다.
+                cached_messages = _with_messages_cache(history)
                 async with client.messages.stream(
                     model=sonnet_model,
                     max_tokens=PLANNER_MAX_TOKENS,
                     system=system_blocks,
                     tools=tools,
-                    messages=history,
+                    messages=cached_messages,
                     temperature=0.2,
                 ) as stream:
                     async for ev in stream:
