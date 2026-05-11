@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text as sa_text
+
 from app.db.session import get_session
 from app.middleware.auth import require_internal_api_key
 from app.mcp.context import WriterContext
@@ -32,7 +34,9 @@ router = APIRouter(
 class QuickSummarizeRequest(BaseModel):
     work_id: UUID
     writer_id: UUID
-    sort_order: int
+    # 호환성: backend Java 가 sort_order 로 호출. 내부 변환해 episode_id 로 MCP 도구 호출.
+    sort_order: int | None = None
+    episode_id: UUID | None = None
     force_regenerate: bool = False
 
 
@@ -41,16 +45,32 @@ async def quick_summarize(
     req: QuickSummarizeRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """summarize_episode 도구 단발 호출.
-
-    반환 형식 = 도구 반환값 그대로 (12-필드 + cached/generation_count/usage).
-    에러는 도구가 dict 로 반환 → HTTP 422 로 변환.
-    """
+    """summarize_episode 도구 단발 호출. backend 호환층 — sort_order 받으면 episode_id 변환."""
     ctx = WriterContext(writer_id=req.writer_id, work_id=req.work_id)
+
+    if req.episode_id is None and req.sort_order is None:
+        raise HTTPException(status_code=400, detail={"error": "missing_identifier"})
+
+    ep_id: str
+    if req.episode_id is not None:
+        ep_id = str(req.episode_id)
+    else:
+        r = await session.execute(
+            sa_text(
+                "SELECT id FROM episode "
+                "WHERE work_id = :wid AND writer_id = :wr AND sort_order = :so LIMIT 1"
+            ),
+            {"wid": req.work_id, "wr": req.writer_id, "so": req.sort_order},
+        )
+        row = r.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "episode_not_found"})
+        ep_id = str(row[0])
+
     result = await summarize_episode(
         session,
         ctx,
-        sort_order=req.sort_order,
+        episode_id=ep_id,
         force_regenerate=req.force_regenerate,
     )
 

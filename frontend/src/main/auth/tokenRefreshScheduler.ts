@@ -78,9 +78,6 @@ export function createTokenRefreshScheduler(
   const scheduleNext = (accessToken: string, overrideDelay?: number) => {
     clear();
     const delay = overrideDelay ?? computeDelay(accessToken);
-    console.log(
-      `[auth] proactive refresh 예약 — ${Math.round(delay / 1000)}s 후`,
-    );
     timer = setTimeout(() => {
       void doRefresh();
     }, delay);
@@ -90,7 +87,6 @@ export function createTokenRefreshScheduler(
     try {
       const outcome = await refreshFn();
       if (outcome.kind === 'ok') {
-        console.log('[auth] proactive refresh 성공');
         retryCount = 0;
         scheduleNext(outcome.accessToken);
         return;
@@ -103,9 +99,6 @@ export function createTokenRefreshScheduler(
         return;
       }
       // network / 5xx — 카운터 소진 없이 고정 간격 재시도
-      console.log(
-        `[auth] proactive refresh 네트워크 오류 — ${NETWORK_RETRY_MS / 1000}s 후 재시도 (카운트 미소진)`,
-      );
       clear();
       timer = setTimeout(() => {
         void doRefresh();
@@ -130,9 +123,6 @@ export function createTokenRefreshScheduler(
     const backoff = Math.min(
       BACKOFF_BASE_MS * Math.pow(2, retryCount - 1),
       BACKOFF_MAX_MS,
-    );
-    console.log(
-      `[auth] proactive refresh 재시도 ${retryCount}/${MAX_RETRIES} — ${backoff / 1000}s 후`,
     );
     clear();
     timer = setTimeout(() => {
