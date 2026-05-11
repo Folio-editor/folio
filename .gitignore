@@ -16,6 +16,12 @@ out/
 build/
 *.tsbuildinfo
 
+# TypeScript 컴파일 산출물 (.ts/.tsx 옆에 동명 .js 가 commit 되면 Vite 가 .js 를 우선
+# import 해서 옛 코드로 빌드되는 사고가 발생. landing 패키지 전체에서 .js/.jsx 차단.
+# Vite 가 직접 처리하므로 .js 산출물은 필요 없음.)
+landing/src/**/*.js
+landing/src/**/*.jsx
+
 # electron-builder 자산 디렉토리는 git 추적 (afterPack.js, license_ko.txt 등)
 # build/ 광범위 ignore 보다 우선 적용
 !frontend/build/
