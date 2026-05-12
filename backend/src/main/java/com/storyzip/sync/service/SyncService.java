@@ -378,6 +378,11 @@ public class SyncService {
         }
         // R-6 B-3: status 가 'completed' 로 *새로 진입* 한 경우만 요약 트리거. 매 PUT/PATCH 폭주 방지.
         String prevStatus = (e != null) ? e.getStatus() : null;
+        // 본문 변경 여부 감지용 — applyStr 가 e.content 를 덮기 전에 옛 값 캡처.
+        // PowerSync 는 row 전체를 전송하지만 작가가 본문 외 메타 (sort_order/title 등) 만
+        // 바꿨다면 프론트는 기존 ciphertext 를 그대로 echo (재암호화 X) — 따라서 ciphertext
+        // 직접 비교만으로 본문 변경을 정확히 식별. 비교 일치 → fireIndexing skip (임베딩 비용 절감).
+        String oldContent = (e != null) ? e.getContent() : null;
         if (e == null) {
             if ("PATCH".equals(op)) return;
             e = Episode.builder().id(id).build();
@@ -414,8 +419,16 @@ public class SyncService {
         // - 동일 episode 5초 내 재호출 디바운스 (PUT + PATCH 연속 도착 흡수)
         log.info("[AI-TRACE] processEpisode saved episode={} prevStatus={} newStatus={} workId={} writerId={}",
                 id, prevStatus, e.getStatus(), e.getWorkId(), writerId);
-        episodeIndexingTrigger.fireIndexing(id, e.getWorkId(), writerId);
-        episodeIndexingTrigger.fireSummary(id, e.getWorkId(), writerId, prevStatus, e.getStatus());
+        // 본문 미변경 (sort_order/title/status 등 메타만 갱신) sync 는 indexing skip.
+        // 프론트가 같은 plaintext 에 대해 동일 ciphertext 를 echo 하는 한 ciphertext 비교로 충분.
+        boolean contentChanged = !java.util.Objects.equals(oldContent, e.getContent());
+        if (contentChanged && e.getContent() != null) {
+            episodeIndexingTrigger.fireIndexing(id, e.getWorkId(), writerId);
+        } else {
+            log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=content_unchanged", id);
+        }
+        // summary: 완성 신규 진입 OR (완성 유지 + 본문 변경) — fireSummary 내부 가드 참조.
+        episodeIndexingTrigger.fireSummary(id, e.getWorkId(), writerId, prevStatus, e.getStatus(), contentChanged);
     }
 
     // ── plot_episode_link ─────────────────────────────────────────
