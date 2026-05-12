@@ -164,6 +164,12 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+      # backend 호출 — encrypt_fields / resolve_episode_plaintext 경로.
+      # 누락 시 코드 default(http://backend:8080 + INTERNAL_API_KEY=changeme) 로
+      # 빠져서 ConnectError / 401 → chunk_embed.skip_no_encrypt 영구. 운영 이래
+      # episode_chunk 0건의 원인.
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY must be set in Doppler}
+      BACKEND_INTERNAL_URL: http://spring-boot-blue:8080
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-${CLAUDE_API_KEY}}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       CLAUDE_HAIKU_MODEL: ${CLAUDE_HAIKU_MODEL:-claude-haiku-4-5-20251001}
