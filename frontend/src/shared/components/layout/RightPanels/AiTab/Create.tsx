@@ -14,6 +14,12 @@ import {
   X,
 } from 'lucide-react';
 import { apiClient } from '../../../../lib/apiClient';
+import {
+  analytics,
+  charCountBucket,
+  countBucket,
+  durationBucket,
+} from '../../../../lib/analytics';
 import { useAiSessionStore } from '../../../../stores/aiSessionStore';
 import { ChatMarkdown } from '../../../../features/agent/ChatMarkdown';
 import {
@@ -48,6 +54,10 @@ export function CreateInputScreen({
   async function handleSubmit() {
     if (!selectedWorkId || !canSubmit) return;
     setSubmitting(true);
+    void analytics.track('ai_create_requested', {
+      prompt_char_count_bucket: charCountBucket(prompt.trim().length),
+      reference_char_count_bucket: charCountBucket(referencePrompt.trim().length),
+    });
     try {
       // agent 'card_auto' 시나리오로 thread 생성 — 'auto' 와 동작 동일 (모든 도구 + 의도 자동 분류).
       // 별도 식별자로 분리해 list_threads (채팅 모드 목록) 에 카드 단발 세션이 노출 안 되도록 함.
@@ -66,6 +76,9 @@ export function CreateInputScreen({
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       failCreate(`대화 생성 실패: ${msg}`);
+      void analytics.track('ai_create_failed', {
+        reason_code: 'thread_create_failed',
+      });
       setScreen('create-input');
     } finally {
       setSubmitting(false);
@@ -224,12 +237,14 @@ export function CreateStreamingScreen() {
   const resetCreate = useAiSessionStore((s) => s.resetCreate);
 
   const abortRef = useRef<AbortController | null>(null);
+  const startedAtRef = useRef<number | null>(null);
 
   // 첫 프롬프트 SSE 시작 — threadId 변경 시 1회만.
   useEffect(() => {
     if (!threadId || state !== 'streaming') return;
     const firstPrompt = takePendingFirstPrompt(threadId);
     if (!firstPrompt) return; // 이미 시작했거나 prompt 없음
+    startedAtRef.current = performance.now();
 
     let done = false;
     let userAborted = false; // unmount cleanup 으로 abort 했는지 추적 (사용자 중단 vs 네트워크 끊김 구분)
@@ -299,11 +314,37 @@ export function CreateStreamingScreen() {
             // 단일 도구 호출 종료 — 누적된 toolStream 은 유지 (다음 tool_input_start 시 reset).
           } else if (evt.type === 'done') {
             done = true;
-            finishCreate(evt.suggestion_ids ?? []);
+            const suggestionIds = evt.suggestion_ids ?? [];
+            finishCreate(suggestionIds);
+            const startedAt = startedAtRef.current ?? performance.now();
+            const origin = useAiSessionStore.getState().createOriginScreen;
+            if (origin === 'review-input') {
+              void analytics.track('ai_review_succeeded', {
+                doc_type: 'episode',
+                duration_bucket: durationBucket(performance.now() - startedAt),
+              });
+            } else {
+              void analytics.track('ai_create_succeeded', {
+                duration_bucket: durationBucket(performance.now() - startedAt),
+                suggestion_count_bucket: countBucket(suggestionIds.length),
+              });
+            }
             return true;
           } else if (evt.type === 'error') {
             done = true;
-            failCreate(`${evt.error_type ?? 'error'}: ${evt.error_message ?? ''}`);
+            const reasonCode = evt.error_type ?? 'error';
+            failCreate(`${reasonCode}: ${evt.error_message ?? ''}`);
+            const origin = useAiSessionStore.getState().createOriginScreen;
+            if (origin === 'review-input') {
+              void analytics.track('ai_review_failed', {
+                doc_type: 'episode',
+                reason_code: reasonCode,
+              });
+            } else {
+              void analytics.track('ai_create_failed', {
+                reason_code: reasonCode,
+              });
+            }
             return true;
           }
         },
@@ -317,6 +358,17 @@ export function CreateStreamingScreen() {
           }
           // 진짜 stream 비정상 종료 — propose 도구 호출 전에 끊겼을 가능성. 명확한 에러 표시.
           failCreate('연결이 끊어졌습니다 — 다시 만들기로 재시도해주세요.');
+          const origin = useAiSessionStore.getState().createOriginScreen;
+          if (origin === 'review-input') {
+            void analytics.track('ai_review_failed', {
+              doc_type: 'episode',
+              reason_code: 'stream_disconnected',
+            });
+          } else {
+            void analytics.track('ai_create_failed', {
+              reason_code: 'stream_disconnected',
+            });
+          }
         },
         (err) => {
           // userAborted 면 모든 onError 무시 (apiClient 가 AbortError 는 이미 swallow,
@@ -325,6 +377,17 @@ export function CreateStreamingScreen() {
           if (userAborted) return;
           const msg = err instanceof Error ? err.message : String(err);
           failCreate(`전송 실패: ${msg}`);
+          const origin = useAiSessionStore.getState().createOriginScreen;
+          if (origin === 'review-input') {
+            void analytics.track('ai_review_failed', {
+              doc_type: 'episode',
+              reason_code: 'stream_send_failed',
+            });
+          } else {
+            void analytics.track('ai_create_failed', {
+              reason_code: 'stream_send_failed',
+            });
+          }
         },
       )
       .then((controller) => {
@@ -333,6 +396,17 @@ export function CreateStreamingScreen() {
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         failCreate(`연결 실패: ${msg}`);
+        const origin = useAiSessionStore.getState().createOriginScreen;
+        if (origin === 'review-input') {
+          void analytics.track('ai_review_failed', {
+            doc_type: 'episode',
+            reason_code: 'stream_connect_failed',
+          });
+        } else {
+          void analytics.track('ai_create_failed', {
+            reason_code: 'stream_connect_failed',
+          });
+        }
       });
 
     return () => {

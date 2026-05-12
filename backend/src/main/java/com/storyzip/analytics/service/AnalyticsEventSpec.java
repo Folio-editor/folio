@@ -41,6 +41,20 @@ final class AnalyticsEventSpec {
             Map.entry("ai_review_requested", Set.of("doc_type", "char_count_bucket")),
             Map.entry("ai_review_succeeded", Set.of("doc_type", "duration_bucket")),
             Map.entry("ai_review_failed", Set.of("doc_type", "reason_code")),
+            Map.entry("ai_feature_opened", Set.of("feature")),
+            Map.entry("ai_create_requested", Set.of("prompt_char_count_bucket", "reference_char_count_bucket")),
+            Map.entry("ai_create_succeeded", Set.of("duration_bucket", "suggestion_count_bucket")),
+            Map.entry("ai_create_failed", Set.of("reason_code")),
+            Map.entry("ai_spellcheck_requested", Set.of("doc_type", "check_scope", "char_count_bucket")),
+            Map.entry("ai_spellcheck_succeeded", Set.of(
+                    "doc_type",
+                    "check_scope",
+                    "duration_bucket",
+                    "issue_count_bucket")),
+            Map.entry("ai_spellcheck_failed", Set.of("doc_type", "check_scope", "reason_code")),
+            Map.entry("ai_summarize_requested", Set.of("doc_type")),
+            Map.entry("ai_summarize_succeeded", Set.of("doc_type", "duration_bucket", "cached")),
+            Map.entry("ai_summarize_failed", Set.of("doc_type", "reason_code")),
             Map.entry("theme_changed", Set.of("theme_id", "mode"))
     );
 

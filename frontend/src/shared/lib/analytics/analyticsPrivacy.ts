@@ -40,6 +40,21 @@ const EVENT_PARAMS: Record<AnalyticsEventName, Set<string>> = {
   ai_review_requested: new Set(['doc_type', 'char_count_bucket']),
   ai_review_succeeded: new Set(['doc_type', 'duration_bucket']),
   ai_review_failed: new Set(['doc_type', 'reason_code']),
+  ai_feature_opened: new Set(['feature']),
+  ai_create_requested: new Set(['prompt_char_count_bucket', 'reference_char_count_bucket']),
+  ai_create_succeeded: new Set(['duration_bucket', 'suggestion_count_bucket']),
+  ai_create_failed: new Set(['reason_code']),
+  ai_spellcheck_requested: new Set(['doc_type', 'check_scope', 'char_count_bucket']),
+  ai_spellcheck_succeeded: new Set([
+    'doc_type',
+    'check_scope',
+    'duration_bucket',
+    'issue_count_bucket',
+  ]),
+  ai_spellcheck_failed: new Set(['doc_type', 'check_scope', 'reason_code']),
+  ai_summarize_requested: new Set(['doc_type']),
+  ai_summarize_succeeded: new Set(['doc_type', 'duration_bucket', 'cached']),
+  ai_summarize_failed: new Set(['doc_type', 'reason_code']),
   theme_changed: new Set(['theme_id', 'mode']),
 };
 

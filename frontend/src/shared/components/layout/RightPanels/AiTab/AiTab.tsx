@@ -9,7 +9,12 @@ import {
 } from 'lucide-react';
 import { apiClient, ApiError } from '../../../../lib/apiClient';
 import { getRegisteredEditor } from '../../../../lib/activeEditorRegistry';
-import { analytics, charCountBucket } from '../../../../lib/analytics';
+import {
+  analytics,
+  charCountBucket,
+  countBucket,
+  durationBucket,
+} from '../../../../lib/analytics';
 import { useAgentChatStore } from '../../../../stores/agentChatStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useWalletStore } from '../../../../stores/walletStore';
@@ -251,6 +256,13 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     };
 
     startSpellcheck(episode, selectionRange);
+    const startedAt = performance.now();
+
+    void analytics.track('ai_spellcheck_requested', {
+      doc_type: 'episode',
+      check_scope: mode,
+      char_count_bucket: charCountBucket(contentToSend.length),
+    });
 
     try {
       // 카드 모드 = 큐 적재 통합 endpoint (/ai/quick/spellcheck) — issues + suggestion_id 반환.
@@ -269,6 +281,12 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
       });
       const spellcheckResult = data ?? { issues: [], summary: '맞춤법 검사가 완료되었습니다.' };
       finishSpellcheck(spellcheckResult);
+      void analytics.track('ai_spellcheck_succeeded', {
+        doc_type: 'episode',
+        check_scope: mode,
+        duration_bucket: durationBucket(performance.now() - startedAt),
+        issue_count_bucket: countBucket(spellcheckResult.issues.length),
+      });
       refreshWalletAfterUsage();
       // 큐 적재 알림 — 0건이면 무관, 적재 실패 시 inline UI 만 사용.
       if (data?.suggestion_id) {
@@ -283,6 +301,11 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSpellcheck(message);
+      void analytics.track('ai_spellcheck_failed', {
+        doc_type: 'episode',
+        check_scope: mode,
+        reason_code: err instanceof ApiError ? String(err.status) : 'unknown',
+      });
       refreshWalletAfterUsage();
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
         ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
@@ -306,6 +329,11 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     };
 
     startSummarize(episode);
+    const startedAt = performance.now();
+
+    void analytics.track('ai_summarize_requested', {
+      doc_type: 'episode',
+    });
 
     try {
       const data = await apiClient.post<import('../../../../stores/aiSessionStore').SummarizeResult>(
@@ -320,10 +348,19 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
         throw new Error('빈 응답');
       }
       finishSummarize(data);
+      void analytics.track('ai_summarize_succeeded', {
+        doc_type: 'episode',
+        duration_bucket: durationBucket(performance.now() - startedAt),
+        cached: data.cached === true,
+      });
       refreshWalletAfterUsage();
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSummarize(message);
+      void analytics.track('ai_summarize_failed', {
+        doc_type: 'episode',
+        reason_code: err instanceof ApiError ? String(err.status) : 'unknown',
+      });
       refreshWalletAfterUsage();
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
         ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
@@ -435,7 +472,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <button
         type="button"
-        onClick={() => setScreen('create-input')}
+        onClick={() => {
+          void analytics.track('ai_feature_opened', { feature: 'create' });
+          setScreen('create-input');
+        }}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <PenSquare size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -449,7 +489,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('review-input')}
+        onClick={() => {
+          void analytics.track('ai_feature_opened', { feature: 'review' });
+          setScreen('review-input');
+        }}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SearchCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -463,7 +506,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('spellcheck-input')}
+        onClick={() => {
+          void analytics.track('ai_feature_opened', { feature: 'spellcheck' });
+          setScreen('spellcheck-input');
+        }}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SpellCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -477,7 +523,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('summarize-input')}
+        onClick={() => {
+          void analytics.track('ai_feature_opened', { feature: 'summarize' });
+          setScreen('summarize-input');
+        }}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <ScrollText size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />

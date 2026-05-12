@@ -103,6 +103,48 @@ export type AnalyticsEventMap = {
     doc_type: string;
     reason_code: string;
   };
+  ai_feature_opened: {
+    feature: string;
+  };
+  ai_create_requested: {
+    prompt_char_count_bucket: string;
+    reference_char_count_bucket: string;
+  };
+  ai_create_succeeded: {
+    duration_bucket: string;
+    suggestion_count_bucket: string;
+  };
+  ai_create_failed: {
+    reason_code: string;
+  };
+  ai_spellcheck_requested: {
+    doc_type: string;
+    check_scope: 'episode' | 'selection';
+    char_count_bucket: string;
+  };
+  ai_spellcheck_succeeded: {
+    doc_type: string;
+    check_scope: 'episode' | 'selection';
+    duration_bucket: string;
+    issue_count_bucket: string;
+  };
+  ai_spellcheck_failed: {
+    doc_type: string;
+    check_scope: 'episode' | 'selection';
+    reason_code: string;
+  };
+  ai_summarize_requested: {
+    doc_type: string;
+  };
+  ai_summarize_succeeded: {
+    doc_type: string;
+    duration_bucket: string;
+    cached: boolean;
+  };
+  ai_summarize_failed: {
+    doc_type: string;
+    reason_code: string;
+  };
   theme_changed: {
     theme_id: string;
     mode: string;
