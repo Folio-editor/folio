@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -169,7 +170,8 @@ public class AgentController {
     public SseEmitter streamMessage(
             @PathVariable String threadId,
             @RequestBody MessageClientRequest body,
-            Authentication auth
+            Authentication auth,
+            HttpServletResponse response
     ) {
         UUID writerUuid = UUID.fromString(auth.getName());
         Map<String, Object> thread = aiClient.getAgentThread(threadId);
@@ -178,6 +180,13 @@ public class AgentController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "thread owner mismatch");
         }
         ensureBalance(writerUuid, MIN_BALANCE.getOrDefault(scenario, 100));
+        // nginx 가 응답을 버퍼링하면 SSE 이벤트가 8KB 단위로 모였다가 client 로 흘러 가
+        // step 카드/heartbeat 가 실시간으로 안 보이고, 도구 idle 침묵 구간이 nginx
+        // proxy_read_timeout 을 초과할 때 연결이 끊긴다. nginx 는 upstream 응답에
+        // X-Accel-Buffering: no 가 있으면 자동으로 buffering off — location 설정과
+        // 독립적인 안전망. FastAPI 도 동일 헤더를 보낸다 (ai/app/api/v1/agent.py:195).
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Cache-Control", "no-cache");
         SseEmitter emitter = new SseEmitter(10 * 60 * 1000L);    // 10분 timeout
         aiClient.streamAgentMessage(threadId, new AgentMessageRequest(body.message()), emitter);
         return emitter;
