@@ -41,13 +41,26 @@ const EVENT_PARAMS: Record<AnalyticsEventName, Set<string>> = {
   ai_review_succeeded: new Set(['doc_type', 'duration_bucket']),
   ai_review_failed: new Set(['doc_type', 'reason_code']),
   theme_changed: new Set(['theme_id', 'mode']),
+  // P0 (2026-05-12) — 결제·AI 결과·암호화 실패·로그인 보강
+  checkout_initiated: new Set(['product_type', 'amount_bucket']),
+  payment_succeeded: new Set(['product_type', 'amount_bucket']),
+  payment_failed: new Set(['product_type', 'reason_code']),
+  ai_spellcheck_requested: new Set(['doc_type', 'char_count_bucket', 'mode']),
+  ai_spellcheck_succeeded: new Set(['doc_type', 'issue_count_bucket', 'duration_bucket']),
+  ai_feature_insufficient_credits: new Set(['feature_type']),
+  decryption_failure: new Set(['field_type', 'reason_code']),
+  kek_derivation_failed: new Set(['reason_code']),
+  sync_decision_made: new Set(['decision', 'is_new_user']),
+  document_edit_failed: new Set(['doc_type', 'reason_code']),
 };
 
 export function sanitizeAnalyticsParams(
   eventName: AnalyticsEventName,
   params: Record<string, unknown>,
 ): Record<string, string | number | boolean> {
-  const allowed = EVENT_PARAMS[eventName];
+  // 미등록 이벤트가 와도 throw 하지 않도록 fallback — 이전 누락으로 결제 취소 시
+  // TypeError 발생한 회귀 차단. 미등록이면 COMMON_PARAMS 만 통과.
+  const allowed = EVENT_PARAMS[eventName] ?? new Set<string>();
   const sanitized: Record<string, string | number | boolean> = {};
 
   for (const [key, value] of Object.entries(params)) {
