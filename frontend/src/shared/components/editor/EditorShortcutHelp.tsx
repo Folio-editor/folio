@@ -56,10 +56,6 @@ const categories: ShortcutCategory[] = [
       { keys: 'Ctrl+H', label: '바꾸기' },
     ],
   },
-  {
-    title: '집필 모드',
-    shortcuts: [{ keys: 'Ctrl+Shift+F', label: '집중 모드 토글' }],
-  },
 ];
 
 interface MarkdownEntry {

@@ -396,6 +396,43 @@ services:
     networks:
       - folio-net
 
+  # ─── B-2 (MONITORING_AUDIT): NGINX 메트릭 익스포터 ────────
+  # nginx stub_status (port 8888) → Prometheus 잡 'nginx' 가 9113 scrape.
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.3.0
+    container_name: folio-nginx-exporter
+    command:
+      - '-nginx.scrape-uri=http://nginx:8888/nginx_status'
+    depends_on:
+      nginx:
+        condition: service_healthy
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+    labels:
+      service: nginx-exporter
+      environment: production
+
+  # ─── B-4 (MONITORING_AUDIT): Celery 메트릭 익스포터 ───────
+  # Redis broker 를 폴링 (worker 코드 변경 X). 큐 길이/처리율/실패율 노출.
+  celery-exporter:
+    image: danihodovic/celery-exporter:0.10.10
+    container_name: folio-celery-exporter
+    environment:
+      CE_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in Doppler}@redis:6379/1
+      CE_ACCEPT_CONTENT: '["json","pickle"]'
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    logging: *default-logging
+    networks:
+      - folio-net
+    labels:
+      service: celery-exporter
+      environment: production
+
 networks:
   folio-net:
     name: folio-net

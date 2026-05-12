@@ -42,3 +42,13 @@ export function countBucket(count: number): string {
   if (count <= 50) return '11_50';
   return '50_plus';
 }
+
+/** 결제 금액(KRW) 버킷 — 정확한 단가 노출 X, 분포만 추적. */
+export function amountBucket(krw: number): string {
+  if (krw <= 0) return '0';
+  if (krw < 5_000) return 'under_5k';
+  if (krw < 15_000) return '5k_15k';
+  if (krw < 30_000) return '15k_30k';
+  if (krw < 100_000) return '30k_100k';
+  return '100k_plus';
+}
