@@ -53,10 +53,14 @@ scrape_configs:
         replacement: folio
 
     pipeline_stages:
-      # ─── 1. 라인 크기 제한 (8KB 초과 드롭) ─────────────────
-      # 프롬프트, stack trace, 에피소드 본문 유출 1차 차단
+      # ─── 1. 라인 크기 제한 ─────────────────────────────────
+      # 프롬프트/에피소드 본문 유출 1차 차단. 32KB 로 상향 — structlog JSON 으로
+      # logger.exception 호출 시 traceback 한 줄이 10~20KB 흔함. 과거 8KB 컷은
+      # agent.sse_failed / agent.runner_failed / planner.tool_failed 같은 진단 핵심
+      # 로그를 통째로 드롭시켜 Loki 에서 흔적 없이 사라지게 했다. 32KB 면 일반적인
+      # 에피소드 본문(~수십KB)은 여전히 차단하면서 traceback 은 보존한다.
       - drop:
-          longer_than: 8KB
+          longer_than: 32KB
           drop_counter_reason: "oversized_line"
 
       # ─── 2. JSON 로그 파싱 (backend/ai/celery/powersync) ───
