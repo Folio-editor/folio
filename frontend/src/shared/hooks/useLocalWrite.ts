@@ -430,32 +430,18 @@ export function useLocalWrite() {
     },
 
     // ── character_note ───────────────────────────────────────
-    /** 캐릭터에 기본 노트(외형·성격)가 없으면 자동 생성 (INSERT OR IGNORE로 중복 방지) */
+    /** 캐릭터에 기본 'intro' 노트 1개 보장 (INSERT OR IGNORE로 중복 방지).
+     *  외형/성격은 더 이상 자동 생성하지 않는다 — intro 본문에 작성하거나, 사용자가
+     *  명시적으로 요청 시 createCharacterNote(kind='custom') 또는 agent 의
+     *  propose_character_update(field='appearance' 등) 으로 별도 노트 추가. */
     ensureCharacterNotes: async (workId: string, characterId: string): Promise<void> => {
       const now = new Date().toISOString();
-      // 기본 노트 3개의 title도 암호화 — '한 줄 소개'/'외형'/'성격'은 평문 자체가 메타지만
-      // 복호화 일관성(모든 character_note.title은 동일 처리)을 위해 암호화한다.
       const encIntroTitle = await encryptWorkField(workId, '한 줄 소개', now);
-      const encAppearanceTitle = await encryptWorkField(workId, '외형', now);
-      const encPersonalityTitle = await encryptWorkField(workId, '성격', now);
       await db.execute(
         `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
          SELECT ?, ?, ?, 'intro', ?, NULL, 0, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'intro')`,
         [crypto.randomUUID(), characterId, writerId, encIntroTitle, now, now, characterId],
-      );
-      // INSERT OR IGNORE — 이미 동일 kind가 있으면 무시 (race condition 방지)
-      await db.execute(
-        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'appearance', ?, NULL, 1, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'appearance')`,
-        [crypto.randomUUID(), characterId, writerId, encAppearanceTitle, now, now, characterId],
-      );
-      await db.execute(
-        `INSERT OR IGNORE INTO character_note (id, character_id, writer_id, kind, title, content, sort_order, created_at, updated_at)
-         SELECT ?, ?, ?, 'personality', ?, NULL, 2, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM character_note WHERE character_id = ? AND kind = 'personality')`,
-        [crypto.randomUUID(), characterId, writerId, encPersonalityTitle, now, now, characterId],
       );
     },
     /**

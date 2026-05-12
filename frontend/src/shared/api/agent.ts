@@ -11,7 +11,8 @@
 import { apiClient } from '../lib/apiClient';
 
 export type AgentScenario =
-  | 'auto'
+  | 'auto'         // 채팅 모드 (다회 turn, list_threads 에 노출)
+  | 'card_auto'    // 카드 모드 자유 문서 생성 (단발, list_threads 에서 제외 — auto 와 동일 동작 alias)
   | 'draft_next'
   | 'consistency_check'
   | 'revision'
@@ -24,6 +25,7 @@ export type AgentScenario =
 // 비동기는 'auto' 1종에 통합 (모든 호출 Celery 경유 → 진행률 폴링).
 export const ASYNC_SCENARIOS = new Set<AgentScenario>([
   'auto',
+  'card_auto',
   'draft_next',
   'revision',
   'consistency_check',
@@ -100,7 +102,9 @@ export interface AgentSuggestion {
 // ─────── Threads ───────
 
 export function createAgentThread(workId: string, scenario: AgentScenario, title?: string) {
-  return apiClient.post<{ threadId: string; scenario: AgentScenario; title: string | null }>(
+  // ★ wire format 은 snake_case ('thread_id') — backend AgentThreadResponse 가 @JsonProperty 로
+  // 강제하므로 camelCase 로 잘못 읽으면 undefined 반환되어 신규 thread 자동 진입 실패.
+  return apiClient.post<{ thread_id: string; scenario: AgentScenario; title: string | null }>(
     '/agent/threads',
     { workId, scenario, title },
   );
@@ -114,6 +118,22 @@ export function listAgentThreads(workId: string) {
 
 export function getAgentThread(threadId: string) {
   return apiClient.get<AgentThreadDetail>(`/agent/threads/${threadId}`);
+}
+
+export function deleteAgentThread(threadId: string) {
+  return apiClient.delete<void>(`/agent/threads/${threadId}`);
+}
+
+export interface AgentCompressResult {
+  compressed: boolean;
+  reason?: string;
+  before: { messages_count: number; estimated_tokens: number };
+  after: { messages_count: number; estimated_tokens: number };
+  summary_so_far_len: number;
+}
+
+export function compressAgentThread(threadId: string) {
+  return apiClient.post<AgentCompressResult>(`/agent/threads/${threadId}/compress`, {});
 }
 
 export function sendAgentMessage(threadId: string, message: string) {
@@ -223,9 +243,23 @@ export function listSuggestions(status?: string, entityType?: string) {
   return apiClient.get<AgentSuggestion[]>(`/agent/suggestions${qs ? '?' + qs : ''}`);
 }
 
-export function patchSuggestion(id: string, status: 'confirmed' | 'rejected', reviewerNote?: string) {
+/**
+ * @param selectedIndices - spelling_batch 전용. 작가가 체크한 fix idx 배열 (예: [0, 2, 5]).
+ *   null/undefined → 모두 적용. 다른 entity_type 에선 무시.
+ */
+export function patchSuggestion(
+  id: string,
+  status: 'confirmed' | 'rejected',
+  reviewerNote?: string,
+  selectedIndices?: number[],
+) {
   return apiClient.patch<{ id: string; status: string }>(`/agent/suggestions/${id}`, {
     status,
     reviewerNote,
+    selectedIndices,
   });
+}
+
+export function deleteSuggestion(id: string) {
+  return apiClient.delete<void>(`/agent/suggestions/${id}`);
 }

@@ -24,6 +24,7 @@ from app.mcp.tools.episode_search import (
     query_episodes_by_chunks,
     search_episode_chunks,
 )
+from app.mcp.tools.episode_spellcheck import check_spelling
 from app.mcp.tools.episode_summary import (
     get_episode_summary,
     list_all_oneline_summaries,
@@ -42,6 +43,9 @@ from app.mcp.tools.proposals import (
     propose_plot_delete,
     propose_plot_revision,
     propose_plot_tree,
+    propose_review_issue,
+    propose_spelling_fix,
+    propose_spelling_fix_batch,
     propose_world_note,
     propose_world_note_delete,
     propose_world_note_update,
@@ -130,8 +134,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "query_episodes_by_chunks",
         "description": (
-            "**자유 텍스트 질의** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
-            "고정 ~10 크레딧, 회차 수 무관. 예: '주인공의 트라우마 묘사', '한중 이주 장면'. "
+            "**자유 텍스트 질의 (벡터)** — 작품 전체에서 query 와 의미 가까운 chunk top-k → Haiku 합성 답변. "
+            "★고정 ~10 크레딧, 회차 수 무관★ — 50화+ 작품 검수/탐색 시 압도적으로 싸다. "
+            "검수 시 모순 후보 추적 적극 활용: '앤의 머리색 묘사', '주인공 부친 사망 언급', 'X 사건 회상'. "
+            "예: 인물 외형 모순 의심 → query 로 모든 묘사 모아 비교 → 모순 회차 식별 → 그 회차만 fetch. "
             "기준 회차에서 출발하는 관련성 탐색은 find_relevant_episodes (~1 크레딧)."
         ),
         "input_schema": {
@@ -139,8 +145,6 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string", "description": "검색 + 합성 질의 (한국어)"},
                 "k": {"type": "integer", "description": "검색 chunk 수 (기본 10, 상한 30)", "default": 10},
-                "sort_order_min": {"type": "integer", "description": "(옵션) 회차 범위 시작"},
-                "sort_order_max": {"type": "integer", "description": "(옵션) 회차 범위 끝"},
             },
             "required": ["query"],
         },
@@ -170,24 +174,22 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_all_oneline_summaries",
         "description": (
-            "작품 전체 회차의 한 줄 요약·시점·톤만 sort_order 순서로 1회 호출 반환. "
-            "agent 가 작품 흐름 / 일관성 검수 시작점에 활용 (300화 ≈ 13.5K tok). "
-            "상세 필요 시 get_episode_summary(sort_order) 또는 list_episode_summaries 로 drill-down."
+            "작품 전체 회차의 한 줄 요약·시점·톤만 시간 순으로 1회 호출 반환. "
+            "★배열 순서 자체가 시간 순★ (회차 번호·sort_order 같은 별도 정렬값 노출 X). "
+            "각 행은 episode_id (UUID) 와 title 보유. 300화 ≈ 13.5K tok. "
+            "상세 필요 시 get_episode_summary(episode_id) 로 drill-down."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "list_episode_summaries",
         "description": (
-            "회차 요약 목록을 sort_order 순서로 조회합니다. "
-            "각 행은 한 줄 요약·시점 인물·톤·등장 인물·끝점만 담은 간략 정보. "
-            "회차 흐름을 빠르게 스캔할 때 사용합니다."
+            "회차 요약 목록을 시간 순으로 조회 (페이지네이션). "
+            "각 행은 한 줄 요약·시점 인물·톤·등장 인물·끝점 + episode_id (UUID) + title."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "start_sort": {"type": "integer", "description": "시작 sort_order (포함)"},
-                "end_sort": {"type": "integer", "description": "끝 sort_order (포함)"},
                 "limit": {"type": "integer", "description": "최대 결과 수 (기본 20, 상한 100)", "default": 20},
                 "offset": {"type": "integer", "description": "오프셋 (기본 0)", "default": 0},
             },
@@ -197,15 +199,15 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_episode_summary",
         "description": (
-            "**캐시 hit 용** — episode_summary 행 존재 시 (list_episodes 의 has_summary=True) "
-            "단건 12-필드 메타 반환 (Haiku 0회). 행 없으면 null → summarize_episode 호출 필요."
+            "**캐시 hit 용** — episode_summary 행 존재 시 단건 12-필드 메타 반환 (Haiku 0회). "
+            "행 없으면 null → summarize_episode 호출 필요."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID (list_episodes 등의 id)"},
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     {
@@ -234,8 +236,8 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "track_foreshadow",
         "description": (
-            "심어진 복선과 회수된 회차를 짝지어 반환합니다. "
-            "paid_off_sort 가 NULL 이면 미회수. 검수 시 1회 호출로 회수 누락 점검."
+            "심어진 복선과 회수된 회차를 짝지어 반환. paid_off_episode_id 가 NULL 이면 미회수. "
+            "검수 시 1회 호출로 회수 누락 점검."
         ),
         "input_schema": {
             "type": "object",
@@ -248,15 +250,13 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "character_arc",
         "description": (
-            "특정 인물의 회차별 변화 시계열 반환. "
-            "sort_order, oneline_summary, tone, is_pov, key_events, cliffhanger."
+            "특정 인물의 회차별 변화 시계열 반환 (배열 시간 순). "
+            "각 행: {episode_id, title, oneline_summary, tone, is_pov, key_events, cliffhanger}."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "추적할 인물 이름"},
-                "start_sort": {"type": "integer"},
-                "end_sort": {"type": "integer"},
             },
             "required": ["name"],
         },
@@ -264,24 +264,18 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "timeline_scan",
         "description": (
-            "회차별 time_progression 과 cliffhanger 만 sort_order 순서로 반환. "
-            "시간선 일관성 검수에 사용."
+            "회차별 time_progression 과 cliffhanger 만 시간 순으로 반환 (시간선 일관성 검수용). "
+            "각 행: {episode_id, title, oneline_summary, time_progression, cliffhanger}."
         ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "start_sort": {"type": "integer"},
-                "end_sort": {"type": "integer"},
-            },
-            "required": [],
-        },
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     # ───────── Phase 4: episode 직접 조회 ─────────
     {
         "name": "list_episodes",
         "description": (
             "**peek 용** — 회차 존재·has_summary 확인. 모든 회차 작업의 첫 단계. "
-            "각 행: {sort_order, title, status, word_count, has_summary}. "
+            "★반환 배열은 시간 순★ — 회차 번호·sort_order 노출 X. 각 행: {id, title, status, word_count, has_summary}. "
+            "id 가 episode_id (UUID) — 후속 도구 호출 시 식별자. "
             "drill: has_summary=True 면 get_episode_summary, False 면 summarize_episode."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -290,21 +284,20 @@ MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "find_relevant_episodes",
         "description": (
-            "**peek 용** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
-            "DB-only ~1 크레딧 (Haiku·임베딩 호출 0회). 다음 화 초안 시 직전 화 기준으로 호출 → "
-            "관련 있는 회차만 골라 summarize_episode/get_episode_summary 로 drill. "
-            "**전제: reference_sort_order 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
-            "list_episodes 결과의 word_count 또는 has_summary 로 사전 확인. "
-            "본문 비어있는 회차를 reference 로 주면 결과 0 + suggested_reference 반환 — 그걸로 재호출."
+            "**peek 용 (벡터)** — 기준 회차의 chunk 임베딩과 의미상 가까운 다른 회차 top-k. "
+            "★DB-only ~1 크레딧★ — 50화+ 검수/초안 시 부담 0에 가깝다.\n"
+            "유스케이스: 회차 검수 시 대상 회차 기준 → 의미상 인접 회차 자동 발굴 → 모순 후보지로 우선 drill.\n"
+            "**전제: reference_episode_id 회차는 본문이 작성되어 있어야 함 (word_count>0)**. "
+            "본문 비어있으면 결과 0 + suggested_reference_episode_id 반환 — 그걸로 재호출."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "reference_sort_order": {"type": "integer", "description": "기준 회차 sort_order"},
+                "reference_episode_id": {"type": "string", "description": "기준 회차 UUID"},
                 "k": {"type": "integer", "description": "top-k (기본 5, 상한 20)", "default": 5},
                 "exclude_self": {"type": "boolean", "description": "기준 회차 자기 자신 제외 (기본 true)", "default": True},
             },
-            "required": ["reference_sort_order"],
+            "required": ["reference_episode_id"],
         },
     },
     # ───────── Phase 4: 평문 fetch ─────────
@@ -319,48 +312,53 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
                 "force_regenerate": {
                     "type": "boolean",
                     "description": "캐시 무시하고 재생성 (기본 false)",
                     "default": False,
                 },
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     {
         "name": "analyze_episode",
         "description": (
             "**drill 용 (자유 task)** — 단건 회차 본문에서 task 별 추출. "
-            "12-필드 표준 요약은 summarize_episode 사용. 본 도구는 양식 외 분석 (예: '복선 회차별 추적', "
+            "12-필드 표준 요약은 summarize_episode 사용. 양식 외 분석 (예: '복선 회차별 추적', "
             "'특정 인물 대사만 추출') 에 한정. Haiku 결과 1회성 — episode_summary 적재 X."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
-                "task": {
-                    "type": "string",
-                    "description": "Haiku 가 본문에서 추출할 작업 지시 (한국어)",
-                },
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
+                "task": {"type": "string", "description": "Haiku 가 본문에서 추출할 작업 지시 (한국어)"},
             },
-            "required": ["sort_order", "task"],
+            "required": ["episode_id", "task"],
         },
     },
     {
         "name": "fetch_episode_plaintext",
         "description": (
             "**drill 용 (raw)** — 회차 평문 그대로 fetch (Vault Transit). "
-            "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode 또는 "
-            "analyze_episode 가 ~70% 저렴. 토큰 비용 큼 — 호출 제한적."
+            "재작성·인용·정확한 문장 분석에만. 정보 추출이 목적이면 summarize_episode/analyze_episode 가 더 저렴. "
+            "검수 (propose_review_issue) 시엔 with_line_numbers=true — [N] 라인 prefix 형식 본문 반환."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "sort_order": {"type": "integer", "description": "조회할 회차 sort_order"},
+                "episode_id": {"type": "string", "description": "조회할 회차 UUID"},
+                "with_line_numbers": {
+                    "type": "boolean",
+                    "description": (
+                        "true 면 본문을 '[1] ...\\n[2] ...' 형식으로 반환. propose_review_issue 의 "
+                        "lines 필드와 1:1 매칭. 검수 목적이면 반드시 true."
+                    ),
+                    "default": False,
+                },
             },
-            "required": ["sort_order"],
+            "required": ["episode_id"],
         },
     },
     # ───────── Phase 4.5: 요약 일괄 백필 ─────────
@@ -368,15 +366,11 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "name": "request_episode_summary_backfill",
         "description": (
             "**사용자 명시 요청 + 확답 후만** — status='완성' + 미요약/stale 회차들의 요약 task 를 "
-            "Celery 큐에 적재. 작가에게 회차당 Haiku 비용 청구되므로 임의 트리거 X. "
-            "단발 회차 요약은 summarize_episode (agent run 내 처리) 가 더 가벼움. "
-            "300화 일괄 백필처럼 명시적 요청에만 사용."
+            "Celery 큐에 적재. 작가에게 회차당 Haiku 비용 청구되므로 임의 트리거 X."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "start_sort": {"type": "integer", "description": "(옵션) 시작 sort_order (포함)"},
-                "end_sort": {"type": "integer", "description": "(옵션) 끝 sort_order (포함)"},
                 "limit": {
                     "type": "integer",
                     "description": "한 번에 적재 max (기본 50, 상한 200)",
@@ -413,29 +407,55 @@ MCP_TOOLS: list[dict[str, Any]] = [
     # ───────── Phase 4: 작가 승인 큐 (extraction_suggestion 에 pending) ─────────
     {
         "name": "propose_character",
-        "description": "신규 등장 인물 등록 제안 (작가 승인 후 character 테이블 INSERT).",
+        "description": (
+            "신규 등장 인물 등록 제안 (작가 승인 후 character 테이블 INSERT). "
+            "외형·성격을 포함한 모든 인물 서술은 단일 'intro' 한 단락으로 합쳐 작성한다 — "
+            "외형/성격을 별도 노트로 분리하지 말 것. 작가가 '외형 노트 따로 만들어줘' 등 "
+            "명시적으로 지시한 경우에 한해 propose_character_update(field='appearance' 등) 사용."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
                 "role": {"type": "string"},
-                "gender": {"type": "string"},
+                "gender": {
+                    "type": "string",
+                    "enum": ["남", "여", "기타", "미설정"],
+                    "description": (
+                        "프론트 위지윅이 아이콘으로 매핑하는 정규 값만 허용. "
+                        "'남성'/'여성'/'male'/'female' 등 변형 금지 — 반드시 '남'/'여'/'기타'/'미설정' 한 글자."
+                    ),
+                },
                 "age": {"type": "string"},
-                "appearance": {"type": "string"},
-                "personality": {"type": "string"},
-                "notes": {"type": "string"},
+                "intro": {
+                    "type": "string",
+                    "description": (
+                        "인물 한 줄 소개 + 외형 + 성격 + 기타 메모를 한 본문에 Markdown 으로 합쳐 작성. "
+                        "권장 구조: '## 외형\\n...\\n\\n## 성격\\n...\\n\\n## 메모\\n- 항목' 식으로 "
+                        "h2 소제목 + 단락/목록 활용. 별도 외형/성격 노트로 분리하지 말 것."
+                    ),
+                },
             },
             "required": ["name"],
         },
     },
     {
         "name": "propose_world_note",
-        "description": "신규 세계관 노트 등록 제안 (작가 승인 후 world_note 테이블 INSERT).",
+        "description": (
+            "신규 세계관 노트 등록 제안 (작가 승인 후 world_note 테이블 INSERT). "
+            "content 는 Markdown 으로 작성 — 백엔드가 위지윅(TipTap) doc 으로 자동 변환."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
-                "content": {"type": "string"},
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "세계관 본문 (Markdown). 제목(##~###), **굵게**, *기울임*, 목록(-/1.), "
+                        "인용(>), 코드블록 사용 가능. 표/이미지/링크 사용 금지."
+                    ),
+                },
                 "category": {"type": "string"},
             },
             "required": ["name", "content"],
@@ -443,13 +463,31 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "propose_character_update",
-        "description": "기존 인물 프로필 수정 제안 (작가 승인 후 character 테이블 UPDATE).",
+        "description": (
+            "기존 인물 프로필 수정 제안 (작가 승인 후 character 테이블 UPDATE 또는 "
+            "character_note 별도 행 INSERT). 'name'/'gender'/'age' 는 character 테이블 직속 "
+            "컬럼 갱신, 그 외 (appearance/personality/mbti 등) 는 새 character_note 행 추가. "
+            "★ 외형/성격/MBTI 등 별도 노트 추가는 작가가 명시적으로 요청한 경우에만 사용. "
+            "그렇지 않으면 인물 서술은 intro 본문에 통합한다."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "character_id": {"type": "string"},
-                "field": {"type": "string", "description": "수정할 컬럼 (예: appearance, personality)"},
-                "new_value": {"type": "string"},
+                "field": {
+                    "type": "string",
+                    "description": (
+                        "name/gender/age (character 직속) 또는 appearance/personality/mbti 등 "
+                        "(character_note 신규 행). 후자는 작가 명시 요청 시에만."
+                    ),
+                },
+                "new_value": {
+                    "type": "string",
+                    "description": (
+                        "field='gender' 일 때는 반드시 '남'/'여'/'기타'/'미설정' 중 하나 (한 글자). "
+                        "'남성'/'male' 등 변형 입력 금지 — 프론트 아이콘 매핑 실패 원인."
+                    ),
+                },
                 "reason": {"type": "string", "description": "수정 사유 (작가가 검토할 때 참고)"},
             },
             "required": ["character_id", "field", "new_value", "reason"],
@@ -457,12 +495,21 @@ MCP_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "propose_plot_revision",
-        "description": "플롯 줄거리 재작성 제안 (작가 승인 후 plot 테이블 UPDATE).",
+        "description": (
+            "플롯 줄거리 재작성 제안 (작가 승인 후 plot 테이블 UPDATE). "
+            "new_outline 은 Markdown 으로 — 위지윅 자동 변환."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "plot_id": {"type": "string"},
-                "new_outline": {"type": "string"},
+                "new_outline": {
+                    "type": "string",
+                    "description": (
+                        "새 플롯 본문 (Markdown). 막/장면 구조는 ##/### 소제목, 핵심 사건은 - 목록, "
+                        "강조는 **굵게** 정도로 절제."
+                    ),
+                },
                 "reason": {"type": "string"},
             },
             "required": ["plot_id", "new_outline", "reason"],
@@ -473,21 +520,35 @@ MCP_TOOLS: list[dict[str, Any]] = [
         "description": (
             "신규 회차 (다음 화 또는 외전) 초안 INSERT 제안. "
             "기존 회차 본문/제목 수정은 propose_episode_update 사용. "
-            "작가 승인 시 episode 로 INSERT (status='작성중')."
+            "작가 승인 시 episode 로 INSERT (status='작성중').\n\n"
+            "★ 본문 작성 규칙 (필수 준수):\n"
+            "1. 회차 본문은 이 도구의 'content' 인자에 절대 채우지 마세요.\n"
+            "2. 대신 본문을 자연어 Markdown 으로 직접 출력 (assistant 응답 텍스트로) 한 후,\n"
+            "3. 본문 출력이 끝나면 propose_episode_draft({title}) 만 호출하세요. content 인자는 비웁니다.\n"
+            "백엔드가 직전 자연어 본문을 자동으로 content 로 합성해 큐에 적재합니다.\n"
+            "이 규칙은 anthropic 의 tool input buffering 정책으로 인한 streaming 불가 문제를 우회하기 위함입니다 — "
+            "사용자가 본문이 작성되는 과정을 라이브로 볼 수 있게 하려면 반드시 본문은 자연어로 출력해야 합니다."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
-                "content": {"type": "string"},
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "★ 채우지 말 것. 본문은 자연어로 직접 출력 후 백엔드가 자동 합성합니다. "
+                        "이 인자에 본문을 채우면 사용자에게 라이브 streaming 표시되지 않습니다 (anthropic API 한계). "
+                        "예외: 매우 짧은 placeholder 등 특수 사용 시에만."
+                    ),
+                },
                 "parent_id": {"type": "string", "description": "분기/외전인 경우 부모 episode id"},
                 "reference_episodes": {
                     "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "참조한 회차 sort_order 들",
+                    "items": {"type": "string"},
+                    "description": "참조한 회차 episode_id (UUID) 들",
                 },
             },
-            "required": ["title", "content"],
+            "required": ["title"],
         },
     },
     # ───────── Phase 4.5: CRUD 확장 ─────────
@@ -517,7 +578,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "world_note_id": {"type": "string"},
                 "name": {"type": "string", "description": "(옵션) 새 이름"},
-                "content": {"type": "string", "description": "(옵션) 새 내용 (평문, 자동 tiptap 래핑)"},
+                "content": {"type": "string", "description": "(옵션) 새 내용 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "reason": {"type": "string"},
             },
             "required": ["world_note_id", "reason"],
@@ -547,7 +608,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "episode_id": {"type": "string"},
                 "title": {"type": "string", "description": "(옵션) 새 제목"},
-                "content": {"type": "string", "description": "(옵션) 새 본문 (평문, 자동 tiptap 래핑)"},
+                "content": {"type": "string", "description": "(옵션) 새 본문 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "status": {
                     "type": "string",
                     "description": "(옵션) '작성중' / '완성' / '발행' 등 평문 상태",
@@ -568,7 +629,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "플롯 제목 (예: '1막 만남')"},
-                "content": {"type": "string", "description": "플롯 줄거리·계획 (평문, tiptap 자동 래핑)"},
+                "content": {"type": "string", "description": "플롯 줄거리·계획 (Markdown — 위지윅 TipTap 자동 변환)"},
                 "status": {"type": "string"},
                 "parent_id": {"type": "string", "description": "(옵션) 상위 플롯 id"},
                 "reason": {"type": "string"},
@@ -588,7 +649,7 @@ MCP_TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "root_title": {"type": "string", "description": "부모 챕터 제목 (예: '챕터1')"},
-                "root_content": {"type": "string", "description": "부모 챕터 줄거리·요약"},
+                "root_content": {"type": "string", "description": "부모 챕터 줄거리·요약 (Markdown — 위지윅 자동 변환)"},
                 "root_status": {"type": "string", "description": "(옵션) 부모 status"},
                 "parent_id": {"type": "string", "description": "(옵션) 더 상위 막의 id"},
                 "children": {
@@ -598,7 +659,10 @@ MCP_TOOLS: list[dict[str, Any]] = [
                         "type": "object",
                         "properties": {
                             "title": {"type": "string"},
-                            "content": {"type": "string"},
+                            "content": {
+                                "type": "string",
+                                "description": "자식 플롯 본문 (Markdown — 위지윅 자동 변환)",
+                            },
                             "status": {"type": "string"},
                         },
                         "required": ["title", "content"],
@@ -632,6 +696,191 @@ MCP_TOOLS: list[dict[str, Any]] = [
                 "reason": {"type": "string"},
             },
             "required": ["episode_id", "reason"],
+        },
+    },
+    # ───────── Phase 5: 한국어 맞춤법 검사 ─────────
+    {
+        "name": "check_spelling",
+        "description": (
+            "회차 본문의 한국어 맞춤법·띄어쓰기·문장부호·오탈자 점검 (Haiku 1회 호출). "
+            "설정·맥락·복선·문체는 평가하지 않음 — 순수 표기 오류만. 작품의 인물·세계관 "
+            "이름은 자동으로 화이트리스트 처리되어 false positive 방지. "
+            "★ 검수 시나리오에서 propose_review_issue 와 함께 사용 권장: 본 도구로 표기 오류 "
+            "전수 점검 후, 작가에게 의미 있는 1~5건만 issue_type='other' + severity='info' 로 "
+            "propose_review_issue 호출. 단순 오타 30건을 모두 propose 하면 작가 검토 부담 ↑ — "
+            "여러 건을 1개 propose 의 description 에 묶어 요약 권장 (예: 'L12·L34 띄어쓰기 / "
+            "L57 마침표 누락')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "검사 대상 회차 UUID (list_episodes 의 id).",
+                },
+            },
+            "required": ["episode_id"],
+        },
+    },
+    # ───────── Phase 5: 맞춤법 자동 수정 (즉시 반영) ─────────
+    {
+        "name": "propose_spelling_fix",
+        "description": (
+            "회차 본문의 한국어 표기 오류 1건을 자동 치환 가능한 형태로 작가 승인 큐에 적재. "
+            "★ propose_review_issue 와 달리 승인 시 backend 가 해당 line 의 TipTap 텍스트에서 "
+            "original → suggestion 으로 1회 치환 후 episode 재저장 → PowerSync sync. "
+            "check_spelling 결과의 issue 1건 = propose_spelling_fix 1회 호출. "
+            "제약: 1 propose = 1 치환 / 마크(굵게·기울임) 걸친 텍스트는 1차 미지원 (backend 가 "
+            "복합 마크 발견 시 적용 거부 → 작가에게 직접 수정 안내). 같은 line 에 여러 오류면 "
+            "각각 propose 호출."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "대상 회차 UUID (36자). check_spelling / fetch_episode_plaintext 응답의 id 필드.",
+                },
+                "line": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "오류 위치 line 번호 (1-based). check_spelling 결과의 issue.line.",
+                },
+                "original": {
+                    "type": "string",
+                    "description": "본문 그대로의 문자열 (한 글자도 빠뜨리거나 더하지 말 것).",
+                    "minLength": 1,
+                },
+                "suggestion": {
+                    "type": "string",
+                    "description": "original 자리를 1:1 대체할 교정 문자열. original 과 동일하면 안 됨.",
+                    "minLength": 1,
+                },
+                "fix_type": {
+                    "type": "string",
+                    "enum": ["typo", "spacing", "punctuation"],
+                    "description": "분류 — 오탈자 / 띄어쓰기 / 문장부호",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "(옵션) 수정 사유 — 작가 검토 시 판단 근거",
+                },
+            },
+            "required": ["episode_id", "line", "original", "suggestion", "fix_type"],
+        },
+    },
+    # ───────── Phase 5: 맞춤법 일괄 체크리스트 (다건 묶음 제안) ─────────
+    {
+        "name": "propose_spelling_fix_batch",
+        "description": (
+            "회차의 한국어 표기 오류 N건을 1개의 체크리스트 제안으로 묶어 적재. ★ 권장 — "
+            "propose_spelling_fix 를 N번 호출하면 작가가 카드 N개를 일일이 검토해야 하지만, "
+            "본 도구를 1회 호출하면 작가가 체크박스로 일괄 선택 후 [적용] 한 번에 자동 치환됨. "
+            "check_spelling 결과의 issues 배열을 거의 그대로 fixes 인자로 전달 가능 — line / "
+            "original / suggestion / type→fix_type 매핑만 신경쓰면 됨. 빈 배열·잘못된 fix_type "
+            "·line 미존재·original==suggestion 는 자동 필터링되며, 모두 무효면 error 반환."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": "대상 회차 UUID (36자). check_spelling / fetch_episode_plaintext 응답의 id 필드.",
+                },
+                "fixes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "맞춤법 수정 항목 목록. check_spelling 의 issues 배열을 그대로 매핑 가능.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "line": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "오류 위치 line 번호 (1-based, check_spelling 결과의 line).",
+                            },
+                            "original": {
+                                "type": "string",
+                                "description": "본문 그대로의 문자열 (한 글자도 변형 금지).",
+                                "minLength": 1,
+                            },
+                            "suggestion": {
+                                "type": "string",
+                                "description": "교정 후 들어갈 문자열. original 과 동일하면 자동 제외.",
+                                "minLength": 1,
+                            },
+                            "fix_type": {
+                                "type": "string",
+                                "enum": ["typo", "spacing", "punctuation"],
+                                "description": "분류 — 오탈자 / 띄어쓰기 / 문장부호",
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "(옵션) 수정 사유 — 작가 검토 시 판단 근거",
+                            },
+                        },
+                        "required": ["line", "original", "suggestion", "fix_type"],
+                    },
+                },
+            },
+            "required": ["episode_id", "fixes"],
+        },
+    },
+    # ───────── Phase 5: 검수 발견 사항 (위치 매핑) ─────────
+    {
+        "name": "propose_review_issue",
+        "description": (
+            "회차 검수 결과로 발견한 이슈 1건을 작가 승인 큐에 적재. 본 도구는 자동 수정 적용을 "
+            "하지 않고, 프론트 채팅 응답에서 '본문에서 보기' 버튼으로 본문 위치 점프 + 흐릿한 "
+            "하이라이트를 제공한다. 작가가 직접 본문을 고친 뒤 승인/거절로 닫음. "
+            "★ 호출 전 fetch_episode_plaintext(episode_id=UUID, with_line_numbers=True) 로 라인 "
+            "번호 형식 ([1] ...) 본문을 fetch 해야 lines 정확. 모호한 추측 금지 — 본문에 명시적 "
+            "근거가 있는 발견만."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "episode_id": {
+                    "type": "string",
+                    "description": (
+                        "검수 대상 회차의 id (uuid 36자). list_episodes / fetch_episode_plaintext / "
+                        "get_episode_summary 응답의 id 필드를 그대로 사용. 회차 번호나 '9화' 같은 "
+                        "title 절대 금지 — UUID 형식 검증 실패."
+                    ),
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "description": "이슈가 위치한 본문 line 번호 (1-based, 위 fetch 의 [N] 인덱스). 1~3 개 권장.",
+                    "minItems": 1,
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["critical", "warning", "info"],
+                    "description": "심각도 — critical: 명백한 모순/오류, warning: 일관성 우려, info: 개선 제안",
+                },
+                "issue_type": {
+                    "type": "string",
+                    "enum": [
+                        "setting_conflict",
+                        "tone_conflict",
+                        "foreshadow_unresolved",
+                        "character_arc",
+                        "timeline",
+                        "other",
+                    ],
+                    "description": "이슈 분류 — 설정 충돌 / 톤 충돌 / 미회수 복선 / 인물 행적 모순 / 시간선 모순 / 기타",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "무엇이 문제인지 1~3 문장. 본문에 명시된 근거 인용 권장.",
+                },
+                "suggestion": {
+                    "type": "string",
+                    "description": "(옵션) 권고 수정 방향. 작가가 본문 고칠 때 참고용.",
+                },
+            },
+            "required": ["episode_id", "lines", "severity", "issue_type", "description"],
         },
     },
 ]
@@ -676,6 +925,10 @@ _HANDLER_MAP: dict[str, ToolHandler] = {
     "propose_plot_create": propose_plot_create,
     "propose_plot_tree": propose_plot_tree,
     "propose_plot_delete": propose_plot_delete,
+    "propose_review_issue": propose_review_issue,
+    "propose_spelling_fix": propose_spelling_fix,
+    "propose_spelling_fix_batch": propose_spelling_fix_batch,
+    "check_spelling": check_spelling,
 }
 
 # 도구 카테고리 (BudgetTracker Tier 2 키 분류)
@@ -715,6 +968,10 @@ TOOL_CATEGORY: dict[str, str] = {
     "propose_plot_create": "propose",
     "propose_plot_tree": "propose",
     "propose_plot_delete": "propose",
+    "propose_review_issue": "propose",
+    "propose_spelling_fix": "propose",
+    "propose_spelling_fix_batch": "propose",
+    "check_spelling": "sub_agent",       # Haiku 호출 — sub_agent 카테고리 (analyze_episode 와 동급)
 }
 
 

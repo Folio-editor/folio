@@ -24,7 +24,8 @@ import { useLocalWrite } from '../../../hooks/useLocalWrite';
 import { useDelayedEmptyState } from '../../../hooks/useDelayedEmptyState';
 import { useDecryptedPlotList, type RawPlotRow } from '../../../hooks/useDecryptedPlot';
 import { decryptWorkFieldOnce } from '../../../crypto/fieldDecrypt';
-import { useSidebarClickHandler } from '../../../lib/sidebarClickHandler';
+import { useSidebarClickHandler, SIDEBAR_ITEM_HINT } from '../../../lib/sidebarClickHandler';
+import { Tooltip } from '../../ui/Tooltip';
 import { cn } from '../../../lib/cn';
 import { useDragZoneStore } from '../../../lib/dragZoneStore';
 import { useOptimisticRows } from '../../../lib/useOptimisticRows';
@@ -203,7 +204,7 @@ export function PlotTreeList({
               onChange={(e) => setCreateTitle(e.target.value)}
               onKeyDown={handleCreateKeyDown}
               onBlur={handleCreateCancel}
-              placeholder="막 제목을 입력 후 Enter"
+              placeholder="챕터 제목을 입력 후 Enter"
               className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
             />
           ) : (
@@ -213,7 +214,7 @@ export function PlotTreeList({
               className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
             >
               <Plus size={14} strokeWidth={2} />
-              <span>새 막</span>
+              <span>새 챕터</span>
             </button>
           )}
           <SidebarSortPicker panelKey="plot" />
@@ -524,35 +525,36 @@ function ActTreeItem({
                 isMergeOver && 'bg-primary/15 ring-1 ring-primary',
               )}
             >
-              <button
-                type="button"
-                {...actClickHandlers}
-                title="클릭=메인 / 더블·⌘+클릭=핀"
-                className={cn(
-                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
-                  isSelected
-                    ? 'bg-secondary font-medium text-primary'
-                    : 'text-sidebar-foreground',
-                )}
-              >
-                {(act.child_count ?? 0) > 0 ? (
-                  <ChevronRight
-                    size={12}
-                    strokeWidth={2}
-                    className={cn(
-                      'shrink-0 transition-transform',
-                      isExpanded && 'rotate-90',
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleExpand(act.id);
-                    }}
-                  />
-                ) : (
-                  <span className="inline-block w-3 shrink-0" aria-hidden="true" />
-                )}
-                {act.title?.trim() || '(제목 없음)'}
-              </button>
+              <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+                <button
+                  type="button"
+                  {...actClickHandlers}
+                  className={cn(
+                    'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent',
+                    isSelected
+                      ? 'bg-secondary font-medium text-primary'
+                      : 'text-sidebar-foreground',
+                  )}
+                >
+                  {(act.child_count ?? 0) > 0 ? (
+                    <ChevronRight
+                      size={12}
+                      strokeWidth={2}
+                      className={cn(
+                        'shrink-0 transition-transform',
+                        isExpanded && 'rotate-90',
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleExpand(act.id);
+                      }}
+                    />
+                  ) : (
+                    <span className="inline-block w-3 shrink-0" aria-hidden="true" />
+                  )}
+                  {act.title?.trim() || '(제목 없음)'}
+                </button>
+              </Tooltip>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleQuickAddChild(); }}
@@ -599,7 +601,7 @@ function ActTreeItem({
 
       {deleteOpen && (
         <DeleteConfirmDialog
-          title="막 삭제"
+          title="챕터 삭제"
           message={`'${act.title?.trim() || '(제목 없음)'}'을(를) 삭제하시겠습니까?`}
           warning="하위 회차가 있다면 함께 처리됩니다. 이 작업은 되돌릴 수 없습니다."
           busy={deleting}
@@ -831,28 +833,28 @@ function EpisodeItem({
             {...dragListeners}
             className="group flex items-center"
           >
-            <button
-              type="button"
-              {...clickHandlers}
-              title="클릭=메인 / 더블·⌘+클릭=핀"
-              className={cn(
-                'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
-                selected
-                  ? 'bg-secondary font-medium text-primary'
-                  : 'text-sidebar-foreground',
-              )}
-            >
-              <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
-              {episode.status && (
-                <span
-                  className={cn(
-                    'ml-auto h-2 w-2 shrink-0 rounded-full',
-                    STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
-                  )}
-                  title={episode.status}
-                />
-              )}
-            </button>
+            <Tooltip side="right" content={SIDEBAR_ITEM_HINT}>
+              <button
+                type="button"
+                {...clickHandlers}
+                className={cn(
+                  'flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent',
+                  selected
+                    ? 'bg-secondary font-medium text-primary'
+                    : 'text-sidebar-foreground',
+                )}
+              >
+                <span className="truncate">{episode.title?.trim() || '(제목 없음)'}</span>
+                {episode.status && (
+                  <span
+                    className={cn(
+                      'ml-auto h-2 w-2 shrink-0 rounded-full',
+                      STATUS_DOT[episode.status] ?? 'bg-muted-foreground',
+                    )}
+                  />
+                )}
+              </button>
+            </Tooltip>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -950,7 +952,7 @@ function PlotAllItem({
     <button
       type="button"
       {...clickHandlers}
-      title="전체 플롯 — 작품의 모든 막과 회차"
+      title="전체 플롯 — 작품의 모든 챕터와 회차"
       className={cn(
         'flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent',
         selected

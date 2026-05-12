@@ -5,7 +5,8 @@
 - character_arc    : 인물의 회차별 등장 + 톤·핵심 사건 시계열
 - timeline_scan    : 회차별 시간 흐름 + cliffhanger 시계열
 
-모두 ctx.work_id + ctx.writer_id 격리 + episode 의 sort_order 정렬.
+모두 ctx.work_id + ctx.writer_id 격리. 외부 노출 식별자는 episode_id (UUID) 뿐 — 내부
+DB 의 sort_order 는 정렬용으로만 사용, 반환 X.
 """
 
 from __future__ import annotations
@@ -47,14 +48,14 @@ async def track_foreshadow(
     """
     sql = (
         "WITH planted AS ("
-        "  SELECT ep.sort_order AS planted_sort, fp.value->>'name' AS name, "
-        "         fp.value->>'description' AS description "
+        "  SELECT ep.id AS episode_id, ep.sort_order AS planted_sort, "
+        "         fp.value->>'name' AS name, fp.value->>'description' AS description "
         "  FROM episode_summary es "
         "  JOIN episode ep ON ep.id = es.episode_id "
         "  CROSS JOIN LATERAL jsonb_array_elements(coalesce(es.foreshadow_planted,'[]'::jsonb)) fp "
         "  WHERE es.work_id = :wid AND es.writer_id = :wr "
         "), paid AS ("
-        "  SELECT ep.sort_order AS paid_sort, "
+        "  SELECT ep.id AS episode_id, ep.sort_order AS paid_sort, "
         "         CASE WHEN jsonb_typeof(fo.value)='string' THEN fo.value#>>'{}' "
         "              ELSE fo.value->>'name' END AS name "
         "  FROM episode_summary es "
@@ -62,9 +63,11 @@ async def track_foreshadow(
         "  CROSS JOIN LATERAL jsonb_array_elements(coalesce(es.foreshadow_paid_off,'[]'::jsonb)) fo "
         "  WHERE es.work_id = :wid AND es.writer_id = :wr "
         ") "
-        "SELECT planted.planted_sort, planted.name, planted.description, "
-        "       (SELECT min(paid_sort) FROM paid WHERE paid.name = planted.name "
-        "         AND paid.paid_sort >= planted.planted_sort) AS paid_off_sort "
+        "SELECT planted.episode_id AS planted_episode_id, "
+        "       planted.name, planted.description, "
+        "       (SELECT episode_id FROM paid WHERE paid.name = planted.name "
+        "         AND paid.paid_sort >= planted.planted_sort "
+        "         ORDER BY paid_sort ASC LIMIT 1) AS paid_off_episode_id "
         "FROM planted "
         + ("WHERE planted.name = :name " if name else "")
         + "ORDER BY planted.planted_sort ASC"
@@ -75,10 +78,10 @@ async def track_foreshadow(
     r = await session.execute(sa_text(sql), params)
     return [
         {
-            "planted_sort": row[0],
+            "planted_episode_id": str(row[0]) if row[0] else None,
             "name": row[1],
             "description": row[2],
-            "paid_off_sort": row[3],
+            "paid_off_episode_id": str(row[3]) if row[3] else None,
             "is_resolved": row[3] is not None,
         }
         for row in r.fetchall()
@@ -90,82 +93,59 @@ async def character_arc(
     ctx: WriterContext,
     *,
     name: str,
-    start_sort: int | None = None,
-    end_sort: int | None = None,
 ) -> list[dict[str, Any]]:
-    """특정 인물의 회차별 변화 추적.
-
-    present_characters @> [name] 조건으로 해당 인물 등장 회차만 추출.
-    sort_order 별 tone / pov_여부 / key_events 시계열 반환.
-    """
-    where = [
-        "es.work_id = :wid",
-        "es.writer_id = :wr",
-        "es.present_characters @> jsonb_build_array(:name)",
-    ]
-    params: dict[str, Any] = {"wid": ctx.work_id, "wr": ctx.writer_id, "name": name}
-    if start_sort is not None:
-        where.append("ep.sort_order >= :s")
-        params["s"] = start_sort
-    if end_sort is not None:
-        where.append("ep.sort_order <= :e")
-        params["e"] = end_sort
-
+    """특정 인물의 회차별 변화 추적. 시간 순 배열 반환 (배열 순서 = 시간 순)."""
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.tone, "
+        "SELECT ep.id, ep.title, es.oneline_summary, es.tone, "
         "       (es.pov_character = :name) AS is_pov, es.key_events, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
-        f"WHERE {' AND '.join(where)} "
+        "WHERE es.work_id = :wid AND es.writer_id = :wr "
+        "  AND es.present_characters @> jsonb_build_array(:name) "
         "ORDER BY ep.sort_order ASC"
     )
-    r = await session.execute(sa_text(sql), params)
+    r = await session.execute(
+        sa_text(sql),
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "name": name},
+    )
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "tone": row[2],
-            "is_pov": bool(row[3]),
-            "key_events": row[4],
-            "cliffhanger": row[5],
+            "episode_id": str(row[0]),
+            "title": row[1],
+            "oneline_summary": row[2],
+            "tone": row[3],
+            "is_pov": bool(row[4]),
+            "key_events": row[5],
+            "cliffhanger": row[6],
         }
         for row in r.fetchall()
     ]
-    # tone 평문 / oneline_summary, cliffhanger 암호화 → 후자만 복호화
     return await _decrypt_summary_text(ctx.work_id, rows, ["oneline_summary", "cliffhanger"])
 
 
 async def timeline_scan(
     session: AsyncSession,
     ctx: WriterContext,
-    *,
-    start_sort: int | None = None,
-    end_sort: int | None = None,
 ) -> list[dict[str, Any]]:
-    """회차별 시간 흐름·끝점만 추출. 시간선 일관성 검수용."""
-    where = ["es.work_id = :wid", "es.writer_id = :wr"]
-    params: dict[str, Any] = {"wid": ctx.work_id, "wr": ctx.writer_id}
-    if start_sort is not None:
-        where.append("ep.sort_order >= :s")
-        params["s"] = start_sort
-    if end_sort is not None:
-        where.append("ep.sort_order <= :e")
-        params["e"] = end_sort
-
+    """회차별 시간 흐름·끝점만 추출 (시간 순 배열). 시간선 일관성 검수용."""
     sql = (
-        "SELECT ep.sort_order, es.oneline_summary, es.time_progression, es.cliffhanger "
+        "SELECT ep.id, ep.title, es.oneline_summary, es.time_progression, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
-        f"WHERE {' AND '.join(where)} "
+        "WHERE es.work_id = :wid AND es.writer_id = :wr "
         "ORDER BY ep.sort_order ASC"
     )
-    r = await session.execute(sa_text(sql), params)
+    r = await session.execute(
+        sa_text(sql),
+        {"wid": ctx.work_id, "wr": ctx.writer_id},
+    )
     rows = [
         {
-            "sort_order": row[0],
-            "oneline_summary": row[1],
-            "time_progression": row[2],
-            "cliffhanger": row[3],
+            "episode_id": str(row[0]),
+            "title": row[1],
+            "oneline_summary": row[2],
+            "time_progression": row[3],
+            "cliffhanger": row[4],
         }
         for row in r.fetchall()
     ]

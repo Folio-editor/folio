@@ -28,10 +28,22 @@ from app.services.encrypt_resolver import (
     summary_text_fields,
 )
 from app.services.providers import get_llm
+from app.services.text_extractor import extract_numbered_text, extract_plain_text
 from app.services.work_key_resolver import (
     WorkKeyResolverError,
     resolve_episode_plaintext,
 )
+
+
+async def _decrypt_title(work_id, title: str | None) -> str | None:
+    """단일 title 필드 안전 복호화 — ciphertext 면 평문, 아니면 그대로. 실패 시 placeholder."""
+    if not isinstance(title, str) or not title.startswith("v1:"):
+        return title
+    try:
+        result = await decrypt_rows(work_id, [{"title": title}], ["title"])
+        return result[0].get("title", title)
+    except DecryptResolverError:
+        return "(제목 암호화 미해제)"
 
 
 async def list_episodes(
@@ -40,12 +52,13 @@ async def list_episodes(
 ) -> list[dict[str, Any]]:
     """작품의 모든 회차 메타 (episode 테이블 직접). 요약 유무 무관.
 
-    반환: [{sort_order, title, status, word_count, has_summary}].
-    title 은 v1: 암호문이면 backend Vault 경유 복호화.
+    반환: 시간 순 정렬된 배열 — [{id, title, status, word_count, has_summary}].
+    배열 인덱스 자체가 시간 순서 (DB 내부 sort_order 로 정렬되어 반환되지만 외부엔 노출 X).
+    title 은 v1: 암호문이면 backend Vault 경유 복호화. AI 는 id (UUID) 만 식별자로 사용.
     """
     r = await session.execute(
         sa_text(
-            "SELECT ep.id, ep.title, ep.status, ep.word_count, ep.sort_order, "
+            "SELECT ep.id, ep.title, ep.status, ep.word_count, "
             "       (es.episode_id IS NOT NULL) AS has_summary "
             "FROM episode ep "
             "LEFT JOIN episode_summary es ON es.episode_id = ep.id "
@@ -60,8 +73,7 @@ async def list_episodes(
             "title": row[1],
             "status": row[2],
             "word_count": row[3],
-            "sort_order": row[4],
-            "has_summary": bool(row[5]),
+            "has_summary": bool(row[4]),
         }
         for row in r.fetchall()
     ]
@@ -73,41 +85,61 @@ async def list_episodes(
             t = r.get("title")
             if isinstance(t, str) and t.startswith("v1:"):
                 r["title"] = "(제목 암호화 미해제)"
-    # id 는 LLM 노출 불필요 (sort_order 로 충분)
-    return [
-        {k: v for k, v in r.items() if k != "id"}
-        for r in rows
-    ]
+    # id 노출 — propose_review_issue / propose_episode_update / propose_episode_delete 의
+    # episode_id 인자에 사용. sort_order 만으론 검수/수정 도구가 행을 식별 못 함.
+    return rows
 
 
 async def fetch_episode_plaintext(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    sort_order: int,
+    episode_id: str,
+    with_line_numbers: bool = False,
 ) -> dict[str, Any]:
+    """회차 본문 평문 fetch.
+
+    Args:
+      episode_id: 회차 UUID (list_episodes 결과의 id)
+      with_line_numbers: True 면 본문을 ``[N] ...`` 줄 번호 prefix 형태로 반환.
+        검수 (propose_review_issue) 처럼 본문 위치 인용이 필요한 도구가 사용. 기본 False.
+
+    Returns: ``{id, title, content, word_count}`` (+ ``lines_format: True`` 면)
+    """
     r = await session.execute(
         sa_text(
             "SELECT id, title FROM episode "
-            "WHERE work_id = :wid AND writer_id = :wr AND sort_order = :so LIMIT 1"
+            "WHERE work_id = :wid AND writer_id = :wr AND id = :eid LIMIT 1"
         ),
-        {"wid": ctx.work_id, "wr": ctx.writer_id, "so": sort_order},
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "eid": episode_id},
     )
     row = r.fetchone()
     if row is None:
-        return {"error": "episode_not_found", "sort_order": sort_order}
+        return {"error": "episode_not_found", "episode_id": episode_id}
 
-    episode_id, title = row[0], row[1]
+    ep_id, title = row[0], row[1]
+    plain_title = await _decrypt_title(ctx.work_id, title)
     try:
-        content = await resolve_episode_plaintext(str(episode_id), str(ctx.work_id))
+        content = await resolve_episode_plaintext(str(ep_id), str(ctx.work_id))
     except WorkKeyResolverError as e:
-        return {"error": "no_plaintext", "reason": str(e), "sort_order": sort_order}
+        return {"error": "no_plaintext", "reason": str(e), "episode_id": episode_id}
 
+    if with_line_numbers:
+        numbered = extract_numbered_text(content)
+        return {
+            "id": str(ep_id),
+            "title": plain_title,
+            "content": numbered,
+            "word_count": len(numbered),
+            "lines_format": True,
+        }
+
+    plain_content = extract_plain_text(content)
     return {
-        "sort_order": sort_order,
-        "title": title,
-        "content": content,
-        "word_count": len(content),
+        "id": str(ep_id),
+        "title": plain_title,
+        "content": plain_content,
+        "word_count": len(plain_content),
     }
 
 
@@ -121,40 +153,28 @@ async def analyze_episode(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    sort_order: int,
+    episode_id: str,
     task: str,
 ) -> dict[str, Any]:
-    """회차 평문 fetch + Haiku 가 task 별 추출. Sonnet 비용 ~70% 절감.
-
-    예시 task:
-      - "등장 인물별 페르소나 (이름·성격·외형) 추출"
-      - "이번 화 핵심 사건 시간순 정리"
-      - "심어진 복선·회수된 복선 추출"
-
-    Sonnet 은 raw 본문 대신 Haiku 압축본만 받음 → 토큰 누적 폭주 방지.
-    """
-    # 1) 본문 fetch (재사용)
-    text_result = await fetch_episode_plaintext(session, ctx, sort_order=sort_order)
+    """회차 평문 fetch + Haiku 가 task 별 추출. Sonnet 비용 ~70% 절감."""
+    text_result = await fetch_episode_plaintext(session, ctx, episode_id=episode_id)
     if "error" in text_result:
         return text_result
     plaintext = text_result["content"]
+    ep_id = text_result.get("id")
+    plain_title = text_result["title"]
 
-    # 2) Haiku 분석
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
     if haiku_model is None:
-        # Fake provider — 평문 그대로 반환 (테스트 모드)
         return {
-            "sort_order": sort_order,
-            "title": text_result["title"],
+            "id": ep_id,
+            "title": plain_title,
             "task": task,
             "analysis": plaintext[:2000],
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
-    user_prompt = (
-        f"[task]\n{task}\n\n"
-        f"[회차 {sort_order} — {text_result['title']}]\n{plaintext}"
-    )
+    user_prompt = f"[task]\n{task}\n\n[{plain_title}]\n{plaintext}"
     schema_hint = '{"analysis": "object or string — task 결과만 담을 것"}'
     try:
         result = await llm.generate_json(
@@ -169,8 +189,8 @@ async def analyze_episode(
 
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
     return {
-        "sort_order": sort_order,
-        "title": text_result["title"],
+        "id": ep_id,
+        "title": plain_title,
         "task": task,
         "analysis": result.get("analysis") if isinstance(result, dict) else result,
         "usage": usage,
@@ -215,7 +235,7 @@ async def summarize_episode(
     session: AsyncSession,
     ctx: WriterContext,
     *,
-    sort_order: int,
+    episode_id: str,
     force_regenerate: bool = False,
 ) -> dict[str, Any]:
     """회차 본문 → Haiku 12-필드 양식 요약 + episode_summary UPSERT (부산물).
@@ -224,11 +244,6 @@ async def summarize_episode(
       - 기존 episode_summary 행이 있고 (ep.updated_at <= es.last_generated_at) 이면
         Haiku 재호출 없이 캐시 반환 (force_regenerate=True 면 무시).
       - stale (본문 수정 후) 또는 미생성 시 Haiku 1회 호출 → UPSERT.
-
-    과금: agent run 의 Haiku 토큰만 청구 (이 경로는 generate_summary_task 미경유 →
-    feature='episode_summary' 영수증 별도 발행 X. 이중 청구 없음).
-
-    반환: 12-필드 schema 결과 + {sort_order, title, cached, generation_count, usage}.
     """
     r = await session.execute(
         sa_text(
@@ -240,15 +255,16 @@ async def summarize_episode(
             "       es.foreshadow_planted, es.foreshadow_paid_off, es.keywords "
             "FROM episode ep "
             "LEFT JOIN episode_summary es ON es.episode_id = ep.id "
-            "WHERE ep.work_id = :wid AND ep.writer_id = :wr AND ep.sort_order = :so LIMIT 1"
+            "WHERE ep.work_id = :wid AND ep.writer_id = :wr AND ep.id = :eid LIMIT 1"
         ),
-        {"wid": ctx.work_id, "wr": ctx.writer_id, "so": sort_order},
+        {"wid": ctx.work_id, "wr": ctx.writer_id, "eid": episode_id},
     )
     row = r.fetchone()
     if row is None:
-        return {"error": "episode_not_found", "sort_order": sort_order}
+        return {"error": "episode_not_found", "episode_id": episode_id}
 
-    episode_id, title, ep_updated, es_last_gen = row[0], row[1], row[2], row[3]
+    ep_id, title, ep_updated, es_last_gen = row[0], row[1], row[2], row[3]
+    plain_title = await _decrypt_title(ctx.work_id, title)
     cache_hit = (
         es_last_gen is not None
         and ep_updated is not None
@@ -257,8 +273,8 @@ async def summarize_episode(
     )
     if cache_hit:
         cached = {
-            "sort_order": sort_order,
-            "title": title,
+            "id": str(ep_id),
+            "title": plain_title,
             "cached": True,
             "generation_count": int(row[4] or 0),
             "oneline_summary": row[5],
@@ -287,13 +303,13 @@ async def summarize_episode(
             return cached
 
     try:
-        plaintext = await resolve_episode_plaintext(str(episode_id), str(ctx.work_id))
+        plaintext = await resolve_episode_plaintext(str(ep_id), str(ctx.work_id))
     except WorkKeyResolverError as e:
-        return {"error": "no_plaintext", "reason": str(e), "sort_order": sort_order}
+        return {"error": "no_plaintext", "reason": str(e), "episode_id": episode_id}
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
-    user_prompt = f"[회차 {sort_order} — {title}]\n\n{plaintext}"
+    user_prompt = f"[{plain_title}]\n\n{plaintext}"
     try:
         result = await llm.generate_json(
             _SUMMARIZE_SYSTEM,
@@ -306,29 +322,27 @@ async def summarize_episode(
         return {"error": "haiku_summarize_failed", "reason": str(e)[:200]}
 
     if not isinstance(result, dict):
-        return {"error": "haiku_invalid_response", "sort_order": sort_order}
+        return {"error": "haiku_invalid_response", "episode_id": episode_id}
 
     summary_text = result.get("summary") or ""
     if not summary_text:
-        return {"error": "missing_summary_field", "sort_order": sort_order}
+        return {"error": "missing_summary_field", "episode_id": episode_id}
 
     content_hash = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
     now = datetime.utcnow()
-    # Phase 4.6: pov_character / tone 은 SQL 매칭 의존 — 평문 유지 (암호화 대상 제외)
     plain_values = {
         "oneline_summary": result.get("oneline_summary"),
         "summary": summary_text,
         "time_progression": result.get("time_progression"),
         "cliffhanger": result.get("cliffhanger"),
     }
-    # Phase 4.6: 자유형 텍스트 필드 암호화 (사용자 원고 기반 정보).
     try:
         encrypted_text = await encrypt_summary_text_fields(ctx.work_id, plain_values)
     except EncryptResolverError as e:
-        return {"error": "encrypt_failed", "reason": str(e)[:200], "sort_order": sort_order}
+        return {"error": "encrypt_failed", "reason": str(e)[:200], "episode_id": episode_id}
 
     values = {
-        "episode_id": episode_id,
+        "episode_id": ep_id,
         "work_id": ctx.work_id,
         "writer_id": ctx.writer_id,
         "oneline_summary": encrypted_text.get("oneline_summary"),
@@ -362,10 +376,9 @@ async def summarize_episode(
     await session.execute(stmt)
 
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
-    # 반환값은 LLM 이 즉시 사용 — 평문 (plain_values) 유지. DB 에는 ciphertext 적재됨.
     return {
-        "sort_order": sort_order,
-        "title": title,
+        "id": str(ep_id),
+        "title": plain_title,
         "cached": False,
         "generation_count": (int(row[4] or 0)) + 1,
         "oneline_summary": plain_values["oneline_summary"],

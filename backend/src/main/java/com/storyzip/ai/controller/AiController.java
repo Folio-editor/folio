@@ -4,6 +4,8 @@ import com.storyzip.ai.client.AiClient;
 import com.storyzip.ai.client.dto.AiContextPayload;
 import com.storyzip.ai.client.dto.DraftRequest;
 import com.storyzip.ai.client.dto.ReviewRequest;
+import com.storyzip.ai.client.dto.QuickSpellcheckRequest;
+import com.storyzip.ai.client.dto.QuickSummarizeRequest;
 import com.storyzip.ai.client.dto.SpellcheckRequest;
 import com.storyzip.common.exception.ErrorCode;
 import com.storyzip.common.exception.PaymentException;
@@ -45,6 +47,8 @@ public class AiController {
     private static final int DRAFT_OPUS_MIN_CREDITS   = 70;
     private static final int REVIEW_MIN_CREDITS       = 29;
     private static final int SPELLCHECK_MIN_CREDITS   = 5;
+    /** Haiku 1회 (~5 크레딧) — cache hit 시 0. 사전 검증은 보수적으로 5. */
+    private static final int SUMMARIZE_MIN_CREDITS    = 5;
 
     private final AiClient aiClient;
     private final TokenWalletService tokenWalletService;
@@ -74,6 +78,12 @@ public class AiController {
             String episodeId,
             String content,
             AiContextPayload context
+    ) {}
+
+    public record QuickSummarizeClientRequest(
+            String workId,
+            int sortOrder,
+            boolean forceRegenerate
     ) {}
 
     @PostMapping(value = "/drafts", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -172,6 +182,70 @@ public class AiController {
             deductFromUsage(writerUuid, "haiku", typed,
                     "AI_SPELLCHECK_" + body.episodeId(),
                     safeUuid(body.episodeId()));
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/quick/spellcheck")
+    @Operation(summary = "맞춤법 검사 + 결과를 작가 승인 큐(spelling_batch)로 적재 — Haiku 1회 (~5 크레딧)")
+    public ResponseEntity<Map<String, Object>> quickSpellcheck(
+            @RequestBody SpellcheckClientRequest body,
+            Authentication authentication
+    ) {
+        String writerId = authentication.getName();
+        UUID writerUuid = UUID.fromString(writerId);
+
+        ensureBalance(writerUuid, SPELLCHECK_MIN_CREDITS);
+
+        QuickSpellcheckRequest request = new QuickSpellcheckRequest(
+                body.workId(),
+                writerId,
+                body.episodeId(),
+                body.content(),
+                body.context()
+        );
+
+        Map<String, Object> result = aiClient.requestQuickSpellcheck(request);
+
+        Object usage = result.get("usage");
+        if (usage instanceof Map<?, ?> usageMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) usageMap;
+            deductFromUsage(writerUuid, "haiku", typed,
+                    "AI_SPELLCHECK_QUEUE_" + body.episodeId(),
+                    safeUuid(body.episodeId()));
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/quick/summarize")
+    @Operation(summary = "회차 요약 단발 생성 — Sonnet 우회, Haiku 1회 (~5 크레딧, cache hit 시 0)")
+    public ResponseEntity<Map<String, Object>> quickSummarize(
+            @RequestBody QuickSummarizeClientRequest body,
+            Authentication authentication
+    ) {
+        String writerId = authentication.getName();
+        UUID writerUuid = UUID.fromString(writerId);
+
+        ensureBalance(writerUuid, SUMMARIZE_MIN_CREDITS);
+
+        QuickSummarizeRequest request = new QuickSummarizeRequest(
+                body.workId(),
+                writerId,
+                body.sortOrder(),
+                body.forceRegenerate()
+        );
+
+        Map<String, Object> result = aiClient.requestQuickSummarize(request);
+
+        // cache hit 이면 usage = {input_tokens: 0, output_tokens: 0} → deductFromUsage 가 자동 skip.
+        Object usage = result.get("usage");
+        if (usage instanceof Map<?, ?> usageMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) usageMap;
+            deductFromUsage(writerUuid, "haiku", typed,
+                    "AI_SUMMARIZE_W" + body.workId() + "_S" + body.sortOrder(),
+                    safeUuid(body.workId()));
         }
         return ResponseEntity.ok(result);
     }

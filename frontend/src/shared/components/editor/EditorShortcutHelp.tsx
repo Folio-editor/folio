@@ -85,7 +85,7 @@ const markdownEntries: MarkdownEntry[] = [
 function Kbd({ children }: { children: string }) {
   return (
     <kbd
-      className="inline-flex h-[20px] items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10.5px] text-[#111]"
+      className="inline-flex h-[20px] items-center rounded-[3px] border border-border border-b-[1.5px] bg-card px-1.5 text-[10.5px] text-popover-foreground"
       style={{ fontFamily: FONT_MONO }}
     >
       {children}
@@ -133,7 +133,7 @@ export default function EditorShortcutHelp({
       aria-modal="false"
       aria-labelledby="folio-esh-title"
       data-folio-dialog
-      className="fixed z-50 flex flex-col rounded-[12px] border border-[#d4d4d4] bg-[#fafaf7] text-[#111] overflow-hidden"
+      className="fixed z-50 flex flex-col rounded-[12px] border border-border bg-popover text-popover-foreground overflow-hidden"
       style={{
         left: drag.rect.x,
         top: drag.rect.y,
@@ -161,13 +161,13 @@ export default function EditorShortcutHelp({
         onPointerDown={drag.startMove}
       >
         <div className="flex-1 min-w-0">
-          <div aria-hidden className="mb-2 h-px w-7 bg-[#111] opacity-45" />
-          <div className="mb-1 text-[10.5px] tracking-[0.32em] uppercase text-[#6b6b6b]">
+          <div aria-hidden className="mb-2 h-px w-7 bg-foreground opacity-45" />
+          <div className="mb-1 text-[10.5px] tracking-[0.32em] uppercase text-muted-foreground">
             Editor · Help
           </div>
           <h2
             id="folio-esh-title"
-            className="m-0 text-[18px] font-semibold leading-[1.35] tracking-[-0.015em] text-[#111]"
+            className="m-0 text-[18px] font-semibold leading-[1.35] tracking-[-0.015em] text-popover-foreground"
             style={{ fontFamily: FONT_SERIF }}
           >
             편집 도움말
@@ -178,7 +178,7 @@ export default function EditorShortcutHelp({
           onClick={onClose}
           onPointerDown={(e) => e.stopPropagation()}
           aria-label="닫기"
-          className="ml-1 mt-1 px-1.5 py-1 text-[11px] uppercase tracking-[0.2em] text-[#6b6b6b] transition-colors hover:text-[#111]"
+          className="ml-1 mt-1 px-1.5 py-1 text-[11px] uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-popover-foreground"
         >
           닫기 ✕
         </button>
@@ -188,7 +188,7 @@ export default function EditorShortcutHelp({
       <nav
         role="tablist"
         aria-label="도움말 분류"
-        className="flex items-center gap-[18px] border-b border-[#e5e5e2] px-7 flex-shrink-0"
+        className="flex items-center gap-[18px] border-b border-border/60 px-7 shrink-0"
       >
         <button
           type="button"
@@ -199,8 +199,8 @@ export default function EditorShortcutHelp({
           className={cn(
             'relative bg-transparent border-0 cursor-pointer px-0 pb-2 pt-1.5 text-[13px] font-medium transition-colors',
             tab === 'shortcut'
-              ? 'text-[#111] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-[#111]'
-              : 'text-[#6b6b6b] hover:text-[#111]',
+              ? 'text-popover-foreground after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-foreground'
+              : 'text-muted-foreground hover:text-popover-foreground',
           )}
         >
           단축키
@@ -214,13 +214,13 @@ export default function EditorShortcutHelp({
           className={cn(
             'relative bg-transparent border-0 cursor-pointer px-0 pb-2 pt-1.5 text-[13px] font-medium transition-colors',
             tab === 'markdown'
-              ? 'text-[#111] after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-[#111]'
-              : 'text-[#6b6b6b] hover:text-[#111]',
+              ? 'text-popover-foreground after:absolute after:-bottom-px after:left-0 after:right-0 after:h-[1.5px] after:bg-foreground'
+              : 'text-muted-foreground hover:text-popover-foreground',
           )}
         >
           마크다운
         </button>
-        <span className="ml-auto pb-2 pt-1.5 text-[11px] text-[#6b6b6b]">
+        <span className="ml-auto pb-2 pt-1.5 text-[11px] text-muted-foreground">
           Esc 로 닫기
         </span>
       </nav>
@@ -233,9 +233,9 @@ export default function EditorShortcutHelp({
         {tab === 'shortcut' &&
           categories.map((category) => (
             <div key={category.title} className="mb-4 last:mb-0">
-              <h3 className="m-0 mb-1.5 flex items-center gap-2.5 text-[10.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b]">
+              <h3 className="m-0 mb-1.5 flex items-center gap-2.5 text-[10.5px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
                 {category.title}
-                <span aria-hidden className="flex-1 h-px bg-[#e5e5e2]" />
+                <span aria-hidden className="flex-1 h-px bg-border/70" />
               </h3>
               <div>
                 {category.shortcuts.map((shortcut) => (
@@ -243,7 +243,7 @@ export default function EditorShortcutHelp({
                     key={shortcut.keys}
                     className="flex items-center justify-between gap-3 py-1"
                   >
-                    <span className="text-[12.5px] leading-[1.5] text-[#111]">
+                    <span className="text-[12.5px] leading-[1.5] text-popover-foreground">
                       {shortcut.label}
                     </span>
                     <span className="inline-flex gap-1">
@@ -260,7 +260,7 @@ export default function EditorShortcutHelp({
         {tab === 'markdown' && (
           <div>
             <p
-              className="m-0 mb-2.5 pb-2.5 border-b border-dashed border-[#e5e5e2] text-[12.5px] italic leading-[1.6] text-[#6b6b6b]"
+              className="m-0 mb-2.5 pb-2.5 border-b border-dashed border-border/60 text-[12.5px] italic leading-[1.6] text-muted-foreground"
               style={{ fontFamily: FONT_SERIF }}
             >
               줄 시작에 입력하면 자동으로 서식이 적용됩니다.
@@ -271,11 +271,11 @@ export default function EditorShortcutHelp({
                   key={entry.syntax}
                   className="flex items-center justify-between gap-3 py-1"
                 >
-                  <span className="text-[12.5px] leading-[1.5] text-[#111]">
+                  <span className="text-[12.5px] leading-[1.5] text-popover-foreground">
                     {entry.label}
                   </span>
                   <code
-                    className="rounded-[3px] border border-[#d4d4d4] bg-white px-2 py-0.5 text-[11px] text-[#111]"
+                    className="rounded-[3px] border border-border bg-card px-2 py-0.5 text-[11px] text-popover-foreground"
                     style={{
                       fontFamily:
                         'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -291,7 +291,7 @@ export default function EditorShortcutHelp({
       </div>
 
       {/* Footer */}
-      <div className="px-7 py-3 border-t border-[#e5e5e2] text-center text-[11px] text-[#6b6b6b] flex-shrink-0">
+      <div className="px-7 py-3 border-t border-border/60 text-center text-[11px] text-muted-foreground shrink-0">
         <Kbd>Esc</Kbd> 닫기 · <Kbd>1</Kbd> 단축키 · <Kbd>2</Kbd> 마크다운
       </div>
 
@@ -303,8 +303,8 @@ export default function EditorShortcutHelp({
         className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
         style={{
           background:
-            'linear-gradient(135deg, transparent 50%, #6b6b6b 50%, #6b6b6b 60%, transparent 60%, transparent 70%, #6b6b6b 70%, #6b6b6b 80%, transparent 80%)',
-          opacity: 0.35,
+            'linear-gradient(135deg, transparent 50%, var(--muted-foreground) 50%, var(--muted-foreground) 60%, transparent 60%, transparent 70%, var(--muted-foreground) 70%, var(--muted-foreground) 80%, transparent 80%)',
+          opacity: 0.4,
         }}
       />
     </div>

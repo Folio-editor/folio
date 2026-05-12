@@ -15,17 +15,17 @@ class TokenPackageTest {
     void fromCode_returnsFixedAmountAndQty() {
         assertThat(TokenPackage.fromCode("TOKEN_3000"))
                 .satisfies(p -> {
-                    assertThat(p.getAmount()).isEqualTo(300);
+                    assertThat(p.getAmount()).isEqualTo(3_000);
                     assertThat(p.getTokenQty()).isEqualTo(3_000);
                 });
         assertThat(TokenPackage.fromCode("TOKEN_5500"))
                 .satisfies(p -> {
-                    assertThat(p.getAmount()).isEqualTo(500);
+                    assertThat(p.getAmount()).isEqualTo(5_000);
                     assertThat(p.getTokenQty()).isEqualTo(5_500);
                 });
         assertThat(TokenPackage.fromCode("TOKEN_12000"))
                 .satisfies(p -> {
-                    assertThat(p.getAmount()).isEqualTo(1_000);
+                    assertThat(p.getAmount()).isEqualTo(10_000);
                     assertThat(p.getTokenQty()).isEqualTo(12_000);
                 });
     }

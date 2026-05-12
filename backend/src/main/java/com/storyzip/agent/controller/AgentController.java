@@ -50,6 +50,8 @@ public class AgentController {
     /** 시나리오별 진입 최소 잔액 (ai/app/agent/scenarios.py SCENARIO_BUDGET 의 min_balance 와 정합). */
     private static final Map<String, Integer> MIN_BALANCE = Map.ofEntries(
             Map.entry("auto", 200),
+            // card_auto: 카드 모드 자유 문서 생성 — auto 와 동등 동작 (단발 진입점 분리용 alias).
+            Map.entry("card_auto", 200),
             Map.entry("draft_next", 800),
             Map.entry("revision", 600),
             Map.entry("consistency_check", 400),
@@ -60,7 +62,7 @@ public class AgentController {
 
     // Phase 4 — auto 모드는 모든 의도를 포괄하므로 항상 비동기.
     private static final Set<String> ASYNC_SCENARIOS =
-            Set.of("auto", "draft_next", "revision", "consistency_check", "extraction");
+            Set.of("auto", "card_auto", "draft_next", "revision", "consistency_check", "extraction");
 
     private final AiClient aiClient;
     private final TokenWalletService walletService;
@@ -107,6 +109,35 @@ public class AgentController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "thread owner mismatch");
         }
         return body;
+    }
+
+    @DeleteMapping("/threads/{threadId}")
+    @Operation(summary = "대화 세션 삭제")
+    public ResponseEntity<Void> deleteThread(
+            @PathVariable String threadId,
+            Authentication auth
+    ) {
+        // 소유자 검증은 AI 서버 쪽 DELETE 가 writer_id 기반 조건절로 1행 보장.
+        // 서비스 단에서 1차로 GET 으로 owner 확인하면 race window 가 생기므로 atomic DELETE 만 신뢰.
+        aiClient.deleteAgentThread(threadId, auth.getName());
+        log.info("agent thread deleted threadId={} writer={}", threadId, auth.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/threads/{threadId}/compress")
+    @Operation(summary = "대화 수동 압축 — 채팅 UI 의 압축 버튼 트리거")
+    public Map<String, Object> compressThread(
+            @PathVariable String threadId,
+            Authentication auth
+    ) {
+        // 소유자 검증 — getAgentThread 로 1차 owner 확인 (압축은 thread 메시지를 변경하므로 안전 우선)
+        Map<String, Object> thread = aiClient.getAgentThread(threadId);
+        if (!auth.getName().equals(thread.get("writer_id"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "thread owner mismatch");
+        }
+        Map<String, Object> result = aiClient.compressAgentThread(threadId);
+        log.info("agent thread compressed threadId={} writer={}", threadId, auth.getName());
+        return result;
     }
 
     // ─────── Messages ───────
@@ -193,7 +224,12 @@ public class AgentController {
         return suggestionService.list(UUID.fromString(auth.getName()), status, entityType, limit);
     }
 
-    public record SuggestionPatchRequest(String status, String reviewerNote) {}
+    public record SuggestionPatchRequest(
+            String status,
+            String reviewerNote,
+            /** spelling_batch 전용 — 작가가 체크박스로 선별한 fix index 들. 다른 entity_type 에선 무시. */
+            List<Integer> selectedIndices
+    ) {}
 
     @PatchMapping("/suggestions/{id}")
     @Operation(summary = "제안 승인/거절")
@@ -203,8 +239,18 @@ public class AgentController {
             Authentication auth
     ) {
         return suggestionService.updateStatus(
-                UUID.fromString(auth.getName()), id, body.status(), body.reviewerNote()
+                UUID.fromString(auth.getName()), id, body.status(), body.reviewerNote(), body.selectedIndices()
         );
+    }
+
+    @DeleteMapping("/suggestions/{id}")
+    @Operation(summary = "제안 기록 영구 삭제 — 처리 완료 또는 미처리 기록 정리용")
+    public ResponseEntity<Void> deleteSuggestion(
+            @PathVariable UUID id,
+            Authentication auth
+    ) {
+        suggestionService.delete(UUID.fromString(auth.getName()), id);
+        return ResponseEntity.noContent().build();
     }
 
     // ─────── 헬퍼 ───────

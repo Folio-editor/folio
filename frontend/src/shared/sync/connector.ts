@@ -48,7 +48,6 @@ export class FolioConnector implements PowerSyncBackendConnector {
       throw new Error('PowerSync: 인증 토큰 없음 — 로그인 필요');
     }
 
-    console.log('[sync] 인증 OK, PowerSync 연결 시도:', POWERSYNC_URL);
     return { endpoint: POWERSYNC_URL, token };
   }
 
@@ -71,13 +70,11 @@ export class FolioConnector implements PowerSyncBackendConnector {
    */
   async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
     if (!useNetworkStore.getState().isOnline) {
-      console.log('[sync] 오프라인 — 업로드 건너뜀 (큐 유지)');
       return;
     }
 
     const token = await window.folio.auth.getAccessToken();
     if (!token) {
-      console.log('[uploadData] 게스트 모드 — 큐 유지');
       return;
     }
 
@@ -121,7 +118,6 @@ export class FolioConnector implements PowerSyncBackendConnector {
         void analytics.track('sync_succeeded', {
           event_count_bucket: countBucket(entries.length),
         });
-        console.log(`[sync] uploadData ${entries.length}건 업로드 성공`);
         // batch 안에 work PUT 이 있으면 서버에 work 행 도달 → server-dek 즉시 발급 가능.
         // pending queue + SQLite 의 stale work (server_encrypted_dek=NULL) 둘 다 trigger.
         // sanitize 의 issueServerDek 는 즉시 호출 안 하고 pending 만 적재 →

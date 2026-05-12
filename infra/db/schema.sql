@@ -37,18 +37,22 @@ CREATE TABLE audit_log (
 );
 
 CREATE TABLE payment (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    writer_id       UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
-    order_id        VARCHAR(100) NOT NULL UNIQUE,
-    payment_key     VARCHAR(200),
-    amount          INTEGER NOT NULL,
-    token_qty       INTEGER NOT NULL,
-    status          VARCHAR(20) NOT NULL,
-    method          VARCHAR(20),
-    approved_at     TIMESTAMP,
-    failure_reason  TEXT,
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    writer_id                UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
+    order_id                 VARCHAR(100) NOT NULL UNIQUE,
+    payment_key              VARCHAR(200),
+    amount                   INTEGER NOT NULL,
+    token_qty                INTEGER NOT NULL,
+    status                   VARCHAR(20) NOT NULL,
+    method                   VARCHAR(20),
+    approved_at              TIMESTAMP,
+    failure_reason           TEXT,
+    -- 결제 시 사용자가 동의한 환불 규정 버전 (현재 'v1'). 약관 변경 시 추적용 — 분쟁 시 법적 증거.
+    -- 전자상거래법 거래 기록 5년 보관 의무 대응. CreatePaymentRequest 에서 명시 동의 받음.
+    refund_policy_version    VARCHAR(20) NOT NULL,
+    refund_policy_agreed_at  TIMESTAMP NOT NULL,
+    created_at               TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE subscription (
@@ -74,6 +78,41 @@ CREATE TABLE payment_event (
     payload         JSONB NOT NULL,
     consumed        BOOLEAN NOT NULL DEFAULT FALSE,
     processed_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- 환불 1건 = 1 row. 약관 제5조: 사용자 신청 → 운영자 검토 → 승인/거절.
+-- 한 결제당 active(REQUESTED/APPROVED) 환불 1건 제한은 application 레벨에서 강제.
+-- 보존: 전자상거래법 제6조 5년 이상.
+CREATE TABLE refund (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id      UUID NOT NULL REFERENCES payment(id) ON DELETE RESTRICT,
+    status          VARCHAR(20) NOT NULL,           -- REQUESTED / APPROVED / REJECTED / CANCELED
+    reason          VARCHAR(30) NOT NULL,           -- RefundReason enum
+    detail          VARCHAR(500),
+    refund_type     VARCHAR(20) NOT NULL,           -- RefundType enum (FULL / PARTIAL / COMPENSATION)
+    refund_amount   INTEGER NOT NULL,
+    token_deducted  INTEGER NOT NULL,
+    requested_at    TIMESTAMP NOT NULL,
+    processed_at    TIMESTAMP,
+    admin_note      VARCHAR(500),
+    created_at      TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- 관리자 API 호출 전수 감사 로그. 모든 admin endpoint 가 INSERT.
+-- 보존: DB 1년 + S3 archive 4년 (Phase B).
+CREATE TABLE admin_audit_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action          VARCHAR(50) NOT NULL,           -- REFUND_LIST / REFUND_APPROVE / REFUND_REJECT 등
+    result          VARCHAR(20) NOT NULL,           -- SUCCESS / DENIED / ERROR
+    resource_type   VARCHAR(30),                    -- refund / payment / writer (NULL 가능)
+    resource_id     UUID,
+    admin_note      VARCHAR(500),
+    request_ip      VARCHAR(45),                    -- IPv6 포함
+    user_agent      VARCHAR(500),
+    request_path    VARCHAR(200),
+    error_message   VARCHAR(500),
+    created_at      TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE analytics_event_dedup (
@@ -381,9 +420,12 @@ CREATE TABLE extraction_suggestion (
             'character_update','character_delete',
             'world_note_update','world_note_delete',
             'plot_create','plot_tree','plot_revision','plot_delete',
-            'episode_draft','episode_update','episode_delete'
+            'episode_draft','episode_update','episode_delete',
+            'review_issue',
+            'spelling_fix','spelling_batch'
         )),
-    suggested_name      VARCHAR(200) NOT NULL,
+    -- TEXT: 2026-05-09 cipher 도입으로 200자 제한이 base64 + AES-GCM 오버헤드 초과 가능 → TEXT.
+    suggested_name      TEXT NOT NULL,
     payload             JSONB NOT NULL DEFAULT '{}'::jsonb,
     source_agent        VARCHAR(40),                  -- 'sonnet_planner' / 'haiku_worker' / NULL(자동 추출 task)
     source_thread_id    UUID,                         -- agent_session.thread_id (FK 미설정: agent_session 후순위 생성)
@@ -421,6 +463,10 @@ CREATE TRIGGER trg_ai_job_updated_at
     BEFORE UPDATE ON ai_job
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+CREATE TRIGGER trg_refund_updated_at
+    BEFORE UPDATE ON refund
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- ============================================================
 -- Phase 4: Agent 서비스 (대화 세션 + 토큰 영수증)
 -- ============================================================
@@ -432,11 +478,12 @@ CREATE TABLE agent_session (
     writer_id        UUID NOT NULL REFERENCES writer(id) ON DELETE CASCADE,
     scenario         VARCHAR(40) NOT NULL
         CHECK (scenario IN (
-            'auto',
+            'auto', 'card_auto',
             'draft_next','consistency_check','revision',
             'extraction','qa','ideation'
         )),
-    title            VARCHAR(200),
+    -- TEXT: 2026-05-09 cipher 도입으로 200자 제한이 base64 + AES-GCM 오버헤드 초과 가능 → TEXT.
+    title            TEXT,
     messages         JSONB NOT NULL DEFAULT '[]'::jsonb,
     summary_so_far   TEXT,                           -- N-5 자동 압축 결과 보관
     status           VARCHAR(20) NOT NULL DEFAULT 'active'
@@ -547,6 +594,13 @@ CREATE INDEX idx_idea_archive_work ON idea_archive(work_id);
 -- 서버 전용
 CREATE INDEX idx_audit_log_writer ON audit_log(writer_id);
 CREATE INDEX idx_payment_writer ON payment(writer_id);
+CREATE INDEX idx_refund_payment_id   ON refund(payment_id);
+CREATE INDEX idx_refund_status       ON refund(status);
+CREATE INDEX idx_refund_requested_at ON refund(requested_at);
+CREATE INDEX idx_admin_audit_action      ON admin_audit_log(action);
+CREATE INDEX idx_admin_audit_resource    ON admin_audit_log(resource_type, resource_id);
+CREATE INDEX idx_admin_audit_created_at  ON admin_audit_log(created_at);
+CREATE INDEX idx_admin_audit_request_ip  ON admin_audit_log(request_ip);
 CREATE INDEX idx_subscription_writer ON subscription(writer_id);
 CREATE INDEX idx_subscription_status ON subscription(status, next_billing_at);
 CREATE INDEX idx_payment_event_type ON payment_event(event_type, processed_at);

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -92,6 +93,17 @@ async def run_agent(
         # 사용자에게 abort 사유 메시지를 history 에도 남김
         messages.append({"role": "assistant", "content": answer})
         logger.warning("agent.budget_exceeded scenario=%s reason=%s", scenario, e.reason)
+    except asyncio.CancelledError:
+        # 사용자가 채팅 UI 의 ■ 중단 버튼 → SSE fetch 취소 → FastAPI StreamingResponse
+        # generator 에 CancelledError 전파 → run_planner_loop 의 await 지점에서 raise.
+        # 본 함수는 partial 처리 후 정리 (영수증/세션 저장) 가 필수라 cancel 을 의도적으로
+        # 흡수. catch 후엔 후속 await 들이 정상 실행됨 (이 시점에 task 의 cancel state 가
+        # 리셋됐으므로). 호출자 (SSE endpoint) 는 응답을 이미 끊었으니 return 값 의미 없음.
+        status = "partial"
+        budget.aborted = "client_disconnect"
+        answer = "[AGENT] 사용자 중단 — 현재까지 진행한 단계까지만 반영했습니다."
+        messages.append({"role": "assistant", "content": answer})
+        logger.info("agent.client_disconnect scenario=%s thread=%s", scenario, thread_id)
     except Exception as e:
         status = "failed"
         # 실제 예외 타입/메시지를 사용자에게 노출 (rate limit / API 에러 진단 가능)
@@ -108,6 +120,16 @@ async def run_agent(
             or "529" in err_msg
             or err_type in ("APIStatusError", "InternalServerError")
         )
+        # GMS / LLM 게이트웨이 프록시는 요청 본문이 자기 한계 (200K 미만) 를 넘어가면
+        # 모델 호출조차 안 하고 generic 에러로 떨군다. "Model not found" / "GMS 에러" 같은
+        # 메시지가 대표 — 실제 모델명은 정상이라 사용자는 원인 파악 불가. 컨텍스트 과포화로 분류.
+        ml = err_msg.lower()
+        is_proxy_overflow = (
+            ("model not found" in ml and "anthropic" in ml)
+            or "[gms" in ml
+            or "request entity too large" in ml
+            or "413" in err_msg
+        )
         if is_rate_limit:
             budget.aborted = "rate_limited"
             answer = (
@@ -120,6 +142,13 @@ async def run_agent(
             answer = (
                 "[AGENT] Anthropic 서버 일시 과부하. 잠시 후 재시도해주세요. "
                 "(" + err_msg + ")"
+            )
+        elif is_proxy_overflow:
+            budget.aborted = "context_overflow"
+            answer = (
+                "[AGENT] 채팅이 누적되어 한 번에 보낼 수 있는 컨텍스트 한계를 넘었습니다. "
+                "같은 thread 의 [압축] 버튼으로 대화를 정리한 뒤 다시 보내주세요. "
+                "(원본 게이트웨이 에러: " + err_msg + ")"
             )
         else:
             budget.aborted = "internal_error"

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
-import { AlertCircle, CheckCircle2, Download, RefreshCw, RotateCw } from 'lucide-react';
+import { AlertCircle, Bug, CheckCircle2, ClipboardList, Download, ExternalLink, RefreshCw, RotateCw } from 'lucide-react';
+import { FEEDBACK_LINKS, openExternalLink } from '../../constants/externalLinks';
 import { useUpdater } from '../../hooks/useUpdater';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
 import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
@@ -237,6 +238,28 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
             </Section>
           )}
 
+          {/* 사용자 설문 */}
+          <Section title="사용자 설문">
+            <FeedbackSection
+              icon={<ClipboardList size={16} className="text-info" strokeWidth={1.75} />}
+              title="Folio 사용자 설문"
+              description="제품 개선과 새 기능 우선순위 결정을 위한 짧은 설문입니다. 응답이 큰 도움이 됩니다."
+              buttonLabel="설문 참여하기"
+              url={FEEDBACK_LINKS.survey}
+            />
+          </Section>
+
+          {/* 버그 리포트 */}
+          <Section title="버그 리포트">
+            <FeedbackSection
+              icon={<Bug size={16} className="text-danger" strokeWidth={1.75} />}
+              title="문제가 발생했나요?"
+              description="버그·오류·이상 동작을 알려주세요. 재현 방법과 환경을 함께 적어주시면 빠르게 해결할 수 있습니다."
+              buttonLabel="버그 신고하기"
+              url={FEEDBACK_LINKS.bug}
+            />
+          </Section>
+
           {/* 도움말 — 튜토리얼 가이드 다시 시작 */}
           <Section title="도움말">
             <div className="space-y-4">
@@ -337,6 +360,38 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
           onCancel={() => setRestartConfirm(false)}
         />
       )}
+    </div>
+  );
+}
+
+function FeedbackSection({
+  icon,
+  title,
+  description,
+  buttonLabel,
+  url,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  url: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 shrink-0">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+        <button
+          type="button"
+          onClick={() => openExternalLink(url)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-foreground/40 hover:bg-muted"
+        >
+          {buttonLabel}
+          <ExternalLink size={11} strokeWidth={1.75} />
+        </button>
+      </div>
     </div>
   );
 }

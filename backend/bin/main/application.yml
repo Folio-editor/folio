@@ -13,6 +13,20 @@ spring:
       write-dates-as-timestamps: false
     time-zone: UTC
 
+  # Gmail SMTP — 환불 신청 시 운영자에게 알림. 약관 제5조.
+  # MAIL_USERNAME/PASSWORD 미설정 시 EmailNotifier가 알아서 패스 (dev/test 깨지지 않음).
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
@@ -27,6 +41,14 @@ management:
   endpoint:
     health:
       show-details: when_authorized
+  health:
+    # Spring Boot 가 starter-mail 의존성 감지 시 자동 등록하는 MailHealthIndicator 비활성화.
+    # 매 헬스체크마다 SMTP 인증을 시도하므로:
+    #   1) Gmail 일일 인증 한도 소진 위험
+    #   2) 인증 실패 시 /actuator/health 가 503 → nginx 가 backend 를 unhealthy 로 판단 → 502
+    # 메일 발송 자체는 EmailNotifier 가 환불 신청 시점에만 호출하므로 헬스체크는 불필요.
+    mail:
+      enabled: false
   metrics:
     tags:
       application: folio-backend
@@ -62,6 +84,17 @@ ai:
 # Folio 보안 (Plan C — 결정 6/15/16)
 # server_pepper 는 Doppler 의 SERVER_PEPPER 환경변수 (32B base64) 로 직접 주입.
 # 이전엔 AWS Secrets Manager 사용했으나 EC2 외부 차단 환경에서 사용 불가 → 폐기.
+storyzip:
+  mail:
+    # 발신 주소 (Gmail SMTP의 경우 username과 동일하게 설정)
+    from: ${MAIL_FROM:}
+    # 운영자(환불 신청 등 인간 검토 알림 수신) — 약관 5조 1항.
+    operator-to: ${MAIL_OPERATOR_TO:2square.f203@gmail.com}
+  admin:
+    # 관리자 API (X-Admin-Token 헤더) 인증 토큰 — Doppler ADMIN_API_TOKEN 으로 주입.
+    # 미설정 시 모든 /api/v1/admin/** 호출이 401로 차단된다 (보안 fail-safe).
+    api-token: ${ADMIN_API_TOKEN:}
+
 folio:
   security:
     pepper:

@@ -12,6 +12,8 @@ import com.storyzip.ai.client.dto.EpisodePipelineResponse;
 import com.storyzip.ai.client.dto.HealthResponse;
 import com.storyzip.ai.client.dto.PingEnqueuedResponse;
 import com.storyzip.ai.client.dto.PingResultResponse;
+import com.storyzip.ai.client.dto.QuickSpellcheckRequest;
+import com.storyzip.ai.client.dto.QuickSummarizeRequest;
 import com.storyzip.ai.client.dto.ReviewRequest;
 import com.storyzip.ai.client.dto.SpellcheckRequest;
 import com.storyzip.common.exception.AiException;
@@ -54,6 +56,8 @@ public class AiClient {
     /** 리뷰는 LLM 한 번 호출이라 길다. 30초 넘으면 사용자 경험 망가지므로 WARN. */
     private static final long AI_REVIEW_SLA_MS = 30_000L;
     private static final long AI_SPELLCHECK_SLA_MS = 20_000L;
+    /** 회차 요약은 본문 길이에 따라 변동 — Haiku 1회 + DB UPSERT 한 번. */
+    private static final long AI_SUMMARIZE_SLA_MS = 30_000L;
     /** 초안 SSE 스트림 전체 — 5분이 한계 (timeout 설정과 동일). */
     private static final long AI_DRAFT_STREAM_SLA_MS = 60_000L;
 
@@ -233,6 +237,51 @@ public class AiClient {
         });
     }
 
+    /** 대화 수동 압축 — Haiku 1회 호출로 첫 절반을 요약. */
+    public Map<String, Object> compressAgentThread(String threadId) {
+        return ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "compressAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = restClient.post()
+                        .uri("/v1/agent/threads/{tid}/compress", threadId)
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .body(Map.class);
+                if (body == null) {
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+                return body;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
+    /** Agent 대화 세션 삭제 — writer_id 를 query 로 전달해 AI 서버에서 소유자 검증. */
+    public void deleteAgentThread(String threadId, String writerId) {
+        ExternalCallLogger.measure(
+                ExternalCallLogger.SYSTEM_AI, "deleteAgentThread", AI_QUICK_SLA_MS, () -> {
+            try {
+                restClient.delete()
+                        .uri(uriBuilder -> uriBuilder
+                                .path("/v1/agent/threads/{tid}")
+                                .queryParam("writer_id", writerId)
+                                .build(threadId))
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .retrieve()
+                        .toBodilessEntity();
+                return null;
+            } catch (ResourceAccessException e) {
+                throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+            } catch (RestClientResponseException e) {
+                throw new AiException(ErrorCode.AI_RESPONSE_INVALID, e);
+            }
+        });
+    }
+
     /**
      * Agent SSE 스트리밍 — AI 서버 /v1/agent/threads/{tid}/messages/stream 프록시.
      * step / done / error 이벤트를 그대로 SseEmitter 로 전달.
@@ -281,6 +330,19 @@ public class AiClient {
                                         org.springframework.http.MediaType.APPLICATION_JSON));
                             } catch (Exception sendErr) {
                                 log.debug("agent SSE downstream disconnected; drain upstream");
+                            }
+                        } else if (line.startsWith(":")) {
+                            // SSE 주석 (heartbeat) 그대로 forward — nginx/Cloudflare idle timeout
+                            // 으로 다운스트림 연결이 끊기는 것을 방지. AI 서버가 15초 간격으로
+                            // ': ping' 을 보내며, Spring 도 해당 frame 을 클라이언트까지 중계해야
+                            // 양 구간 모두 keepalive 효과를 얻는다.
+                            String commentBody = line.startsWith(": ")
+                                    ? line.substring(2)
+                                    : line.substring(1);
+                            try {
+                                emitter.send(SseEmitter.event().comment(commentBody));
+                            } catch (Exception sendErr) {
+                                log.debug("agent SSE heartbeat forward failed (downstream gone)");
                             }
                         }
                     }
@@ -546,6 +608,102 @@ public class AiClient {
                     String body = response.body();
                     int bodyLen = body == null ? 0 : body.length();
                     log.warn("AI spellcheck non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+
+                return mapper.readValue(response.body(), Map.class);
+            });
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        }
+    }
+
+    /** 맞춤법 검사 + 큐 적재 통합 — FastAPI /v1/quick/spellcheck 프록시. spellcheck 와 동일하게 Haiku 1회. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestQuickSpellcheck(QuickSpellcheckRequest request) {
+        try {
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestQuickSpellcheck", AI_SPELLCHECK_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/quick/spellcheck"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(2))
+                        .build();
+
+                HttpClient client = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<String> response = client.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    log.warn("AI quick spellcheck non-200: status={} bodyLen={}",
+                            response.statusCode(), bodyLen);
+                    throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
+                }
+
+                return mapper.readValue(response.body(), Map.class);
+            });
+        } catch (AiException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiException(ErrorCode.AI_REQUEST_TIMEOUT, e);
+        } catch (Exception e) {
+            throw new AiException(ErrorCode.AI_SERVER_UNAVAILABLE, e);
+        }
+    }
+
+    /** 회차 요약 단발 생성 — FastAPI /v1/quick/summarize 프록시 (동기 JSON, Haiku 1회). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestQuickSummarize(QuickSummarizeRequest request) {
+        try {
+            return ExternalCallLogger.measureChecked(
+                    ExternalCallLogger.SYSTEM_AI, "requestQuickSummarize", AI_SUMMARIZE_SLA_MS, () -> {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonBody = mapper.writeValueAsString(request);
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(properties.getBaseUrl() + "/v1/quick/summarize"))
+                        .header("Content-Type", "application/json")
+                        .header(INTERNAL_API_KEY_HEADER, properties.getInternalApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofMinutes(2))
+                        .build();
+
+                HttpClient summarizeClient = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(properties.getConnectTimeout())
+                        .build();
+
+                HttpResponse<String> response = summarizeClient.send(
+                        httpReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+
+                if (response.statusCode() != 200) {
+                    String body = response.body();
+                    int bodyLen = body == null ? 0 : body.length();
+                    log.warn("AI quick summarize non-200: status={} bodyLen={}",
                             response.statusCode(), bodyLen);
                     throw new AiException(ErrorCode.AI_RESPONSE_INVALID);
                 }

@@ -35,11 +35,16 @@ function toCheckoutError(code: string, message: string): Error {
   return err;
 }
 
+/**
+ * 일회성 결제 — 신용카드 결제창.
+ *
+ * <p>채널: KG이니시스 V2 (테스트 모드). PG 가 카드 인증 결제창을 띄워 사용자가 카드사 선택 →
+ * 카드사 인증 → 결제 완료 흐름으로 진행. 다양한 결제수단(카카오페이/네이버페이/계좌이체 등)
+ * 동시 노출은 후속 PR 에서 {@code loadPaymentUI} 기반으로 도입.
+ */
 export async function webOpenOneTime(
   params: FolioOneTimePaymentParams,
 ): Promise<FolioOneTimePaymentResult> {
-  // PortOne SDK 0.1.x의 PaymentRequestUnion 타입 정의 버그 — alipayPlus가 required로 잡혀있다.
-  // 런타임은 payMethod 분기로 동작하므로 타입만 우회한다.
   const response = await PortOne.requestPayment({
     storeId: params.storeId,
     channelKey: params.channelKey,
@@ -47,8 +52,7 @@ export async function webOpenOneTime(
     orderName: params.orderName,
     totalAmount: params.amount,
     currency: 'KRW',
-    payMethod: 'EASY_PAY',
-    easyPay: { easyPayProvider: 'KAKAOPAY' },
+    payMethod: 'CARD',
     customer: { customerId: params.customerKey },
   } as Parameters<typeof PortOne.requestPayment>[0]);
 
@@ -65,14 +69,21 @@ export async function webOpenOneTime(
   return { paymentId: response.paymentId };
 }
 
+/**
+ * 빌링키 발급 — 정기결제용 카드 등록.
+ *
+ * <p>PortOne V2 의 빌링키 발급은 {@code billingKeyMethod} 가 필수. 일회성 결제와 달리
+ * 통합 모달 없이 결제수단을 지정해야 한다. 정기결제는 신용카드를 기본으로 한다 — 카카오페이/
+ * 네이버페이 등 간편결제는 빌링키 발급이 지원되지 않는 경우가 많고, 사용자 입장에서도 정기결제
+ * 는 카드 등록이 가장 직관적.
+ */
 export async function webOpenBillingAuth(
   params: FolioBillingAuthParams,
 ): Promise<FolioBillingAuthResult> {
   const response = await PortOne.requestIssueBillingKey({
     storeId: params.storeId,
     channelKey: params.channelKey,
-    billingKeyMethod: 'EASY_PAY',
-    easyPay: { easyPayProvider: 'KAKAOPAY' },
+    billingKeyMethod: 'CARD',
     customer: { customerId: params.customerKey },
     issueName: 'Folio Pro 정기결제 카드 등록',
   } as Parameters<typeof PortOne.requestIssueBillingKey>[0]);
