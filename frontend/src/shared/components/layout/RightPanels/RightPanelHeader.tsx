@@ -5,6 +5,7 @@ import { useReviewHighlightStore } from '../../../stores/reviewHighlightStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useAgentChatStore } from '../../../stores/agentChatStore';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus';
+import { useReviewHighlightAutoCleanup } from '../../../hooks/useReviewHighlightAutoCleanup';
 import { RIGHT_TAB_HELP } from '../../../constants/tabHelpContent';
 import { FloatingHelpCard } from '../../ui/FloatingHelpCard';
 import { TABS } from './tabs';
@@ -26,6 +27,9 @@ export function RightPanelHeader({
   activeTab: RightPanelTab;
   selectedWorkId: string | null;
 }) {
+  // Review/Spelling 본문 하이라이트 자동 해제 — 탭 전환/메뉴 복귀/회차 변경 감지.
+  useReviewHighlightAutoCleanup(activeTab);
+
   const aiScreen = useAiSessionStore((s) => s.screen);
   const aiIsStreaming = useAiSessionStore((s) => s.isStreaming);
   const setScreen = useAiSessionStore((s) => s.setScreen);

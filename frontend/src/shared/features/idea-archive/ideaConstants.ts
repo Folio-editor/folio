@@ -9,7 +9,7 @@ export const TAG_COLOR: Record<string, string> = {
 };
 
 export const TAG_OPTIONS = [
-  { value: '', label: '태그 없음' },
+  { value: '', label: '없음' },
   { value: '문장', label: '문장' },
   { value: '장면', label: '장면' },
   { value: '설정', label: '설정' },
