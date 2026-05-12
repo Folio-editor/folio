@@ -254,6 +254,10 @@ services:
       - /opt/folio/data/prometheus:/prometheus
       # docker_sd_configs 가 컨테이너 SD 위해 필요 (read-only)
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # FastAPI /metrics 인증용 시크릿 — deploy.sh 가 INTERNAL_API_KEY 를
+      # /opt/folio/data/prometheus-secrets/internal-api-key (0400 nobody:nogroup) 로 기록.
+      # prometheus.yml 의 http_headers.files 가 이 파일을 헤더 값으로 사용.
+      - /opt/folio/data/prometheus-secrets:/etc/prometheus/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/-/ready || exit 1"]
       interval: 30s
@@ -421,7 +425,9 @@ services:
     container_name: folio-celery-exporter
     environment:
       CE_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in Doppler}@redis:6379/1
-      CE_ACCEPT_CONTENT: '["json","pickle"]'
+      # CE_ACCEPT_CONTENT 는 click CLI multi-value 가 ',' 로 split 하여 JSON 배열 파싱이 깨진다
+      # (SerializerNotInstalled: ["json"). default(json) 만 사용 — 워커도 accept_content=['json']
+      # 이므로 누락해도 무방. 명시 설정 X.
     depends_on:
       redis:
         condition: service_healthy

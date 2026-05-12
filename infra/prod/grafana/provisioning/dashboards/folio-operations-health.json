@@ -102,7 +102,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
       "targets": [
-        { "expr": "count(count by (name) (container_last_seen{name=~\"folio-.*\"}))", "refId": "A" }
+        { "expr": "count(count by (name) (container_last_seen{name=~\"/?folio-.*\"}))", "refId": "A" }
       ]
     },
     {

@@ -75,6 +75,14 @@ scrape_configs:
   - job_name: fastapi
     metrics_path: /metrics
     scrape_interval: 15s
+    # ai/app/main.py 의 /metrics 라우트가 require_internal_api_key 의존성을 걸어둠.
+    # 시크릿을 파일로 마운트해 헤더로 주입 (compose 의 prometheus-secrets 볼륨).
+    # deploy.sh 가 매 배포 시점에 Doppler 의 INTERNAL_API_KEY 를 호스트 경로
+    # /opt/folio/data/prometheus-secrets/internal-api-key (0400 nobody:nogroup) 로 기록.
+    http_headers:
+      X-Internal-Api-Key:
+        files:
+          - /etc/prometheus/secrets/internal-api-key
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 30s
