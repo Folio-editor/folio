@@ -176,7 +176,13 @@ export function PlotTreeList({
     setCreateTitle('');
     if (!trimmedTitle) return;
     void (async () => {
-      const id = await createPlot(workId, trimmedTitle, acts.length);
+      // acts 는 검색어로 필터된 배열이라 .length 를 sort_order 로 쓰면 새 막이 중간에 박힌다.
+      // 필터 무관하게 전체 act 의 MAX(sort_order)+1000 을 사용한다.
+      const sortOrder =
+        rawActRows.length === 0
+          ? 0
+          : Math.max(...rawActRows.map((r) => r.sort_order ?? 0)) + 1000;
+      const id = await createPlot(workId, trimmedTitle, sortOrder);
       onItemSelect(id, 'default');
     })();
   };

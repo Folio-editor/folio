@@ -103,7 +103,12 @@ export function EpisodeOverview({ workId, onSelect }: EpisodeOverviewProps) {
 
   const handleNew = async () => {
     const title = `${episodes.length + 1}화`;
-    const id = await createEpisode(workId, title, episodes.length);
+    // rawEpisodes 는 status != 'trashed' 외 필터 없음 = 사용자에게 보이는 전체. MAX+1000 사용.
+    const sortOrder =
+      rawEpisodes.length === 0
+        ? 0
+        : Math.max(...rawEpisodes.map((r) => r.sort_order ?? 0)) + 1000;
+    const id = await createEpisode(workId, title, sortOrder);
     onSelect(id);
   };
 

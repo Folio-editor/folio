@@ -48,7 +48,12 @@ export function PlotListScreen({ workId, onSelect }: PlotListScreenProps) {
   );
 
   const handleNew = async () => {
-    const id = await createPlot(workId, `${items.length + 1}회 플롯`, items.length);
+    // sort_order 에 .length 를 쓰면 기존 항목 사이에 끼어들 수 있다. rawRows 는 unfiltered.
+    const sortOrder =
+      rawRows.length === 0
+        ? 0
+        : Math.max(...rawRows.map((r) => r.sort_order ?? 0)) + 1000;
+    const id = await createPlot(workId, `${items.length + 1}회 플롯`, sortOrder);
     onSelect(id);
   };
 

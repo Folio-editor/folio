@@ -304,7 +304,13 @@ export function CharacterOverviewAll({ workId, onSelect }: CharacterOverviewAllP
   const filteredItems = items;
 
   const handleNew = async () => {
-    const id = await createCharacter(workId, '새 인물', '미설정', '', items.length);
+    // 새 인물은 항상 끝에 와야 한다. rawCharacters 는 work_id/writer_id 만으로 가져온 unfiltered
+    // 결과이므로 그대로 MAX(sort_order)+1000 을 계산해 stride 1000 reorder 규칙과 정렬한다.
+    const sortOrder =
+      rawCharacters.length === 0
+        ? 0
+        : Math.max(...rawCharacters.map((r) => r.sort_order ?? 0)) + 1000;
+    const id = await createCharacter(workId, '새 인물', '미설정', '', sortOrder);
     onSelect(`char:${id}`);
   };
 
