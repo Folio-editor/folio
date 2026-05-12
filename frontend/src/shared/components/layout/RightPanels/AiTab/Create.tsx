@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Info,
   Loader2,
   PenSquare,
@@ -781,14 +782,17 @@ function CreateSuggestionsDock({
     try {
       const api = await import('../../../../api/agent');
       await api.patchSuggestion(id, status, undefined, selectedIndices);
+      // 처리된 카드는 deck 에서 즉시 제거 — 3개 처리하면 dock 자체 사라짐.
+      // (확인된 내역은 작업물 탭의 SuggestionInbox 에서 status 필터로 조회 가능)
       setSuggestions((prev) => {
-        const updated = prev.map((s) => (s.id === id ? { ...s, status } : s));
-        // 다음 pending 자동 이동 — 없으면 현재 idx 유지
-        const nextIdx = updated.findIndex((s, i) => i > idx && s.status === 'pending');
-        const fallback = updated.findIndex((s) => s.status === 'pending');
-        const target = nextIdx >= 0 ? nextIdx : fallback >= 0 ? fallback : idx;
-        setIdx(target);
-        return updated;
+        const filtered = prev.filter((s) => s.id !== id);
+        if (filtered.length === 0) {
+          setIdx(0);
+          return filtered;
+        }
+        // 현재 위치 기준 다음 카드 표시 (이미 제거됐으니 idx 조정)
+        setIdx((cur) => Math.min(cur, filtered.length - 1));
+        return filtered;
       });
     } finally {
       setBusyId(null);
@@ -852,6 +856,12 @@ function CreateSuggestionsDockOverlay({
   const isReviewIssue = current.entity_type === 'review_issue';
   const isSpellingFix = current.entity_type === 'spelling_fix';
   const isSpellingBatch = current.entity_type === 'spelling_batch';
+  // 본문 영역 접기 토글 — 한 줄 헤더만 보이게 (액션 버튼 공간 확보).
+  // 카드 전환 시 (idx/id 변경) 자동으로 펼침으로 복귀.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(false);
+  }, [current.id]);
 
   // spelling_batch 체크리스트 상태 — 카드 전환 시 모두 체크된 상태로 리셋
   const batchFixCount = useMemo(() => {
@@ -913,21 +923,33 @@ function CreateSuggestionsDockOverlay({
         {statusLabel && (
           <span className="shrink-0 text-[10px] text-muted-foreground">{statusLabel}</span>
         )}
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          title={collapsed ? '본문 펼치기' : '본문 접기 (한 줄로)'}
+          aria-label={collapsed ? '펼치기' : '접기'}
+        >
+          {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
       </div>
 
-      {/* 본문 — entity 별 풍부 미리보기. footer 가 액션 통합 → hideActions */}
-      <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
-        <SuggestionBodyPreview
-          s={current}
-          workId={current.work_id}
-          busy={busy}
-          onApprove={(selectedIndices) => onApprove(selectedIndices)}
-          onReject={onReject}
-          hideActions
-          batchChecked={isSpellingBatch ? batchChecked : undefined}
-          onBatchCheckedChange={isSpellingBatch ? setBatchChecked : undefined}
-        />
-      </div>
+      {/* 본문 — entity 별 풍부 미리보기. footer 가 액션 통합 → hideActions.
+          collapsed 면 본문 영역 숨김 — 헤더 + 푸터만 보이는 한 줄 컴팩트 UI. */}
+      {!collapsed && (
+        <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
+          <SuggestionBodyPreview
+            s={current}
+            workId={current.work_id}
+            busy={busy}
+            onApprove={(selectedIndices) => onApprove(selectedIndices)}
+            onReject={onReject}
+            hideActions
+            batchChecked={isSpellingBatch ? batchChecked : undefined}
+            onBatchCheckedChange={isSpellingBatch ? setBatchChecked : undefined}
+          />
+        </div>
+      )}
 
       {/* 푸터 — 좌우 페이지네이션 + 액션 */}
       <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1">

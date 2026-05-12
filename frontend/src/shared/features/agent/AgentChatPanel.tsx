@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   FileArchive,
   Loader2,
   Plus,
@@ -268,22 +269,17 @@ export function AgentChatPanel({ workId }: Props) {
     setReviewState((prev) => (prev ? { ...prev, busyId: id } : prev));
     try {
       await patchSuggestion(id, status, undefined, selectedIndices);
+      // 처리된 카드는 deck 에서 즉시 제거 — 3개 처리하면 모두 사라짐.
+      // (확인된 내역은 작업물 탭의 SuggestionInbox 에서 confirmed/rejected 필터로 조회 가능)
       setReviewState((prev) => {
         if (!prev) return prev;
-        const updated = prev.suggestions.map((s) =>
-          s.id === id ? { ...s, status } : s,
-        );
-        // 다음 pending 자동 이동. 없으면 자동 닫기.
-        const nextIdxFromCurrent = updated.findIndex(
-          (s, i) => i > prev.idx && s.status === 'pending',
-        );
-        const fallback = updated.findIndex((s) => s.status === 'pending');
-        const nextIdx = nextIdxFromCurrent >= 0 ? nextIdxFromCurrent : fallback;
-        if (nextIdx < 0) {
-          // 전부 처리됨 → 닫기
-          return null;
+        const filtered = prev.suggestions.filter((s) => s.id !== id);
+        if (filtered.length === 0) {
+          return null;    // 전부 처리됨 → 자동 닫기
         }
-        return { suggestions: updated, idx: nextIdx, busyId: null };
+        // 현재 위치 기준으로 다음 카드 표시 (이미 제거됐으니 idx 조정)
+        const nextIdx = Math.min(prev.idx, filtered.length - 1);
+        return { suggestions: filtered, idx: nextIdx, busyId: null };
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -959,6 +955,12 @@ function ReviewOverlay({
   const isReviewIssue = current.entity_type === 'review_issue';
   const isSpellingFix = current.entity_type === 'spelling_fix';
   const isSpellingBatch = current.entity_type === 'spelling_batch';
+  // 본문 영역 접기 토글 — 한 줄 헤더만 보이게 (입력창 공간 확보).
+  // 카드 전환 시 (idx 변경) 자동으로 펼침으로 복귀.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(false);
+  }, [current.id]);
 
   // spelling_batch 의 체크 상태를 부모에서 직접 관리 — 외부 footer 액션 버튼이 같은 state 사용.
   // 카드 전환 시 (idx 변경) 새 spelling_batch 의 fixes 길이만큼 모두 체크된 상태로 리셋.
@@ -1020,6 +1022,15 @@ function ReviewOverlay({
         )}
         <button
           type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          title={collapsed ? '본문 펼치기' : '본문 접기 (한 줄로)'}
+          aria-label={collapsed ? '펼치기' : '접기'}
+        >
+          {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+        <button
+          type="button"
           onClick={onClose}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           title="검토 닫기 (입력창으로 돌아가기)"
@@ -1030,19 +1041,22 @@ function ReviewOverlay({
       </div>
 
       {/* 본문 — 스크롤 가능 영역. 내장 [거절/승인] 버튼은 hideActions 로 숨김 — footer 가 통합 제공.
-          spelling_batch 는 controlledChecked 로 체크 상태를 부모와 공유 → footer 의 [적용 (N)] 버튼이 같은 selection 사용. */}
-      <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
-        <SuggestionBodyPreview
-          s={current}
-          workId={current.work_id}
-          busy={busy}
-          onApprove={(selectedIndices) => onApprove(current.id, selectedIndices)}
-          onReject={() => onReject(current.id)}
-          hideActions
-          batchChecked={isSpellingBatch ? batchChecked : undefined}
-          onBatchCheckedChange={isSpellingBatch ? setBatchChecked : undefined}
-        />
-      </div>
+          spelling_batch 는 controlledChecked 로 체크 상태를 부모와 공유 → footer 의 [적용 (N)] 버튼이 같은 selection 사용.
+          collapsed 면 본문 영역 숨김 — 헤더 + 푸터 액션 버튼만 표시되어 한 줄에 가까운 컴팩트 UI. */}
+      {!collapsed && (
+        <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
+          <SuggestionBodyPreview
+            s={current}
+            workId={current.work_id}
+            busy={busy}
+            onApprove={(selectedIndices) => onApprove(current.id, selectedIndices)}
+            onReject={() => onReject(current.id)}
+            hideActions
+            batchChecked={isSpellingBatch ? batchChecked : undefined}
+            onBatchCheckedChange={isSpellingBatch ? setBatchChecked : undefined}
+          />
+        </div>
+      )}
 
       {/* 푸터 — 좌우 페이지네이션(아이콘 only) + 액션. 컴팩트 디자인 */}
       <div className="flex shrink-0 items-center gap-1 border-t border-border/50 px-2 py-1">
