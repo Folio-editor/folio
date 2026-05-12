@@ -130,6 +130,14 @@ async def run_agent(
             "request entity too large" in ml
             or "413" in err_msg
         )
+        # ★ GMS "Model not found in request" 는 anthropic 모델 미존재가 아니라
+        # 프록시 transient (timeout/connection reset 등). retry 3회 다 실패하면 여기 도달.
+        # 사용자에게 GMS 프록시 일시 장애임을 명확히 안내.
+        is_gms_transient = (
+            "model not found" in ml
+            and "anthropic" in ml
+            and "400" in err_msg
+        )
         if is_rate_limit:
             budget.aborted = "rate_limited"
             answer = (
@@ -150,10 +158,18 @@ async def run_agent(
                 "같은 thread 의 [압축] 버튼으로 대화를 정리한 뒤 다시 보내주세요. "
                 "(원본 게이트웨이 에러: " + err_msg + ")"
             )
+        elif is_gms_transient:
+            budget.aborted = "gateway_transient"
+            answer = (
+                "[AGENT] LLM 게이트웨이 일시 장애로 응답이 끊겼습니다. 잠시 후 같은 thread 에 "
+                "다시 메시지를 보내주세요. (게이트웨이 응답: " + err_msg + ")"
+            )
         else:
             budget.aborted = "internal_error"
             answer = f"[AGENT] 내부 오류 — {err_type}: {err_msg}"
-        messages.append({"role": "assistant", "content": answer})
+        # ★ 에러 응답은 messages 에 append X — DB 영속 시 다음 turn history 에 영원히 따라옴.
+        # SSE 로 사용자에게 answer 만 노출되고 끝. status='failed' 와 receipt 로 추적 가능.
+        # (BudgetExceeded / CancelledError 는 partial 진행이므로 별도 분기에서 append 유지.)
         logger.exception("agent.runner_failed scenario=%s err_type=%s", scenario, err_type)
 
     duration_ms = int((time.time() - started) * 1000)

@@ -19,7 +19,13 @@ from app.services.decrypt_resolver import (
 from app.services.text_extractor import extract_plain_text
 
 
-async def list_world_notes(session: AsyncSession, ctx: WriterContext) -> list[dict]:
+async def list_world_notes(session: AsyncSession, ctx: WriterContext) -> dict:
+    """peek — 세계관 노트 이름 배열 + drill 용 id_map + 트리 구조용 parent_map.
+
+    반환: {names: [...], id_map: {name: id}, parent_map: {name: parent_name 또는 None}}
+    parent_map 의 None 값 = root 노트. 자식은 parent name 으로 트리 추론 가능.
+    상세 본문은 get_world_note(name) drill 로.
+    """
     r = await session.execute(
         sa_text(
             "SELECT id, name, parent_id "
@@ -34,13 +40,18 @@ async def list_world_notes(session: AsyncSession, ctx: WriterContext) -> list[di
         for row in r.fetchall()
     ]
     try:
-        return await decrypt_rows(ctx.work_id, rows, ["name"])
+        rows = await decrypt_rows(ctx.work_id, rows, ["name"])
     except DecryptResolverError:
-        for r in rows:
-            n = r.get("name")
+        for row in rows:
+            n = row.get("name")
             if isinstance(n, str) and n.startswith("v1:"):
-                r["name"] = "(이름 암호화 미해제)"
-        return rows
+                row["name"] = "(이름 암호화 미해제)"
+    names = [r["name"] for r in rows]
+    id_map = {r["name"]: r["id"] for r in rows}
+    # parent_id → parent_name 매핑 (트리 표시용 친화 형태)
+    name_by_id = {r["id"]: r["name"] for r in rows}
+    parent_map = {r["name"]: name_by_id.get(r["parent_id"]) for r in rows}
+    return {"names": names, "id_map": id_map, "parent_map": parent_map}
 
 
 async def get_world_note(session: AsyncSession, ctx: WriterContext, *, name: str) -> dict | None:

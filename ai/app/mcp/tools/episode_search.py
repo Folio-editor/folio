@@ -13,18 +13,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mcp.context import WriterContext
 from app.services.decrypt_resolver import DecryptResolverError, decrypt_rows
 from app.services.providers import get_embedder, get_llm
+from app.services.text_extractor import extract_plain_text
+from app.services.work_key_resolver import (
+    WorkKeyResolverError,
+    resolve_episode_plaintext,
+)
 
 
 async def _decrypt_chunk_content(work_id, rows: list[dict]) -> list[dict]:
+    """chunk 행의 content + title 일괄 복호화. 둘 다 v1: ciphertext 가능.
+
+    title 도 복호화 — Haiku worker 가 chunks_text 헤더에서 회차 평문 라벨('12화', '17화')
+    로 식별해 합성 정확도 향상. title 미복호화 시 v1: base64 가 헤더에 노출되어 Haiku 가
+    chunk 출처 회차를 구분 못함.
+    """
     if not rows:
         return rows
+    fields = ["content"]
+    if any("title" in r for r in rows):
+        fields.append("title")
     try:
-        return await decrypt_rows(work_id, rows, ["content"])
+        return await decrypt_rows(work_id, rows, fields)
     except DecryptResolverError:
         for r in rows:
-            v = r.get("content")
-            if isinstance(v, str) and v.startswith("v1:"):
-                r["content"] = "(암호화 미해제)"
+            for f in fields:
+                v = r.get(f)
+                if isinstance(v, str) and v.startswith("v1:"):
+                    r[f] = "(암호화 미해제)" if f == "content" else "(제목 암호화 미해제)"
         return rows
 
 
@@ -209,13 +224,32 @@ async def query_episodes_by_chunks(
     ctx: WriterContext,
     *,
     query: str,
+    task: str | None = None,
     k: int = 10,
+    full_episode_count: int = 0,
 ) -> dict[str, Any]:
-    """벡터 검색으로 query 와 가장 유사한 회차 chunk N개를 찾아 Haiku 가 답변 합성.
+    """벡터 검색으로 chunk N개 → Haiku 가 task 지시에 따라 합성.
 
-    회차 범위 필터는 제거됨 — 작품 전체 대상으로 검색. 필요 시 별도 도구로 분리.
-    반환: {query, matched_chunks, answer, episodes: [{episode_id, title}], usage}
+    ★ query 와 task 는 명확히 분리된 역할:
+      - **query**: 임베딩 모델용 — chunk 와의 벡터 유사도 매칭만 담당. 본문 어휘에
+        가까운 묘사·인물·사건 단어로 작성해야 sim ↑.
+      - **task**: Haiku 합성 지시 — 검색된 chunks 를 받은 후 무엇을 추출/평가/판단할지.
+        추상 메타 단어 OK ('일관성 평가', '모순 후보 탐색' 등 자유 분석 지시).
+
+    task 미지정 시 query 를 그대로 합성 지시로 사용 (backward compat).
+
+    Args:
+      query: 본문 어휘 기반 검색어. 예: '가후 어머니 표정 가르치다 어린 시절 웃음'.
+      task: Haiku 가 chunks 에서 수행할 작업 지시. 예: '가후의 감정 부재 설정이
+        회차별로 일관되게 유지되는지 평가하고, 모순 정황을 인용해 정리해줘'.
+      k: 검색 chunk 수 (기본 10, 상한 30).
+      full_episode_count: top sim 회차 N개의 풀 본문 포함 (기본 0, 상한 3).
+        chunk 잘림 문제 보완. 1~2 권장 (회차당 ~4K 토큰).
+
+    반환: {query, task, matched_chunks_count, full_episodes_used, answer, episodes, usage}
     """
+    full_episode_count = max(0, min(int(full_episode_count or 0), 3))
+    task_text = (task or "").strip() or query    # task 없으면 query 로 fallback
     embedder = get_embedder()
     vecs = await embedder.embed_batch([query])
     if not vecs:
@@ -261,13 +295,48 @@ async def query_episodes_by_chunks(
         for row in rows
     ]
     matched_chunks = await _decrypt_chunk_content(ctx.work_id, matched_chunks)
-    # 회차별 (id, title) 쌍 — 후속 propose_* 도구의 episode_id 인자에 사용
+    # 회차별 (id, title) 쌍 — 후속 propose_* 도구의 episode_id 인자에 사용.
+    # 동시에 회차별 최고 sim 추적 — full_episode_count 우선순위에 사용.
     seen: dict[str, str] = {}
+    episode_top_sim: dict[str, float] = {}
     for c in matched_chunks:
         eid = c.get("episode_id")
-        if isinstance(eid, str) and eid not in seen:
+        if not isinstance(eid, str):
+            continue
+        if eid not in seen:
             seen[eid] = c.get("title")
+        sim = c.get("similarity", 0.0)
+        if eid not in episode_top_sim or sim > episode_top_sim[eid]:
+            episode_top_sim[eid] = sim
     episodes = [{"episode_id": eid, "title": title} for eid, title in seen.items()]
+
+    # 상위 sim 회차 N개의 풀 본문 fetch (옵션). chunk 잘림 문제 보완.
+    # 본문 fetch 실패한 회차는 fallback — chunks 만 전달.
+    full_episodes: list[dict[str, Any]] = []
+    full_episode_ids: set[str] = set()
+    if full_episode_count > 0:
+        top_eids = sorted(
+            episode_top_sim, key=lambda e: -episode_top_sim[e]
+        )[:full_episode_count]
+        for eid in top_eids:
+            try:
+                raw_body = await resolve_episode_plaintext(eid, str(ctx.work_id))
+            except WorkKeyResolverError:
+                continue
+            if not raw_body:
+                continue
+            # ★ TipTap JSON → 평문 추출. resolve_episode_plaintext 는 TipTap doc 을 그대로
+            # 반환하므로 그대로 Haiku 에 넣으면 {"type":"paragraph",...} wrapper 가 토큰의
+            # 절반을 차지. 평문 추출 후 전달 — Haiku 입력 토큰 ~50% 절감.
+            plain_body = extract_plain_text(raw_body)
+            if not plain_body:
+                continue
+            full_episodes.append({
+                "episode_id": eid,
+                "title": seen.get(eid, "(제목 없음)"),
+                "content": plain_body,
+            })
+            full_episode_ids.add(eid)
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
@@ -275,16 +344,39 @@ async def query_episodes_by_chunks(
         return {
             "query": query,
             "matched_chunks": matched_chunks,
+            "full_episodes": full_episodes,
             "answer": "(fake provider — Haiku 합성 생략)",
             "episodes": episodes,
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
 
-    chunks_text = "\n---\n".join(
-        f"[{c.get('title')} · sim={c['similarity']}]\n{c['content']}"
-        for c in matched_chunks
+    # Haiku 입력 구성 — full episode body 가 있는 회차는 chunk 중복 제거.
+    # sim 값은 Haiku 합성에 도움 X — 부동소수 score 를 보면 가중치 추론 오류 유발 가능.
+    # 회차 평문 title 만 헤더로 사용.
+    chunks_for_prompt = [
+        c for c in matched_chunks if c.get("episode_id") not in full_episode_ids
+    ]
+    sections: list[str] = []
+    if full_episodes:
+        full_text = "\n\n===\n\n".join(
+            f"[{fe['title']} — 풀 본문]\n{fe['content']}"
+            for fe in full_episodes
+        )
+        sections.append(f"[유사도 상위 회차 풀 본문]\n{full_text}")
+    if chunks_for_prompt:
+        chunks_text = "\n---\n".join(
+            f"[{c.get('title')}]\n{c['content']}"
+            for c in chunks_for_prompt
+        )
+        sections.append(f"[추가 관련 chunks]\n{chunks_text}")
+    body_block = "\n\n".join(sections) if sections else "(컨텍스트 없음)"
+    # Haiku 입력 — task 가 핵심 (수행 지시). query 는 벡터 검색용이라 합성 지시로는 부적합.
+    # task 미지정 시 query 로 fallback (task_text 가 이미 처리).
+    user_prompt = (
+        f"[지시]\n{task_text}\n\n"
+        f"[검색에 쓰인 query 단서]\n{query}\n\n"
+        f"{body_block}"
     )
-    user_prompt = f"[질의]\n{query}\n\n[검색된 chunks]\n{chunks_text}"
     try:
         result = await llm.generate_json(
             _QUERY_SYSTEM,
@@ -292,11 +384,17 @@ async def query_episodes_by_chunks(
             '{"answer": "string — 질의에 대한 답"}',
             model_override=haiku_model,
             max_tokens=1500,
+            cache_system=True,    # 같은 turn 안 multi-call 시 system 캐시 hit (5분 ephemeral)
         )
     except Exception as e:
         return {
             "query": query,
+            "task": task_text,
             "matched_chunks": matched_chunks,
+            "full_episodes": [
+                {k: v for k, v in fe.items() if k != "content"}
+                for fe in full_episodes
+            ],
             "answer": None,
             "error": "haiku_synthesis_failed",
             "reason": str(e)[:200],
@@ -304,10 +402,17 @@ async def query_episodes_by_chunks(
         }
 
     usage = getattr(llm, "last_usage", {"input_tokens": 0, "output_tokens": 0})
+    # full_episodes 본문은 결과 dict 에 다시 넣지 않음 — 이미 Haiku answer 로 합성됐고
+    # 오케스트레이터 컨텍스트에 raw 본문 중복 적재하면 토큰 폭증. 식별자만 노출.
     return {
         "query": query,
+        "task": task_text,
         "answer": result.get("answer") if isinstance(result, dict) else None,
         "matched_chunks_count": len(matched_chunks),
+        "full_episodes_used": [
+            {"episode_id": fe["episode_id"], "title": fe["title"]}
+            for fe in full_episodes
+        ],
         "episodes": episodes,
         "usage": usage,
     }

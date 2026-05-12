@@ -144,6 +144,7 @@ async def check_spelling(
             schema_hint=SPELLCHECK_SCHEMA_HINT,
             model_override=haiku_model,
             max_tokens=3000,
+            cache_system=True,    # 동일 turn 여러 회차 check_spelling 시 system 캐시 hit
         )
     except Exception as e:
         return {"error": "haiku_spellcheck_failed", "reason": str(e)[:200], "episode_id": episode_id}

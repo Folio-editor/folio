@@ -403,7 +403,8 @@ public class SuggestionApplier {
             episodeIndexingTrigger.fireIndexing(epId, workId, writerId);
         }
         if (newStatus != null) {
-            episodeIndexingTrigger.fireSummary(epId, workId, writerId, prevStatus, newStatus);
+            // AI 제안 적용 경로 — newContent != null 이면 본문 변경된 것으로 간주.
+            episodeIndexingTrigger.fireSummary(epId, workId, writerId, prevStatus, newStatus, newContent != null);
         }
         return epId;
     }

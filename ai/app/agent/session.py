@@ -117,13 +117,32 @@ async def load_session(session: AsyncSession, thread_id: uuid.UUID) -> dict[str,
         summary_so_far = raw_summary
     title = await _decrypt_text_or_passthrough(work_id, raw_title)
 
+    # ★ 옛 garbage 청소 — 과거에 영속화된 `[AGENT] 내부 오류 ...` / `[AGENT] LLM 게이트웨이 ...`
+    # 류 에러 텍스트 assistant 메시지는 다음 turn 의 LLM 입력에서 제외. 에러 자체는 status/
+    # receipt 로 추적되니 분실 X. (BudgetExceeded / CancelledError 의 partial 메시지는 보존 —
+    # 사용자가 의도적으로 중단한 정상 흐름)
+    _ERROR_PREFIXES = (
+        "[AGENT] 내부 오류",
+        "[AGENT] LLM 게이트웨이",
+        "[AGENT] Anthropic API rate limit",
+        "[AGENT] Anthropic 서버 일시 과부하",
+        "[AGENT] 채팅이 누적되어",
+    )
+    cleaned: list[dict] = []
+    for m in messages:
+        if m.get("role") == "assistant" and isinstance(m.get("content"), str):
+            txt = m["content"]
+            if any(txt.startswith(p) for p in _ERROR_PREFIXES):
+                continue    # drop
+        cleaned.append(m)
+
     return {
         "thread_id": row[0],
         "work_id": work_id,
         "writer_id": row[2],
         "scenario": row[3],
         "title": title,
-        "messages": messages,
+        "messages": cleaned,
         "summary_so_far": summary_so_far,
         "status": row[7],
     }

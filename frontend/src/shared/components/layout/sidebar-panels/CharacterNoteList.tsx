@@ -94,6 +94,7 @@ export function CharacterNoteList({
   onItemSelect,
 }: CharacterNoteListProps) {
   const writerId = useWriterId();
+  const db = usePowerSync();
   const { createCharacter, ensureCharacterNotes } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
@@ -206,7 +207,17 @@ export function CharacterNoteList({
     if (!trimmedTitle) return;
     void (async () => {
       if (tagFilter.length > 0) clearFilter('character-tag');
-      const id = await createCharacter(workId, trimmedTitle, '미설정', '', characters.length);
+      // characters 는 태그 필터/검색어로 줄어든 배열이라 .length 를 sort_order 로 쓰면
+      // 필터 해제 후 기존 항목 사이에 끼어든다. 필터 무관하게 DB 의 MAX(sort_order)+1000 사용.
+      const rows = await db.getAll<{ sort_order: number | null }>(
+        `SELECT sort_order FROM character WHERE work_id = ? AND writer_id = ?`,
+        [workId, writerId],
+      );
+      const sortOrder =
+        rows.length === 0
+          ? 0
+          : Math.max(...rows.map((r) => r.sort_order ?? 0)) + 1000;
+      const id = await createCharacter(workId, trimmedTitle, '미설정', '', sortOrder);
       await ensureCharacterNotes(workId, id);
       setExpandedCharId(id);
       onItemSelect('char:' + id, 'default');

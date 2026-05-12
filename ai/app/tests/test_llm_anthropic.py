@@ -242,7 +242,12 @@ def test_anthropic_client_uses_default_base_url_when_none(monkeypatch: pytest.Mo
 
     llm_module.AnthropicLLM("test-key", "sonnet", "haiku", "opus", base_url=None)
 
-    assert init_calls == [{"api_key": "test-key"}]
+    # AnthropicLLM 은 GMS 400 진단용 httpx event_hooks 클라이언트를 항상 주입한다
+    # (anthropic.diag_file_enabled 로그 출력). 테스트는 api_key 만 검증하고 http_client
+    # 존재는 무시 — 진단 코드 동작은 별도 책임.
+    assert len(init_calls) == 1
+    assert init_calls[0]["api_key"] == "test-key"
+    assert "base_url" not in init_calls[0]
 
 
 def test_anthropic_client_receives_base_url_when_provided(monkeypatch: pytest.MonkeyPatch):
@@ -258,9 +263,6 @@ def test_anthropic_client_receives_base_url_when_provided(monkeypatch: pytest.Mo
         base_url="https://gms.example.com/anthropic",
     )
 
-    assert init_calls == [
-        {
-            "api_key": "test-key",
-            "base_url": "https://gms.example.com/anthropic",
-        }
-    ]
+    assert len(init_calls) == 1
+    assert init_calls[0]["api_key"] == "test-key"
+    assert init_calls[0]["base_url"] == "https://gms.example.com/anthropic"
