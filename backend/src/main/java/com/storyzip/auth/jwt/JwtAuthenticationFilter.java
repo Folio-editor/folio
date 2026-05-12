@@ -22,6 +22,14 @@ import java.util.List;
 /**
  * Authorization: Bearer {token} 헤더를 검증하고 SecurityContext에 인증 정보를 주입한다.
  * 검증 실패 시 조용히 통과 (인증 필수 경로에서는 Spring Security가 401 처리).
+ *
+ * <p>SseEmitter / DeferredResult 같은 async 응답은 stream 종료 시 Tomcat 이 ASYNC dispatch
+ * 로 filter chain 을 재실행한다. SessionCreationPolicy.STATELESS 환경에선 ThreadLocal
+ * SecurityContext 가 사라진 상태라, OncePerRequestFilter 의 기본 동작(async skip)을 그대로
+ * 두면 AuthorizationFilter 가 빈 컨텍스트에 대해 AccessDenied 를 던지고, response 가
+ * 이미 commit 됐기 때문에 ServletException → 500 에러 로그가 찍힌다 (클라엔 영향 X).
+ * shouldNotFilterAsyncDispatch=false 로 재실행 허용해 JWT 를 다시 파싱, SecurityContext
+ * 복원하면 AuthorizationFilter 가 정상 통과한다.
  */
 @Slf4j
 @Component
@@ -32,6 +40,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtProvider jwtProvider;
+
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
