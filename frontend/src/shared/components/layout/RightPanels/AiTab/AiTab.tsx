@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { apiClient, ApiError } from '../../../../lib/apiClient';
 import { getRegisteredEditor } from '../../../../lib/activeEditorRegistry';
-import { analytics, charCountBucket } from '../../../../lib/analytics';
+import { analytics, charCountBucket, countBucket, durationBucket } from '../../../../lib/analytics';
 import { useAgentChatStore } from '../../../../stores/agentChatStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useWalletStore } from '../../../../stores/walletStore';
@@ -181,9 +181,11 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       failCreateAction(`검수 시작 실패: ${msg}`);
-      const display = msg.startsWith(INSUFFICIENT_CREDITS_PREFIX)
-        ? msg.slice(INSUFFICIENT_CREDITS_PREFIX.length)
-        : msg;
+      const insufficient = msg.startsWith(INSUFFICIENT_CREDITS_PREFIX);
+      if (insufficient) {
+        void analytics.track('ai_feature_insufficient_credits', { feature_type: 'review' });
+      }
+      const display = insufficient ? msg.slice(INSUFFICIENT_CREDITS_PREFIX.length) : msg;
       toast.error('검수 시작 실패', { description: display });
       void analytics.track('ai_review_failed', {
         doc_type: 'episode',
@@ -251,6 +253,12 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     };
 
     startSpellcheck(episode, selectionRange);
+    const spellcheckStart = Date.now();
+    void analytics.track('ai_spellcheck_requested', {
+      doc_type: 'episode',
+      char_count_bucket: charCountBucket(contentToSend.length),
+      mode,
+    });
 
     try {
       // 카드 모드 = 큐 적재 통합 endpoint (/ai/quick/spellcheck) — issues + suggestion_id 반환.
@@ -270,6 +278,11 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
       const spellcheckResult = data ?? { issues: [], summary: '맞춤법 검사가 완료되었습니다.' };
       finishSpellcheck(spellcheckResult);
       refreshWalletAfterUsage();
+      void analytics.track('ai_spellcheck_succeeded', {
+        doc_type: 'episode',
+        issue_count_bucket: countBucket(spellcheckResult.issues.length),
+        duration_bucket: durationBucket(Date.now() - spellcheckStart),
+      });
       // 큐 적재 알림 — 0건이면 무관, 적재 실패 시 inline UI 만 사용.
       if (data?.suggestion_id) {
         toast.success(`맞춤법 ${spellcheckResult.issues.length}건 발견`, {
@@ -284,9 +297,13 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSpellcheck(message);
       refreshWalletAfterUsage();
-      const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
-        ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
-        : message;
+      const insufficient = message.startsWith(INSUFFICIENT_CREDITS_PREFIX);
+      if (insufficient) {
+        void analytics.track('ai_feature_insufficient_credits', {
+          feature_type: 'spellcheck',
+        });
+      }
+      const display = insufficient ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length) : message;
       toast.error('맞춤법 검사 실패', { description: display });
     }
   }, [pinnedEpisode, decryptedContent, decryptStatus, aiContextPayload, aiContextLoading, aiContextHasUndecrypted, startSpellcheck, finishSpellcheck, failSpellcheck, refreshWalletAfterUsage]);

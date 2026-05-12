@@ -20,6 +20,9 @@ import TabIndent from './extensions/TabIndent';
 import TypewriterMode from './extensions/TypewriterMode';
 import FocusMode from './extensions/FocusMode';
 import FindReplace from './extensions/FindReplace';
+import { MarkdownLinkInputRule } from './extensions/MarkdownLinkInputRule';
+import { ForceHorizontalRule } from './extensions/ForceHorizontalRule';
+import { LiteraryHighlight } from './extensions/LiteraryHighlight';
 import ReviewHighlight from './extensions/ReviewHighlight';
 import SpellcheckHighlight from './extensions/SpellcheckHighlight';
 import { useReviewHighlightStore } from '../../stores/reviewHighlightStore';
@@ -27,6 +30,7 @@ import { useAiSessionStore } from '../../stores/aiSessionStore';
 import { UnifiedEditorToolbar } from './UnifiedEditorToolbar';
 import EditorBubbleMenu from './EditorBubbleMenu';
 import EditorStatusBar from './EditorStatusBar';
+import DailyGoalWidget from './DailyGoalWidget';
 import EditorSettingsPanel from './EditorSettingsPanel';
 import EditorFindReplace from './EditorFindReplace';
 import { useHelpModalStore } from '../../stores/helpModalStore';
@@ -42,6 +46,11 @@ interface ContentEditorProps {
   showStatusBar?: boolean;
   /** 컴팩트 모드 — 툴바/설정/찾기 숨김, 단축키 전용 편집 (우측 사이드바용) */
   compact?: boolean;
+  /**
+   * 라인 번호 강제 숨김 — 글로벌 settings.showLineNumbers 와 무관하게 OFF.
+   * 짧은 메모성 콘텐츠 (아이디어 메모 등) 에서 순수 위지윅 보기용.
+   */
+  hideLineNumbers?: boolean;
   onCharCountChange?: (count: number) => void;
   /**
    * DB 에 저장된 현재 word_count. mount 시 실제 chars 와 다를 때만 onCharCountChange 호출
@@ -64,6 +73,7 @@ export function ContentEditor({
   className,
   showStatusBar = true,
   compact = false,
+  hideLineNumbers = false,
   onCharCountChange,
   storedWordCount,
 }: ContentEditorProps) {
@@ -113,11 +123,25 @@ export function ContentEditor({
         StarterKit.configure({
           code: false,
           codeBlock: false,
-          link: { openOnClick: false },
+          // Link: paste 시 URL 자동 인식 + 입력 중 URL 입력 시 자동 링크화.
+          // openOnClick=false 는 에디터 편집 중 우발적 외부 이동 차단 (Ctrl+click 으로 열기).
+          link: {
+            openOnClick: false,
+            autolink: true,
+            linkOnPaste: true,
+            defaultProtocol: 'https',
+            protocols: ['http', 'https', 'mailto'],
+          },
         }),
         Placeholder.configure({ placeholder }),
         Highlight.configure({ multicolor: true }),
-        Typography,
+        // Typography: ★ emDash 비활성 ★ — 작가가 `---` 입력 시 Typography 가
+        // em-dash (—) 로 먼저 변환해 StarterKit HorizontalRule 의 input rule 이
+        // 매칭 못 한다. 가로선이 우선이라 dash 변환은 끔.
+        // 나머지 변환 (..., (c) → ©, (r) → ® 등) 은 그대로 유지.
+        Typography.configure({
+          emDash: false,
+        }),
         CharacterCount,
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         TextStyle,
@@ -137,6 +161,17 @@ export function ContentEditor({
         FindReplace,
         ReviewHighlight,
         SpellcheckHighlight,
+        // 마크다운 [text](url) 입력 시 자동 변환 — StarterKit Link 가 미지원하는 input rule 보강
+        MarkdownLinkInputRule,
+        // ★ HR input rule 강제 — StarterKit 의 동일 룰이 Typography 등과 경쟁해 발화 못 하는 케이스 보강
+        ForceHorizontalRule,
+        // 대사 ("...") / 내면 묘사 ('...') 자동 색상 하이라이트 — ProseMirror Decoration (display-only).
+        // 설정 토글 OFF 시 wrapper 의 .no-dialogue-color / .no-inner-thought-color 가 색상 무효화.
+        // 옵션은 항상 ON 으로 두고 색상 토글은 CSS 레이어에서 처리 — extension reconfigure 비용 회피.
+        LiteraryHighlight.configure({
+          dialogueEnabled: true,
+          innerThoughtEnabled: true,
+        }),
       ],
       content: parseContent(initialContent),
       onUpdate: ({ editor: ed }) => {
@@ -401,8 +436,11 @@ export function ContentEditor({
     settings.autoIndent && 'auto-indent',
     settings.focusMode && 'focus-mode',
     settings.typewriterMode && 'typewriter-mode',
-    settings.showLineNumbers && 'show-line-numbers',
+    settings.showLineNumbers && !hideLineNumbers && 'show-line-numbers',
     settings.showParagraphMarks && 'show-paragraph-marks',
+    // 색상 토글 — default ON 동작 유지. OFF 시 negation 클래스 부착해 CSS 에서 색상 제거.
+    !settings.dialogueColor && 'no-dialogue-color',
+    !settings.innerThoughtColor && 'no-inner-thought-color',
     className,
   );
 
@@ -435,22 +473,29 @@ export function ContentEditor({
         </>
       )}
 
-      {/* 본문 — 클릭 시 에디터 포커스 보장 */}
-      <div
-        className="min-h-0 flex-1 cursor-text overflow-y-auto px-8 py-6"
-        onMouseDown={() => {
-          // 에디터가 포커스를 잃은 상태에서 영역 어디든 클릭하면 포커스 복원
-          // TipTap 내부 클릭은 자체 처리하지만, blur 상태에서는 명시적 focus가 필요
-          if (editor && !editor.isFocused) {
-            // 약간의 지연으로 TipTap의 자체 클릭 처리와 충돌 방지
-            requestAnimationFrame(() => {
-              if (!editor.isFocused) editor.commands.focus();
-            });
-          }
-        }}
-      >
-        <EditorContent editor={editor} style={{ minHeight: '100%', outline: 'none' }} />
-        {editor && <EditorBubbleMenu editor={editor} />}
+      {/* 본문 영역 — outer 는 relative + non-scrolling, inner 는 absolute + scrollable.
+          이 구조로 DailyGoalWidget 이 스크롤과 무관하게 viewport 좌표에 고정될 수 있다. */}
+      <div className="relative min-h-0 flex-1">
+        <div
+          className="absolute inset-0 cursor-text overflow-y-auto px-8 py-6"
+          onMouseDown={() => {
+            // 에디터가 포커스를 잃은 상태에서 영역 어디든 클릭하면 포커스 복원
+            if (editor && !editor.isFocused) {
+              requestAnimationFrame(() => {
+                if (!editor.isFocused) editor.commands.focus();
+              });
+            }
+          }}
+        >
+          <EditorContent editor={editor} style={{ minHeight: '100%', outline: 'none' }} />
+          {editor && <EditorBubbleMenu editor={editor} />}
+        </div>
+        {/* 일일 목표 위젯 — 스크롤과 무관하게 viewport (=relative wrapper) 좌표에 고정.
+            드래그로 이동. dailyGoalEnabled 시에만 표시. */}
+        <DailyGoalWidget
+          sessionStartChars={sessionStartChars}
+          charCount={charCount}
+        />
       </div>
 
       {/* 상태바 */}

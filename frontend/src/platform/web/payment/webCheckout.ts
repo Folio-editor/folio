@@ -13,6 +13,8 @@
 
 import PortOne from '@portone/browser-sdk/v2';
 
+import { analytics } from '../../../shared/lib/analytics';
+import { amountBucket } from '../../../shared/lib/analytics/analyticsBuckets';
 import type {
   FolioBillingAuthParams,
   FolioBillingAuthResult,
@@ -45,6 +47,12 @@ function toCheckoutError(code: string, message: string): Error {
 export async function webOpenOneTime(
   params: FolioOneTimePaymentParams,
 ): Promise<FolioOneTimePaymentResult> {
+  void analytics.track('checkout_initiated', {
+    product_type: 'one_time',
+    amount_bucket: amountBucket(params.amount),
+  });
+  // PortOne SDK 0.1.x의 PaymentRequestUnion 타입 정의 버그 — alipayPlus가 required로 잡혀있다.
+  // 런타임은 payMethod 분기로 동작하므로 타입만 우회한다.
   const response = await PortOne.requestPayment({
     storeId: params.storeId,
     channelKey: params.channelKey,
@@ -58,14 +66,26 @@ export async function webOpenOneTime(
 
   // SDK가 modal close에서 undefined를 반환하는 케이스 — 사용자 취소로 간주.
   if (!response) {
+    void analytics.track('payment_failed', {
+      product_type: 'one_time',
+      reason_code: 'USER_CLOSED',
+    });
     const err = new Error('결제창이 닫혔습니다.');
     (err as Error & { code?: string }).code = 'USER_CLOSED';
     throw err;
   }
   if (response.code) {
+    void analytics.track('payment_failed', {
+      product_type: 'one_time',
+      reason_code: response.code,
+    });
     throw toCheckoutError(response.code, response.message ?? '');
   }
 
+  void analytics.track('payment_succeeded', {
+    product_type: 'one_time',
+    amount_bucket: amountBucket(params.amount),
+  });
   return { paymentId: response.paymentId };
 }
 
@@ -80,6 +100,10 @@ export async function webOpenOneTime(
 export async function webOpenBillingAuth(
   params: FolioBillingAuthParams,
 ): Promise<FolioBillingAuthResult> {
+  void analytics.track('checkout_initiated', {
+    product_type: 'subscription',
+    amount_bucket: '0',    // billing key 발급 단계는 금액 없음
+  });
   const response = await PortOne.requestIssueBillingKey({
     storeId: params.storeId,
     channelKey: params.channelKey,
@@ -89,13 +113,22 @@ export async function webOpenBillingAuth(
   } as Parameters<typeof PortOne.requestIssueBillingKey>[0]);
 
   if (!response) {
+    void analytics.track('payment_failed', {
+      product_type: 'subscription',
+      reason_code: 'USER_CLOSED',
+    });
     const err = new Error('카드 등록창이 닫혔습니다.');
     (err as Error & { code?: string }).code = 'USER_CLOSED';
     throw err;
   }
   if (response.code) {
+    void analytics.track('payment_failed', {
+      product_type: 'subscription',
+      reason_code: response.code,
+    });
     throw toCheckoutError(response.code, response.message ?? '');
   }
 
+  // 구독은 backend subscriptionApi.create() 완료 시 payment_succeeded 발화 — PaymentSettings.tsx 가 책임.
   return { billingKey: response.billingKey, customerKey: params.customerKey };
 }

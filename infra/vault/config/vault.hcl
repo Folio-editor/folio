@@ -13,6 +13,17 @@ listener "tcp" {
   address     = "0.0.0.0:8200"
   // dev 환경: TLS off (compose 내부 통신). prod 전환 시 TLS 재활성 필요.
   tls_disable = true
+  // B-5 (MONITORING_AUDIT): Prometheus 가 토큰 없이 /v1/sys/metrics scrape 가능.
+  // folio-net 내부 통신만 가능하므로 외부 노출 위험 없음.
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
+}
+
+// B-5: 메트릭 보존 + 호스트명 라벨 비활성 (cardinality 절약).
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname          = true
 }
 
 api_addr     = "http://vault:8200"

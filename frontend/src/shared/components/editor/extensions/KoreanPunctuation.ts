@@ -25,21 +25,15 @@ const KoreanPunctuation = Extension.create<KoreanPunctuationOptions>({
         handler: ({ state, range }) => {
           const { tr } = state;
 
-          tr.insertText('\u2026\u2026', range.from, range.to);
+          tr.insertText('……', range.from, range.to);
         },
       }),
 
-      // Two hyphens → em dash × 2
-      new InputRule({
-        find: /(?:^|\s)--$/,
-        handler: ({ state, range, match }) => {
-          const { tr } = state;
-          const prefix = match[0].startsWith('--') ? '' : match[0][0];
-          const insertText = `${prefix}\u2014\u2014`;
-
-          tr.insertText(insertText, range.from, range.to);
-        },
-      }),
+      // ⚠ 이전: '--' → em-dash × 2 (——) 자동 변환 룰 있었음.
+      // ★ 제거됨 — markdown 가로선 '---' 입력 시 두 번째 '-' 시점에 이 룰이 가로채
+      //   prefix + em-dash 두 개로 변환했고, 그 결과 StarterKit HorizontalRule 의
+      //   ^---$ input rule 이 영원히 매칭할 수 없었다. HR 변환 우선.
+      //   em-dash 가 필요하면 OS IME 또는 복붙으로 처리.
     ];
   },
 });
