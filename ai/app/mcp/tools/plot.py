@@ -18,10 +18,13 @@ from app.services.decrypt_resolver import (
 from app.services.text_extractor import extract_plain_text
 
 
-async def list_plots(session: AsyncSession, ctx: WriterContext) -> list[dict]:
-    """peek 용 — 작품의 모든 플롯 제목·상태·parent_id 만 (본문 X).
+async def list_plots(session: AsyncSession, ctx: WriterContext) -> dict:
+    """peek — 플롯 제목 배열 + drill 용 id_map + status_map + parent_map.
 
-    토큰 효율: 플롯 10개 ~수백 tok. 본문은 get_plot(title) 단건으로 drill.
+    반환: {titles: [...], id_map: {title: id}, status_map: {title: status},
+           parent_map: {title: parent_title 또는 None}}
+    status 는 '예정'/'작성중'/'완료' 등 평문. parent_map None = root 막.
+    본문은 get_plot(title 또는 plot_id) drill 로.
     """
     r = await session.execute(
         sa_text(
@@ -48,7 +51,17 @@ async def list_plots(session: AsyncSession, ctx: WriterContext) -> list[dict]:
             t = row.get("title")
             if isinstance(t, str) and t.startswith("v1:"):
                 row["title"] = "(제목 암호화 미해제)"
-    return rows
+    titles = [r["title"] for r in rows]
+    id_map = {r["title"]: r["id"] for r in rows}
+    status_map = {r["title"]: r["status"] for r in rows}
+    title_by_id = {r["id"]: r["title"] for r in rows}
+    parent_map = {r["title"]: title_by_id.get(r["parent_id"]) for r in rows}
+    return {
+        "titles": titles,
+        "id_map": id_map,
+        "status_map": status_map,
+        "parent_map": parent_map,
+    }
 
 
 async def get_plot(

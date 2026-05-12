@@ -120,7 +120,12 @@ export function ForeshadowOverview({ workId, onSelect }: ForeshadowOverviewProps
   );
 
   const handleNew = async () => {
-    const id = await createForeshadow(workId, '새 복선', '중', items.length);
+    // rawRows 는 work_id/writer_id 만으로 가져온 unfiltered 결과. MAX(sort_order)+1000 으로 끝에 배치.
+    const sortOrder =
+      rawRows.length === 0
+        ? 0
+        : Math.max(...rawRows.map((r) => r.sort_order ?? 0)) + 1000;
+    const id = await createForeshadow(workId, '새 복선', '중', sortOrder);
     onSelect(id);
   };
 

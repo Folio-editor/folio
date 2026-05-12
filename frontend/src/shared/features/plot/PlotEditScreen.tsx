@@ -176,7 +176,12 @@ function ActDetailScreen({ act, onBack }: { act: PlotRow; onBack: () => void }) 
 
   const handleNewEpisode = async () => {
     const epTitle = `${episodes.length + 1}화`;
-    await createPlot(act.work_id, epTitle, episodes.length, id);
+    // rawEpisodeRows 는 parent_id 단일 조건의 unfiltered 결과. MAX(sort_order)+1000 으로 끝에 배치.
+    const sortOrder =
+      rawEpisodeRows.length === 0
+        ? 0
+        : Math.max(...rawEpisodeRows.map((r) => r.sort_order ?? 0)) + 1000;
+    await createPlot(act.work_id, epTitle, sortOrder, id);
   };
 
   return (

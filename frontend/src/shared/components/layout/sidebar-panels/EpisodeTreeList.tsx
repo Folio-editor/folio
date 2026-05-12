@@ -82,6 +82,7 @@ export function EpisodeTreeList({
   onItemSelect,
 }: EpisodeTreeListProps) {
   const writerId = useWriterId();
+  const db = usePowerSync();
   const { createEpisode } = useLocalWrite();
   const [creating, setCreating] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
@@ -129,7 +130,19 @@ export function EpisodeTreeList({
     setCreateTitle('');
     if (!trimmedTitle) return;
     void (async () => {
-      const id = await createEpisode(workId, trimmedTitle, episodes.length);
+      // 새 회차는 항상 리스트 끝에 위치해야 한다. 화면에 보이는 episodes 는 status/검색
+      // 필터로 줄어든 배열이라 .length 를 sort_order 로 쓰면 기존 항목 사이에 끼어든다.
+      // 필터 무관하게 DB 의 MAX(sort_order)+1000 을 사용한다 (place* 와 동일한 stride).
+      const rows = await db.getAll<{ sort_order: number | null }>(
+        `SELECT sort_order FROM episode
+          WHERE work_id = ? AND writer_id = ? AND status != 'trashed'`,
+        [workId, writerId],
+      );
+      const sortOrder =
+        rows.length === 0
+          ? 0
+          : Math.max(...rows.map((r) => r.sort_order ?? 0)) + 1000;
+      const id = await createEpisode(workId, trimmedTitle, sortOrder);
       onItemSelect(id, 'default');
     })();
   };
