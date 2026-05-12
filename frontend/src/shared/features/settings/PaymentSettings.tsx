@@ -3,6 +3,7 @@ import {
   Coins,
   Gift,
   History,
+  Info,
   Loader2,
   Receipt,
   Shield,
@@ -363,6 +364,34 @@ export function PaymentSettings() {
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto flex max-w-lg flex-col gap-6">
+          {/* 알파 테스트 결제 공지 — 결제로직 혼란 방지용 안내 카드.
+              실 결제는 차단되어 있으며, 구독은 PG 테스트 모드 특성상 SMS 인증이 미발송된다는 점 명시. */}
+          <div className="rounded-lg border border-warning/40 bg-warning-soft/50 p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <Info size={14} className="shrink-0 text-warning" />
+              <h3 className="text-xs font-semibold text-warning">
+                알파 테스트 안내
+              </h3>
+            </div>
+            <ul className="space-y-1.5 text-[12px] leading-relaxed text-foreground">
+              <li className="flex gap-1.5">
+                <span aria-hidden className="select-none text-warning">•</span>
+                <span>현재 알파 테스트 중으로 결제가 무료 제공됩니다.</span>
+              </li>
+              <li className="flex gap-1.5">
+                <span aria-hidden className="select-none text-warning">•</span>
+                <span>
+                  구독 결제의 경우 카드 정보 등록 후 SMS 인증문자가 발송되지 않습니다.{' '}
+                  <span className="text-muted-foreground">[토스페이먼츠 정책]</span>
+                </span>
+              </li>
+              <li className="flex gap-1.5">
+                <span aria-hidden className="select-none text-warning">•</span>
+                <span>인증 정보를 임의 값으로 입력하시면 인증이 완료됩니다.</span>
+              </li>
+            </ul>
+          </div>
+
           {!canUse && (
             <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
               로그인 후에 결제/구독 기능을 사용할 수 있습니다.
