@@ -319,7 +319,7 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service=\"backend\"} |~ \"Payment|Subscription|Refund|Toss\"",
+          "expr": "{service=\"backend\"} |~ \"Payment|Subscription|Refund|PortOne|BillingKey\"",
           "queryType": "range",
           "refId": "A"
         }
