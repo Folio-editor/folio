@@ -2,6 +2,7 @@ package com.storyzip.common.exception;
 
 import com.storyzip.common.observability.TraceContextFilter;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -105,6 +107,47 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(
             AccessDeniedException e, HttpServletRequest request) {
+        return buildCommonErrorResponse(ErrorCode.FORBIDDEN, request, e);
+    }
+
+    /**
+     * Spring Security 6 의 {@link AuthorizationDeniedException} 전용 핸들러.
+     *
+     * <p>주 발생 경로 — SSE 비동기 응답 마무리:
+     * <ol>
+     *   <li>AgentController.streamMessage 가 SseEmitter 반환 후 종료</li>
+     *   <li>가상 스레드가 89초간 SSE 본문 송신 → emitter.complete()</li>
+     *   <li>Spring MVC 가 비동기 응답 마무리를 위해 내부 dispatch 발생
+     *       — 새 Tomcat 워커 + 새 SecurityFilterChain 실행</li>
+     *   <li>dispatch 된 요청에는 JWT 헤더 없어 anonymous 로 인지</li>
+     *   <li>AuthorizationFilter 가 anyRequest().authenticated() 룰에 의해 거부
+     *       → 본 예외 발생</li>
+     * </ol>
+     *
+     * <p>이 시점 응답은 이미 SSE 로 송신 완료되어 {@code response.isCommitted() == true}.
+     * 기본 핸들러는 표준 에러 응답을 보내려다 "Unable to handle the Spring Security
+     * Exception because the response is already committed" 로 깨지면서 connection 강제
+     * 종료를 유발해 클라이언트에 ERR_HTTP2_PROTOCOL_ERROR 가 노출된다.
+     *
+     * <p>본 핸들러는 committed 상태면 추가 응답 시도 없이 조용히 무시한다.
+     * SSE 본문은 이미 클라이언트에 도달했고 사용자 경험엔 영향 없음.
+     *
+     * <p>committed 아닌 일반 권한 거부 케이스는 평소처럼 403 응답.
+     *
+     * <p>참고: docs/issues/ai-agent-sse-authorization-denied.md
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAuthorizationDenied(
+            AuthorizationDeniedException e, HttpServletRequest request, HttpServletResponse response) {
+        String traceId = newTraceId();
+        if (response.isCommitted()) {
+            // 응답 이미 committed — SSE 등 비동기 응답이 정상 종료된 후의 dispatch 거부.
+            // 추가 응답 쓰면 HTTP/2 프레임 손상 → 클라이언트 ERR_HTTP2_PROTOCOL_ERROR.
+            // 사용자 경험엔 영향 없으므로 INFO 로 한 줄만 남기고 빠진다.
+            log.info("[ASYNC_DISPATCH_DENIED_AFTER_COMMIT] traceId={} path={} (응답이 이미 송신됨, 추가 처리 없음)",
+                    traceId, request.getRequestURI());
+            return null;
+        }
         return buildCommonErrorResponse(ErrorCode.FORBIDDEN, request, e);
     }
 

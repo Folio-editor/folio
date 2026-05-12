@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -104,6 +106,45 @@ public class TraceContextFilter extends OncePerRequestFilter {
                 } else {
                     org.slf4j.MDC.clear();
                 }
+            }
+        };
+    }
+
+    /**
+     * {@link #wrapMdc} + Spring Security {@link SecurityContext} 전파.
+     *
+     * <p>SSE 비동기 처리에서 {@code emitter.complete()} 호출 후 Spring MVC 가 비동기 응답
+     * 마무리를 위한 내부 dispatch 를 발생시키는데, 이 dispatch 는 새 Tomcat 워커에서 처리되며
+     * 원래 JWT 헤더는 함께 전달되지 않는다. SecurityContext 가 비어있으면 anonymous 로
+     * 인지되어 {@code AuthorizationFilter} 가 {@code anyRequest().authenticated()} 룰에
+     * 의해 거부 → {@code AuthorizationDeniedException} → "/error" forward 도 막혀 connection 강제 종료.
+     *
+     * <p>이를 막기 위해 부모 스레드의 SecurityContext 를 캡처해 가상 스레드에서 복원한다.
+     * MDC 와 동일한 캡처/복원/정리 패턴.
+     *
+     * <p>사용 예: {@code Thread.startVirtualThread(TraceContextFilter.wrapMdcAndSecurity(() -> ...));}
+     */
+    public static Runnable wrapMdcAndSecurity(Runnable task) {
+        java.util.Map<String, String> mdcSnapshot = org.slf4j.MDC.getCopyOfContextMap();
+        SecurityContext securitySnapshot = SecurityContextHolder.getContext();
+        return () -> {
+            java.util.Map<String, String> previousMdc = org.slf4j.MDC.getCopyOfContextMap();
+            SecurityContext previousSecurity = SecurityContextHolder.getContext();
+            if (mdcSnapshot != null) {
+                org.slf4j.MDC.setContextMap(mdcSnapshot);
+            } else {
+                org.slf4j.MDC.clear();
+            }
+            SecurityContextHolder.setContext(securitySnapshot);
+            try {
+                task.run();
+            } finally {
+                if (previousMdc != null) {
+                    org.slf4j.MDC.setContextMap(previousMdc);
+                } else {
+                    org.slf4j.MDC.clear();
+                }
+                SecurityContextHolder.setContext(previousSecurity);
             }
         };
     }
