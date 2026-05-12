@@ -50,6 +50,14 @@ public class SecurityConfig {
             "/internal/**",
             // 관리자 API — JWT 우회 후 AdminAuthInterceptor 의 X-Admin-Token 헤더 검증.
             "/api/v1/admin/**",
+            // AI Agent SSE 스트리밍 — Spring Security 의 ASYNC dispatch 처리가 committed
+            // 응답에서 깨지는 구조적 이슈(ERR_HTTP2_PROTOCOL_ERROR) 우회.
+            // JwtAuthenticationFilter 는 permitAll 과 무관하게 동작하므로 SecurityContext 는
+            // 정상 채워지고, 컨트롤러의 Authentication auth 파라미터로 사용자 검증을 직접 수행.
+            // emitter.complete() 후 발생하는 내부 dispatch 도 AuthorizationFilter 를 거치지
+            // 않아 거부되지 않으며 응답이 깔끔하게 종료된다.
+            // (docs/issues/ai-agent-sse-authorization-denied.md)
+            "/api/v1/agent/threads/*/messages/stream",
             // Spring Boot 의 에러 페이지 forward 경로. SSE 비동기 응답이 끝난 직후
             // emitter.complete() 가 발생시키는 내부 dispatch 는 새 servlet 요청처럼
             // JWT 헤더 없이 필터 체인을 다시 돈다. /error 가 인증 필요로 설정되면
