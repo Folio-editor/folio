@@ -34,8 +34,8 @@
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"ai\"}[5m])) by (le))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"ai\"}[5m])) by (le, color))",
+          "legendFormat": "p95 {{color}}",
           "refId": "B"
         },
         {
