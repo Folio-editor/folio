@@ -95,6 +95,10 @@ services:
     logging: *default-logging
     networks:
       - folio-net
+    labels:
+      service: backend
+      color: blue
+      environment: production
 
   fastapi-blue:
     image: folio-ai:${IMAGE_TAG:-latest}
@@ -145,6 +149,10 @@ services:
     logging: *default-logging
     networks:
       - folio-net
+    labels:
+      service: ai
+      color: blue
+      environment: production
 
   celery-worker-blue:
     image: folio-celery-worker:${IMAGE_TAG:-latest}
@@ -172,6 +180,10 @@ services:
     logging: *default-logging
     networks:
       - folio-net
+    labels:
+      service: celery-worker
+      color: blue
+      environment: production
 
   react-web-blue:
     image: folio-web:${IMAGE_TAG:-latest}
@@ -187,6 +199,10 @@ services:
     logging: *default-logging
     networks:
       - folio-net
+    labels:
+      service: web
+      color: blue
+      environment: production
 
   landing-blue:
     image: folio-landing:${IMAGE_TAG:-latest}
@@ -202,6 +218,10 @@ services:
     logging: *default-logging
     networks:
       - folio-net
+    labels:
+      service: landing
+      color: blue
+      environment: production
 
 networks:
   folio-net:

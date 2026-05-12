@@ -1,0 +1,150 @@
+apiVersion: 1
+# Folio Grafana Unified Alerting — provisioned rules.
+# B-3 (MONITORING_AUDIT_2026-05-11) — 룰 0건 상태 해소.
+# 그룹별 severity 분리: critical (즉시 통보), high (5~10분 진정), medium (10~15분).
+groups:
+  - orgId: 1
+    name: folio-critical
+    folder: Folio
+    interval: 1m
+    rules:
+      - uid: folio-app-down
+        title: App instance down
+        condition: A
+        for: 2m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 120, to: 0 }
+            model:
+              expr: 'sum by (job, color) (up{job=~"spring-boot|fastapi"}) == 0'
+              instant: true
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }}/{{ $labels.color }} 인스턴스 다운"
+          runbook: "deploy.sh 헬스체크 + docker logs"
+
+      - uid: folio-vault-sealed
+        title: Vault sealed
+        condition: A
+        for: 1m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 60, to: 0 }
+            model:
+              expr: 'vault_core_unsealed == 0'
+              instant: true
+        labels: { severity: critical }
+        annotations:
+          summary: "Vault sealed — backend 부팅 차단"
+          runbook: "bash infra/scripts/vault-unseal.sh --interactive"
+
+  - orgId: 1
+    name: folio-high
+    folder: Folio
+    interval: 1m
+    rules:
+      - uid: folio-http-5xx-spike
+        title: HTTP 5xx spike (backend)
+        condition: A
+        for: 5m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              expr: 'sum(rate(http_server_requests_seconds_count{service="backend",status=~"5.."}[5m])) > 0.1'
+              instant: true
+        labels: { severity: high }
+        annotations:
+          summary: "Backend 5xx 비율 임계 초과 (>0.1 req/s)"
+
+      - uid: folio-disk-low
+        title: Disk free < 15%
+        condition: A
+        for: 10m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: 'node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15'
+              instant: true
+        labels: { severity: high }
+        annotations: { summary: "루트 디스크 잔여 15% 미만" }
+
+      - uid: folio-mem-low
+        title: Host memory free < 15%
+        condition: A
+        for: 5m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              expr: 'node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.15'
+              instant: true
+        labels: { severity: high }
+        annotations: { summary: "호스트 가용 메모리 15% 미만" }
+
+      - uid: folio-pg-connections-high
+        title: Postgres connection pool near max
+        condition: A
+        for: 5m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              expr: 'sum(pg_stat_activity_count) / pg_settings_max_connections > 0.8'
+              instant: true
+        labels: { severity: high }
+        annotations: { summary: "Postgres 커넥션 80% 초과" }
+
+      - uid: folio-redis-mem-high
+        title: Redis memory > 90%
+        condition: A
+        for: 5m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              expr: 'redis_memory_used_bytes / redis_memory_max_bytes > 0.9'
+              instant: true
+        labels: { severity: high }
+        annotations: { summary: "Redis 메모리 90% 초과 — 키 이빅션 임박" }
+
+      - uid: folio-container-restart-loop
+        title: 컨테이너 재시작 반복
+        condition: A
+        for: 10m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: 'changes(container_start_time_seconds{name=~"folio-.*"}[10m]) > 3'
+              instant: true
+        labels: { severity: high }
+        annotations: { summary: "{{ $labels.name }} 10분간 3회 이상 재시작" }
+
+  - orgId: 1
+    name: folio-medium
+    folder: Folio
+    interval: 5m
+    rules:
+      - uid: folio-mongo-oplog-low
+        title: Mongo oplog window < 1h
+        condition: A
+        for: 10m
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: 'mongodb_oplog_stats_window_seconds < 3600'
+              instant: true
+        labels: { severity: medium }
+        annotations: { summary: "Oplog 보존 1h 미만 — PowerSync 재동기화 위험" }

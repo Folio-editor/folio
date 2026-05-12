@@ -121,3 +121,30 @@ scrape_configs:
       - targets: ['mongodb-exporter:9216']
         labels:
           service: mongo
+
+  # ─── NGINX (B-2) — stub_status 기반 ─────────────────────────
+  - job_name: nginx
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          service: nginx
+
+  # ─── Celery (B-4) — Redis broker 폴링 ───────────────────────
+  - job_name: celery
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['celery-exporter:9808']
+        labels:
+          service: celery
+
+  # ─── Vault (B-5) — telemetry endpoint ──────────────────────
+  - job_name: vault
+    scrape_interval: 30s
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ['prometheus']
+    static_configs:
+      - targets: ['vault:8200']
+        labels:
+          service: vault
