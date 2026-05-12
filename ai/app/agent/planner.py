@@ -87,13 +87,19 @@ def _with_tools_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _decay_old_tool_results(
+    messages: list[dict[str, Any]],
+    keep_recent: int = KEEP_RECENT_TOOL_RESULTS,
+) -> list[dict[str, Any]]:
     """오래된 user.tool_result 의 content 를 placeholder 로 교체.
 
     Anthropic API 검증 규칙:
       - assistant.tool_use ↔ user.tool_result.tool_use_id 페어 유지 필수.
     이 함수는 페어 구조와 tool_use_id 는 그대로 두고 tool_result.content 본문만 치환 →
-    400 에러 없이 토큰만 줄임. 가장 최근 KEEP_RECENT_TOOL_RESULTS 개 tool_result 는 본문 유지.
+    400 에러 없이 토큰만 줄임. 가장 최근 keep_recent 개 tool_result 는 본문 유지.
+
+    keep_recent=0 으로 호출하면 모든 tool_result 를 placeholder 로 치환 — past history
+    경계 정리 (continuation 시 과거 cycle 의 raw 데이터 완전 제거) 용도.
 
     파괴적 변경 방지 — 새 list/dict 로 복제. 원본 history 는 DB 저장된 그대로 보존.
     """
@@ -125,10 +131,14 @@ def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, An
         for bi, b in enumerate(c):
             if isinstance(b, dict) and b.get("type") == "tool_result":
                 positions.append((mi, bi))
-    if len(positions) <= KEEP_RECENT_TOOL_RESULTS:
+    if keep_recent > 0 and len(positions) <= keep_recent:
         return messages    # 충분히 적음 — 변경 불필요
-    # 3) 마지막 KEEP_RECENT_TOOL_RESULTS 개 제외, 그 이전은 decay 대상
-    decay_set = set(positions[: -KEEP_RECENT_TOOL_RESULTS])
+    # 3) 마지막 keep_recent 개 제외, 그 이전은 decay 대상.
+    #    keep_recent=0 이면 전체 decay 대상.
+    if keep_recent > 0:
+        decay_set = set(positions[: -keep_recent])
+    else:
+        decay_set = set(positions)
     if not decay_set:
         return messages
     # 4) 새 messages 합성 (얕은 복사 + 대상 block 만 치환)
@@ -350,18 +360,21 @@ async def run_planner_loop(
     # 들어올 수 있다. orphan tool_result / orphan tool_use 를 제거 — Anthropic 400 차단.
     history = _sanitize_history(history)
 
-    # ★ 선제 batch decay — 기존 thread 의 누적 tool_result raw 본문이 임계 초과면 첫
-    # Sonnet 호출 전에 미리 decay. 기존 설계에선 decay 가 loop 내 첫 iter 응답 *후* 에만
-    # 발동해서 첫 호출은 항상 풀 history 송신 → 64K+ chars 가 GMS 에 통째 들어감.
-    # load_session 직후 한 번 검사해 이미 누적된 raw 본문을 placeholder 로 치환.
-    pre_loaded_accumulated = _accumulated_old_tool_result_chars(history)
-    if pre_loaded_accumulated >= TOOL_RESULT_DECAY_BATCH_THRESHOLD:
-        decayed = _decay_old_tool_results(history)
-        if decayed is not history:
-            history = decayed
+    # ★ 선제 전체 decay — 현재 시점의 history 는 전부 "과거 cycle" 이다.
+    # 사용자 신규 메시지를 append 하기 직전이므로 이 history 의 모든 tool_result 는
+    # 직전 cycle 들의 결과물 → 새 cycle 에 필요한 raw 데이터 0.
+    # keep_recent=0 으로 호출해 KEEP_RECENT 무시하고 전체 placeholder 치환.
+    # → 새 cycle 시작 시점에 과거 cycle 의 raw 텍스트는 history 에서 사라짐.
+    #   ("이전 히스토리에는 도구 raw 텍스트 안 들어감, 도구 호출 흐름만 유지" 보장)
+    decayed = _decay_old_tool_results(history, keep_recent=0)
+    if decayed is not history:
+        before_chars = _count_messages_chars(history)
+        history = decayed
+        after_chars = _count_messages_chars(history)
+        if before_chars != after_chars:
             logger.info(
-                "planner.tool_result_preload_decay scenario=%s accumulated_chars=%d",
-                scenario_name, pre_loaded_accumulated,
+                "planner.tool_result_preload_decay_all scenario=%s before=%d after=%d",
+                scenario_name, before_chars, after_chars,
             )
 
     # ★ Past history hard cap (20K chars) — 무슨 일이 있어도 이전 대화 부분은 이 한도 안에.
