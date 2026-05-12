@@ -64,7 +64,7 @@
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "tomcat_threads_busy_threads{service=\"backend\"}",
+          "expr": "tomcat_threads_current_threads_busy{service=\"backend\"} or tomcat_threads_busy_threads{service=\"backend\"}",
           "legendFormat": "Busy {{color}}",
           "refId": "A"
         }

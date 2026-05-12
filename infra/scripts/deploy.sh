@@ -64,6 +64,17 @@ echo "[deploy] Downloading secrets from Doppler..."
 doppler secrets download --project folio --config prd --no-file --format env > .env
 echo "IMAGE_TAG=${IMAGE_TAG}" >> .env
 
+# ─── 2.5. Prometheus 시크릿 파일 기록 ──────────────────────
+# prometheus.yml 의 fastapi job 이 X-Internal-Api-Key 헤더를 file 로 읽어 주입한다.
+# 매 배포 시점에 Doppler 의 INTERNAL_API_KEY 값으로 파일을 갱신해 회전(rotation) 반영.
+# 권한: 65534:65534 (nobody) / 0400 — Prometheus 컨테이너가 nobody UID 로 실행.
+echo "[deploy] Writing prometheus secrets..."
+sudo mkdir -p /opt/folio/data/prometheus-secrets
+printf '%s' "$(doppler secrets get INTERNAL_API_KEY --project folio --config prd --plain)" \
+    | sudo tee /opt/folio/data/prometheus-secrets/internal-api-key > /dev/null
+sudo chown 65534:65534 /opt/folio/data/prometheus-secrets/internal-api-key
+sudo chmod 400 /opt/folio/data/prometheus-secrets/internal-api-key
+
 # ─── 3. 새 이미지 Pull ──────────────────────────────────────
 echo "[deploy] Pulling images for $NEXT..."
 docker compose -f docker-compose.yml -f "docker-compose.${NEXT}.yml" --env-file .env pull
