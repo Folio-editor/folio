@@ -13,8 +13,11 @@ import com.storyzip.payment.domain.RefundType;
 import com.storyzip.payment.domain.TokenWallet;
 import com.storyzip.payment.dto.RefundRequest;
 import com.storyzip.payment.dto.RefundResponse;
+import com.storyzip.payment.domain.Subscription;
+import com.storyzip.payment.domain.SubscriptionStatus;
 import com.storyzip.payment.repository.PaymentRepository;
 import com.storyzip.payment.repository.RefundRepository;
+import com.storyzip.payment.repository.SubscriptionRepository;
 import com.storyzip.payment.repository.TokenWalletRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +54,7 @@ class RefundServiceTest {
     @Mock PaymentRepository paymentRepository;
     @Mock RefundRepository refundRepository;
     @Mock TokenWalletRepository tokenWalletRepository;
+    @Mock SubscriptionRepository subscriptionRepository;
     @Mock PortOneClient portOneClient;
     @Mock TokenWalletService tokenWalletService;
     @Mock EmailNotifier emailNotifier;
@@ -94,10 +98,32 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("종량제 7일 이내 일부 사용 신청 (단순변심): REFUND_REQUEST_DENIED")
-    void onetime_within7Days_partialUsed_simpleReason_denied() {
+    @DisplayName("종량제 7일 이내 일부 사용 신청 (단순변심): PARTIAL_USED 비례 환불 (약관 제4조 1항)")
+    void onetime_within7Days_partialUsed_simpleReason_proratedRefund() {
+        // 5,000원 / 550 크레딧, 100 사용 (잔여 450) → 5,000 × 450/550 = 4,090.9... → floor 4,090원
         Payment payment = doneOnetime(5_000, 550, hoursAgo(24));
         TokenWallet wallet = walletWithPurchase(450);
+        given(paymentRepository.findWithLockByOrderId("SZ-1")).willReturn(Optional.of(payment));
+        given(tokenWalletRepository.findById(writerId)).willReturn(Optional.of(wallet));
+        given(refundRepository.findActiveByPaymentId(any())).willReturn(Optional.empty());
+        given(refundRepository.countByPayment_IdAndStatus(any(), eq(RefundStatus.REJECTED))).willReturn(0L);
+
+        RefundResponse res = refundService.requestRefund(writerId, "SZ-1",
+                new RefundRequest(RefundReason.CUSTOMER_CHANGE_OF_MIND, null));
+
+        assertThat(res.refundType()).isEqualTo(RefundType.PARTIAL_USED);
+        assertThat(res.refundAmount()).isEqualTo(4_090);
+        assertThat(res.tokenDeducted()).isEqualTo(450);
+        assertThat(res.status()).isEqualTo(RefundStatus.REQUESTED);
+        verify(portOneClient, never()).cancelPayment(anyString(), anyString(), any());
+        verify(tokenWalletService, never()).deductForRefund(any(), any(Integer.class), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("종량제 7일 이내 전부 사용 신청 (단순변심): REFUND_REQUEST_DENIED (제6조 2항)")
+    void onetime_within7Days_fullyUsed_simpleReason_denied() {
+        Payment payment = doneOnetime(5_000, 550, hoursAgo(24));
+        TokenWallet wallet = walletWithPurchase(0);
         given(paymentRepository.findWithLockByOrderId("SZ-1")).willReturn(Optional.of(payment));
         given(tokenWalletRepository.findById(writerId)).willReturn(Optional.of(wallet));
         given(refundRepository.findActiveByPaymentId(any())).willReturn(Optional.empty());
@@ -106,7 +132,7 @@ class RefundServiceTest {
         assertThatThrownBy(() -> refundService.requestRefund(writerId, "SZ-1",
                 new RefundRequest(RefundReason.CUSTOMER_CHANGE_OF_MIND, null)))
                 .isInstanceOf(PaymentException.class)
-                .hasMessageContaining("일부라도 사용");
+                .hasMessageContaining("모두 사용");
     }
 
     @Test
@@ -255,6 +281,42 @@ class RefundServiceTest {
     }
 
     @Test
+    @DisplayName("구독 FULL 승인: PortOne cancel + refundSubscription 호출 + 활성 구독 즉시 만료")
+    void approve_subscriptionFull_refundsSubscriptionAndExpires() {
+        Payment payment = doneSubscription(19_800, 25_000, hoursAgo(24));
+        Refund refund = persistedRefund(payment, RefundType.FULL, 19_800, 25_000);
+        Subscription subscription = activeSubscription();
+        given(refundRepository.findById(refund.getId())).willReturn(Optional.of(refund));
+        given(subscriptionRepository.findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE))
+                .willReturn(Optional.of(subscription));
+
+        refundService.approveRefund(refund.getId(), "OK");
+
+        verify(portOneClient).cancelPayment(eq("SUB-1"), anyString(), isNull());
+        // 구독 환불은 deductForRefund (purchase 버킷) 가 아니라 refundSubscription 호출.
+        verify(tokenWalletService).refundSubscription(eq(writerId), anyString(), any());
+        verify(tokenWalletService, never()).deductForRefund(any(), any(Integer.class), anyString(), any());
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.APPROVED);
+        // 활성 구독은 즉시 CANCELLED 로 만료 — 자동 갱신 차단.
+        assertThat(subscription.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
+    }
+
+    @Test
+    @DisplayName("구독 FULL 승인: 활성 구독이 없어도 토큰 회수는 정상 진행 (과거 결제 뒤늦은 환불)")
+    void approve_subscriptionFull_noActiveSubscription_stillRefundsTokens() {
+        Payment payment = doneSubscription(19_800, 25_000, hoursAgo(24));
+        Refund refund = persistedRefund(payment, RefundType.FULL, 19_800, 25_000);
+        given(refundRepository.findById(refund.getId())).willReturn(Optional.of(refund));
+        given(subscriptionRepository.findByWriter_IdAndStatus(writerId, SubscriptionStatus.ACTIVE))
+                .willReturn(Optional.empty());
+
+        refundService.approveRefund(refund.getId(), "OK");
+
+        verify(tokenWalletService).refundSubscription(eq(writerId), anyString(), any());
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.APPROVED);
+    }
+
+    @Test
     @DisplayName("COMPANY_FAULT_CREDIT 승인: PortOne 호출 없음, 크레딧 보상 (chargePurchase)")
     void approve_companyFaultCredit_skipsPortOneAndCharges() {
         Payment payment = doneOnetime(5_000, 550, hoursAgo(30 * 24));
@@ -332,6 +394,20 @@ class RefundServiceTest {
         TokenWallet wallet = TokenWallet.createEmpty(writerId);
         if (balance > 0) wallet.overwriteSubscription(balance);
         return wallet;
+    }
+
+    private Subscription activeSubscription() {
+        Subscription subscription = Subscription.builder()
+                .writer(writer)
+                .customerKey("ck_test")
+                .billingKey("bk_test")
+                .plan("PRO_MONTHLY")
+                .monthlyTokens(25_000)
+                .monthlyAmount(19_800)
+                .nextBillingAt(LocalDateTime.now(ZoneOffset.UTC).plusMonths(1))
+                .build();
+        ReflectionTestUtils.setField(subscription, "id", UUID.randomUUID());
+        return subscription;
     }
 
     private Refund persistedRefund(Payment payment, RefundType type, int amount, int tokenDeducted) {
