@@ -41,7 +41,18 @@ final class AnalyticsEventSpec {
             Map.entry("ai_review_requested", Set.of("doc_type", "char_count_bucket")),
             Map.entry("ai_review_succeeded", Set.of("doc_type", "duration_bucket")),
             Map.entry("ai_review_failed", Set.of("doc_type", "reason_code")),
-            Map.entry("theme_changed", Set.of("theme_id", "mode"))
+            Map.entry("theme_changed", Set.of("theme_id", "mode")),
+            // P0 (2026-05-12) — 결제·AI 결과·암호화 실패·로그인 보강. analyticsPrivacy.ts 와 동일.
+            Map.entry("checkout_initiated", Set.of("product_type", "amount_bucket")),
+            Map.entry("payment_succeeded", Set.of("product_type", "amount_bucket")),
+            Map.entry("payment_failed", Set.of("product_type", "reason_code")),
+            Map.entry("ai_spellcheck_requested", Set.of("doc_type", "char_count_bucket", "mode")),
+            Map.entry("ai_spellcheck_succeeded", Set.of("doc_type", "issue_count_bucket", "duration_bucket")),
+            Map.entry("ai_feature_insufficient_credits", Set.of("feature_type")),
+            Map.entry("decryption_failure", Set.of("field_type", "reason_code")),
+            Map.entry("kek_derivation_failed", Set.of("reason_code")),
+            Map.entry("sync_decision_made", Set.of("decision", "is_new_user")),
+            Map.entry("document_edit_failed", Set.of("doc_type", "reason_code"))
     );
 
     private AnalyticsEventSpec() {
