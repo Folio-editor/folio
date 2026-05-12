@@ -544,6 +544,19 @@ function ReviewIssueCard({
 
   function handleJump() {
     if (!hasJump || !p.episode_id) return;
+    // 같은 위치를 두 번 클릭하면 토글 끔 — 사용자가 '하이라이트 제거' 라는 별도 액션을
+    // 찾지 않아도 직관적으로 해제 가능. focusedIndex/episodeId/lines 동등성으로 판단.
+    const state = useReviewHighlightStore.getState();
+    const sameTarget =
+      state.episodeId === p.episode_id &&
+      state.focusedIndex === 0 &&
+      state.issues.length === 1 &&
+      state.issues[0].lines.length === lines.length &&
+      state.issues[0].lines.every((ln, i) => ln === lines[i]);
+    if (sameTarget) {
+      state.clearIssues();
+      return;
+    }
     // 1) 메인 패널에 회차 오픈 (이미 열려있으면 점프)
     openTab({ section: 'episode', itemId: p.episode_id });
     // 2) ReviewHighlight 에 단일 이슈 세팅 + 포커스 — TipTap 확장이 흐릿한 데코 + scrollIntoView 자동 처리.
@@ -646,6 +659,18 @@ function SpellingBatchCard({
   const focusHighlightIssue = useReviewHighlightStore((s) => s.focusIssue);
   function jumpToFix(fix: SpellingBatchFix) {
     if (!p.episode_id || typeof fix.line !== 'number' || fix.line < 1) return;
+    // 같은 fix 재클릭 → 토글 끔. line 한 줄 단위 비교.
+    const state = useReviewHighlightStore.getState();
+    const sameTarget =
+      state.episodeId === p.episode_id &&
+      state.focusedIndex === 0 &&
+      state.issues.length === 1 &&
+      state.issues[0].lines.length === 1 &&
+      state.issues[0].lines[0] === fix.line;
+    if (sameTarget) {
+      state.clearIssues();
+      return;
+    }
     openTab({ section: 'episode', itemId: p.episode_id });
     setHighlightIssues(
       [
