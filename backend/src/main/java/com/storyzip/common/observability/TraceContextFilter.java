@@ -39,6 +39,15 @@ public class TraceContextFilter extends OncePerRequestFilter {
     private static final long SLA_WARN_THRESHOLD_MS = 5_000L;
 
     @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        // JwtAuthenticationFilter 도 async dispatch 에 재실행되도록 했음 (SseEmitter
+        // 완료 시 SecurityContext 복원 필요). 그 짝으로 trace MDC 도 async dispatch 에서
+        // 동일하게 세팅/정리되도록 — 안 그러면 JWT 필터가 MDC.put(USER_ID) 한 뒤 정리
+        // 책임자가 없어 thread-pool 의 다른 요청으로 컨텍스트가 새어 나갈 수 있다.
+        return false;
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String traceId = resolveTraceId(request);

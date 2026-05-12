@@ -28,15 +28,44 @@ PLANNER_MAX_TOKENS = 6000     # 초안 본문 (3~5K tok) + tool_use 블록 동�
 # Anthropic 200K - planner 응답 6K - system/tools margin 14K = 안전 ceiling 180K.
 PLANNER_MAX_HISTORY_TOKENS = 180_000
 
+# 2-tier hard cap — messages 송신 시 char 단위 분리 예산.
+# token estimate 는 한국어 과소추정 위험이 있어 안전한 char 단위 직접 측정 채택.
+# system + tools 는 cached infra (15K) 라 별도. 아래는 messages 배열 chars 만.
+PAST_HISTORY_CHAR_CAP = 20_000      # 이전 user/assistant + 이전 cycle tool I/O
+CURRENT_CYCLE_CHAR_CAP = 50_000     # 현재 cycle: 현재 user message + 도구 호출/결과 누적
+TOTAL_MESSAGES_CHAR_CAP = PAST_HISTORY_CHAR_CAP + CURRENT_CYCLE_CHAR_CAP    # 70K
+
 # Tool result decay — 최근 N개 tool exchange 만 본문 유지, 그 이전은 placeholder 로 교체.
 # Anthropic 페어 검증 (assistant.tool_use ↔ user.tool_result 의 tool_use_id 매칭) 은 유지하면서
 # tool_result.content 본문만 짧은 메모로 치환 — 토큰 70~90% 절감, 페어 구조는 보존.
 # 모델은 자기 직전 답변에 결과를 이미 통합해 인용했으므로 옛 raw 결과 재참조 필요 빈도 낮음.
+# placeholder 에 도구명 + 원본 char 수를 박아 모델이 "어떤 도구의 결과였는지" 즉시 인지 → 재호출 결정 정확화.
 KEEP_RECENT_TOOL_RESULTS = 6
-TOOL_RESULT_DECAY_PLACEHOLDER = (
-    "[이전 도구 결과는 컨텍스트 절약을 위해 요약 제거되었습니다. "
-    "재참조가 필요하면 도구를 다시 호출하세요.]"
-)
+
+
+def _build_decay_placeholder(tool_name: str, original_chars: int) -> str:
+    """도구명 + 원본 크기 정보 박힌 placeholder. 모델이 어떤 도구의 결과였는지 즉시 인지."""
+    if tool_name:
+        return (
+            f"[{tool_name} 결과 ({original_chars}자) 생략 — 컨텍스트 절약. "
+            "필요 시 같은 도구 재호출.]"
+        )
+    return (
+        f"[이전 도구 결과 ({original_chars}자) 생략 — 컨텍스트 절약. "
+        "필요 시 같은 도구 재호출.]"
+    )
+
+
+def _is_decay_placeholder(text: str) -> bool:
+    """placeholder 인지 식별 (idempotent decay 위해 재처리 방지)."""
+    if not isinstance(text, str):
+        return False
+    return text.startswith("[") and "결과" in text and "생략" in text and "재호출" in text
+
+# Batch decay 임계 — 매 iter decay 하면 boundary 가 1씩 밀려 cache 가 매번 무효화된다.
+# 대신 옛 (KEEP_RECENT 이전) tool_result 들의 verbatim content 누적이 임계 도달했을 때만
+# 한꺼번에 decay → cache invalidation 은 batch 시점 1회만, 그 사이엔 안정.
+TOOL_RESULT_DECAY_BATCH_THRESHOLD = 8_000
 
 
 def _with_tools_cache(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -70,7 +99,22 @@ def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, An
     """
     if not messages:
         return messages
-    # 1) tool_result 들의 (msg_idx, block_idx) 을 등장 순으로 수집
+    # 1) tool_use_id → tool_name 매핑 — placeholder 에 도구명 박기 위한 lookup table.
+    #    이전 assistant.tool_use 블록들에서 한 번에 수집.
+    tool_use_name_by_id: dict[str, str] = {}
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        c = m.get("content")
+        if not isinstance(c, list):
+            continue
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                tu_id = b.get("id", "")
+                tu_name = b.get("name", "")
+                if tu_id:
+                    tool_use_name_by_id[tu_id] = tu_name
+    # 2) tool_result 들의 (msg_idx, block_idx) 을 등장 순으로 수집
     positions: list[tuple[int, int]] = []
     for mi, m in enumerate(messages):
         if m.get("role") != "user":
@@ -83,11 +127,11 @@ def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, An
                 positions.append((mi, bi))
     if len(positions) <= KEEP_RECENT_TOOL_RESULTS:
         return messages    # 충분히 적음 — 변경 불필요
-    # 2) 마지막 KEEP_RECENT_TOOL_RESULTS 개 제외, 그 이전은 decay 대상
+    # 3) 마지막 KEEP_RECENT_TOOL_RESULTS 개 제외, 그 이전은 decay 대상
     decay_set = set(positions[: -KEEP_RECENT_TOOL_RESULTS])
     if not decay_set:
         return messages
-    # 3) 새 messages 합성 (얕은 복사 + 대상 block 만 치환)
+    # 4) 새 messages 합성 (얕은 복사 + 대상 block 만 치환)
     out: list[dict[str, Any]] = []
     for mi, m in enumerate(messages):
         c = m.get("content")
@@ -98,10 +142,17 @@ def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, An
         changed = False
         for bi, b in enumerate(c):
             if (mi, bi) in decay_set and isinstance(b, dict) and b.get("type") == "tool_result":
+                tu_id = b.get("tool_use_id", "")
+                tool_name = tool_use_name_by_id.get(tu_id, "")
+                existing = b.get("content", "")
+                # 이미 placeholder 면 재처리 skip (idempotent)
+                if isinstance(existing, str) and _is_decay_placeholder(existing):
+                    continue
+                original_chars = len(existing) if isinstance(existing, str) else 0
                 new_c[bi] = {
                     "type": "tool_result",
-                    "tool_use_id": b.get("tool_use_id", ""),
-                    "content": TOOL_RESULT_DECAY_PLACEHOLDER,
+                    "tool_use_id": tu_id,
+                    "content": _build_decay_placeholder(tool_name, original_chars),
                 }
                 changed = True
         if changed:
@@ -109,6 +160,76 @@ def _decay_old_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, An
         else:
             out.append(m)
     return out
+
+
+def _accumulated_old_tool_result_chars(messages: list[dict[str, Any]]) -> int:
+    """KEEP_RECENT_TOOL_RESULTS 보다 오래된 위치의 tool_result 중 아직 verbatim
+    (placeholder 치환 안 된) 인 것들의 char 누적 합. Batch decay 임계 판단용.
+    """
+    positions: list[tuple[int, int]] = []
+    for mi, m in enumerate(messages):
+        if m.get("role") != "user":
+            continue
+        c = m.get("content")
+        if not isinstance(c, list):
+            continue
+        for bi, b in enumerate(c):
+            if isinstance(b, dict) and b.get("type") == "tool_result":
+                positions.append((mi, bi))
+    if len(positions) <= KEEP_RECENT_TOOL_RESULTS:
+        return 0
+    candidates = positions[: -KEEP_RECENT_TOOL_RESULTS]
+    total = 0
+    for mi, bi in candidates:
+        block = messages[mi]["content"][bi]
+        if isinstance(block, dict):
+            existing = block.get("content", "")
+            # 이미 decay placeholder 이면 카운트 안 함 (idempotent)
+            if isinstance(existing, str) and not _is_decay_placeholder(existing):
+                total += len(existing)
+    return total
+
+
+def _count_messages_chars(messages: list[dict[str, Any]]) -> int:
+    """messages 의 JSON 직렬화 길이 (chars) — hard cap 측정용. token 추정 X."""
+    import json
+    try:
+        return len(json.dumps(messages, ensure_ascii=False))
+    except Exception:
+        return sum(len(str(m)) for m in messages)
+
+
+def _find_current_cycle_start(history: list[dict[str, Any]]) -> int:
+    """현재 cycle 의 시작 인덱스 — 가장 최근의 'user text' 메시지 위치.
+    user 의 tool_result 메시지는 cycle 중간이라 제외. content 가 str 인 user 메시지 = cycle 시작.
+    """
+    for i in range(len(history) - 1, -1, -1):
+        m = history[i]
+        if m.get("role") == "user" and isinstance(m.get("content"), str):
+            return i
+    return 0
+
+
+def _drop_oldest_pair(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """가장 오래된 (user, assistant) 페어 1쌍을 drop.
+    Anthropic messages[0] = user 규칙 보존을 위해 user→assistant 순으로 같이 제거.
+    인접한 tool_result-only user 메시지도 같은 cycle 잔재라 함께 drop.
+    """
+    if not history:
+        return history
+    i = 0
+    # 첫 user 페어 + 그 cycle 의 tool_result 들 모두 drop
+    n = len(history)
+    # 첫 user 1개 drop
+    if i < n and history[i].get("role") == "user":
+        i += 1
+    # 이어지는 assistant + tool_result 시퀀스 drop (다음 user_text 만나기 직전까지)
+    while i < n:
+        m = history[i]
+        if m.get("role") == "user" and isinstance(m.get("content"), str):
+            break    # 다음 user_text — cycle 시작
+        i += 1
+    return history[i:]
 
 
 def _with_messages_cache(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -229,13 +350,109 @@ async def run_planner_loop(
     # 들어올 수 있다. orphan tool_result / orphan tool_use 를 제거 — Anthropic 400 차단.
     history = _sanitize_history(history)
 
+    # ★ 선제 batch decay — 기존 thread 의 누적 tool_result raw 본문이 임계 초과면 첫
+    # Sonnet 호출 전에 미리 decay. 기존 설계에선 decay 가 loop 내 첫 iter 응답 *후* 에만
+    # 발동해서 첫 호출은 항상 풀 history 송신 → 64K+ chars 가 GMS 에 통째 들어감.
+    # load_session 직후 한 번 검사해 이미 누적된 raw 본문을 placeholder 로 치환.
+    pre_loaded_accumulated = _accumulated_old_tool_result_chars(history)
+    if pre_loaded_accumulated >= TOOL_RESULT_DECAY_BATCH_THRESHOLD:
+        decayed = _decay_old_tool_results(history)
+        if decayed is not history:
+            history = decayed
+            logger.info(
+                "planner.tool_result_preload_decay scenario=%s accumulated_chars=%d",
+                scenario_name, pre_loaded_accumulated,
+            )
+
+    # ★ Past history hard cap (20K chars) — 무슨 일이 있어도 이전 대화 부분은 이 한도 안에.
+    # 계단식 축소: (1) decay 재적용 (2) force compression (3) 가장 오래된 페어부터 drop.
+    from app.agent.session import maybe_compress as _maybe_compress_for_cap
+    past_chars = _count_messages_chars(history)
+    if past_chars > PAST_HISTORY_CHAR_CAP:
+        # (1) decay 재시도 — KEEP_RECENT 무시하고 전체 옛 tool_result 강제 decay
+        history = _decay_old_tool_results(history)
+        past_chars = _count_messages_chars(history)
+        logger.info(
+            "planner.past_cap_decay scenario=%s after_decay_chars=%d cap=%d",
+            scenario_name, past_chars, PAST_HISTORY_CHAR_CAP,
+        )
+    # (2) 여전히 초과면 force maybe_compress (Haiku 1회 호출로 옛 head 요약)
+    compression_attempts = 0
+    while past_chars > PAST_HISTORY_CHAR_CAP and compression_attempts < 3:
+        compression_attempts += 1
+        try:
+            new_history, new_summary, did = await _maybe_compress_for_cap(
+                history, summary_so_far, budget, force=True
+            )
+            if not did:
+                break    # 압축 불가 (head 부족 등) — (3) 단계로
+            history = new_history
+            summary_so_far = new_summary
+            system_blocks = _build_system_blocks(
+                scenario["system_prompt"], work_meta_block, summary_so_far
+            )
+            past_chars = _count_messages_chars(history)
+            logger.info(
+                "planner.past_cap_force_compress scenario=%s attempt=%d after_chars=%d",
+                scenario_name, compression_attempts, past_chars,
+            )
+        except BudgetExceeded:
+            raise
+        except Exception as e:
+            logger.warning("planner.past_cap_compress_failed: %s", str(e)[:200])
+            break
+    # (3) 마지막 안전 그물 — 그래도 초과면 가장 오래된 페어부터 drop
+    drop_attempts = 0
+    while past_chars > PAST_HISTORY_CHAR_CAP and drop_attempts < 10 and len(history) > 2:
+        drop_attempts += 1
+        history = _drop_oldest_pair(history)
+        past_chars = _count_messages_chars(history)
+    if drop_attempts > 0:
+        logger.warning(
+            "planner.past_cap_drop_oldest scenario=%s drops=%d final_chars=%d",
+            scenario_name, drop_attempts, past_chars,
+        )
+
     # 사용자 신규 메시지를 history 에 append
     history.append({"role": "user", "content": user_message})
 
     suggestion_ids: list[str] = []
     final_text: str | None = None
+    # 이번 user request cycle 에서 propose_episode_draft 가 성공했는지 추적.
+    # cycle 종료 시 (loop break) 마지막 assistant wrap-up text 도 placeholder 로 치환해
+    # 다음 cycle 의 history bloat 방지. 모델은 시나리오 prompt 지시대로 "본문 텍스트 →
+    # propose 호출" 패턴을 따른 뒤, 추가로 "최종 답변" wrap-up 으로 같은 본문을 다시
+    # 출력하는 경향이 있어 같은 본문이 history 에 두 번 등장한다.
+    episode_draft_proposed_in_cycle = False
 
     while True:
+        # ★ Current cycle hard cap (50K chars) — 현재 user 메시지 + 이후 도구 호출/결과 누적.
+        # 매 iter 시작에 검사. 초과 시 in-cycle decay 시도 → 그래도 초과면 graceful break.
+        cycle_start = _find_current_cycle_start(history)
+        cycle_chars = _count_messages_chars(history[cycle_start:])
+        if cycle_chars > CURRENT_CYCLE_CHAR_CAP:
+            # 1차 시도: in-cycle 옛 tool_result decay (KEEP_RECENT 무시)
+            history = _decay_old_tool_results(history)
+            cycle_chars_after = _count_messages_chars(history[cycle_start:])
+            if cycle_chars_after < cycle_chars:
+                logger.info(
+                    "planner.cycle_cap_decay scenario=%s before=%d after=%d cap=%d",
+                    scenario_name, cycle_chars, cycle_chars_after, CURRENT_CYCLE_CHAR_CAP,
+                )
+                cycle_chars = cycle_chars_after
+            # 2차: 여전히 초과면 graceful break
+            if cycle_chars > CURRENT_CYCLE_CHAR_CAP:
+                final_text = (
+                    f"(현재 cycle 의 도구 호출 결과가 한도({CURRENT_CYCLE_CHAR_CAP:,}자)를 초과해 "
+                    "추가 추론을 중단합니다. 같은 thread 의 [압축] 버튼으로 정리하거나 "
+                    "더 적은 도구로 다시 요청해주세요.)"
+                )
+                logger.warning(
+                    "planner.cycle_cap_break scenario=%s cycle_chars=%d cap=%d",
+                    scenario_name, cycle_chars, CURRENT_CYCLE_CHAR_CAP,
+                )
+                break
+
         # ★ iterative compression — 매 iter 시작에 maybe_compress 호출.
         # DB 영속 history 와 별개로 ★요청 송신용 in-memory history 만★ 동적 축소.
         # maybe_compress 내부 임계 (40 msg / 100K tok) 미만이면 즉시 no-op return (Haiku 호출 X).
@@ -400,6 +617,41 @@ async def run_planner_loop(
                 })
                 final_text = None
                 continue
+
+            # ★ Wrap-up text 도 trim — propose_episode_draft 가 이번 cycle 에서 성공했다면
+            # 모델이 "최종 답변" 으로 본문을 다시 출력하는 경향이 있어 history 에 같은 본문이
+            # 중복 누적된다 (Plan B 는 propose 직후 turn 만 trim 함). 마지막 assistant text
+            # (방금 추가한 history[-1]) 의 긴 텍스트도 placeholder 로 치환해 다음 user
+            # request 시작 시 body bloat 방지.
+            if (
+                episode_draft_proposed_in_cycle
+                and len(history) >= 1
+                and history[-1].get("role") == "assistant"
+            ):
+                wrap_content = history[-1].get("content")
+                if isinstance(wrap_content, list):
+                    new_wrap_blocks: list[dict[str, Any]] = []
+                    wrap_trimmed_total = 0
+                    for block in wrap_content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text") or ""
+                            if len(text) > 500:
+                                wrap_trimmed_total += len(text)
+                                new_wrap_blocks.append({
+                                    "type": "text",
+                                    "text": (
+                                        f"(이미 propose 완료된 본문 {len(text)}자 — DB 에 저장됨. "
+                                        "필요 시 read_episode_plaintext 도구로 재조회)"
+                                    ),
+                                })
+                                continue
+                        new_wrap_blocks.append(block)
+                    if wrap_trimmed_total > 0:
+                        history[-1] = {**history[-1], "content": new_wrap_blocks}
+                        logger.info(
+                            "planner.propose_wrapup_trimmed scenario=%s saved_chars=%d",
+                            scenario_name, wrap_trimmed_total,
+                        )
             break
         if stop_reason and stop_reason != "tool_use":
             logger.warning(
@@ -427,6 +679,11 @@ async def run_planner_loop(
 
         tool_results: list[dict[str, Any]] = []
         budget_aborted: BudgetExceeded | None = None
+        # 어떤 heavy propose 도구가 성공했는지 추적 — 직후 history 의 assistant text 를
+        # placeholder 로 치환해 다음 iter 의 request body 크기 폭주를 차단.
+        # 한국어 본문 4K chars 는 ensure_ascii=True 직렬화 시 25KB+ body bytes 가 되고,
+        # 연속 episode 생성 시 누적되어 GMS gateway body limit 을 초과 → 400 발생.
+        heavy_propose_succeeded = False
         for tu in tool_uses:
             name = getattr(tu, "name", "")
             tu_id = getattr(tu, "id", "")
@@ -492,12 +749,64 @@ async def run_planner_loop(
                         budget_aborted = be
             if isinstance(result, dict) and result.get("suggestion_id"):
                 suggestion_ids.append(result["suggestion_id"])
+                # propose_episode_draft (또는 본문성 propose) 가 suggestion_id 까지 발행됐다 =
+                # 본문이 DB 에 적재 완료. 그 본문이 더 이상 history 의 assistant text 에
+                # 머물러 다음 iter 들의 prompt 크기를 키울 필요 없음.
+                if name in ("propose_episode_draft",):
+                    heavy_propose_succeeded = True
+                    episode_draft_proposed_in_cycle = True
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tu_id,
                 "content": _format_tool_result(result),
             })
         history.append({"role": "user", "content": tool_results})
+
+        # ★ Body bloat 완화 — propose_episode_draft 성공 직후 그 assistant turn 의 긴
+        # text content 를 짧은 placeholder 로 치환. 모델이 재참조해야 하면
+        # read_episode_plaintext 도구로 DB 에서 다시 불러올 수 있다.
+        # tool_use 블록은 그대로 보존 (Anthropic 이 tool_use ↔ tool_result 짝맞춤 검증).
+        # 500 chars 이상의 본문성 text 만 대상 — "이제 5화 작성하겠습니다" 같은 짧은 멘트는 유지.
+        if heavy_propose_succeeded and len(history) >= 2 and history[-2].get("role") == "assistant":
+            asst_content = history[-2].get("content")
+            if isinstance(asst_content, list):
+                new_blocks: list[dict[str, Any]] = []
+                trimmed_total = 0
+                for block in asst_content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text") or ""
+                        if len(text) > 500:
+                            trimmed_total += len(text)
+                            new_blocks.append({
+                                "type": "text",
+                                "text": (
+                                    f"(propose 완료 — 본문 {len(text)}자는 DB 에 저장됨. "
+                                    "필요 시 read_episode_plaintext 도구로 재조회)"
+                                ),
+                            })
+                            continue
+                    new_blocks.append(block)
+                if trimmed_total > 0:
+                    history[-2] = {**history[-2], "content": new_blocks}
+                    logger.info(
+                        "planner.propose_text_trimmed scenario=%s saved_chars=%d",
+                        scenario_name, trimmed_total,
+                    )
+
+        # ★ Tool result batch decay — 옛 tool_result raw 본문 누적이 임계 도달했을 때만
+        # 한 번에 placeholder 치환. 매 iter decay 하면 boundary 가 1씩 밀려 cache 가
+        # 매번 무효화되지만, batch 방식은 임계 도달 시점에만 1회 invalidate → 그 사이엔 안정.
+        # 모델은 옛 raw 결과가 필요하면 같은 도구를 다시 호출할 수 있다 (placeholder 안내 문구).
+        # 사용자 메시지/assistant text/tool_use 메타는 그대로 — "대화 흐름" 보존.
+        accumulated_old_chars = _accumulated_old_tool_result_chars(history)
+        if accumulated_old_chars >= TOOL_RESULT_DECAY_BATCH_THRESHOLD:
+            decayed_history = _decay_old_tool_results(history)
+            if decayed_history is not history:
+                history = decayed_history
+                logger.info(
+                    "planner.tool_result_batch_decay scenario=%s accumulated_chars=%d",
+                    scenario_name, accumulated_old_chars,
+                )
 
         if budget_aborted is not None:
             # tool_results 는 모두 채워진 안전한 상태. 이제 raise 하여 runner 가
