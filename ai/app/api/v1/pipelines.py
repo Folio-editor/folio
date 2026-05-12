@@ -102,7 +102,8 @@ async def trigger_episode_pipeline(
         except WorkKeyResolverError as e:
             ikey = _idempotency_key("indexing", req.episode_id, "no_plaintext")
             logger.info(
-                "episode_indexing.skip",
+                "episode_indexing.skip: reason=no_plaintext episode=%s detail=%s",
+                req.episode_id, str(e)[:200],
                 extra={"episode_id": req.episode_id, "reason": "no_plaintext", "idempotency_key": ikey},
             )
             return PipelineResponse(
