@@ -191,7 +191,12 @@ function IdeaPanelList({
     const trimmed = inputText.trim();
     if (!trimmed) return;
     const content = textToTiptap(trimmed);
-    await createIdea(workId, content, activeTag, ideas.length);
+    // rawRows 는 unfiltered. MAX(sort_order)+1000 으로 항상 끝에 배치.
+    const sortOrder =
+      rawRows.length === 0
+        ? 0
+        : Math.max(...rawRows.map((r) => r.sort_order ?? 0)) + 1000;
+    await createIdea(workId, content, activeTag, sortOrder);
     setInputText('');
     inputRef.current?.focus();
   };

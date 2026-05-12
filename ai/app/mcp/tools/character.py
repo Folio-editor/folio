@@ -20,28 +20,34 @@ from app.services.decrypt_resolver import (
 from app.services.text_extractor import extract_plain_text
 
 
-async def list_characters(session: AsyncSession, ctx: WriterContext) -> list[dict]:
+async def list_characters(session: AsyncSession, ctx: WriterContext) -> dict:
+    """peek — 인물 이름 배열 + drill 용 id_map.
+
+    반환: {names: ["김철수", ...], id_map: {"김철수": "uuid...", ...}}
+    상세(성별·나이·외형·성격 등)는 get_character(name) drill 로.
+    이름이 v1: 암호문이면 backend Vault 경유 복호화. 복호화 실패 행은 names 에서 자연 제외.
+    """
     r = await session.execute(
         sa_text(
-            "SELECT id, name, gender, age "
-            "FROM character "
+            "SELECT id, name FROM character "
             "WHERE work_id = :wid AND writer_id = :wr "
             "ORDER BY sort_order"
         ),
         {"wid": ctx.work_id, "wr": ctx.writer_id},
     )
-    rows = [
-        {"id": str(row[0]), "name": row[1], "gender": row[2], "age": row[3]}
-        for row in r.fetchall()
-    ]
+    rows = [{"id": str(row[0]), "name": row[1]} for row in r.fetchall()]
     try:
-        return await decrypt_rows(ctx.work_id, rows, ["name"])
+        rows = await decrypt_rows(ctx.work_id, rows, ["name"])
     except DecryptResolverError:
-        for r in rows:
-            n = r.get("name")
+        # 복호화 실패 행은 name 이 v1: 그대로라 작가가 알아볼 수 없음 — id_map 에 plaintext 매칭 불가.
+        # 실패 시 placeholder name 으로 노출하되 id_map 에도 동일 키로 등록 (작가 직접 식별 보조).
+        for row in rows:
+            n = row.get("name")
             if isinstance(n, str) and n.startswith("v1:"):
-                r["name"] = "(이름 암호화 미해제)"
-        return rows
+                row["name"] = "(암호화 미해제)"
+    names = [r["name"] for r in rows]
+    id_map = {r["name"]: r["id"] for r in rows}
+    return {"names": names, "id_map": id_map}
 
 
 async def get_character(session: AsyncSession, ctx: WriterContext, *, name: str) -> dict | None:
@@ -59,7 +65,7 @@ async def get_character(session: AsyncSession, ctx: WriterContext, *, name: str)
         for row in r.fetchall()
     ]
     try:
-        rows = await decrypt_rows(ctx.work_id, rows, ["name"])
+        rows = await decrypt_rows(ctx.work_id, rows, ["name", "age"])
     except DecryptResolverError:
         # 복호화 실패 — 평문 이름이라도 매칭 가능. v1: 행은 name 매칭 불가하므로 자연 제외.
         pass

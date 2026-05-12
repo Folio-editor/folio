@@ -1,6 +1,9 @@
 package com.storyzip.security;
 
+import com.storyzip.ai.client.EpisodeIndexingTrigger;
+import com.storyzip.sync.domain.Episode;
 import com.storyzip.sync.domain.Work;
+import com.storyzip.sync.repository.EpisodeRepository;
 import com.storyzip.sync.repository.WorkRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -20,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -48,7 +52,9 @@ import java.util.UUID;
 public class WorkServerDekController {
 
     private final WorkRepository workRepo;
+    private final EpisodeRepository episodeRepo;
     private final KmsService kms;
+    private final EpisodeIndexingTrigger episodeIndexingTrigger;
 
     public record ServerDekRequest(
             @NotNull UUID workId,
@@ -95,6 +101,19 @@ public class WorkServerDekController {
             work.setServerEncryptedDek(wrapped);
             workRepo.save(work);
             log.info("server_encrypted_dek 발급 완료 workId={}", req.workId());
+
+            // 발급 전에 PowerSync 로 올라온 episode 들은 fireIndexing 시점에 DEK=NULL
+            // 이라 skip 되어 영영 chunk_and_embed 가 호출되지 않는다 (디자인 누락).
+            // 발급 직후 work 내 episode 전부에 대해 trailing-edge 디바운스 큐에 적재 —
+            // 30초 후 발사될 때 DEK 가 박혀 있으므로 정상 인덱싱. 이미 큐에 있는 episode
+            // 면 EpisodeIndexingTrigger 내부에서 cancel + 재예약으로 흡수.
+            List<Episode> episodes = episodeRepo.findAllByWorkId(work.getId());
+            for (Episode ep : episodes) {
+                episodeIndexingTrigger.fireIndexing(ep.getId(), work.getId(), writerId);
+            }
+            log.info("server_encrypted_dek 발급 후 백필 trigger workId={} episode_count={}",
+                    work.getId(), episodes.size());
+
             return ResponseEntity.ok(new ServerDekResponse(true));
         } catch (ResponseStatusException | AccessDeniedException e) {
             throw e;

@@ -183,6 +183,7 @@ async def analyze_episode(
             schema_hint,
             model_override=haiku_model,
             max_tokens=2000,
+            cache_system=True,    # 같은 turn 다회 분석 시 system 캐시 hit
         )
     except Exception as e:
         return {"error": "haiku_analysis_failed", "reason": str(e)[:200]}
@@ -206,13 +207,29 @@ _SUMMARIZE_SYSTEM = (
     "당신은 웹소설 회차 메타 분석 worker 입니다. 회차 본문을 분석해 향후 일관성 검수, "
     "다음 회차 초안 생성, 작가 검색에 사용할 풍부한 메타데이터를 JSON 으로 추출합니다.\n"
     "추출 원칙:\n"
-    "- 본문에 명시된 정보만 (추측·확장 금지)\n"
-    "- 인물·장소 이름은 본문 표기 그대로\n"
-    "- 핵심 사건은 시간순 정렬\n"
-    "- 복선은 작가 의도 명확한 것만 (모호한 묘사 제외)\n"
-    "- present_characters: 고유 명칭 인물만 (무명 군중 제외)\n"
-    "- present_locations: 주요 무대만 (일상 공간 제외)\n"
-    "- summary: 3 문장 이내 (cliffhanger 가 끝점 별도 보존하므로 결말 반복 금지)"
+    "- 본문에 명시된 정보만 (추측·확장·해석 금지). 본문 어휘 그대로 인용.\n"
+    "- 인물·장소 이름은 본문 표기 그대로.\n"
+    "- 핵심 사건은 시간순 정렬.\n"
+    "- 복선은 작가 의도 명확한 것만 (모호한 묘사 제외).\n"
+    "- present_characters: 고유 명칭 인물만 (무명 군중 제외).\n"
+    "- ★ present_locations: 명사형 단일 명칭만. 괄호 부가 설명 금지.\n"
+    "  좋음: '학궁터', '한중성 남문', '가후 관사'\n"
+    "  나쁨: '폐가 (장안성 남문 인근)', '남문 (안문)' — 괄호 추가 설명은 후속 SQL JSONB\n"
+    "  매칭 (search_episode_summaries scope='location:X') 정확도를 깨뜨림.\n"
+    "- summary: 3 문장 이내 (cliffhanger 가 끝점 별도 보존하므로 결말 반복 금지).\n"
+    "- ★ time_progression: 본문에 명시된 시간 단서만 인용. '아침', '저녁', '다음날',\n"
+    "  특정 연도 등 본문에 박힌 표현 그대로. **본문에 없는 '정오 무렵', '한 시진 후'\n"
+    "  같은 추정 시간 표현 절대 금지** — 실제 본문에 그 단어가 있는지 확인 후 작성.\n"
+    "- ★ cliffhanger: 본문 끝의 사실 1~2문장만. 해석·평가 (\"X의 그림이 본격 시작\",\n"
+    "  \"새 국면 진입\", \"운명의 만남이 다가온다\" 등) 금지. 본문이 \"장천이 가후 관사로\n"
+    "  향한다\" 면 그대로 인용, \"법정의 큰 그림이 시작된다\" 같은 해석 추가 X.\n"
+    "- ★ foreshadow_planted vs paid_off 구분:\n"
+    "  • planted: 본 회차에 **처음 등장한 미해결 단서** (향후 회수될 예정).\n"
+    "  • paid_off: 본 회차에서 **명확히 회수 완료된** 이전 복선. 단순 언급·진행 단계\n"
+    "    중간은 paid_off X. 예: 1화에 '왕이 살해됐다' planted → 5화에 '범인은 Y' 라\n"
+    "    밝혀지면 paid_off. 5화에서 'Y가 의심된다'만 나오면 여전히 진행 중 (paid_off X).\n"
+    "  • 본 회차가 더 큰 계획의 한 단계라면 paid_off 가 아니라 그 계획 자체를 planted 로\n"
+    "    유지하거나 빈 배열."
 )
 
 _SUMMARIZE_SCHEMA = """{
@@ -303,9 +320,14 @@ async def summarize_episode(
             return cached
 
     try:
-        plaintext = await resolve_episode_plaintext(str(ep_id), str(ctx.work_id))
+        raw_content = await resolve_episode_plaintext(str(ep_id), str(ctx.work_id))
     except WorkKeyResolverError as e:
         return {"error": "no_plaintext", "reason": str(e), "episode_id": episode_id}
+    # ★ TipTap JSON → 평문 추출. resolve_episode_plaintext 는 복호화된 TipTap doc 을
+    # 그대로 반환하므로 그대로 Haiku 에 보내면 {"type":"paragraph",...} wrapper 가 토큰의
+    # 절반을 잡아먹는다 (실측: 6K 본문 → TipTap JSON 13K → 토큰 53% 낭비). extract_plain_text
+    # 로 wrapper 제거 후 전달 — Haiku 입력 토큰 약 50% 절감, 합성 품질 동일.
+    plaintext = extract_plain_text(raw_content)
 
     llm = get_llm()
     haiku_model = getattr(llm, "_haiku_model", None)
@@ -317,6 +339,7 @@ async def summarize_episode(
             _SUMMARIZE_SCHEMA,
             model_override=haiku_model,
             max_tokens=2000,
+            cache_system=True,    # 동일 turn N회차 백필 시 system prompt 캐시 hit
         )
     except Exception as e:
         return {"error": "haiku_summarize_failed", "reason": str(e)[:200]}

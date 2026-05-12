@@ -40,7 +40,7 @@ async def track_foreshadow(
     ctx: WriterContext,
     *,
     name: str | None = None,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """복선 추적. planted 회차와 paid_off 회차를 짝지어 반환.
 
     회수 안 된 복선(paid_off=NULL)을 검수에 활용.
@@ -76,7 +76,7 @@ async def track_foreshadow(
     if name:
         params["name"] = name
     r = await session.execute(sa_text(sql), params)
-    return [
+    foreshadows = [
         {
             "planted_episode_id": str(row[0]) if row[0] else None,
             "name": row[1],
@@ -86,6 +86,12 @@ async def track_foreshadow(
         }
         for row in r.fetchall()
     ]
+    # ★ coverage 메타 제거 — list_all_oneline_summaries 에 동일 정보가 이미 있어 중복.
+    # 한 turn 안에 4개 analytics 도구가 같은 메타를 반복 출력하던 ~1K chars 낭비 해소.
+    # 사각지대 인지가 필요한 검수 상황은 list_all_oneline_summaries 호출 1회로 충분.
+    return {
+        "foreshadows": foreshadows,
+    }
 
 
 async def character_arc(
@@ -93,10 +99,15 @@ async def character_arc(
     ctx: WriterContext,
     *,
     name: str,
-) -> list[dict[str, Any]]:
-    """특정 인물의 회차별 변화 추적. 시간 순 배열 반환 (배열 순서 = 시간 순)."""
+) -> dict[str, Any]:
+    """특정 인물의 회차별 변화 추적. 시간 순 배열 반환 (배열 순서 = 시간 순).
+
+    ★ oneline_summary 필드 제거 — list_all_oneline_summaries 에 이미 있어 중복 (회차당
+    ~60 chars 절감). 본 도구는 인물 호 (tone/is_pov/key_events/cliffhanger) 에 집중.
+    회차 흐름은 list_all_oneline_summaries 와 episode_id 로 cross-reference.
+    """
     sql = (
-        "SELECT ep.id, ep.title, es.oneline_summary, es.tone, "
+        "SELECT ep.id, ep.title, es.tone, "
         "       (es.pov_character = :name) AS is_pov, es.key_events, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
@@ -112,24 +123,34 @@ async def character_arc(
         {
             "episode_id": str(row[0]),
             "title": row[1],
-            "oneline_summary": row[2],
-            "tone": row[3],
-            "is_pov": bool(row[4]),
-            "key_events": row[5],
-            "cliffhanger": row[6],
+            "tone": row[2],
+            "is_pov": bool(row[3]),
+            "key_events": row[4],
+            "cliffhanger": row[5],
         }
         for row in r.fetchall()
     ]
-    return await _decrypt_summary_text(ctx.work_id, rows, ["oneline_summary", "cliffhanger"])
+    episodes = await _decrypt_summary_text(
+        ctx.work_id, rows, ["title", "cliffhanger"]
+    )
+    # coverage 메타 제거 — list_all_oneline_summaries 의 메타로 충분.
+    return {
+        "character_name": name,
+        "episodes": episodes,
+    }
 
 
 async def timeline_scan(
     session: AsyncSession,
     ctx: WriterContext,
-) -> list[dict[str, Any]]:
-    """회차별 시간 흐름·끝점만 추출 (시간 순 배열). 시간선 일관성 검수용."""
+) -> dict[str, Any]:
+    """회차별 시간 흐름·끝점만 추출 (시간 순 배열). 시간선 일관성 검수용.
+
+    ★ oneline_summary 필드 제거 — list_all_oneline_summaries 에 이미 있어 중복.
+    회차 흐름은 list_all_oneline_summaries 와 episode_id 로 cross-reference.
+    """
     sql = (
-        "SELECT ep.id, ep.title, es.oneline_summary, es.time_progression, es.cliffhanger "
+        "SELECT ep.id, ep.title, es.time_progression, es.cliffhanger "
         "FROM episode_summary es "
         "JOIN episode ep ON ep.id = es.episode_id "
         "WHERE es.work_id = :wid AND es.writer_id = :wr "
@@ -143,12 +164,15 @@ async def timeline_scan(
         {
             "episode_id": str(row[0]),
             "title": row[1],
-            "oneline_summary": row[2],
-            "time_progression": row[3],
-            "cliffhanger": row[4],
+            "time_progression": row[2],
+            "cliffhanger": row[3],
         }
         for row in r.fetchall()
     ]
-    return await _decrypt_summary_text(
-        ctx.work_id, rows, ["oneline_summary", "time_progression", "cliffhanger"]
+    episodes = await _decrypt_summary_text(
+        ctx.work_id, rows, ["title", "time_progression", "cliffhanger"]
     )
+    # coverage 메타 제거 — list_all_oneline_summaries 의 메타로 충분.
+    return {
+        "episodes": episodes,
+    }

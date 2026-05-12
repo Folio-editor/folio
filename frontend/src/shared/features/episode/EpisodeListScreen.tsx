@@ -35,7 +35,12 @@ export function EpisodeListScreen({ workId, onSelect }: EpisodeListScreenProps) 
   const { data: items } = useDecryptedEpisodeList(rawRows);
 
   const handleNew = async () => {
-    const id = await createEpisode(workId, `${items.length + 1}화`, items.length);
+    // rawRows 는 unfiltered. MAX(sort_order)+1000 으로 항상 끝에 배치.
+    const sortOrder =
+      rawRows.length === 0
+        ? 0
+        : Math.max(...rawRows.map((r) => r.sort_order ?? 0)) + 1000;
+    const id = await createEpisode(workId, `${items.length + 1}화`, sortOrder);
     onSelect(id);
   };
 
