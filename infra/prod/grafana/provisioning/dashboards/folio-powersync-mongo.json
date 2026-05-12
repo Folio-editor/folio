@@ -15,7 +15,7 @@
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "mongodb_dbstats_storageSize",
+          "expr": "(mongodb_dbstats_storageSize) or (mongodb_mongod_dbstats_storage_size)",
           "legendFormat": "{{database}}",
           "refId": "A"
         }
@@ -30,7 +30,7 @@
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
       "targets": [
         {
-          "expr": "mongodb_oplog_stats_window_seconds",
+          "expr": "(mongodb_oplog_stats_window_seconds) or (mongodb_mongod_replset_oplog_head_timestamp - mongodb_mongod_replset_oplog_tail_timestamp)",
           "refId": "A"
         }
       ],
@@ -97,12 +97,12 @@
       "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
       "targets": [
         {
-          "expr": "rate(container_cpu_usage_seconds_total{name=\"folio-powersync-prod\"}[5m]) * 100",
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\"/?folio-powersync-prod\"}[5m]) * 100",
           "legendFormat": "CPU %",
           "refId": "A"
         },
         {
-          "expr": "container_memory_usage_bytes{name=\"folio-powersync-prod\"}",
+          "expr": "container_memory_usage_bytes{name=~\"/?folio-powersync-prod\"}",
           "legendFormat": "Memory bytes",
           "refId": "B"
         }
