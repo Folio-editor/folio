@@ -173,6 +173,12 @@ public class AgentController {
             Authentication auth,
             HttpServletResponse response
     ) {
+        // 본 엔드포인트는 SecurityConfig 의 PUBLIC_ENDPOINTS 에 등록되어
+        // AuthorizationFilter 의 거부를 우회한다 (SSE async dispatch 의 committed
+        // 응답 충돌 회피). 대신 인증/소유권 검증은 본 컨트롤러에서 직접 수행.
+        if (auth == null || auth.getName() == null || "anonymousUser".equals(auth.getName())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "authentication required");
+        }
         UUID writerUuid = UUID.fromString(auth.getName());
         Map<String, Object> thread = aiClient.getAgentThread(threadId);
         String scenario = (String) thread.get("scenario");
