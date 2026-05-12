@@ -107,6 +107,47 @@ export type AnalyticsEventMap = {
     theme_id: string;
     mode: string;
   };
+  // ─── P0 (2026-05-12): 매출 / 안정성 가시화 ───
+  checkout_initiated: {
+    product_type: 'one_time' | 'subscription';
+    amount_bucket: string;
+  };
+  payment_succeeded: {
+    product_type: 'one_time' | 'subscription';
+    amount_bucket: string;
+  };
+  payment_failed: {
+    product_type: 'one_time' | 'subscription';
+    reason_code: string;
+  };
+  ai_spellcheck_requested: {
+    doc_type: string;
+    char_count_bucket: string;
+    mode: 'episode' | 'selection';
+  };
+  ai_spellcheck_succeeded: {
+    doc_type: string;
+    issue_count_bucket: string;
+    duration_bucket: string;
+  };
+  ai_feature_insufficient_credits: {
+    feature_type: 'review' | 'spellcheck' | 'draft' | 'agent';
+  };
+  decryption_failure: {
+    field_type: string;
+    reason_code: string;
+  };
+  kek_derivation_failed: {
+    reason_code: string;
+  };
+  sync_decision_made: {
+    decision: 'use-server' | 'use-local';
+    is_new_user: boolean;
+  };
+  document_edit_failed: {
+    doc_type: string;
+    reason_code: string;
+  };
 };
 
 export type AnalyticsEventName = keyof AnalyticsEventMap;

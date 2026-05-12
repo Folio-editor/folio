@@ -1,5 +1,4 @@
 import { Check } from 'lucide-react';
-import { useEditorSettings } from '../../stores/editorSettingsStore';
 
 interface EditorStatusBarProps {
   charCount: number;
@@ -17,8 +16,6 @@ export default function EditorStatusBar({
   sessionStartChars,
   showManuscriptCount = false,
 }: EditorStatusBarProps) {
-  const { dailyGoalEnabled, dailyGoalChars } = useEditorSettings();
-
   const readingTime = Math.ceil(charCount / 500);
   const sessionDelta = charCount - sessionStartChars;
   // 한국 출판 관행: 200자 원고지 N매 (소수점 1자리)
@@ -36,11 +33,7 @@ export default function EditorStatusBar({
         세션 {sessionDelta >= 0 ? '+' : ''}
         {sessionDelta.toLocaleString()}자
       </span>
-      {dailyGoalEnabled && (
-        <span>
-          목표 {Math.max(0, sessionDelta)}/{dailyGoalChars.toLocaleString()}
-        </span>
-      )}
+      {/* 일일 목표는 DailyGoalWidget (드래그 가능한 위젯) 으로 이동. */}
       {charCount > 50000 && (
         <span className="text-warning">· 대용량 문서</span>
       )}

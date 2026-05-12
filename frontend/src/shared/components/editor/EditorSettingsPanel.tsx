@@ -124,11 +124,6 @@ export default function EditorSettingsPanel({
             className="w-24"
           />
         </label>
-        <Toggle
-          label="집중 모드"
-          checked={settings.focusMode}
-          onChange={(v) => set('focusMode', v)}
-        />
 
         {/* 표시 */}
         <SectionLabel>표시</SectionLabel>
@@ -146,7 +141,7 @@ export default function EditorSettingsPanel({
         {/* 목표 */}
         <SectionLabel>목표</SectionLabel>
         <Toggle
-          label="일일 목표"
+          label="목표 위젯"
           checked={settings.dailyGoalEnabled}
           onChange={(v) => set('dailyGoalEnabled', v)}
         />

@@ -126,6 +126,15 @@ function IdeaPanelList({
   const [sortKey, setSortKey] = useState<IdeaSortKey>('default');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  // 카드 펼침 상태 — id 집합. 펼치면 line-clamp 해제, 전체 본문 노출.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const toggleExpand = (id: string) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // content/tag는 v1: 암호문 → useDecryptedIdeaArchiveList 거쳐야 한다.
   const { data: rawRows = [] } = useQuery<RawIdeaListRow>(
@@ -350,7 +359,10 @@ function IdeaPanelList({
           )
         ) : (
           <div className="flex flex-col gap-1.5">
-            {filteredIdeas.map((idea) => (
+            {filteredIdeas.map((idea) => {
+              const expanded = expandedIds.has(idea.id);
+              const fullText = extractText(idea.content) || '(빈 아이디어)';
+              return (
               <ContextMenu key={idea.id}>
                 <ContextMenuTrigger asChild>
                   <div
@@ -383,6 +395,19 @@ function IdeaPanelList({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            toggleExpand(idea.id);
+                          }}
+                          title={expanded ? '접기' : '펼치기'}
+                          aria-label={expanded ? '아이디어 본문 접기' : '아이디어 본문 펼치기'}
+                          aria-expanded={expanded}
+                          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setPendingDeleteId(idea.id);
                           }}
                           title="아이디어 삭제"
@@ -393,8 +418,13 @@ function IdeaPanelList({
                         </button>
                       </div>
                     </div>
-                    <p className="line-clamp-2 text-xs text-foreground">
-                      {extractText(idea.content) || '(빈 아이디어)'}
+                    <p
+                      className={cn(
+                        'text-xs text-foreground',
+                        expanded ? 'whitespace-pre-wrap' : 'line-clamp-2',
+                      )}
+                    >
+                      {fullText}
                     </p>
                   </div>
                 </ContextMenuTrigger>
@@ -428,7 +458,8 @@ function IdeaPanelList({
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -530,6 +561,7 @@ function IdeaPanelDetail({ id, onBack }: { id: string; onBack: () => void }) {
           debounceMs={1500}
           showStatusBar={false}
           compact
+          hideLineNumbers
         />
       )}
 
