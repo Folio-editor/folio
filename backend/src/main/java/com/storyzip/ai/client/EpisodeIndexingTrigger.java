@@ -84,16 +84,20 @@ public class EpisodeIndexingTrigger {
             log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=debounce_5s", episodeId);
             return;
         }
-        debounce.put(episodeId, now);
 
         Boolean ready = workRepo.findById(workId)
                 .map(w -> w.getServerEncryptedDek() != null)
                 .orElse(false);
         if (!Boolean.TRUE.equals(ready)) {
+            // 디바운스 캐시 등록 X — DEK 비동기 발급 race 에서 첫 트리거가 미발급 상태로
+            // 도착하면 그 episode 가 5초간 poisoned 되어, 직후 도착하는 PowerSync PATCH 들이
+            // 전부 debounce skip → 영구 0 청크. DEK 준비 안 된 sync 는 디바운스에서 제외해
+            // 다음 동기화 때 즉시 재시도되게 한다.
             log.info("[AI-TRACE] pipeline=indexing skip episode={} reason=server_encrypted_dek_null work={}",
                     episodeId, workId);
             return;
         }
+        debounce.put(episodeId, now);
         log.info("[AI-TRACE] pipeline=indexing trigger episode={} workId={}", episodeId, workId);
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -135,7 +139,6 @@ public class EpisodeIndexingTrigger {
             log.info("[AI-TRACE] pipeline=summary skip episode={} reason=debounce_5s", episodeId);
             return;
         }
-        summaryDebounce.put(episodeId, nowSummary);
         SubscriptionRepository subRepo = subscriptionRepoProvider.getIfAvailable();
         if (subRepo == null) {
             log.info("[AI-TRACE] pipeline=summary skip episode={} reason=SubscriptionRepo_missing", episodeId);
@@ -151,10 +154,12 @@ public class EpisodeIndexingTrigger {
                 .map(w -> w.getServerEncryptedDek() != null)
                 .orElse(false);
         if (!Boolean.TRUE.equals(ready)) {
+            // indexing 트리거와 동일 — DEK 미발급 / 미구독 등 가드 fail 케이스는 debounce 등록 X.
             log.info("[AI-TRACE] pipeline=summary skip episode={} reason=server_encrypted_dek_null work={}",
                     episodeId, workId);
             return;
         }
+        summaryDebounce.put(episodeId, nowSummary);
         log.info("[AI-TRACE] pipeline=summary trigger episode={} workId={}", episodeId, workId);
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
