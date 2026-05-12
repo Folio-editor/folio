@@ -291,7 +291,11 @@ public class AiClient {
             AgentMessageRequest body,
             SseEmitter emitter
     ) {
-        Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
+        // wrapMdcAndSecurity: MDC + Spring SecurityContext 를 가상 스레드에 전파.
+        // SecurityContext 가 없으면 emitter.complete() 후 Spring MVC 내부 dispatch 가
+        // anonymous 로 인지되어 보안 거부 → 응답 강제 종료.
+        // (docs/issues/ai-agent-sse-authorization-denied.md)
+        Thread.startVirtualThread(TraceContextFilter.wrapMdcAndSecurity(() -> {
             ObjectMapper mapper = new ObjectMapper();
             long startNanos = System.nanoTime();
             try {
@@ -434,9 +438,12 @@ public class AiClient {
      */
     public void streamDraft(DraftRequest request, SseEmitter emitter,
                             java.util.function.Consumer<Map<String, Object>> onDone) {
-        // 가상 스레드는 부모 MDC를 자동 상속하지 않으므로 wrapMdc로 전체 컨텍스트
-        // (traceId/userId/role/httpMethod/httpPath …)를 캡처해 자식에서 복원·정리한다.
-        Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
+        // 가상 스레드는 부모 MDC + SecurityContext 를 자동 상속하지 않으므로
+        // wrapMdcAndSecurity 로 둘 다 캡처해 자식에서 복원·정리한다.
+        // SecurityContext 누락 시 emitter.complete() 후 Spring MVC 내부 dispatch 가
+        // anonymous 로 인지되어 AuthorizationDeniedException → "/error" forward 막힘 →
+        // 응답 강제 종료 → 클라이언트 "network error". (docs/issues/ai-agent-sse-authorization-denied.md)
+        Thread.startVirtualThread(TraceContextFilter.wrapMdcAndSecurity(() -> {
             ObjectMapper mapper = new ObjectMapper();
             Map<String, Object> lastDoneUsage = new java.util.HashMap<>();
             long startNanos = System.nanoTime();
