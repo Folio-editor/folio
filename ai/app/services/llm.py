@@ -51,6 +51,8 @@ class LLMProvider(ABC):
         model_override: str | None = None,
         max_tokens: int = 2000,
         temperature: float | None = None,
+        cache_system: bool = False,
+        force_json: bool = True,
     ) -> dict: ...
 
     @abstractmethod
@@ -92,6 +94,8 @@ class FakeLLM(LLMProvider):
         model_override: str | None = None,
         max_tokens: int = 2000,
         temperature: float | None = None,
+        cache_system: bool = False,    # noqa: ARG002 — fake provider 는 캐시 noop
+        force_json: bool = True,       # noqa: ARG002 — fake provider 는 이미 dict 반환
     ) -> dict:
         self._last_usage = _empty_usage()
         blob = f"{system}\n{user}\n{schema_hint}".lower()
@@ -176,6 +180,123 @@ class AnthropicLLM(LLMProvider):
         client_kwargs: dict[str, Any] = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
+
+        # ★ GMS 400 "Model not found" 원인 진단 — 실제 wire 트래픽 캡처.
+        # Anthropic SDK 는 내부 httpx 클라이언트를 쓴다. 커스텀 httpx 를 주입해 event_hooks 로
+        # 모든 요청/응답을 가로채면 SDK 가 직렬화한 진짜 body 와 GMS 가 돌려준 진짜 response 를
+        # 그대로 볼 수 있다 — SDK 의 BadRequestError 가 가린 정보 전부 노출.
+        #
+        # 출력: 프로젝트 루트의 logs/anthropic_http.jsonl (JSONL, append-only).
+        # 에러(≥400) 만 모이도록 — 정상 응답은 한 줄 요약만.
+        # 파일 경로는 ANTHROPIC_DIAG_FILE 환경변수로 override 가능.
+        try:
+            import httpx as _httpx
+            import json as _json
+            import os as _os
+            import time as _time
+            from pathlib import Path as _Path
+            from datetime import datetime as _dt, timezone as _tz
+
+            _diag_path_str = _os.environ.get("ANTHROPIC_DIAG_FILE")
+            if _diag_path_str:
+                _diag_path = _Path(_diag_path_str)
+            else:
+                # 기본: <repo_root>/ai/logs/anthropic_http.jsonl
+                _diag_path = _Path(__file__).resolve().parents[2] / "logs" / "anthropic_http.jsonl"
+            _diag_path.parent.mkdir(parents=True, exist_ok=True)
+
+            def _write_diag(record: dict) -> None:
+                try:
+                    record["ts"] = _dt.now(_tz.utc).isoformat()
+                    line = _json.dumps(record, ensure_ascii=False, default=str)
+                    with open(_diag_path, "a", encoding="utf-8") as f:
+                        f.write(line + "\n")
+                except Exception as e:
+                    logger.warning("anthropic.diag_write_failed: %s", e)
+
+            # 요청 시작 시각을 request 객체 extensions 에 저장 → 응답 시 latency 계산
+            async def _on_request(request: _httpx.Request) -> None:
+                try:
+                    request.extensions["_diag_start"] = _time.time()
+                    body = request.content or b""
+                    body_len = len(body)
+                    model_in_body = None
+                    try:
+                        parsed = _json.loads(body) if body else {}
+                        if isinstance(parsed, dict):
+                            model_in_body = parsed.get("model")
+                    except Exception:
+                        model_in_body = "(parse_failed)"
+                    request.extensions["_diag_model"] = model_in_body
+                    request.extensions["_diag_body_len"] = body_len
+                    request.extensions["_diag_body"] = body  # 에러 시 첨부용
+                except Exception as e:
+                    logger.warning("anthropic.http_request_hook_failed: %s", e)
+
+            async def _on_response(response: _httpx.Response) -> None:
+                try:
+                    status = response.status_code
+                    req = response.request
+                    started = req.extensions.get("_diag_start") or _time.time()
+                    latency_ms = int((_time.time() - started) * 1000)
+                    model_in_req = req.extensions.get("_diag_model")
+                    req_body_len = req.extensions.get("_diag_body_len", 0)
+
+                    if status >= 400:
+                        # 본문 전체 읽기 (streaming 도 강제 await)
+                        await response.aread()
+                        resp_body_text = response.text
+                        # 요청 본문 양 끝 첨부 (4KB head + 2KB tail)
+                        req_body = req.extensions.get("_diag_body") or b""
+                        if len(req_body) > 6144:
+                            req_body_preview = (
+                                req_body[:4096].decode("utf-8", errors="replace")
+                                + f"\n...[{len(req_body) - 6144} bytes 생략]...\n"
+                                + req_body[-2048:].decode("utf-8", errors="replace")
+                            )
+                        else:
+                            req_body_preview = req_body.decode("utf-8", errors="replace")
+                        _write_diag({
+                            "kind": "http_error",
+                            "status": status,
+                            "url": str(req.url),
+                            "method": req.method,
+                            "latency_ms": latency_ms,
+                            "model_in_req": model_in_req,
+                            "req_body_len": req_body_len,
+                            "req_headers": {
+                                k: v for k, v in req.headers.items()
+                                if k.lower() not in ("authorization", "x-api-key")
+                            },
+                            "req_body_preview": req_body_preview,
+                            "resp_status": status,
+                            "resp_headers": dict(response.headers),
+                            "resp_body": resp_body_text,
+                        })
+                        logger.error(
+                            "anthropic.http_error status=%d model=%r latency=%dms diag_file=%s",
+                            status, model_in_req, latency_ms, _diag_path,
+                        )
+                    else:
+                        _write_diag({
+                            "kind": "http_ok",
+                            "status": status,
+                            "url": str(req.url),
+                            "latency_ms": latency_ms,
+                            "model_in_req": model_in_req,
+                            "req_body_len": req_body_len,
+                        })
+                except Exception as e:
+                    logger.warning("anthropic.http_response_hook_failed: %s", e)
+
+            client_kwargs["http_client"] = _httpx.AsyncClient(
+                event_hooks={"request": [_on_request], "response": [_on_response]},
+                timeout=_httpx.Timeout(600.0, connect=10.0),
+            )
+            logger.info("anthropic.diag_file_enabled path=%s", _diag_path)
+        except Exception as e:
+            logger.warning("anthropic.diag_httpx_setup_failed: %s — fallback default client", e)
+
         self._client = anthropic.AsyncAnthropic(**client_kwargs)
 
     @property
@@ -191,6 +312,8 @@ class AnthropicLLM(LLMProvider):
         model_override: str | None = None,
         max_tokens: int = 2000,
         temperature: float | None = None,
+        cache_system: bool = False,
+        force_json: bool = True,
     ) -> dict:
         system_prompt = (
             f"{system.rstrip()}\n\n"
@@ -198,11 +321,36 @@ class AnthropicLLM(LLMProvider):
             f"응답 형식: {schema_hint}"
         )
         model = model_override or self._haiku_model
+        # cache_system=True 면 system 을 Anthropic 의 list 형태로 감싸 ephemeral 캐싱 활성화.
+        # 같은 system+schema 로 반복 호출되는 도구(예: query_episodes_by_chunks)는 system
+        # 부분을 5분 캐시 — 같은 turn 안 multi-call 시 input 토큰 단가 1/10.
+        system_payload: Any
+        if cache_system:
+            system_payload = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            system_payload = system_prompt
+        # ★ JSON 강제 — assistant prefill 기법.
+        # output_config (Structured Outputs) 은 additionalProperties=false 강제 + 모든 필드
+        # 명시 요구. 우리 시스템은 호출마다 schema 가 동적이라 부적합. 대신 마지막 메시지로
+        # assistant 역할의 '{' 만 보내면 모델이 그 뒤를 이어 valid JSON 을 생성한다.
+        # 마크다운 ```json``` wrapper, 인사말 모두 차단 — 첫 글자가 이미 '{' 라 모델은
+        # JSON 안에서만 출력 가능. 응답 파싱 시 '{' prefix 를 복원해서 json.loads.
+        messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
+        prefill_used = False
+        if force_json:
+            messages.append({"role": "assistant", "content": "{"})
+            prefill_used = True
         create_kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user}],
+            "system": system_payload,
+            "messages": messages,
         }
         if "opus-4-7" not in model:
             create_kwargs["temperature"] = temperature if temperature is not None else 0.2
@@ -214,6 +362,14 @@ class AnthropicLLM(LLMProvider):
             self._last_usage["output_tokens"],
         )
         raw_text = _extract_text(response.content)
+        # prefill 사용 시 Anthropic 은 '{' 다음 글자부터 응답한다 — 복원해서 valid JSON 생성.
+        # 다만 다음 케이스는 prepend 안 함 (이중 '{{' 또는 wrapper 손상 방어):
+        #   - 응답이 이미 '{' 로 시작 (테스트 mock / 모델이 prefill 무시)
+        #   - 응답이 markdown ```json``` wrapper 로 시작 (parser 가 별도 처리)
+        if prefill_used:
+            stripped = raw_text.lstrip()
+            if stripped and not stripped.startswith("{") and not stripped.startswith("`"):
+                raw_text = "{" + raw_text
         return _parse_json_response(raw_text)
 
     async def generate_stream(

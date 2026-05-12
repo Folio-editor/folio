@@ -271,7 +271,13 @@ export function SectionItemList({
     setCreateTitle('');
     if (!trimmedTitle) return;
     void (async () => {
-      const id = await createForeshadow(workId, trimmedTitle, '중', rows.length);
+      // rows 는 importance 필터/검색어로 줄어든 배열이라 .length 를 sort_order 로 쓰면
+      // 필터 해제 후 기존 항목 사이에 끼어든다. 필터 무관한 rawForeshadowRows 기준으로 계산.
+      const sortOrder =
+        rawForeshadowRows.length === 0
+          ? 0
+          : Math.max(...rawForeshadowRows.map((r) => r.sort_order ?? 0)) + 1000;
+      const id = await createForeshadow(workId, trimmedTitle, '중', sortOrder);
       onItemSelect(id, 'default');
     })();
   };

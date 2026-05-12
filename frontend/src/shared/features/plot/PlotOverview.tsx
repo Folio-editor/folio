@@ -257,13 +257,25 @@ export function PlotOverview({ workId, selectedItemId, onNavigateTo }: PlotOverv
 
   const handleNewAct = async () => {
     const title = `챕터 ${acts.length + 1}`;
-    await createPlot(workId, title, acts.length);
+    // sort_order 는 unfiltered MAX+1000 으로 계산해야 끝에 위치한다. decryptedPlots 에는
+    // sort_order 가 있고 필터가 걸려있지 않으므로 그대로 활용.
+    const actRows = decryptedPlots.filter((p) => p.parent_id == null);
+    const sortOrder =
+      actRows.length === 0
+        ? 0
+        : Math.max(...actRows.map((p) => p.sort_order ?? 0)) + 1000;
+    await createPlot(workId, title, sortOrder);
   };
 
   const handleNewEpisode = async (actId: string) => {
     const siblings = episodesByAct.get(actId) ?? [];
     const title = `${siblings.length + 1}화`;
-    await createPlot(workId, title, siblings.length, actId);
+    const siblingPlots = decryptedPlots.filter((p) => p.parent_id === actId);
+    const sortOrder =
+      siblingPlots.length === 0
+        ? 0
+        : Math.max(...siblingPlots.map((p) => p.sort_order ?? 0)) + 1000;
+    await createPlot(workId, title, sortOrder, actId);
   };
 
   return (

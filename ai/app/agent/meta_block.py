@@ -19,6 +19,8 @@ from uuid import UUID
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.decrypt_resolver import DecryptResolverError, decrypt_rows
+
 _TTL_SECONDS = 5
 _cache: dict[str, tuple[float, str]] = {}     # work_id -> (expires_at_ts, block_text)
 
@@ -44,6 +46,20 @@ async def build_work_meta_block(session: AsyncSession, work_id: UUID, writer_id:
         return block
 
     title, author, desc, status, genres, moods, kind = row
+    # Vault Transit 암호화 필드(title/description) 복호화 — 누락 시 v1: 암호문 그대로
+    # system 캐시에 박혀 Sonnet 입장 무의미 noise.
+    try:
+        decrypted = await decrypt_rows(
+            work_id, [{"title": title, "description": desc}], ["title", "description"]
+        )
+        title = decrypted[0].get("title") or title
+        desc = decrypted[0].get("description") or desc
+    except DecryptResolverError:
+        if isinstance(title, str) and title.startswith("v1:"):
+            title = "(암호화 미해제)"
+        if isinstance(desc, str) and desc.startswith("v1:"):
+            desc = "(암호화 미해제)"
+
     short_desc = (desc or "").strip()
     if len(short_desc) > 400:
         short_desc = short_desc[:400] + "…"
@@ -56,17 +72,7 @@ async def build_work_meta_block(session: AsyncSession, work_id: UUID, writer_id:
         f"장르: {genres or []}\n"
         f"분위기: {moods or []}\n"
         f"상태: {status or '(미정)'}\n"
-        f"\n[작가가 작성한 한 줄 줄거리/소개]\n{short_desc or '(미정)'}\n"
-        f"\n[탐색 안내]\n"
-        "- 인물 목록: list_characters / 상세: get_character(name)\n"
-        "- 세계관 노트 목록: list_world_notes / 상세: get_world_note(name)\n"
-        "- 메인 플롯: get_plot\n"
-        "- 회차 존재 여부 (요약 유무 무관, 가장 먼저): list_episodes\n"
-        "- 작품 흐름 1회 조망 (요약된 회차만): list_all_oneline_summaries\n"
-        "- 회차 메타 범위: list_episode_summaries / 단건: get_episode_summary(sort_order)\n"
-        "- 본문 평문 (비싸므로 신중): fetch_episode_plaintext(sort_order)\n"
-        "- 복선·시간선·인물 추적: track_foreshadow / character_arc / timeline_scan\n"
-        "필요한 정보가 있으면 위 도구들을 직접 호출해 탐색하세요."
+        f"\n[작가가 작성한 한 줄 줄거리/소개]\n{short_desc or '(미정)'}"
     )
     _cache[cache_key] = (now + _TTL_SECONDS, block)
     return block
