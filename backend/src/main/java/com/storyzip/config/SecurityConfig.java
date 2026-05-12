@@ -47,7 +47,16 @@ public class SecurityConfig {
             // (Spring Security 가 먼저 401 차단하면 controller 의 헤더 검증 도달 못 함)
             "/internal/**",
             // 관리자 API — JWT 우회 후 AdminAuthInterceptor 의 X-Admin-Token 헤더 검증.
-            "/api/v1/admin/**"
+            "/api/v1/admin/**",
+            // Spring Boot 의 에러 페이지 forward 경로. SSE 비동기 응답이 끝난 직후
+            // emitter.complete() 가 발생시키는 내부 dispatch 는 새 servlet 요청처럼
+            // JWT 헤더 없이 필터 체인을 다시 돈다. /error 가 인증 필요로 설정되면
+            // dispatch 가 AuthorizationFilter 에 막혀 응답 마무리가 깨지고 클라이언트엔
+            // "network error" 로 보이므로, Spring Boot 공식 권장대로 permitAll.
+            // 실제 데이터 접근 가드는 각 컨트롤러 진입 전 필터 단계에서 이미 작동하므로
+            // /error 자체를 열어도 비밀 데이터 노출 위험 없음.
+            // (docs/issues/ai-agent-sse-authorization-denied.md)
+            "/error"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
