@@ -35,6 +35,9 @@ async function deriveKekFromLogin(
   } catch (e) {
     // KEK 도출 실패는 로그인 자체를 막지 않는다 — 암호화/복호화가 필요한 시점에 사용자에게 노출.
     console.warn('[auth] KEK 도출 실패:', e);
+    void analytics.track('kek_derivation_failed', {
+      reason_code: e instanceof Error ? e.name : 'unknown',
+    });
   }
 }
 
@@ -366,6 +369,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   resolveSyncDecision: async (decision) => {
     const { writer, previousGuestId } = get();
+    void analytics.track('sync_decision_made', {
+      decision,
+      is_new_user: previousGuestId === null || writer?.id === previousGuestId,
+    });
 
     if (decision === 'use-server') {
       try {

@@ -49,7 +49,16 @@ export async function decryptWorkFieldOnce({
       },
     });
     return await decryptString(workKey, value.slice(PREFIX.length));
-  } catch {
+  } catch (e) {
+    // 복호화 실패 — 사용자 데이터 노출 못 함. 운영 모니터링 위해 1회 발화.
+    // 무한 루프 방지: try import — analytics 모듈이 crypto 보다 늦게 로드되면 silent.
+    try {
+      const { analytics } = await import('../lib/analytics');
+      void analytics.track('decryption_failure', {
+        field_type: 'work_field',
+        reason_code: e instanceof Error ? e.name : 'unknown',
+      });
+    } catch { /* analytics 모듈 미로딩 — 무시 */ }
     return value;
   }
 }

@@ -64,6 +64,55 @@
   margin: 0.6em 0 0.25em;
 }
 
+/* ── 마크다운 --- 구분선 (HorizontalRule) ──
+   .tiptap 와 .ProseMirror 두 selector 모두 매칭 — Tiptap 3.x 가 EditorContent 에 두 클래스 다 박지만
+   빌드/플러그인 환경에 따라 한쪽만 박힐 가능성 대비. !important 로 cascade 우선. */
+.folio-editor .ProseMirror > hr,
+.folio-editor .tiptap > hr,
+.folio-editor .ProseMirror hr,
+.folio-editor .tiptap hr {
+  display: block !important;
+  width: 100% !important;
+  min-width: 100%;
+  box-sizing: border-box !important;
+  margin: 1.2em 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--border) !important;
+  background: none !important;
+  height: 0 !important;
+  text-indent: 0 !important;
+  clear: both !important;
+}
+.folio-editor.auto-indent .ProseMirror hr,
+.folio-editor.auto-indent .tiptap hr {
+  /* auto-indent 모드 paragraph text-indent 상속 차단 */
+  text-indent: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+.folio-editor .ProseMirror hr.ProseMirror-selectednode,
+.folio-editor .tiptap hr.ProseMirror-selectednode {
+  border-top-color: var(--ring) !important;
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── 마크다운 [text](url) 링크 ── */
+.folio-editor .ProseMirror a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: text-decoration-color 120ms ease;
+}
+.folio-editor .ProseMirror a:hover {
+  text-decoration-color: var(--primary);
+}
+
 /* ── 장면 구분선 ── */
 /* ── 데코레이션 공통 — 메인(.folio-editor) + 모든 인라인 에디터 wrapper.
    인물·세계관·플롯 인라인 에디터에서도 작가메모·이름태그·형광펜 등이 동일하게 렌더되도록 selector 통일. */
@@ -81,13 +130,15 @@
 }
 
 /* ── 대사 / 독백 ── */
-.folio-editor .dialogue,
+/* 토글: ContentEditor wrapper 의 .no-dialogue-color / .no-inner-thought-color 클래스로 OFF 가능
+   (default ON). 인라인 에디터(note/inline/plot) 는 항상 ON — 작가 설정 패널이 그쪽엔 없음. */
+.folio-editor:not(.no-dialogue-color) .dialogue,
 .note-inline-editor .dialogue,
 .inline-note-editor .dialogue,
 .plot-inline-editor .dialogue {
   color: var(--editor-dialogue);
 }
-.folio-editor .inner-thought,
+.folio-editor:not(.no-inner-thought-color) .inner-thought,
 .note-inline-editor .inner-thought,
 .inline-note-editor .inner-thought,
 .plot-inline-editor .inner-thought {
