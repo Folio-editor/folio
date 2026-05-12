@@ -38,6 +38,14 @@ final class AnalyticsEventSpec {
             Map.entry("sync_failed", Set.of("reason_code", "retry_count_bucket")),
             Map.entry("offline_entered", Set.of("queued_event_count_bucket")),
             Map.entry("online_restored", Set.of("queued_event_count_bucket")),
+            Map.entry("theme_changed", Set.of("theme_id", "mode")),
+            Map.entry("checkout_initiated", Set.of("product_type", "amount_bucket")),
+            Map.entry("payment_succeeded", Set.of("product_type", "amount_bucket")),
+            Map.entry("payment_failed", Set.of("product_type", "reason_code")),
+            Map.entry("decryption_failure", Set.of("field_type", "reason_code")),
+            Map.entry("kek_derivation_failed", Set.of("reason_code")),
+            Map.entry("sync_decision_made", Set.of("decision", "is_new_user")),
+            Map.entry("document_edit_failed", Set.of("doc_type", "reason_code")),
             Map.entry("ai_review_requested", Set.of("doc_type", "char_count_bucket")),
             Map.entry("ai_review_succeeded", Set.of("doc_type", "duration_bucket")),
             Map.entry("ai_review_failed", Set.of("doc_type", "reason_code")),
@@ -58,8 +66,7 @@ final class AnalyticsEventSpec {
             Map.entry("ai_summarize_requested", Set.of("doc_type")),
             Map.entry("ai_summarize_succeeded", Set.of("doc_type", "duration_bucket", "cached")),
             Map.entry("ai_summarize_failed", Set.of("doc_type", "reason_code")),
-            Map.entry("ai_feature_insufficient_credits", Set.of("feature_type")),
-            Map.entry("theme_changed", Set.of("theme_id", "mode"))
+            Map.entry("ai_feature_insufficient_credits", Set.of("feature_type"))
     );
 
     private AnalyticsEventSpec() {
