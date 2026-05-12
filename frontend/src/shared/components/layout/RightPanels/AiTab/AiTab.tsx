@@ -28,6 +28,12 @@ import type { AiTabContentProps, EpisodeInfo } from './types';
 
 /* ── AI 탭: 단일 전역 세션 기반 화면 전환 ── */
 
+function analyticsReasonCode(err: unknown): string {
+  if (err instanceof ApiError) return String(err.status);
+  if (err instanceof Error && err.name) return err.name;
+  return 'unknown';
+}
+
 export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabContentProps) {
   const isEpisode = mainSection === 'episode' && mainItemId != null;
 
@@ -303,6 +309,11 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
           feature_type: 'spellcheck',
         });
       }
+      void analytics.track('ai_spellcheck_failed', {
+        doc_type: 'episode',
+        reason_code: analyticsReasonCode(err),
+        mode,
+      });
       const display = insufficient ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length) : message;
       toast.error('맞춤법 검사 실패', { description: display });
     }
@@ -323,6 +334,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     };
 
     startSummarize(episode);
+    const summarizeStart = Date.now();
+    void analytics.track('ai_summarize_requested', {
+      doc_type: 'episode',
+    });
 
     try {
       const data = await apiClient.post<import('../../../../stores/aiSessionStore').SummarizeResult>(
@@ -338,10 +353,19 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
       }
       finishSummarize(data);
       refreshWalletAfterUsage();
+      void analytics.track('ai_summarize_succeeded', {
+        doc_type: 'episode',
+        duration_bucket: durationBucket(Date.now() - summarizeStart),
+        cached: data.cached === true,
+      });
     } catch (err) {
       const message = describeAiError(err, 'AI 서버 오류가 발생했습니다.');
       failSummarize(message);
       refreshWalletAfterUsage();
+      void analytics.track('ai_summarize_failed', {
+        doc_type: 'episode',
+        reason_code: analyticsReasonCode(err),
+      });
       const display = message.startsWith(INSUFFICIENT_CREDITS_PREFIX)
         ? message.slice(INSUFFICIENT_CREDITS_PREFIX.length)
         : message;
@@ -352,6 +376,14 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
   // Phase 7: legacy 직접 streaming/직접 review 흐름 라우팅 제거됨.
   // (draft-input/draft-view/history-view/review-result/review-history-view 화면들은 도달 불가)
   // 모든 생성형 작업은 create-input → create-streaming 으로, 검수는 review-input → create-streaming 으로.
+
+  const openAiFeature = useCallback((
+    feature: 'create' | 'review' | 'spellcheck' | 'summarize',
+    nextScreen: Parameters<typeof setScreen>[0],
+  ) => {
+    void analytics.track('ai_feature_opened', { feature });
+    setScreen(nextScreen);
+  }, [setScreen]);
 
   if (screen === 'review-input') {
     return (
@@ -452,7 +484,7 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <button
         type="button"
-        onClick={() => setScreen('create-input')}
+        onClick={() => openAiFeature('create', 'create-input')}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <PenSquare size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -466,7 +498,7 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('review-input')}
+        onClick={() => openAiFeature('review', 'review-input')}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SearchCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -480,7 +512,7 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('spellcheck-input')}
+        onClick={() => openAiFeature('spellcheck', 'spellcheck-input')}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <SpellCheck size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />
@@ -494,7 +526,7 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
 
       <button
         type="button"
-        onClick={() => setScreen('summarize-input')}
+        onClick={() => openAiFeature('summarize', 'summarize-input')}
         className="flex min-h-[5.5rem] items-start gap-3 rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-accent/30"
       >
         <ScrollText size={20} className="mt-0.5 shrink-0 text-primary" strokeWidth={1.5} />

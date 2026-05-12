@@ -41,6 +41,7 @@ import { SuggestionBodyPreview, entityLabel, useDecryptedSuggestion } from './su
 import { ChatMarkdown } from './ChatMarkdown';
 import { toolLabel } from './toolLabels';
 import { apiClient } from '../../lib/apiClient';
+import { analytics, charCountBucket, countBucket, durationBucket } from '../../lib/analytics';
 import { useAgentChatStore } from '../../stores/agentChatStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
@@ -63,6 +64,11 @@ function estimateTokens(messages: AgentMessage[] | undefined | null): number {
   } catch {
     return 0;
   }
+}
+
+function analyticsReasonCode(err: unknown): string {
+  if (err instanceof Error && err.name) return err.name;
+  return 'unknown';
 }
 
 interface Props {
@@ -102,10 +108,19 @@ export function AgentChatPanel({ workId }: Props) {
     busyId: string | null;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const openedTrackedRef = useRef(false);
   // 활성 SSE 스트림의 AbortController — 사용자 중단 시 fetch 취소.
   // 백엔드 Spring SseEmitter 가 client disconnect 감지 → AI server 까지 EOF 전파 →
   // Anthropic stream cancel. 클라 측은 finally 블록이 streaming/sending 정리.
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!eligible || openedTrackedRef.current) return;
+    openedTrackedRef.current = true;
+    void analytics.track('ai_chat_opened', {
+      entry_source: 'right_panel',
+    });
+  }, [eligible]);
 
   // ─── thread 목록 로드 ───
   useEffect(() => {
@@ -174,14 +189,23 @@ export function AgentChatPanel({ workId }: Props) {
       const r = await createAgentThread(workId, 'auto');
       const tid = r.thread_id;
       if (!tid) {
+        void analytics.track('ai_chat_thread_create_failed', {
+          reason_code: 'missing_thread_id',
+        });
         setError('새 대화 생성 실패: 응답에 thread_id 누락');
         return;
       }
       setActiveThread(workId, tid);
+      void analytics.track('ai_chat_thread_created', {
+        scenario: 'auto',
+      });
       const refreshed = await listAgentThreads(workId);
       setThreads(workId, refreshed);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
+      void analytics.track('ai_chat_thread_create_failed', {
+        reason_code: analyticsReasonCode(e),
+      });
       setError(`새 대화 생성 실패: ${msg}`);
     }
   }
@@ -312,6 +336,11 @@ export function AgentChatPanel({ workId }: Props) {
     setStreaming(true);
     setStreamSteps([]);
     setLiveAssistantTurns([]);
+    const startedAt = Date.now();
+    let failureTracked = false;
+    void analytics.track('ai_chat_message_sent', {
+      message_char_count_bucket: charCountBucket(text.length),
+    });
     const doneHolder: { evt: AgentRunResponse | null } = { evt: null };
     try {
       await new Promise<void>((resolve, reject) => {
@@ -338,6 +367,10 @@ export function AgentChatPanel({ workId }: Props) {
                 doneHolder.evt = evt as unknown as AgentRunResponse;
                 return true;
               } else if (evt.type === 'error') {
+                failureTracked = true;
+                void analytics.track('ai_chat_message_failed', {
+                  reason_code: evt.error_type,
+                });
                 setError(`태스크 실패 — ${evt.error_type}: ${evt.error_message}`);
                 return true;
               }
@@ -353,6 +386,16 @@ export function AgentChatPanel({ workId }: Props) {
       });
       if (doneHolder.evt) {
         setLastResponse(doneHolder.evt);
+        void analytics.track('ai_chat_message_succeeded', {
+          duration_bucket: durationBucket(Date.now() - startedAt),
+          suggestion_count_bucket: countBucket(doneHolder.evt.suggestion_ids.length),
+          status: doneHolder.evt.status,
+        });
+      } else if (!failureTracked) {
+        failureTracked = true;
+        void analytics.track('ai_chat_message_failed', {
+          reason_code: 'stream_disconnected',
+        });
       }
       const refreshed = await getAgentThread(activeThreadId);
       setThread(refreshed);
@@ -369,7 +412,16 @@ export function AgentChatPanel({ workId }: Props) {
       const isAbort =
         (e instanceof DOMException && e.name === 'AbortError') ||
         msg.toLowerCase().includes('abort');
-      if (!isAbort) setError(`전송 실패: ${msg}`);
+      if (isAbort) {
+        void analytics.track('ai_chat_message_aborted', {
+          duration_bucket: durationBucket(Date.now() - startedAt),
+        });
+      } else {
+        void analytics.track('ai_chat_message_failed', {
+          reason_code: analyticsReasonCode(e),
+        });
+        setError(`전송 실패: ${msg}`);
+      }
       // abort 직후에도 partial 상태 반영 위해 thread 재조회 — 실패해도 조용히
       try {
         const refreshed = await getAgentThread(activeThreadId);
