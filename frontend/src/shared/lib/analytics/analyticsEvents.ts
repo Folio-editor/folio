@@ -103,6 +103,43 @@ export type AnalyticsEventMap = {
     doc_type: string;
     reason_code: string;
   };
+  ai_feature_opened: {
+    feature: 'create' | 'review' | 'spellcheck' | 'summarize';
+  };
+  ai_create_requested: {
+    prompt_char_count_bucket: string;
+    reference_char_count_bucket: string;
+  };
+  ai_create_succeeded: {
+    duration_bucket: string;
+    suggestion_count_bucket: string;
+  };
+  ai_create_failed: {
+    reason_code: string;
+  };
+  ai_chat_opened: {
+    entry_source: string;
+  };
+  ai_chat_thread_created: {
+    scenario: string;
+  };
+  ai_chat_thread_create_failed: {
+    reason_code: string;
+  };
+  ai_chat_message_sent: {
+    message_char_count_bucket: string;
+  };
+  ai_chat_message_succeeded: {
+    duration_bucket: string;
+    suggestion_count_bucket: string;
+    status: string;
+  };
+  ai_chat_message_failed: {
+    reason_code: string;
+  };
+  ai_chat_message_aborted: {
+    duration_bucket: string;
+  };
   theme_changed: {
     theme_id: string;
     mode: string;
@@ -130,8 +167,25 @@ export type AnalyticsEventMap = {
     issue_count_bucket: string;
     duration_bucket: string;
   };
+  ai_spellcheck_failed: {
+    doc_type: string;
+    reason_code: string;
+    mode: 'episode' | 'selection';
+  };
+  ai_summarize_requested: {
+    doc_type: string;
+  };
+  ai_summarize_succeeded: {
+    doc_type: string;
+    duration_bucket: string;
+    cached: boolean;
+  };
+  ai_summarize_failed: {
+    doc_type: string;
+    reason_code: string;
+  };
   ai_feature_insufficient_credits: {
-    feature_type: 'review' | 'spellcheck' | 'draft' | 'agent';
+    feature_type: 'review' | 'spellcheck' | 'create' | 'summarize' | 'draft' | 'agent';
   };
   decryption_failure: {
     field_type: string;
