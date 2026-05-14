@@ -5,7 +5,7 @@ export function FlowSection() {
   return (
     <>
       <ChapterHead label="Chapter II · 흐름" heading="1화부터 함께 쌓습니다." />
-      <section className="chapter">
+      <section className="chapter" id="flow">
         <div className="flow">
           {STEPS.map((s) => (
             <div className="flow-row" key={s.num}>
