@@ -32,6 +32,51 @@ html {
   font-family: var(--sans);
 }
 
+.folio-landing .scroll-to-top {
+  position: fixed;
+  right: 28px;
+  bottom: 32px;
+  z-index: 90;
+  width: 46px;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(17, 17, 17, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(17, 17, 17, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.folio-landing .scroll-to-top.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.folio-landing .scroll-to-top:hover {
+  background: #ffffff;
+  border-color: rgba(17, 17, 17, 0.38);
+  transform: translateY(-2px);
+}
+.folio-landing .scroll-to-top:active {
+  transform: translateY(0);
+}
+.folio-landing .scroll-to-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 /* ── Top Navigation ───────────────────────────────────── */
 .folio-landing .nav {
   position: fixed;
@@ -1168,6 +1213,13 @@ html {
 
 /* ── Mobile ≤720px ────────────────────────────────────── */
 @media (max-width: 720px) {
+  .folio-landing .scroll-to-top {
+    right: 18px;
+    bottom: 22px;
+    width: 42px;
+    height: 42px;
+  }
+
   .folio-landing .nav-inner {
     padding: 0 1.25rem;
   }
