@@ -586,12 +586,96 @@ html {
   height: auto;
   border-radius: 8px;
 }
+.folio-landing .sync-preview-frame {
+  overflow: visible;
+}
+.folio-landing .sync-status-chip {
+  position: absolute;
+  z-index: 2;
+  width: min(38vw, 330px);
+  padding: 12px 14px 11px;
+  font-family: var(--sans);
+  color: #5f6672;
+  background: #ffffff;
+  border: 1px solid rgba(17, 17, 17, 0.06);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(17, 17, 17, 0.04),
+    0 12px 28px -8px rgba(17, 17, 17, 0.12),
+    0 32px 64px -24px rgba(17, 17, 17, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.folio-landing .sync-status-chip-pending {
+  left: -5%;
+  bottom: -7%;
+}
+.folio-landing .sync-status-chip-online {
+  right: -8%;
+  top: -5%;
+}
+.folio-landing .sync-status-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.folio-landing .sync-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.folio-landing .sync-status-dot.blue,
+.folio-landing .sync-status-fill.blue {
+  background: #4f79bd;
+}
+.folio-landing .sync-status-dot.green,
+.folio-landing .sync-status-fill.green {
+  background: #4f8650;
+}
+.folio-landing .sync-status-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.04);
+}
+.folio-landing .sync-status-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+.folio-landing .sync-status-chip-pending .sync-status-fill {
+  width: 72%;
+}
+.folio-landing .sync-status-chip-online .sync-status-fill {
+  width: 0;
+}
 @media (max-width: 900px) {
   .folio-landing .mock-frame {
     width: 100%;
     margin-left: 0;
     padding: 10px;
     border-radius: 12px;
+  }
+  .folio-landing .sync-status-chip {
+    width: min(70vw, 250px);
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .folio-landing .sync-status-chip-pending {
+    left: -8px;
+    bottom: -18px;
+  }
+  .folio-landing .sync-status-chip-online {
+    right: -8px;
+    top: -14px;
+  }
+  .folio-landing .sync-status-label {
+    font-size: 12px;
   }
 }
 .folio-landing .tool-text {
