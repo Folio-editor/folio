@@ -61,11 +61,13 @@ import { useQuery } from '@powersync/react';
 import { ONBOARDING_WORK } from '../../constants/onboardingContent';
 import { OnboardingGuideDialog } from './OnboardingGuideDialog';
 import { SyncDecisionDialog } from './SyncDecisionDialog';
+import { RestoreAccountDialog } from './RestoreAccountDialog';
 import EditorShortcutHelp from '../../components/editor/EditorShortcutHelp';
 import { useHelpModalStore } from '../../stores/helpModalStore';
 import { SettingsScreen } from '../settings/SettingsScreen';
 import type { SettingsItemId } from '../../components/layout/sidebar-panels/SettingsList';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { useAuthStore } from '../../stores/authStore';
 import {
   Activity, WorkspaceSection, AuxPanelItem, AUX_DRAG_MIME,
   type RightPanelTab, type ClickIntent, type MainDoc,
@@ -1406,6 +1408,10 @@ export function AuthenticatedApp() {
         />
       )}
 
+      {/* 탈퇴 처리된 계정으로 로그인 시도 → 30일 내 복구 다이얼로그 */}
+      <RestoreWithdrawnDialogWrapper />
+
+
       {/* 신규 사용자 가이드 워크스페이스 다이얼로그 */}
       <OnboardingGuideDialog
         open={onboardingOpen}
@@ -1612,4 +1618,25 @@ function renderEditor({
       );
   }
   return null;
+}
+
+/**
+ * 탈퇴 처리된 계정으로 로그인 시도 시 노출되는 복구 다이얼로그 wrapper.
+ * authStore 의 withdrawnSnapshot 이 set 되면 자동으로 표시되고, 복구 또는 취소 시 클리어된다.
+ */
+function RestoreWithdrawnDialogWrapper() {
+  const snapshot = useAuthStore((s) => s.withdrawnSnapshot);
+  const busy = useAuthStore((s) => s.isLoggingIn);
+  const restoreAfterWithdrawal = useAuthStore((s) => s.restoreAfterWithdrawal);
+  const dismiss = useAuthStore((s) => s.dismissWithdrawnSnapshot);
+  if (!snapshot) return null;
+  return (
+    <RestoreAccountDialog
+      deletedAt={snapshot.deletedAt}
+      restorableUntil={snapshot.restorableUntil}
+      busy={busy}
+      onRestore={() => void restoreAfterWithdrawal()}
+      onCancel={dismiss}
+    />
+  );
 }

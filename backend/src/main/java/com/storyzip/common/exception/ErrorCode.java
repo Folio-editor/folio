@@ -48,6 +48,8 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "A006", "접근 권한이 없습니다"),
     OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "A007", "OAuth 공급자 호출에 실패했습니다"),
     WRITER_NOT_FOUND(HttpStatus.NOT_FOUND, "A008", "작가를 찾을 수 없습니다"),
+    ACCOUNT_WITHDRAWN(HttpStatus.CONFLICT, "A009", "탈퇴 처리된 계정입니다"),
+    ACCOUNT_WITHDRAWAL_EXPIRED(HttpStatus.GONE, "A010", "복구 가능 기간이 만료되었습니다"),
 
     // ===== Payment (P###) =====
     PAYMENT_FAILED(HttpStatus.BAD_REQUEST, "P001", "결제에 실패했습니다"),

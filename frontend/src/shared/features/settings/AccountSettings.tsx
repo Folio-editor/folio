@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, CloudOff, Coins, HardDrive, LogOut, RefreshCw, Sparkles } from 'lucide-react';
+import { Cloud, CloudOff, Coins, HardDrive, Loader2, LogOut, RefreshCw, Sparkles, UserX } from 'lucide-react';
 import { useQuery, useStatus } from '@powersync/react';
 import { db } from '../../sync/db';
 import { useAuthStore } from '../../stores/authStore';
@@ -80,6 +80,7 @@ export function AccountSettings() {
 function GuestView() {
   const login = useAuthStore((s) => s.login);
   const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
+  const loginError = useAuthStore((s) => s.error);
   const { localBytes, pendingCount } = useLocalStorageStats();
   const cached = useCachedAccountInfo();
 
@@ -106,6 +107,11 @@ function GuestView() {
             >
               {isLoggingIn ? '로그인 중…' : 'Google로 로그인'}
             </button>
+            {loginError && (
+              <p className="mt-3 rounded bg-destructive/5 p-2 text-xs text-destructive">
+                {loginError}
+              </p>
+            )}
           </div>
 
           {/* 클라우드 사용량 (캐시) */}
@@ -151,7 +157,20 @@ function GuestView() {
 function AuthenticatedView() {
   const { data, loading, isStale, cachedAt } = useAccountInfo();
   const logout = useAuthStore((s) => s.logout);
+  const withdraw = useAuthStore((s) => s.withdraw);
   const writerFromStore = useAuthStore((s) => s.writer);
+  const [withdrawConfirmOpen, setWithdrawConfirmOpen] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  const handleWithdraw = async () => {
+    setWithdrawing(true);
+    try {
+      await withdraw();
+      setWithdrawConfirmOpen(false);
+    } finally {
+      setWithdrawing(false);
+    }
+  };
   const { localBytes, pendingCount } = useLocalStorageStats();
   const psStatus = useStatus();
   const isOnline = useNetworkStatus();
@@ -382,15 +401,83 @@ function AuthenticatedView() {
 
           {/* 계정 관리 */}
           <Section title="계정">
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <LogOut size={13} />
-              로그아웃
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground self-start"
+              >
+                <LogOut size={13} />
+                로그아웃
+              </button>
+              <button
+                type="button"
+                onClick={() => setWithdrawConfirmOpen(true)}
+                className="flex items-center gap-2 rounded-lg border border-destructive/40 px-3 py-2 text-xs text-destructive transition-colors hover:bg-destructive/10 self-start"
+              >
+                <UserX size={13} />
+                회원 탈퇴
+              </button>
+            </div>
           </Section>
+        </div>
+      </div>
+
+      {withdrawConfirmOpen && (
+        <WithdrawConfirmDialog
+          busy={withdrawing}
+          onConfirm={() => void handleWithdraw()}
+          onCancel={() => setWithdrawConfirmOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── 회원 탈퇴 확인 다이얼로그 ────────────────────────────── */
+
+interface WithdrawConfirmDialogProps {
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function WithdrawConfirmDialog({ busy, onConfirm, onCancel }: WithdrawConfirmDialogProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-background p-5 shadow-lg">
+        <h3 className="text-base font-semibold text-foreground">정말 탈퇴하시겠어요?</h3>
+        <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+          <p>
+            클라우드 데이터는 <span className="font-medium text-foreground">30일간 보관</span>되며,
+            같은 Google 계정으로 다시 로그인하면 복구할 수 있어요.
+          </p>
+          <p>
+            이 기기의 작업물은 그대로 유지되며 <span className="font-medium text-foreground">게스트 모드</span>에서
+            계속 작업할 수 있어요.
+          </p>
+          <p className="text-destructive">
+            30일이 지나면 클라우드 데이터는 영구 삭제되어 복구할 수 없어요.
+          </p>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+          >
+            {busy && <Loader2 size={12} className="animate-spin" />}
+            {busy ? '탈퇴 처리 중…' : '탈퇴하기'}
+          </button>
         </div>
       </div>
     </div>
