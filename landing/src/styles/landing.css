@@ -31,6 +31,9 @@ html {
 .folio-landing .sans {
   font-family: var(--sans);
 }
+.folio-landing [id] {
+  scroll-margin-top: calc(var(--nav-h) + 24px);
+}
 
 .folio-landing .scroll-to-top {
   position: fixed;
@@ -75,6 +78,81 @@ html {
 .folio-landing .scroll-to-top:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.folio-landing .bookmark-nav {
+  position: fixed;
+  right: 28px;
+  top: 50%;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+.folio-landing .bookmark-nav-item {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+  padding: 7px 0;
+  color: rgba(17, 17, 17, 0.38);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.folio-landing .bookmark-nav-item::before {
+  content: '';
+  grid-column: 1 / -1;
+  width: 22px;
+  height: 1px;
+  margin-left: 2px;
+  background: rgba(17, 17, 17, 0.18);
+  transition:
+    width 0.18s ease,
+    background 0.18s ease;
+}
+.folio-landing .bookmark-nav-item:hover,
+.folio-landing .bookmark-nav-item.active {
+  color: var(--ink);
+}
+.folio-landing .bookmark-nav-item:hover {
+  transform: translateX(-2px);
+}
+.folio-landing .bookmark-nav-item.active::before {
+  width: 54px;
+  background: var(--ink);
+}
+.folio-landing .bookmark-nav-num {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+.folio-landing .bookmark-nav-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.folio-landing .bookmark-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.folio-landing .guide-bookmark-nav {
+  gap: 2px;
+}
+.folio-landing .guide-bookmark-nav .bookmark-nav-item {
+  min-width: 102px;
+  padding: 5px 0;
+}
+
+@media (max-width: 1180px) {
+  .folio-landing .bookmark-nav {
+    display: none;
+  }
 }
 
 /* ── Top Navigation ───────────────────────────────────── */
