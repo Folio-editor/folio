@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
 
 const BOOKMARKS = [
   { id: 'prologue', num: '00', label: '프롤로그' },
@@ -52,6 +53,15 @@ export function LandingBookmarkNav() {
           <span className="bookmark-nav-label">{item.label}</span>
         </button>
       ))}
+      <button
+        type="button"
+        className="bookmark-nav-top"
+        aria-label="맨 위로 이동"
+        title="맨 위로 이동"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      >
+        <ArrowUp size={16} strokeWidth={1.8} aria-hidden="true" />
+      </button>
     </nav>
   );
 }
