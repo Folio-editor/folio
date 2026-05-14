@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TopNav } from '../components/landing/TopNav';
 import { FinFooter } from '../components/landing/FinFooter';
+import { ScrollToTopButton } from '../components/landing/ScrollToTopButton';
 
 import '../styles/landing.css';
 import '../styles/guide.css';
@@ -622,6 +623,7 @@ export function Guide() {
       </main>
 
       <FinFooter />
+      <ScrollToTopButton />
     </div>
   );
 }
