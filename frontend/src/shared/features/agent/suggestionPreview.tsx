@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Check, X } from 'lucide-react';
 import { useQuery } from '@powersync/react';
 
 import { decryptWorkFieldOnce, isCipher } from '../../crypto/fieldDecrypt';
@@ -369,17 +369,17 @@ export function SuggestionBodyPreview({
             type="button"
             onClick={onReject}
             disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
           >
-            거절
+            <X size={12} /> 거절
           </button>
           <button
             type="button"
             onClick={() => onApprove()}
             disabled={busy}
-            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded bg-primary px-2 text-xs text-primary-foreground disabled:opacity-50"
           >
-            ✓ 승인 (자동 작성)
+            <Check size={12} /> 승인 (자동 작성)
           </button>
         </div>
       )}
@@ -390,19 +390,19 @@ export function SuggestionBodyPreview({
             type="button"
             onClick={onReject}
             disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
             title="이 수정을 무시"
           >
-            무시
+            <X size={12} /> 무시
           </button>
           <button
             type="button"
             onClick={() => onApprove()}
             disabled={busy}
-            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded bg-primary px-2 text-xs text-primary-foreground disabled:opacity-50"
             title="승인 시 본문에 즉시 자동 치환 (PowerSync sync)"
           >
-            ✓ 적용
+            <Check size={12} /> 적용
           </button>
         </div>
       )}
@@ -413,19 +413,19 @@ export function SuggestionBodyPreview({
             type="button"
             onClick={onReject}
             disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
             title="이 발견을 무시"
           >
-            무시
+            <X size={12} /> 무시
           </button>
           <button
             type="button"
             onClick={() => onApprove()}
             disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
             title="확인 처리 (자동 수정 안 함)"
           >
-            ✓ 확인
+            <Check size={12} /> 확인
           </button>
         </div>
       )}
@@ -822,19 +822,19 @@ function SpellingBatchCard({
             type="button"
             onClick={onReject}
             disabled={busy}
-            className="rounded border border-border px-2 py-0.5 text-[10px] hover:bg-accent disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded border border-border px-2 text-xs hover:bg-accent disabled:opacity-50"
             title="이 묶음 전체 무시"
           >
-            전체 무시
+            <X size={12} /> 전체 무시
           </button>
           <button
             type="button"
             onClick={() => onApply(Array.from(checked).sort((a, b) => a - b))}
             disabled={busy || noneChecked}
-            className="rounded bg-primary px-2 py-0.5 text-[10px] text-primary-foreground disabled:opacity-50"
+            className="flex h-7 items-center gap-1 rounded bg-primary px-2 text-xs text-primary-foreground disabled:opacity-50"
             title="체크된 항목만 본문에 일괄 자동 치환"
           >
-            ✓ 선택 항목 적용 ({checked.size})
+            <Check size={12} /> 선택 항목 적용 ({checked.size})
           </button>
         </div>
       )}

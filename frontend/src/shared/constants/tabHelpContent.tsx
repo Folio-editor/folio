@@ -21,7 +21,7 @@ interface TabHelp {
 function K({ children }: { children: ReactNode }) {
   return (
     <kbd
-      className="inline-flex items-center rounded-[3px] border border-[#d4d4d4] border-b-[1.5px] bg-white px-1.5 text-[10px] text-[#111] mx-[1px] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+      className="inline-flex items-center rounded-[3px] border border-border border-b-[1.5px] bg-background px-1.5 text-[10px] text-foreground mx-px"
       style={{
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         height: '18px',
@@ -33,7 +33,7 @@ function K({ children }: { children: ReactNode }) {
 }
 
 function H({ children }: { children: ReactNode }) {
-  return <strong className="font-semibold text-[#111] dark:text-zinc-100">{children}</strong>;
+  return <strong className="font-semibold text-foreground">{children}</strong>;
 }
 
 function GuideBox({
@@ -44,12 +44,12 @@ function GuideBox({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-3 rounded-[6px] border border-[#d4d4d4] bg-white px-3.5 py-2.5 dark:border-zinc-700 dark:bg-zinc-800">
-      <p className="m-0 mb-1.5 flex items-center gap-2 text-[9.5px] font-medium uppercase tracking-[0.28em] text-[#6b6b6b] dark:text-zinc-400">
+    <div className="mt-3 rounded-[6px] border border-border bg-muted px-3.5 py-2.5">
+      <p className="m-0 mb-1.5 flex items-center gap-2 text-[9.5px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
         {label}
-        <span aria-hidden className="flex-1 h-px bg-[#e5e5e2] dark:bg-zinc-700" />
+        <span aria-hidden className="flex-1 h-px bg-border" />
       </p>
-      <div className="text-[12px] leading-[1.7] text-[#111] dark:text-zinc-100">{children}</div>
+      <div className="text-[12px] leading-[1.7] text-foreground">{children}</div>
     </div>
   );
 }
@@ -60,12 +60,12 @@ const HELP: Partial<Record<Activity, TabHelp>> = {
     title: '작품 홈',
     steps: [
       {
-        title: '처음엔 여기부터',
+        title: '작품의 고유 공간',
         body: (
           <>
             <p>
-              작품 홈은 이 작품의 <H>출발점</H>이에요. 새 작품을 만들었다면 먼저 제목,
-              작가명, 한 줄 소개를 정리해 두세요. 이후 기획, 설정, 원고 작업의 기준이
+              작품 홈은 이 작품의 <H>출발점</H>입니다. 새 작품을 만들었다면 먼저 제목,
+              작가명, 소개를 정리해 보세요. 이후 기획, 설정, 원고 작업의 기준이
               됩니다.
             </p>
             <GuideBox label="추천 순서">
@@ -289,42 +289,65 @@ const HELP: Partial<Record<Activity, TabHelp>> = {
     title: '세계관',
     steps: [
       {
-        title: '기본 문서 하나부터',
+        title: '세계관은 작품의 무대',
         body: (
           <>
             <p>
-              새 작품에는 <H>시대/배경, 공간/지리, 세력/조직, 규칙/법칙, 역사/연표</H>가
-              자동으로 만들어져요. 먼저 필요한 문서 하나만 골라 채우면 됩니다.
+              세계관 탭은 작품이 펼쳐지는 <H>시간·공간·규칙</H>을 적어두는 곳입니다.
+              회차에서 묘사가 흔들리지 않도록, 무대의 뼈대를 한 자리에 모아둡니다.
             </p>
-            <GuideBox label="추천 순서">
-              <ol className="list-decimal space-y-1 pl-4">
-                <li>시대/배경</li>
-                <li>공간/지리</li>
-                <li>세력/조직</li>
-              </ol>
+            <GuideBox label="기본 5가지 분류">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>시대/배경</H> — 연대, 사회 분위기, 풍속</li>
+                <li><H>공간/지리</H> — 마을, 건물, 자연 명소</li>
+                <li><H>세력/조직</H> — 가문, 단체, 학교, 학우 그룹</li>
+                <li><H>규칙/법칙</H> — 세계가 작동하는 원리, 마법·기술 체계</li>
+                <li><H>역사/연표</H> — 사건의 순서와 인과</li>
+              </ul>
             </GuideBox>
           </>
         ),
       },
       {
-        title: '+ 새 문서로 하위 추가',
+        title: '하위 문서로 자유롭게 구체화',
         body: (
           <>
             <p>
-              세계관은 <H>부모-자식 구조</H>로 확장돼요. 예를 들어 `공간/지리 → 수도 →
-              북부 구역`처럼 큰 설정 아래 세부 문서를 추가할 수 있습니다.
+              상위 문서 아래 <H>+ 하위 문서</H>로 깊이를 더할 수 있어요. 큰 분류만 두고
+              필요할 때 자식 문서를 통해 구체화 가능합니다.
             </p>
+            <GuideBox label="확장 예시">
+              <ul className="list-disc space-y-1 pl-4">
+                <li>공간/지리 → 애번리 마을 → 마을 학교</li>
+                <li>세력/조직 → 학교 학우들 → 라이벌 그룹</li>
+                <li>시대/배경 → 19세기 말 → 종교와 풍속</li>
+              </ul>
+            </GuideBox>
           </>
         ),
       },
       {
-        title: '드래그로 정리',
+        title: '좋은 세계관 문서의 작은 습관',
         body: (
           <>
-            <p>
-              문서는 <H>드래그</H>로 다른 부모 아래로 옮길 수 있어요. 구조가 바뀌어도 다시
-              정리하기 쉽습니다.
-            </p>
+            <GuideBox label="필요할 때만 깊게">
+              <p>
+                모든 분류를 미리 채우지 마세요. 회차에서 <H>실제로 쓰이는 설정</H>만
+                먼저 자세히 적고, 나머지는 한 줄 메모로 남겨두면 충분해요.
+              </p>
+            </GuideBox>
+            <GuideBox label="회차와 연결 짓기">
+              <p>
+                각 문서 끝에 <H>등장 회차</H>를 메모해 두면 좋아요. "이 설정은 어디서
+                썼더라?" 다시 찾기가 훨씬 쉬워집니다.
+              </p>
+            </GuideBox>
+            <GuideBox label="이름은 작품의 시그니처">
+              <p>
+                장소·조직·규칙의 이름은 한 번 정하면 작품 전체에 반복돼요. 처음 지을 때
+                조금만 신경 쓰면, 묘사 일관성이 자연스럽게 따라옵니다.
+              </p>
+            </GuideBox>
           </>
         ),
       },
@@ -381,32 +404,68 @@ const HELP: Partial<Record<Activity, TabHelp>> = {
     title: '기획',
     steps: [
       {
-        title: '기획서 한 장 먼저',
+        title: '기획은 작품의 나침반.',
         body: (
           <>
             <p>
-              기획 탭은 작품 방향을 잡는 곳이에요. 먼저 <H>기획서 한 장</H>에 컨셉과
-              시놉시스만 적어두면 이후 작업이 훨씬 쉬워집니다.
+              기획 탭은 작품의 <H>방향과 약속</H>을 적어두는 곳입니다. 회차·세계관·캐릭터
+              작업 중 길을 잃었을 때, 돌아와서 "이 작품이 약속한 재미는 뭐였지?" 다시
+              확인할 수 있습니다.
             </p>
-            <GuideBox label="먼저 적기">
-              <ol className="list-decimal space-y-1 pl-4">
-                <li>한 문장 소개</li>
-                <li>짧은 시놉시스</li>
-                <li>주인공의 목표</li>
-              </ol>
+            <GuideBox label="이런 문서를 만들어요">
+              <ul className="list-disc space-y-1 pl-4">
+                <li>작품 기획안 — 로그라인, 한 줄 소개, 타깃 독자</li>
+                <li>주제·모티프 노트 — 작품 안에서 반복되는 정서와 상징</li>
+                <li>시놉시스 / 트리트먼트 — 처음부터 끝까지 큰 흐름</li>
+                <li>연재 전략 / 회차 운영 메모 — 분량과 호흡 계획</li>
+              </ul>
             </GuideBox>
           </>
         ),
       },
       {
-        title: '막히면 이 3개 확인',
+        title: '+ 새 문서로 템플릿 골라 시작',
         body: (
           <>
-            <ul className="list-disc space-y-1 pl-4">
-              <li>주인공은 무엇을 원하나요?</li>
-              <li>무엇이 그걸 막고 있나요?</li>
-              <li>왜 지금 이야기가 시작되나요?</li>
-            </ul>
+            <p>
+              왼쪽 사이드바의 <H>+ 새 문서</H> 버튼을 누르면 4가지 기본 템플릿이 제공됩니다.
+            </p>
+            <GuideBox label="4가지 기본 템플릿">
+              <ul className="list-disc space-y-1 pl-4">
+                <li><H>빈 서식</H> — 자유롭게 시작</li>
+                <li><H>기본 작품 기획</H> — 핵심·주인공·갈등을 빠르게</li>
+                <li><H>중장편/연재 기획</H> — 초반 후킹·독자 약속·장기 전개</li>
+                <li><H>장르/세계관 기획</H> — 세계의 규칙·세력·비밀 중심</li>
+              </ul>
+            </GuideBox>
+            <p className="mt-3">마음에 드는 걸 골라 빈칸을 채우면 쉽게 기획서 한 장이 완성됩니다.</p>
+          </>
+        ),
+      },
+      {
+        title: '좋은 기획서의 작은 습관',
+        body: (
+          <>
+            <GuideBox label="짧게 자주">
+              <p>
+                처음부터 완벽하게 채우려 하지 마세요. <H>한 줄</H>이라도 먼저 적고,
+                회차를 쓰면서 천천히 채워가도 충분해요.
+              </p>
+            </GuideBox>
+            <GuideBox label="한 문장으로 다시">
+              <p>
+                로그라인은 항상 <H>한 문장</H>으로 압축해 보세요. 누구나 5초 안에 읽을 수
+                있어야 작품의 방향이 흔들리지 않아요.
+              </p>
+            </GuideBox>
+            <GuideBox label="흔들릴 때 돌아오기">
+              <p>회차가 길을 잃으면 이 3가지를 다시 떠올려 보세요.</p>
+              <ul className="list-disc space-y-1 pl-4 mt-1.5">
+                <li>주인공은 무엇을 원하나요?</li>
+                <li>무엇이 그걸 막고 있나요?</li>
+                <li>왜 지금 이야기가 시작되나요?</li>
+              </ul>
+            </GuideBox>
           </>
         ),
       },

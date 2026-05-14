@@ -231,12 +231,14 @@ public class AgentController {
     @GetMapping("/suggestions")
     @Operation(summary = "Agent 제안 목록")
     public List<Map<String, Object>> listSuggestions(
+            @RequestParam(value = "workId", required = false) String workId,
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "entityType", required = false) String entityType,
             @RequestParam(value = "limit", defaultValue = "50") int limit,
             Authentication auth
     ) {
-        return suggestionService.list(UUID.fromString(auth.getName()), status, entityType, limit);
+        UUID workUuid = (workId != null && !workId.isBlank()) ? UUID.fromString(workId) : null;
+        return suggestionService.list(UUID.fromString(auth.getName()), workUuid, status, entityType, limit);
     }
 
     public record SuggestionPatchRequest(

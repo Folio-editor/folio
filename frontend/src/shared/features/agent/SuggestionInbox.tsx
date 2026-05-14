@@ -20,7 +20,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { SuggestionBodyPreview, entityLabel, useDecryptedSuggestion } from './suggestionPreview';
 
-export function SuggestionInbox() {
+interface SuggestionInboxProps {
+  /** 현재 활성 작품 id — 이 작품의 제안만 표시. null/undefined 면 전체 (호환용 폴백). */
+  workId: string | null;
+}
+
+export function SuggestionInbox({ workId }: SuggestionInboxProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isGuest = useAuthStore((s) => s.isGuest);
   const isOnline = useNetworkStatus();
@@ -39,7 +44,7 @@ export function SuggestionInbox() {
     setLoading(true);
     try {
       const status = filter === 'all' ? undefined : filter;
-      const rows = await listSuggestions(status);
+      const rows = await listSuggestions(status, undefined, workId ?? undefined);
       setItems(rows);
     } finally {
       setLoading(false);
@@ -48,7 +53,7 @@ export function SuggestionInbox() {
 
   useEffect(() => {
     void refresh();
-  }, [filter, eligible]);
+  }, [filter, eligible, workId]);
 
   if (!eligible) {
     return (

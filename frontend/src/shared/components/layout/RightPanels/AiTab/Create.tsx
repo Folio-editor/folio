@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@powersync/react';
 import {
   AlertTriangle,
@@ -14,9 +14,9 @@ import {
   Square,
   X,
 } from 'lucide-react';
-import { apiClient } from '../../../../lib/apiClient';
-import { analytics, charCountBucket, countBucket, durationBucket } from '../../../../lib/analytics';
+import { analytics, charCountBucket } from '../../../../lib/analytics';
 import { useAiSessionStore } from '../../../../stores/aiSessionStore';
+import { useResizableTopHandle } from '../../../../hooks/useResizableTopHandle';
 import { ChatMarkdown } from '../../../../features/agent/ChatMarkdown';
 import {
   SuggestionBodyPreview,
@@ -26,7 +26,6 @@ import {
 import { toolLabel } from '../../../../features/agent/toolLabels';
 import type { AgentSuggestion } from '../../../../api/agent';
 import { CardlessInput, CARDLESS_INPUT_CLASS } from './CardlessInput';
-import { setPendingFirstPrompt, takePendingFirstPrompt } from './pendingPrompt';
 
 /* ── 문서 생성: 입력 화면 (자유 프롬프트 + 참고 회차 선택) ── */
 
@@ -40,6 +39,7 @@ export function CreateInputScreen({
   const referencePrompt = useAiSessionStore((s) => s.createReferencePrompt);
   const setReferencePrompt = useAiSessionStore((s) => s.setCreateReferencePrompt);
   const startCreate = useAiSessionStore((s) => s.startCreate);
+  const startCreateStream = useAiSessionStore((s) => s.startCreateStream);
   const failCreate = useAiSessionStore((s) => s.failCreate);
   const setScreen = useAiSessionStore((s) => s.setScreen);
 
@@ -66,9 +66,9 @@ export function CreateInputScreen({
         : '';
       const fullPrompt = refBlock + prompt.trim();
       startCreate(tid, 'create-input');
-      // streamMessage 는 useEffect 안에서 시작 — startCreate 가 screen 을 'create-streaming' 으로 전환
-      // 그 화면이 마운트되면서 createThreadId + prompt 로 SSE 시작.
-      setPendingFirstPrompt(tid, fullPrompt);
+      // SSE 는 store 가 보유 — 컴포넌트 lifecycle 과 무관하게 스트림이 계속 흐른다.
+      // CreateStreamingScreen 이 unmount 되어도 chunk 가 store 에 누적되므로 화면 복귀 시 진행 상태 복원.
+      startCreateStream(tid, fullPrompt);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       failCreate(`대화 생성 실패: ${msg}`);
@@ -215,189 +215,17 @@ export function CreateStreamingScreen() {
   const suggestionIds = useAiSessionStore((s) => s.createSuggestionIds);
   const error = useAiSessionStore((s) => s.createError);
   const toolStream = useAiSessionStore((s) => s.createToolStream);
-  const liveText = useAiSessionStore((s) => s.createLiveText);
 
   const turns = useAiSessionStore((s) => s.createTurns);
 
-  const appendChunk = useAiSessionStore((s) => s.appendCreateChunk);
-  const addStep = useAiSessionStore((s) => s.addCreateStep);
-  const startCreateToolStream = useAiSessionStore((s) => s.startCreateToolStream);
-  const appendCreateToolPartial = useAiSessionStore((s) => s.appendCreateToolPartial);
-  const startCreateTurn = useAiSessionStore((s) => s.startCreateTurn);
-  const appendCreateTurnText = useAiSessionStore((s) => s.appendCreateTurnText);
-  const addCreateTurnTool = useAiSessionStore((s) => s.addCreateTurnTool);
-  const markCreateTurnAsBody = useAiSessionStore((s) => s.markCreateTurnAsBody);
-  const finishCreate = useAiSessionStore((s) => s.finishCreate);
-  const failCreate = useAiSessionStore((s) => s.failCreate);
   const setScreen = useAiSessionStore((s) => s.setScreen);
   const resetCreate = useAiSessionStore((s) => s.resetCreate);
+  const abortCreateStream = useAiSessionStore((s) => s.abortCreateStream);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const startedAtRef = useRef<number>(0);
-
-  function trackCreateStreamSucceeded(ids: string[]) {
-    const origin = useAiSessionStore.getState().createOriginScreen;
-    const duration = durationBucket(Date.now() - startedAtRef.current);
-    if (origin === 'review-input') {
-      void analytics.track('ai_review_succeeded', {
-        doc_type: 'episode',
-        duration_bucket: duration,
-      });
-      return;
-    }
-    void analytics.track('ai_create_succeeded', {
-      duration_bucket: duration,
-      suggestion_count_bucket: countBucket(ids.length),
-    });
-  }
-
-  function trackCreateStreamFailed(reasonCode: string) {
-    const origin = useAiSessionStore.getState().createOriginScreen;
-    if (origin === 'review-input') {
-      void analytics.track('ai_review_failed', {
-        doc_type: 'episode',
-        reason_code: reasonCode,
-      });
-      return;
-    }
-    void analytics.track('ai_create_failed', {
-      reason_code: reasonCode,
-    });
-  }
-
-  // 첫 프롬프트 SSE 시작 — threadId 변경 시 1회만.
-  useEffect(() => {
-    if (!threadId || state !== 'streaming') return;
-    const firstPrompt = takePendingFirstPrompt(threadId);
-    if (!firstPrompt) return; // 이미 시작했거나 prompt 없음
-    startedAtRef.current = Date.now();
-
-    let done = false;
-    let userAborted = false; // unmount cleanup 으로 abort 했는지 추적 (사용자 중단 vs 네트워크 끊김 구분)
-    apiClient
-      .streamSSE(
-        `/agent/threads/${threadId}/messages/stream`,
-        { message: firstPrompt },
-        (parsed: unknown) => {
-          const evt = parsed as {
-            type: string;
-            text?: string;
-            error_type?: string;
-            error_message?: string;
-            suggestion_ids?: string[];
-            tool_name?: string;
-            step_type?: string;
-            user_tokens?: number;
-            iterations?: number;
-            cum_user_tokens?: number;
-            seq?: number;
-            field?: string;
-            chunk?: string;
-            partial_json?: string;
-            block_index?: number;
-          };
-          if (evt.type === 'step') {
-            addStep({
-              step_type: evt.step_type ?? 'unknown',
-              tool_name: evt.tool_name ?? null,
-              user_tokens: evt.user_tokens,
-              iterations: evt.iterations,
-              cum_user_tokens: evt.cum_user_tokens,
-              seq: evt.seq,
-            });
-            // turn 카드 헤더에 도구 라벨 추가
-            if (evt.step_type === 'tool_call' && evt.tool_name) {
-              addCreateTurnTool(evt.tool_name);
-              // propose_episode_draft 호출 시 그 turn 을 본문 카드로 마크
-              if (evt.tool_name === 'propose_episode_draft') {
-                markCreateTurnAsBody();
-              }
-            }
-          } else if (evt.type === 'assistant_start') {
-            // 새 turn 시작 — 새 카드 추가
-            startCreateTurn();
-          } else if (evt.type === 'assistant_end') {
-            // turn 종료 — 다음 assistant_start 까지 동일 turn 유지
-          } else if (evt.type === 'text_delta' && evt.text) {
-            // turn 별 카드에 누적 + (legacy 호환) 전체 liveText 도 누적
-            appendCreateTurnText(evt.text);
-            appendChunk(evt.text);
-          } else if (evt.type === 'tool_input_start') {
-            // propose_* 도구 시작 — streaming 박스 reset.
-            startCreateToolStream(evt.tool_name ?? '', '');
-            // 본문 도구면 현재 turn 을 body 로 마크 (step 보다 먼저 도착 가능성 대비)
-            if (evt.tool_name === 'propose_episode_draft') {
-              markCreateTurnAsBody();
-            }
-          } else if (evt.type === 'tool_input_delta' && evt.partial_json) {
-            // tool_input_start 가 누락됐다면 (이벤트 순서 흔들림) 안전장치로 첫 chunk 시 stream 시작.
-            const cur = useAiSessionStore.getState().createToolStream;
-            if (!cur || cur.toolName !== (evt.tool_name ?? '')) {
-              startCreateToolStream(evt.tool_name ?? '', '');
-            }
-            appendCreateToolPartial(evt.partial_json);
-          } else if (evt.type === 'tool_input_stop') {
-            // 단일 도구 호출 종료 — 누적된 toolStream 은 유지 (다음 tool_input_start 시 reset).
-          } else if (evt.type === 'done') {
-            done = true;
-            const ids = evt.suggestion_ids ?? [];
-            finishCreate(ids);
-            trackCreateStreamSucceeded(ids);
-            return true;
-          } else if (evt.type === 'error') {
-            done = true;
-            trackCreateStreamFailed(evt.error_type ?? 'error');
-            failCreate(`${evt.error_type ?? 'error'}: ${evt.error_message ?? ''}`);
-            return true;
-          }
-        },
-        () => {
-          // 정상 종료 = 'done' 이벤트가 도착해 done=true 로 설정된 경우만.
-          // 그 외는 stream 이 'done' 없이 끊긴 경우 (proxy idle timeout / 서버 종료 / 사용자 중지).
-          if (done) return;
-          if (userAborted) {
-            // 사용자가 중지 버튼을 눌렀거나 화면을 떠난 경우 — 그때 이미 적절한 상태 처리됨, 추가 동작 X
-            return;
-          }
-          // 진짜 stream 비정상 종료 — propose 도구 호출 전에 끊겼을 가능성. 명확한 에러 표시.
-          trackCreateStreamFailed('stream_disconnected');
-          failCreate('연결이 끊어졌습니다 — 다시 만들기로 재시도해주세요.');
-        },
-        (err) => {
-          // userAborted 면 모든 onError 무시 (apiClient 가 AbortError 는 이미 swallow,
-          // 여기까지 오면 다른 종류 에러). message 기반 'abort' 매칭은 'Failed to fetch' 등의
-          // 일반 에러까지 잘못 swallow 하므로 사용 X.
-          if (userAborted) return;
-          const msg = err instanceof Error ? err.message : String(err);
-          trackCreateStreamFailed('stream_send_failed');
-          failCreate(`전송 실패: ${msg}`);
-        },
-      )
-      .then((controller) => {
-        abortRef.current = controller;
-      })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        trackCreateStreamFailed('stream_connect_failed');
-        failCreate(`연결 실패: ${msg}`);
-      });
-
-    return () => {
-      // unmount 로 인한 abort — onDone 의 "비정상 종료" 분기에서 사용자 알림 차단용 flag.
-      userAborted = true;
-      abortRef.current?.abort();
-      abortRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId]);
-
+  // SSE 는 store 가 보유 — 본 컴포넌트의 mount/unmount 와 무관하게 스트림 유지.
+  // 사용자 명시 "중지" 시에만 abortCreateStream 호출.
   function handleAbort() {
-    // 사용자 명시 중지 — abort 후 상태 전환까지 명시 처리.
-    // apiClient 는 AbortError 를 swallow 하므로 onDone/onError 모두 안 불림 → 별도 finishCreate
-    // 로 'done' 상태 전환. suggestion_ids 는 비어있고, source_thread_id 매칭으로 dock 이 부분
-    // 결과 카드를 복원 가능 (agent 가 도중에 실제로 propose 호출했었다면).
-    abortRef.current?.abort();
-    finishCreate([]);
+    abortCreateStream();
   }
 
   function handleStartOver() {
@@ -863,6 +691,10 @@ function CreateSuggestionsDockOverlay({
     setCollapsed(false);
   }, [current.id]);
 
+  // 상단 드래그 핸들로 본문 높이 조절 — 초기 26vh.
+  const { height: bodyHeight, onPointerDown: onResizeHandlePointerDown } =
+    useResizableTopHandle();
+
   // spelling_batch 체크리스트 상태 — 카드 전환 시 모두 체크된 상태로 리셋
   const batchFixCount = useMemo(() => {
     if (!isSpellingBatch) return 0;
@@ -905,6 +737,16 @@ function CreateSuggestionsDockOverlay({
 
   return (
     <div className="flex shrink-0 flex-col border-t border-primary/30 bg-card shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+      {/* 상단 리사이즈 핸들 — 위/아래 드래그로 본문 영역 높이 조절 */}
+      <div
+        onPointerDown={onResizeHandlePointerDown}
+        className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center bg-primary/5 hover:bg-primary/20"
+        title="드래그해서 높이 조절"
+        aria-label="제안 카드 높이 조절"
+        role="separator"
+      >
+        <div className="h-0.5 w-10 rounded-full bg-border group-hover:bg-primary/60" />
+      </div>
       {/* 헤더 — 카운터 · entity · 제목 · 상태 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-1.5">
         <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
@@ -937,7 +779,10 @@ function CreateSuggestionsDockOverlay({
       {/* 본문 — entity 별 풍부 미리보기. footer 가 액션 통합 → hideActions.
           collapsed 면 본문 영역 숨김 — 헤더 + 푸터만 보이는 한 줄 컴팩트 UI. */}
       {!collapsed && (
-        <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
+        <div
+          style={{ height: bodyHeight }}
+          className="min-h-0 overflow-y-auto px-3 py-1.5"
+        >
           <SuggestionBodyPreview
             s={current}
             workId={current.work_id}
