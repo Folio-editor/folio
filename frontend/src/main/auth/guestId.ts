@@ -33,3 +33,18 @@ export function getOrCreateGuestId(): string {
   }
   return id;
 }
+
+/**
+ * 게스트 UUID 를 새 UUID 로 덮어쓴다.
+ * 회원 탈퇴 시 호출 — 탈퇴를 "신규 게스트 모드 진입" 으로 명시 처리하기 위해 사용.
+ */
+export function rotateGuestId(): string {
+  const file = guestIdFile();
+  const id = randomUUID();
+  try {
+    fs.writeFileSync(file, id, 'utf8');
+  } catch {
+    /* 쓰기 실패 시 메모리에만 유지 */
+  }
+  return id;
+}

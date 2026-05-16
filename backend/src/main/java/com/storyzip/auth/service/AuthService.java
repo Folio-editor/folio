@@ -11,12 +11,14 @@ import com.storyzip.auth.oauth.GoogleUserInfo;
 import com.storyzip.auth.repository.WriterRepository;
 import com.storyzip.common.exception.AuthException;
 import com.storyzip.common.exception.ErrorCode;
+import com.storyzip.common.exception.WithdrawnAccountException;
 import com.storyzip.payment.service.TokenWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,6 +33,9 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String PROVIDER_GOOGLE = "google";
+
+    /** 탈퇴 후 자동 영구삭제까지의 유예 기간 — TrashCleanupScheduler 의 30일과 일치해야 한다. */
+    private static final int WITHDRAWAL_GRACE_DAYS = 30;
 
     private final GoogleOAuthClient googleOAuthClient;
     private final WriterRepository writerRepository;
@@ -119,6 +124,55 @@ public class AuthService {
         refreshTokenRedisService.deleteAllDevices(writerId);
     }
 
+    /**
+     * 회원 탈퇴 — soft delete + 모든 기기 refresh token 폐기.
+     *
+     * <p>writer.deleted_at 에 timestamp 기록. 30일 내 같은 Google 계정으로 다시 로그인하면
+     * {@link #restoreAndLogin} 으로 복구 가능. 30일 경과 시 TrashCleanupScheduler 가 hard delete.
+     */
+    @Transactional
+    public void withdraw(UUID writerId) {
+        Writer writer = writerRepository.findById(writerId)
+                .orElseThrow(() -> new AuthException(ErrorCode.WRITER_NOT_FOUND));
+        if (writer.isDeleted()) {
+            // 이미 탈퇴 상태 — idempotent
+            return;
+        }
+        writer.softDelete();
+        refreshTokenRedisService.deleteAllDevices(writerId);
+        log.info("[Withdraw] writer={} softDeleted, all refresh tokens revoked", writerId);
+    }
+
+    /**
+     * 탈퇴 처리된 계정의 복구 + 로그인 — 새 Google code 로 동일 사용자 검증 후 deleted_at = NULL.
+     *
+     * <p>복구 가능 기간({@value #WITHDRAWAL_GRACE_DAYS} 일) 을 넘기면 거부. 사실상 이 시점에
+     * writer 행이 이미 hard delete 되어 있을 가능성이 높지만 안전망으로 명시 검증.
+     */
+    @Transactional
+    public LoginResponse restoreAndLogin(String code, String codeVerifier, String redirectUri, String deviceId) {
+        GoogleUserInfo userInfo = googleOAuthClient.exchangeDesktopCode(code, codeVerifier, redirectUri);
+        Writer writer = writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, userInfo.sub())
+                .orElseThrow(() -> new AuthException(ErrorCode.WRITER_NOT_FOUND));
+
+        if (!writer.isDeleted()) {
+            // 이미 정상 상태 — 복구 불필요. 일반 로그인 흐름으로 토큰 발급.
+            writer.updateProfile(userInfo.name(), userInfo.picture());
+            return issueTokens(writer, deviceId, false);
+        }
+
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(WITHDRAWAL_GRACE_DAYS);
+        if (writer.getDeletedAt().isBefore(cutoff)) {
+            // 복구 마감 초과 — 거부
+            throw new AuthException(ErrorCode.ACCOUNT_WITHDRAWAL_EXPIRED);
+        }
+
+        writer.restoreFromWithdrawal();
+        writer.updateProfile(userInfo.name(), userInfo.picture());
+        log.info("[Restore] writer={} restored from withdrawal", writer.getId());
+        return issueTokens(writer, deviceId, false);
+    }
+
     @Transactional(readOnly = true)
     public WriterDto me(UUID writerId) {
         Writer writer = writerRepository.findById(writerId)
@@ -141,6 +195,9 @@ public class AuthService {
     /**
      * Google 사용자 정보를 받아 신규/기존 Writer를 결정하고 토큰을 발급한다.
      * Desktop(PKCE)과 Web(client_secret) 두 흐름 모두 동일한 후처리를 거치도록 추출.
+     *
+     * <p>탈퇴 처리된 계정으로 로그인 시도 시 {@link WithdrawnAccountException} 을 던져
+     * 컨트롤러가 복구 다이얼로그용 응답으로 변환하게 한다.
      */
     private LoginResponse upsertWriterAndIssueTokens(GoogleUserInfo userInfo, String deviceId) {
         Optional<Writer> existing = writerRepository.findByOauthProviderAndOauthId(PROVIDER_GOOGLE, userInfo.sub());
@@ -149,6 +206,11 @@ public class AuthService {
         boolean isNewUser;
         if (existing.isPresent()) {
             writer = existing.get();
+            if (writer.isDeleted()) {
+                // 탈퇴 처리된 계정 — 토큰 발급 거부. 복구는 별도 엔드포인트(restoreAndLogin)로.
+                LocalDateTime deletedAt = writer.getDeletedAt();
+                throw new WithdrawnAccountException(deletedAt, deletedAt.plusDays(WITHDRAWAL_GRACE_DAYS));
+            }
             writer.updateProfile(userInfo.name(), userInfo.picture());
             isNewUser = false;
         } else {

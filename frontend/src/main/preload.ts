@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   LoginResult,
+  LoginOutcome,
   FolioApi,
   FolioCryptoMaterial,
   UpdaterState,
@@ -14,7 +15,9 @@ import type {
 const api: FolioApi = {
   platform: 'electron',
   auth: {
-    loginWithGoogle: () => ipcRenderer.invoke('auth:login') as Promise<LoginResult>,
+    loginWithGoogle: () => ipcRenderer.invoke('auth:login') as Promise<LoginOutcome>,
+    restoreAfterWithdrawal: () =>
+      ipcRenderer.invoke('auth:restoreAfterWithdrawal') as Promise<LoginResult>,
     logout: () => ipcRenderer.invoke('auth:logout') as Promise<void>,
     tryRestore: () =>
       ipcRenderer.invoke('auth:tryRestore') as Promise<LoginResult | null>,
@@ -22,10 +25,14 @@ const api: FolioApi = {
       ipcRenderer.invoke('auth:getAccessToken') as Promise<string | null>,
     getGuestId: () =>
       ipcRenderer.invoke('auth:getGuestId') as Promise<string>,
+    rotateGuestId: () =>
+      ipcRenderer.invoke('auth:rotateGuestId') as Promise<string>,
     getLastKnownWriterId: () =>
       ipcRenderer.invoke('auth:getLastKnownWriterId') as Promise<string | null>,
     commitLastKnownWriterId: (writerId: string) =>
       ipcRenderer.invoke('auth:commitLastKnownWriterId', writerId) as Promise<void>,
+    clearLastKnownWriterId: () =>
+      ipcRenderer.invoke('auth:clearLastKnownWriterId') as Promise<void>,
     onSessionExpired: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on('auth:session-expired', listener);
