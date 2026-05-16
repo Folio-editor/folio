@@ -31,7 +31,7 @@ public class SuggestionService {
     private final SuggestionApplier applier;
 
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> list(UUID writerId, String status, String entityType, int limit) {
+    public List<Map<String, Object>> list(UUID writerId, UUID workId, String status, String entityType, int limit) {
         StringBuilder sql = new StringBuilder(
                 "SELECT id, work_id, episode_id, entity_type, suggested_name, payload, " +
                         "       source_agent, source_thread_id, status, reviewer_note, " +
@@ -41,6 +41,10 @@ public class SuggestionService {
         );
         List<Object> args = new java.util.ArrayList<>();
         args.add(writerId);
+        if (workId != null) {
+            sql.append(" AND work_id = ? ");
+            args.add(workId);
+        }
         if (status != null && !status.isBlank()) {
             sql.append(" AND status = ? ");
             args.add(status);

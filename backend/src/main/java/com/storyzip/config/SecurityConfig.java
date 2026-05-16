@@ -31,6 +31,8 @@ public class SecurityConfig {
             "/favicon.ico",
             "/api/v1/auth/login/**",
             "/api/v1/auth/refresh",
+            // 탈퇴 계정 복구 — 인증 토큰이 폐기된 상태에서 새 PKCE 흐름으로 호출되므로 permitAll.
+            "/api/v1/auth/restore",
             // 웹(브라우저) OAuth 흐름 — 인증 전 호출되는 엔드포인트
             "/api/v1/auth/google/web/**",
             "/api/v1/auth/web/exchange",

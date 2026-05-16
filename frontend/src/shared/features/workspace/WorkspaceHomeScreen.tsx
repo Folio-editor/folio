@@ -26,7 +26,6 @@ import {
 import { MainPanelHeader } from '../../components/layout/MainPanelHeader';
 import { ExportButton } from './ExportButton';
 import { SECTION_LABELS, WorkspaceSection } from '../../types/workspace';
-import { cn } from '../../lib/cn';
 import { parseServerDate } from '../../lib/dateTime';
 
 interface WorkspaceHomeScreenProps {
@@ -148,6 +147,36 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [tagModal, setTagModal] = useState<TagField | null>(null);
+
+  // 섹션별 문서 총 갯수 — 카드 우측 상단 배지에 표시.
+  // episode 만 trashed 필터링 (다른 테이블엔 휴지통 status 없음).
+  const { data: countRows = [] } = useQuery<{
+    plan_count: number;
+    world_count: number;
+    character_count: number;
+    plot_count: number;
+    episode_count: number;
+    foreshadow_count: number;
+  }>(
+    `SELECT
+       (SELECT COUNT(*) FROM plan_note   WHERE work_id = ?) AS plan_count,
+       (SELECT COUNT(*) FROM world_note  WHERE work_id = ?) AS world_count,
+       (SELECT COUNT(*) FROM character   WHERE work_id = ?) AS character_count,
+       (SELECT COUNT(*) FROM plot        WHERE work_id = ?) AS plot_count,
+       (SELECT COUNT(*) FROM episode     WHERE work_id = ? AND status != 'trashed') AS episode_count,
+       (SELECT COUNT(*) FROM foreshadow  WHERE work_id = ?) AS foreshadow_count`,
+    [id, id, id, id, id, id],
+  );
+  const counts = countRows[0];
+  const sectionCount: Record<WorkspaceSection, number> = {
+    plan: counts?.plan_count ?? 0,
+    'world-note': counts?.world_count ?? 0,
+    character: counts?.character_count ?? 0,
+    plot: counts?.plot_count ?? 0,
+    episode: counts?.episode_count ?? 0,
+    foreshadow: counts?.foreshadow_count ?? 0,
+    'idea-archive': 0,
+  };
 
   // 작품 단위 태그(장르·분위기)는 work 테이블 직속 컬럼.
   // (이전엔 plan 테이블에 있었으나 ERD 정리로 work로 이전됨.)
@@ -310,13 +339,20 @@ function WorkspaceEditor({ work, onSectionSelect, onDeleted, onBack }: Workspace
         <div className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3">
           {SECTIONS.map((section) => {
             const Icon = SECTION_ICON[section];
+            const count = sectionCount[section];
             return (
               <button
                 key={section}
                 type="button"
                 onClick={() => onSectionSelect(section)}
-                className="flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
+                className="relative flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left transition-colors hover:border-ring hover:bg-primary/5"
               >
+                <span
+                  aria-label={`${SECTION_LABELS[section]} 문서 ${count}개`}
+                  className="absolute right-3 top-3 inline-flex min-w-6 items-center justify-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
+                >
+                  {count}
+                </span>
                 <Icon size={24} strokeWidth={1.5} className="text-muted-foreground" />
                 <span className="mt-2 text-sm font-medium text-foreground">
                   {SECTION_LABELS[section]}

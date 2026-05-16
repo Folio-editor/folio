@@ -7,9 +7,16 @@ import {
   initKekFromLogin,
   restoreKek,
 } from '../crypto/lifecycle';
+import { apiClient } from '../lib/apiClient';
 // backfill 폐기됨 — SQLite 는 항상 평문 저장 정책 (옵션 A).
 // upload sanitize 가 서버 전송 시점에만 ciphertext 변환.
 import { analytics } from '../lib/analytics';
+import type { LoginOutcome, WithdrawnLoginResult } from '../types/auth';
+
+/** 회원 탈퇴 시 사용 — main 의 LoginOutcome 응답이 withdrawn 분기인지 판정. */
+function isWithdrawnOutcome(r: LoginOutcome): r is WithdrawnLoginResult {
+  return (r as WithdrawnLoginResult).status === 'withdrawn';
+}
 
 /** 웹 모드에서는 게스트 모드 비활성 — getGuestId 호출이 throw하므로 분기 가드 필요. */
 function isWebPlatform(): boolean {
@@ -120,6 +127,21 @@ interface AuthState {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   /**
+   * 회원 탈퇴 — 서버 soft delete + 로컬 writer_id 를 새 guestId 로 재매핑 + KEK 폐기 + 게스트 모드 진입.
+   * 로컬 데이터는 그대로 보존되어 게스트 모드에서 계속 작업 가능.
+   * 30일 내 같은 Google 재로그인 시 자동으로 복구 플로우로 진입.
+   */
+  withdraw: () => Promise<void>;
+  /**
+   * 직전 login() 결과가 탈퇴 처리된 계정이면 채워지는 메타데이터.
+   * UI 가 이 값을 보고 RestoreAccountDialog 를 노출하고, 사용자 동의 시 restoreAfterWithdrawal() 호출.
+   */
+  withdrawnSnapshot: WithdrawnLoginResult | null;
+  /** 복구 다이얼로그에서 "취소" 시 호출 — 스냅샷 초기화 */
+  dismissWithdrawnSnapshot: () => void;
+  /** 복구 다이얼로그에서 "복구하기" 시 호출 — restoreAfterWithdrawal + 일반 login 후속 흐름 재사용 */
+  restoreAfterWithdrawal: () => Promise<void>;
+  /**
    * 사용자(또는 자동 판별)의 sync 의사결정을 적용한다.
    * 'use-server'면 disconnectAndClear()로 로컬을 비운 뒤 connect 허용 상태로 전환.
    */
@@ -144,6 +166,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isNewUser: false,
   syncDecision: null,
   kekVersion: 0,
+  withdrawnSnapshot: null,
 
   /**
    * useQuery 필터에 사용할 writerId.
@@ -282,7 +305,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoggingIn: true, error: null });
     void analytics.track('login_started', { provider: 'google' });
     try {
-      const result = await window.folio.auth.loginWithGoogle();
+      const outcome = await window.folio.auth.loginWithGoogle();
+
+      // 탈퇴 처리된 계정 — 토큰 미발급. UI 가 복구 다이얼로그를 표시하도록 스냅샷만 보관하고 종료.
+      if (isWithdrawnOutcome(outcome)) {
+        set({
+          isLoggingIn: false,
+          withdrawnSnapshot: outcome,
+        });
+        void analytics.track('login_failed', {
+          reason_code: 'account_withdrawn',
+        });
+        return;
+      }
+      const result = outcome;
 
       // KEK 도출: pepper_user/salt/sub/version 영속 + 메모리 KEK 즉시 사용 가능 상태로.
       // 사용자 전환(initKekFromLogin 내부에서 sub 비교)도 자동 처리된다.
@@ -464,6 +500,131 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         kekVersion: s.kekVersion + 1,
       }));
     }
+  },
+
+  /**
+   * 회원 탈퇴 — 서버 soft delete + 로컬 writer_id 를 새 guestId 로 재매핑 + KEK 폐기.
+   * 로컬 데이터는 보존되어 게스트 모드에서 계속 작업 가능. 30일 내 같은 Google 재로그인 시
+   * 자동으로 복구 플로우 진입 (서버가 `withdrawn` 응답 → UI 가 RestoreAccountDialog 노출).
+   *
+   * **KEK 정책**: 폐기하지 않는다 (logout() 과 동일 정책). 이유:
+   *  - 로컬 SQLite 에 v1: 암호문으로 저장된 행이 많아 KEK 가 없으면 화면에 "텅 빈" 데이터로 보임
+   *  - 같은 사용자가 복구하면 같은 pepper/salt 로 KEK 재도출되므로 폐기해도 보안상 동일하지만,
+   *    탈퇴 직후 게스트 모드에서 즉시 기존 데이터를 보려면 KEK 가 살아있어야 함
+   *  - 다른 사용자가 같은 디바이스에 로그인하면 `initKekFromLogin` 이 sub 비교 후 자동 교체
+   *
+   * 흐름 요약 (기존 게스트→로그인 패턴의 거울상):
+   *  ① 서버 soft delete (모든 device refresh token 폐기)
+   *  ② 새 guestId 발급
+   *  ③ 로컬 SQLite: 모든 writer_id 행을 새 guestId 로 재매핑 (ps_crud 큐에 들어가도
+   *     SyncService 가 JWT 기준 덮어쓰므로 서버 무손실)
+   *  ④ logout() 흐름 + lastKnownWriterId 명시 클리어 (KEK 는 유지 — 게스트 모드 복호화 가능)
+   */
+  withdraw: async () => {
+    const writer = get().writer;
+    if (!writer) return;
+    const previousWriterId = writer.id;
+
+    // ① 서버 soft delete — Authorization 헤더는 apiClient 가 자동 부착.
+    try {
+      await apiClient.post('/auth/withdraw');
+    } catch (e) {
+      // 네트워크 오류 / 이미 탈퇴 등 — 사용자에게 노출 후 중단.
+      set({ error: `회원 탈퇴 실패: ${(e as Error).message}` });
+      throw e;
+    }
+
+    // 웹 플랫폼은 게스트 모드 미지원 — 단순 로그아웃 흐름으로 폴백.
+    if (isWebPlatform()) {
+      await get().logout();
+      void analytics.track('account_withdrawn', { platform: 'web' });
+      return;
+    }
+
+    // ② 새 guestId 발급 — 탈퇴 후 상태를 "신규 게스트 모드 진입" 으로 격리.
+    let newGuestId: string;
+    try {
+      newGuestId = await window.folio.auth.rotateGuestId();
+    } catch (e) {
+      console.warn('[withdraw] rotateGuestId 실패, getGuestId 폴백:', e);
+      newGuestId = await window.folio.auth.getGuestId();
+    }
+
+    // ③ 로컬 writer_id 재매핑: 이전 user 의 모든 데이터를 새 guestId 로 이전.
+    try {
+      await db.writeTransaction(async (tx) => {
+        for (const table of WRITER_ID_TABLES) {
+          await tx.execute(
+            `UPDATE ${table} SET writer_id = ? WHERE writer_id = ?`,
+            [newGuestId, previousWriterId],
+          );
+        }
+      });
+      console.log(`[withdraw] writer_id 재매핑: ${previousWriterId} → ${newGuestId}`);
+    } catch (e) {
+      console.warn('[withdraw] writer_id 재매핑 실패:', e);
+    }
+
+    // ④ lastKnownWriterId 파일 영속분 제거 — 이전 사용자 식별자 잔영 정리.
+    //    ★ KEK 는 폐기하지 않는다 (logout 정책 동일). 폐기 시 게스트 모드에서 v1: 암호문이
+    //      복호화되지 않아 화면에 "텅 빈" 데이터로 보이는 문제 + 새로고침 후 restoreKek
+    //      재료가 없어 영구히 복호화 불가능해지는 문제.
+    try {
+      await window.folio.auth.clearLastKnownWriterId();
+    } catch (e) {
+      console.warn('[withdraw] clearLastKnownWriterId 실패:', e);
+    }
+
+    // ⑤ logout() 재사용 — disconnect + 게스트 모드 전환. 단 lastKnownWriterId 를 logout 이
+    //    유지하므로 직후 명시 null 로 덮어쓴다 (이전 사용자 데이터 잔영 차단).
+    await get().logout();
+    set({
+      guestWriterId: newGuestId,
+      lastKnownWriterId: null,
+    });
+
+    void analytics.track('account_withdrawn', { platform: 'electron' });
+  },
+
+  /**
+   * 복구 다이얼로그에서 "복구하기" 클릭 시 호출.
+   * main 의 restoreAfterWithdrawal() 이 새 Google PKCE 흐름을 시작해 백엔드 {@code /auth/restore} 호출 →
+   * 성공 시 일반 login() 후속 처리 그대로 (KEK 도출 + state 전환 + useSyncResolver 자동 판정).
+   */
+  restoreAfterWithdrawal: async () => {
+    set({ isLoggingIn: true, error: null });
+    const currentGuestId = get().guestWriterId;
+    try {
+      const result = await window.folio.auth.restoreAfterWithdrawal();
+
+      await deriveKekFromLogin(result.encryption);
+
+      // 일반 login() 의 후속 흐름과 동일 — 게스트 데이터가 있으면 useSyncResolver 가 판정.
+      // 신규 가입 분기는 적용 X (복구는 기존 회원).
+      set((s) => ({
+        writer: result.writer,
+        guestWriterId: null,
+        previousGuestId: currentGuestId,
+        isAuthenticated: true,
+        isGuest: false,
+        isLoggingIn: false,
+        isNewUser: false,
+        syncDecision: null, // useSyncResolver 가 판정
+        withdrawnSnapshot: null, // 다이얼로그 close
+        kekVersion: s.kekVersion + 1,
+      }));
+      void analytics.track('account_restored', { platform: 'electron' });
+    } catch (e) {
+      set({ isLoggingIn: false, error: (e as Error).message });
+      void analytics.track('account_restore_failed', {
+        reason_code: e instanceof Error ? e.name : 'unknown',
+      });
+    }
+  },
+
+  /** 복구 다이얼로그 "취소" — 스냅샷만 클리어. 게스트 모드 유지. */
+  dismissWithdrawnSnapshot: () => {
+    set({ withdrawnSnapshot: null });
   },
 
   subscribeSessionEvents: () =>

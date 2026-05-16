@@ -6,9 +6,16 @@
 // - Ctrl+Click (mac: ⌘+Click) → 새 탭으로 열기 ('newTab')
 // - 더블 클릭 → 우측 핀 ('pin')
 
-/** 사이드바 항목 hover 시 툴팁에 표기할 인터랙션 안내. ⌘ 같은 OS 전용 기호 회피. */
-export const SIDEBAR_ITEM_HINT =
-  '클릭 → 메인에 열기 · 더블클릭 → 우측 패널에 핀 추가 · Ctrl+클릭 → 새 탭으로 열기';
+/** 사이드바 항목 hover 시 툴팁에 표기할 인터랙션 안내. 3줄 JSX. */
+export const SIDEBAR_ITEM_HINT = (
+  <span className="block leading-relaxed">
+    클릭 → 메인에 열기
+    <br />
+    더블 클릭 → 보조 뷰어에 추가
+    <br />
+    Ctrl+클릭 → 새 탭으로 열기
+  </span>
+);
 //
 // onClick은 더블클릭 시 2회 발생 후 onDoubleClick 발생하므로,
 // 단일 클릭 액션은 200ms 지연 → 그 사이 더블 들어오면 timeout 취소.

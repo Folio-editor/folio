@@ -125,7 +125,7 @@ export function RightPanels({
             mainItemId={mainItemId}
           />
         </div>
-        {activeTab === 'inbox' && <InboxTabContent />}
+        {activeTab === 'inbox' && <InboxTabContent selectedWorkId={selectedWorkId} />}
       </div>
     </div>
   );
@@ -136,7 +136,7 @@ export function RightPanels({
  * 인증·온라인 가드 후 SuggestionInbox 를 그대로 렌더한다.
  * 본 컴포넌트는 다른 곳에서 안 쓰이므로 본 파일에 그대로 둔다 (40줄 미만).
  */
-function InboxTabContent() {
+function InboxTabContent({ selectedWorkId }: { selectedWorkId: string | null }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isGuest = useAuthStore((s) => s.isGuest);
   const isOnline = useNetworkStatus();
@@ -161,5 +161,5 @@ function InboxTabContent() {
       </div>
     );
   }
-  return <SuggestionInbox />;
+  return <SuggestionInbox workId={selectedWorkId} />;
 }

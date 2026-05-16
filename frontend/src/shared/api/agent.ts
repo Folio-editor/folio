@@ -235,8 +235,9 @@ export type AgentStreamEvent =
 
 // ─────── Suggestions ───────
 
-export function listSuggestions(status?: string, entityType?: string) {
+export function listSuggestions(status?: string, entityType?: string, workId?: string) {
   const params = new URLSearchParams();
+  if (workId) params.set('workId', workId);
   if (status) params.set('status', status);
   if (entityType) params.set('entityType', entityType);
   const qs = params.toString();

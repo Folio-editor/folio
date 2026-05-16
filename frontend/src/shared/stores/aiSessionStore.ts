@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { apiClient } from '../lib/apiClient';
+import { analytics, countBucket, durationBucket } from '../lib/analytics';
 
 export type AiScreen =
   | 'menu'
@@ -353,6 +355,13 @@ interface AiSessionStore {
   // turn 별 분리 — assistant_start 마다 새 turn, text_delta 누적, step 마다 toolNames 추가.
   // propose_episode_draft 호출 시 그 turn 의 kind='body' 로 마크 (본문 카드 강조).
   createTurns: { kind: 'thinking' | 'body' | 'wrap'; text: string; toolNames: string[] }[];
+  /**
+   * 진행 중인 SSE 의 abort 핸들. 컴포넌트 lifecycle 과 무관하게 store 가 보유 →
+   * `CreateStreamingScreen` 이 unmount 되어도 스트림이 계속 흐르고 chunk 가 누적된다.
+   * 사용자가 명시적으로 "중지" 를 눌렀을 때만 abortCreateStream() 으로 정리.
+   * null = 진행 중인 stream 없음.
+   */
+  createAbortHandle: (() => void) | null;
 
   // 액션
   setScreen: (screen: AiScreen) => void;
@@ -409,6 +418,13 @@ interface AiSessionStore {
    *   '다시 만들기' 시 이 화면으로 돌아간다. 미지정 시 'create-input' 으로 폴백.
    */
   startCreate: (threadId: string, originScreen?: AiScreen) => void;
+  /**
+   * SSE 스트리밍 시작 — `startCreate` 직후 호출. 컴포넌트가 unmount 되어도
+   * 스트림이 끊기지 않도록 store 가 abort 핸들을 보유한다.
+   */
+  startCreateStream: (threadId: string, prompt: string) => void;
+  /** 사용자 명시 중지 — SSE abort + 상태를 'done' 으로 마무리. */
+  abortCreateStream: () => void;
   appendCreateChunk: (text: string) => void;
   addCreateStep: (step: CreateStepEvent) => void;
   startCreateToolStream: (toolName: string, field: string) => void;
@@ -483,6 +499,7 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
   createSuggestionIds: [],
   createOriginScreen: null,
   createError: '',
+  createAbortHandle: null,
 
   setScreen: (screen) => set({ screen, viewingHistoryId: null, viewingReviewHistoryId: null, viewingSpellcheckHistoryId: null }),
   setStoryline: (storyline) => set({ storyline }),
@@ -865,6 +882,162 @@ export const useAiSessionStore = create<AiSessionStore>((set, get) => ({
           : 'create-input'
       ),
     })),
+
+  startCreateStream: (threadId, prompt) => {
+    // 이전 stream 이 살아있으면 먼저 정리 — 중복 스트림 방지
+    const prev = get().createAbortHandle;
+    if (prev) prev();
+
+    const startedAt = Date.now();
+    let done = false;
+    let userAborted = false;
+    let controller: AbortController | null = null;
+
+    const trackSucceeded = (ids: string[]) => {
+      const origin = get().createOriginScreen;
+      const duration = durationBucket(Date.now() - startedAt);
+      if (origin === 'review-input') {
+        void analytics.track('ai_review_succeeded', {
+          doc_type: 'episode',
+          duration_bucket: duration,
+        });
+        return;
+      }
+      void analytics.track('ai_create_succeeded', {
+        duration_bucket: duration,
+        suggestion_count_bucket: countBucket(ids.length),
+      });
+    };
+    const trackFailed = (reasonCode: string) => {
+      const origin = get().createOriginScreen;
+      if (origin === 'review-input') {
+        void analytics.track('ai_review_failed', {
+          doc_type: 'episode',
+          reason_code: reasonCode,
+        });
+        return;
+      }
+      void analytics.track('ai_create_failed', {
+        reason_code: reasonCode,
+      });
+    };
+
+    const handle = () => {
+      userAborted = true;
+      controller?.abort();
+    };
+    set({ createAbortHandle: handle });
+
+    apiClient
+      .streamSSE(
+        `/agent/threads/${threadId}/messages/stream`,
+        { message: prompt },
+        (parsed: unknown) => {
+          const evt = parsed as {
+            type: string;
+            text?: string;
+            error_type?: string;
+            error_message?: string;
+            suggestion_ids?: string[];
+            tool_name?: string;
+            step_type?: string;
+            user_tokens?: number;
+            iterations?: number;
+            cum_user_tokens?: number;
+            seq?: number;
+            field?: string;
+            chunk?: string;
+            partial_json?: string;
+            block_index?: number;
+          };
+          const s = get();
+          if (evt.type === 'step') {
+            s.addCreateStep({
+              step_type: evt.step_type ?? 'unknown',
+              tool_name: evt.tool_name ?? null,
+              user_tokens: evt.user_tokens,
+              iterations: evt.iterations,
+              cum_user_tokens: evt.cum_user_tokens,
+              seq: evt.seq,
+            });
+            if (evt.step_type === 'tool_call' && evt.tool_name) {
+              s.addCreateTurnTool(evt.tool_name);
+              if (evt.tool_name === 'propose_episode_draft') {
+                s.markCreateTurnAsBody();
+              }
+            }
+          } else if (evt.type === 'assistant_start') {
+            s.startCreateTurn();
+          } else if (evt.type === 'assistant_end') {
+            // 다음 assistant_start 까지 동일 turn 유지
+          } else if (evt.type === 'text_delta' && evt.text) {
+            s.appendCreateTurnText(evt.text);
+            s.appendCreateChunk(evt.text);
+          } else if (evt.type === 'tool_input_start') {
+            s.startCreateToolStream(evt.tool_name ?? '', '');
+            if (evt.tool_name === 'propose_episode_draft') {
+              s.markCreateTurnAsBody();
+            }
+          } else if (evt.type === 'tool_input_delta' && evt.partial_json) {
+            const cur = get().createToolStream;
+            if (!cur || cur.toolName !== (evt.tool_name ?? '')) {
+              s.startCreateToolStream(evt.tool_name ?? '', '');
+            }
+            s.appendCreateToolPartial(evt.partial_json);
+          } else if (evt.type === 'tool_input_stop') {
+            // no-op
+          } else if (evt.type === 'done') {
+            done = true;
+            const ids = evt.suggestion_ids ?? [];
+            s.finishCreate(ids);
+            trackSucceeded(ids);
+            set({ createAbortHandle: null });
+            return true;
+          } else if (evt.type === 'error') {
+            done = true;
+            trackFailed(evt.error_type ?? 'error');
+            s.failCreate(`${evt.error_type ?? 'error'}: ${evt.error_message ?? ''}`);
+            set({ createAbortHandle: null });
+            return true;
+          }
+        },
+        () => {
+          if (done) return;
+          if (userAborted) return; // 사용자 명시 중지 — abortCreateStream 이 이미 처리
+          trackFailed('stream_disconnected');
+          get().failCreate('연결이 끊어졌습니다 — 다시 만들기로 재시도해주세요.');
+          set({ createAbortHandle: null });
+        },
+        (err) => {
+          if (userAborted) return;
+          const msg = err instanceof Error ? err.message : String(err);
+          trackFailed('stream_send_failed');
+          get().failCreate(`전송 실패: ${msg}`);
+          set({ createAbortHandle: null });
+        },
+      )
+      .then((c) => {
+        controller = c;
+        // controller 도착 전에 abort 가 요청됐다면 즉시 정리
+        if (userAborted) c.abort();
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        trackFailed('stream_connect_failed');
+        get().failCreate(`연결 실패: ${msg}`);
+        set({ createAbortHandle: null });
+      });
+  },
+
+  abortCreateStream: () => {
+    const handle = get().createAbortHandle;
+    if (handle) handle();
+    set({ createAbortHandle: null });
+    // apiClient 는 AbortError 를 swallow 하므로 onDone/onError 가 호출되지 않음 →
+    // 상태 전환을 여기서 직접 마무리. suggestion_ids 비어있어도 source_thread_id 매칭으로
+    // dock 이 부분 결과 카드를 복원 가능 (agent 가 도중에 propose 호출했었다면).
+    get().finishCreate([]);
+  },
 
   appendCreateChunk: (text) =>
     set((s) => ({ createLiveText: s.createLiveText + text })),

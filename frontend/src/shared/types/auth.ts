@@ -27,6 +27,26 @@ export interface LoginResult {
 }
 
 /**
+ * 탈퇴 처리된 계정으로 로그인 시도 시 main 프로세스가 반환하는 응답.
+ * Renderer 는 이를 받아 복구 다이얼로그를 노출하고, 사용자 동의 시
+ * {@link FolioAuthApi.restoreAfterWithdrawal} 로 진행한다.
+ */
+export interface WithdrawnLoginResult {
+  status: 'withdrawn';
+  /** 탈퇴 처리된 시각 (ISO-8601) */
+  deletedAt: string;
+  /** 30일 후 자동 영구삭제 예정 시각 (ISO-8601) */
+  restorableUntil: string;
+}
+
+/** Renderer 가 받는 로그인 결과 — 성공 / 탈퇴 / null(취소) union. */
+export type LoginOutcome = LoginResult | WithdrawnLoginResult;
+
+export function isWithdrawnResult(r: LoginOutcome | null): r is WithdrawnLoginResult {
+  return r !== null && (r as WithdrawnLoginResult).status === 'withdrawn';
+}
+
+/**
  * 백엔드 LoginResponse.EncryptionMaterial과 1:1 매핑.
  * Base64 문자열 그대로 전달되어, KEK 도출 직전 lifecycle.initKekFromLogin에서 디코딩한다.
  */
@@ -41,12 +61,27 @@ export interface LoginEncryptionMaterial {
  * Preload contextBridge로 renderer에 노출되는 API.
  */
 export interface FolioAuthApi {
-  loginWithGoogle: () => Promise<LoginResult>;
+  /**
+   * Google PKCE 로그인.
+   * 일반 성공 시 {@link LoginResult}, 탈퇴 처리된 계정이면 {@link WithdrawnLoginResult}.
+   */
+  loginWithGoogle: () => Promise<LoginOutcome>;
+  /**
+   * 탈퇴 처리된 계정의 복구 + 로그인.
+   * 새 Google PKCE 흐름을 시작해 백엔드 {@code /auth/restore} 를 호출한다.
+   * 복구 마감 기간 초과 시 throw.
+   */
+  restoreAfterWithdrawal: () => Promise<LoginResult>;
   logout: () => Promise<void>;
   tryRestore: () => Promise<LoginResult | null>;
   getAccessToken: () => Promise<string | null>;
   /** 게스트 UUID 반환. 없으면 생성 후 userData에 저장. */
   getGuestId: () => Promise<string>;
+  /**
+   * 게스트 UUID 를 새 UUID 로 로테이션. 회원 탈퇴 시 호출되어 탈퇴 후의 상태를
+   * "신규 게스트 모드 진입" 으로 격리한다. 반환값은 새 게스트 UUID.
+   */
+  rotateGuestId: () => Promise<string>;
   /**
    * 마지막으로 로그인했던 사용자의 writerId.
    * 로그아웃 / 앱 재시작 이후에도 로컬 데이터를 계속 표시하기 위한 참조값.
@@ -58,6 +93,11 @@ export interface FolioAuthApi {
    * resolveSyncDecision 성공 후 renderer가 호출.
    */
   commitLastKnownWriterId: (writerId: string) => Promise<void>;
+  /**
+   * 마지막 로그인 사용자 영속분을 제거한다.
+   * 회원 탈퇴 시 호출 — 이전 사용자 식별자 잔영 제거.
+   */
+  clearLastKnownWriterId: () => Promise<void>;
   /**
    * Main 프로세스의 proactive token refresh가 최종 실패(RT 거부/재시도 초과)했을 때
    * 알림을 받는다. 반환되는 함수를 호출해 구독을 해지한다.

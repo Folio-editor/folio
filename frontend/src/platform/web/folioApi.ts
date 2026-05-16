@@ -189,6 +189,11 @@ export function createWebFolioApi(): FolioApi {
         return new Promise<LoginResult>(() => {});
       },
 
+      restoreAfterWithdrawal: async () => {
+        // 웹은 본 PR 범위 밖 — Electron 우선 지원. 향후 별도 작업.
+        throw new Error('restoreAfterWithdrawal is not yet supported on web');
+      },
+
       tryRestore: async () => {
         // 1. URL에 auth_code가 있으면 1회 교환 (callback redirect 직후)
         const fresh = await exchangeAuthCodeIfPresent();
@@ -265,10 +270,18 @@ export function createWebFolioApi(): FolioApi {
         throw new Error('guest mode is not supported on web');
       },
 
+      rotateGuestId: async () => {
+        throw new Error('guest mode is not supported on web');
+      },
+
       getLastKnownWriterId: async () => localStorage.getItem(LAST_WRITER_ID_KEY),
 
       commitLastKnownWriterId: async (writerId: string) => {
         localStorage.setItem(LAST_WRITER_ID_KEY, writerId);
+      },
+
+      clearLastKnownWriterId: async () => {
+        localStorage.removeItem(LAST_WRITER_ID_KEY);
       },
 
       onSessionExpired: (callback) => {

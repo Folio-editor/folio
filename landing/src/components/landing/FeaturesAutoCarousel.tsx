@@ -72,7 +72,7 @@ export function FeaturesAutoCarousel() {
   };
 
   return (
-    <div className="carousel-wrap">
+    <div className="carousel-wrap" id="extra-features">
       <div className="carousel-head">
         <div>
           <div className="carousel-label sans">그 외 기능</div>

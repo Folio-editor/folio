@@ -5,7 +5,7 @@ import { generatePkce, generateState } from './pkce';
 import { getOrCreateDeviceId } from './deviceId';
 import { startOAuthServer } from './oauthServer';
 import { saveRefreshToken, getRefreshToken, clearRefreshToken } from './tokenStore';
-import { saveLastWriterId, getLastWriterId } from './lastWriterStore';
+import { saveLastWriterId, getLastWriterId, clearLastWriterId } from './lastWriterStore';
 import {
   createTokenRefreshScheduler,
   parseJwtExp,
@@ -88,13 +88,43 @@ export function commitLastKnownWriterId(writerId: string): void {
   saveLastWriterId(writerId);
 }
 
+/**
+ * 마지막 로그인 사용자 영속분을 제거한다.
+ * 회원 탈퇴 시 호출 — 이전 사용자 식별자 잔영 제거.
+ */
+export function clearLastKnownWriterId(): void {
+  clearLastWriterId();
+}
+
 interface LoginWithGoogleOptions {
   onCodeReceived?: () => void;
 }
 
 export async function loginWithGoogle(
   options: LoginWithGoogleOptions = {},
+): Promise<import('../../shared/types/auth').LoginOutcome> {
+  return runGoogleOAuth(options, '/auth/login/google');
+}
+
+/**
+ * 탈퇴 처리된 계정의 복구 + 로그인.
+ * 새 Google PKCE 흐름을 시작해 백엔드 {@code /auth/restore} 를 호출한다.
+ */
+export async function restoreAfterWithdrawal(
+  options: LoginWithGoogleOptions = {},
 ): Promise<LoginResult> {
+  const result = await runGoogleOAuth(options, '/auth/restore');
+  if ((result as { status?: string }).status === 'withdrawn') {
+    // 백엔드가 /auth/restore 에서 다시 withdrawn 을 돌려주는 경우는 없음 — 안전망.
+    throw new Error('unexpected withdrawn response on /auth/restore');
+  }
+  return result as LoginResult;
+}
+
+async function runGoogleOAuth(
+  options: LoginWithGoogleOptions,
+  endpointPath: '/auth/login/google' | '/auth/restore',
+): Promise<import('../../shared/types/auth').LoginOutcome> {
   const deviceId = getOrCreateDeviceId();
   const { codeVerifier, codeChallenge } = generatePkce();
   const state = generateState();
@@ -118,7 +148,7 @@ export async function loginWithGoogle(
     const code = await server.waitForCode(state);
     options.onCodeReceived?.();
 
-    const response = await fetch(`${apiUrl()}/auth/login/google`, {
+    const response = await fetch(`${apiUrl()}${endpointPath}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -128,6 +158,25 @@ export async function loginWithGoogle(
         deviceId,
       }),
     });
+
+    // 409 Conflict — 탈퇴 처리된 계정. 토큰 저장 없이 분기 반환.
+    if (response.status === 409) {
+      const body = (await response.json().catch(() => ({}))) as {
+        status?: string;
+        deletedAt?: string;
+        restorableUntil?: string;
+      };
+      console.log('[oauth] 409 withdrawn body:', body);
+      if (body.status === 'withdrawn' && body.deletedAt && body.restorableUntil) {
+        return {
+          status: 'withdrawn' as const,
+          deletedAt: body.deletedAt,
+          restorableUntil: body.restorableUntil,
+        };
+      }
+      // status 가 다른 409 — 알 수 없는 충돌
+      throw new Error('login conflict: unexpected 409 body');
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
