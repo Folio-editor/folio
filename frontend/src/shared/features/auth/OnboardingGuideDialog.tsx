@@ -4,7 +4,6 @@ import {
   ONBOARDING_EPISODES,
   ONBOARDING_CHARACTERS,
   ONBOARDING_FORESHADOW,
-  ONBOARDING_IDEAS,
 } from '../../constants/onboardingContent';
 import { WORLD_NOTE_TEMPLATES } from '../../constants/worldNoteTemplates';
 import {
@@ -61,11 +60,12 @@ export function OnboardingGuideDialog({
         aria-modal="true"
         aria-labelledby="onboarding-title"
         data-folio-dialog
-        className="relative w-full max-w-[720px] max-h-[calc(100vh-48px)] overflow-auto rounded-[12px] border border-border bg-popover px-8 pt-7 pb-6 text-popover-foreground"
+        className="relative w-full max-w-190 max-h-[calc(100vh-48px)] overflow-auto rounded-[12px] border border-border bg-popover px-10 pt-10 pb-8 text-popover-foreground"
         style={{
           boxShadow: MODAL_SHADOW,
           animation: RISE_ANIMATION,
         }}
+        aria-label="시작 흐름 선택"
       >
         <style>{`
           @keyframes folioDialogRise {
@@ -76,230 +76,181 @@ export function OnboardingGuideDialog({
           }
         `}</style>
 
-        {/* Header */}
-        <header className="text-center mb-[22px]">
+        {/* 헤더 — 환영 메시지 한 줄 */}
+        <header className="mb-8 text-center">
           <div
             aria-hidden
-            className="mx-auto mb-3 h-px w-10 bg-foreground opacity-45"
+            className="mx-auto mb-4 h-px w-10 bg-foreground opacity-40"
           />
-          <div className="mb-2.5 text-[10px] font-normal uppercase tracking-[0.4em] text-muted-foreground">
-            Chapter 0 · Welcome
-          </div>
           <h1
             id="onboarding-title"
-            className="m-0 text-[24px] font-semibold leading-[1.3] tracking-[-0.02em] text-popover-foreground"
+            className="m-0 text-[26px] font-medium leading-[1.3] tracking-[-0.015em] text-popover-foreground"
             style={{ fontFamily: FONT_SERIF }}
           >
-            이제, 첫 페이지를 펼칩니다.
+            환영합니다
           </h1>
+          <p className="mt-2 text-[12.5px] leading-[1.6] text-muted-foreground">
+            첫 페이지로 들어갈 두 갈래 중 하나를 골라주세요.
+          </p>
         </header>
 
-        {/* Cards */}
+        {/* 두 갈래 — 각각 카드 안에 정리. 카드 전체가 클릭 영역(button). */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* 01 — 가이드 */}
-          <button
-            type="button"
-            onClick={onAccept}
-            disabled={busy}
-            aria-label="예시와 함께 시작 (단축키 1)"
-            className={cn(
-              'group relative flex flex-col rounded-[8px] border border-border bg-card p-4 text-left transition-[border-color,box-shadow] duration-200',
-              'hover:border-foreground hover:shadow-[0_1px_0_var(--border)]',
-              busy && 'cursor-not-allowed opacity-60',
-            )}
-          >
-            <div className="mb-2 flex items-center text-[10px] tracking-[0.3em] text-muted-foreground">
-              <span>01</span>
-              <span className="relative ml-3 pl-3 text-destructive">
-                <span
-                  aria-hidden
-                  className="absolute left-0 top-1/2 h-px w-[7px] -translate-y-1/2 bg-destructive"
-                />
-                추천
-              </span>
-            </div>
-            <h2
-              className="m-0 mb-1 text-[17px] font-semibold leading-[1.3] tracking-[-0.015em] text-popover-foreground"
-              style={{ fontFamily: FONT_SERIF }}
-            >
-              예시와 함께 시작
-            </h2>
-            <p
-              className="m-0 mb-3 text-[12.5px] leading-[1.6] text-muted-foreground"
-              style={{ fontFamily: FONT_SERIF }}
-            >
-              샘플 작품과 탭별 안내를 따라 흐름을 익힙니다.
-            </p>
-
-            {/* Miniature preview */}
-            <div
-              aria-hidden
-              className="mb-3 rounded-[5px] border border-border/60 bg-popover px-3 pt-2.5 pb-2.5 text-[11.5px]"
-            >
-              <div className="mb-1.5 flex items-center gap-1.5 border-b border-border/60 pb-1.5">
-                <span
-                  className="text-[12px] font-bold text-popover-foreground"
-                  style={{ fontFamily: FONT_SERIF }}
-                >
-                  ▦
-                </span>
-                <span
-                  className="text-[12.5px] font-semibold text-popover-foreground"
+          <BranchCard
+            label="갈래 A"
+            heading="예시와 함께 시작"
+            description={
+              <>
+                가이드 작품 <span className="font-medium text-popover-foreground">「{ONBOARDING_WORK.title}」</span>이
+                미리 채워져 있습니다. 인물·세계관·플롯·{ONBOARDING_EPISODES.length}화 원고가 모두 들어 있어 도구를 빠르게 둘러보기에 좋습니다.
+              </>
+            }
+            preview={
+              <div className="rounded-[6px] border border-border bg-background/60 px-4 py-3">
+                <p
+                  className="m-0 mb-1 text-[14px] font-semibold leading-[1.4] text-popover-foreground"
                   style={{ fontFamily: FONT_SERIF }}
                 >
                   {ONBOARDING_WORK.title}
-                </span>
+                </p>
+                <p className="m-0 text-[11.5px] leading-[1.6] text-muted-foreground">
+                  {ONBOARDING_EPISODES.length}화 분량 · 인물 {ONBOARDING_CHARACTERS.length} ·
+                  세계관 {WORLD_NOTE_TEMPLATES.length} · 복선 {ONBOARDING_FORESHADOW.length}
+                </p>
+                <div className="mt-3 border-t border-border/60 pt-2 text-[11px] leading-[1.6] text-muted-foreground/80">
+                  예시 작품 · 자유롭게 수정 · 삭제 가능
+                </div>
               </div>
+            }
+            scenarios={[
+              '도구를 먼저 둘러보고 싶을 때',
+              '설정·플롯이 어떻게 연결되는지 보고 싶을 때',
+            ]}
+            onClick={onAccept}
+            busy={busy}
+            busyLabel="생성 중…"
+            ariaLabel="예시와 함께 시작 (단축키 1)"
+          />
 
-              <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground">
-                회차 {ONBOARDING_EPISODES.length}
-              </div>
-              <ul className="m-0 list-none p-0">
-                {ONBOARDING_EPISODES.slice(0, 3).map((e) => (
-                  <li
-                    key={e.title}
-                    className="relative truncate pl-2.5 text-[11.5px] leading-[1.55] text-popover-foreground"
-                  >
-                    <span className="absolute left-0 text-muted-foreground">·</span>
-                    {e.title}
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-dashed border-border/60 pt-1.5 text-[10.5px] text-muted-foreground">
-                <span>캐릭터 {ONBOARDING_CHARACTERS.length}</span>
-                <span>세계관 {WORLD_NOTE_TEMPLATES.length}</span>
-                <span>복선 {ONBOARDING_FORESHADOW.length}</span>
-                <span>아이디어 {ONBOARDING_IDEAS.length}</span>
-              </div>
-            </div>
-
-            <ul className="m-0 mb-3 list-none p-0">
-              <FeatureLine>샘플 작품이 바로 생성됩니다</FeatureLine>
-              <FeatureLine>탭별 도움말이 차례로 안내됩니다</FeatureLine>
-            </ul>
-
-            <div className="mt-auto flex items-center justify-between gap-2.5 border-t border-border/60 pt-2.5">
-              <span className="text-[11px] leading-[1.4] text-muted-foreground">
-                처음 써 보거나 흐름이 궁금한 분
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-destructive">
-                {busy ? (
-                  <>
-                    <span
-                      className="inline-block h-3 w-3 animate-spin rounded-full border border-destructive border-t-transparent"
-                      aria-hidden
-                    />
-                    생성 중…
-                  </>
-                ) : (
-                  <>
-                    시작
-                    <span
-                      aria-hidden
-                      className="inline-block transition-transform duration-200 group-hover:translate-x-[3px]"
-                    >
-                      →
-                    </span>
-                  </>
-                )}
-              </span>
-            </div>
-          </button>
-
-          {/* 02 — 처음부터 */}
-          <button
-            type="button"
-            onClick={onSkip}
-            disabled={busy}
-            aria-label="처음부터 시작 (단축키 2)"
-            className={cn(
-              'group relative flex flex-col rounded-[8px] border border-border bg-card p-4 text-left transition-[border-color,box-shadow] duration-200',
-              'hover:border-foreground hover:shadow-[0_1px_0_var(--border)]',
-              busy && 'cursor-not-allowed opacity-60',
-            )}
-          >
-            <div className="mb-2 text-[10px] tracking-[0.3em] text-muted-foreground">
-              02
-            </div>
-            <h2
-              className="m-0 mb-1 text-[17px] font-semibold leading-[1.3] tracking-[-0.015em] text-popover-foreground"
-              style={{ fontFamily: FONT_SERIF }}
-            >
-              처음부터 시작
-            </h2>
-            <p
-              className="m-0 mb-3 text-[12.5px] leading-[1.6] text-muted-foreground"
-              style={{ fontFamily: FONT_SERIF }}
-            >
-              빈 작업실에서 자기 호흡대로 첫 줄을 씁니다.
-            </p>
-
-            <div
-              aria-hidden
-              className="mb-3 flex h-[124px] items-center justify-center rounded-[5px] border border-dashed border-border bg-popover"
-            >
+          <BranchCard
+            label="갈래 B"
+            heading="처음부터 시작"
+            description="빈 작품을 만들고 제목 한 줄에서 출발합니다. 인물도 세계관도 쌓이는 대로 채우면 됩니다."
+            preview={
               <div
-                className="text-center text-[12px] italic leading-[1.6] text-muted-foreground"
-                style={{ fontFamily: FONT_SERIF }}
+                aria-hidden
+                className="flex h-30 items-center justify-center rounded-[6px] border border-dashed border-border"
               >
-                <span
-                  className="block text-[22px] font-light not-italic text-muted-foreground/50 mb-0.5"
+                <div
+                  className="text-center text-[13px] leading-normal text-muted-foreground"
                   style={{ fontFamily: FONT_SERIF }}
                 >
-                  ＋
-                </span>
-                새 작품
-                <br />첫 페이지
+                  <span className="block text-[24px] font-light text-muted-foreground/60 mb-1">＋</span>
+                  새 작품
+                </div>
               </div>
-            </div>
-
-            <ul className="m-0 mb-3 list-none p-0">
-              <FeatureLine>빈 작업실에서 바로 시작합니다</FeatureLine>
-              <FeatureLine>설정 → 도움말에서 가이드를 다시 받을 수 있습니다</FeatureLine>
-            </ul>
-
-            <div className="mt-auto flex items-center justify-between gap-2.5 border-t border-border/60 pt-2.5">
-              <span className="text-[11px] leading-[1.4] text-muted-foreground">
-                바로 집필하고 싶은 분
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-popover-foreground">
-                시작
-                <span
-                  aria-hidden
-                  className="inline-block transition-transform duration-200 group-hover:translate-x-[3px]"
-                >
-                  →
-                </span>
-              </span>
-            </div>
-          </button>
+            }
+            scenarios={[
+              '이미 머릿속에 작품이 있을 때',
+              '나만의 구조로 비워두고 싶을 때',
+            ]}
+            onClick={onSkip}
+            busy={busy}
+            busyLabel="이동 중…"
+            ariaLabel="처음부터 시작 (단축키 2 / Esc)"
+          />
         </div>
-
-        {/* Footer keyboard hint */}
-        <footer className="mt-[18px] text-center text-[11px] text-muted-foreground">
-          <Kbd>1</Kbd> 가이드 · <Kbd>2</Kbd> 처음부터 · <Kbd>Esc</Kbd> 닫기
-        </footer>
       </section>
     </div>
   );
 }
 
-function FeatureLine({ children }: { children: ReactNode }) {
-  return (
-    <li className="relative pl-3.5 text-[11.5px] leading-[1.7] text-popover-foreground">
-      <span aria-hidden className="absolute left-0 text-muted-foreground/50">
-        —
-      </span>
-      {children}
-    </li>
-  );
+interface BranchCardProps {
+  label: string;
+  heading: string;
+  description: ReactNode;
+  preview: ReactNode;
+  scenarios: string[];
+  onClick: () => void;
+  busy: boolean;
+  busyLabel: string;
+  ariaLabel: string;
 }
 
-function Kbd({ children }: { children: ReactNode }) {
+function BranchCard({
+  label,
+  heading,
+  description,
+  preview,
+  scenarios,
+  onClick,
+  busy,
+  busyLabel,
+  ariaLabel,
+}: BranchCardProps) {
   return (
-    <kbd className="mx-0.5 inline-block rounded-[3px] border border-border bg-card px-1.5 py-0 text-[10px] font-normal text-popover-foreground">
-      {children}
-    </kbd>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      aria-label={ariaLabel}
+      className={cn(
+        'group flex w-full flex-col gap-4 rounded-[10px] border border-border bg-card p-6 text-left transition-[border-color,box-shadow] duration-200',
+        'hover:border-foreground/60 hover:shadow-[0_1px_0_var(--border)]',
+        busy && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      {/* 갈래 라벨 + 가로선 */}
+      <div className="flex items-center gap-3">
+        <span className="text-[10.5px] tracking-[0.22em] text-muted-foreground">
+          {label}
+        </span>
+        <span aria-hidden className="h-px flex-1 bg-border" />
+      </div>
+
+      {/* 헤딩 */}
+      <h2
+        className="m-0 text-[20px] font-medium leading-[1.3] tracking-[-0.01em] text-popover-foreground"
+        style={{ fontFamily: FONT_SERIF }}
+      >
+        {heading}
+      </h2>
+
+      {/* 설명 */}
+      <p
+        className="m-0 text-[12.5px] leading-[1.7] text-muted-foreground"
+        style={{ fontFamily: FONT_SERIF }}
+      >
+        {description}
+      </p>
+
+      {/* 작품 미리보기 */}
+      {preview}
+
+      {/* 시나리오 bullet */}
+      <ul className="m-0 mt-auto flex list-none flex-col gap-1.5 border-t border-border/60 p-0 pt-4">
+        {scenarios.map((s) => (
+          <li
+            key={s}
+            className="relative pl-3.5 text-[12px] leading-[1.55] text-popover-foreground/80"
+          >
+            <span aria-hidden className="absolute left-0 top-0 text-muted-foreground/60">
+              ·
+            </span>
+            {s}
+          </li>
+        ))}
+      </ul>
+
+      {busy && (
+        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span
+            aria-hidden
+            className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent"
+          />
+          {busyLabel}
+        </span>
+      )}
+    </button>
   );
 }

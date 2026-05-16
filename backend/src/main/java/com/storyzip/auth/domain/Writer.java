@@ -97,6 +97,11 @@ public class Writer {
         this.deletedAt = LocalDateTime.now();
     }
 
+    /** 30일 내 복구 시 호출 — deleted_at 초기화. */
+    public void restoreFromWithdrawal() {
+        this.deletedAt = null;
+    }
+
     public boolean isDeleted() {
         return this.deletedAt != null;
     }

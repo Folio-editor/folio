@@ -33,6 +33,15 @@ export type AnalyticsEventMap = {
   login_failed: {
     reason_code: string;
   };
+  account_withdrawn: {
+    platform: 'electron' | 'web';
+  };
+  account_restored: {
+    platform: 'electron' | 'web';
+  };
+  account_restore_failed: {
+    reason_code: string;
+  };
   desktop_download_clicked: {
     surface: string;
     os: string;

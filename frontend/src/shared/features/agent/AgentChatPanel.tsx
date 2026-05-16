@@ -46,6 +46,7 @@ import { analytics, charCountBucket, countBucket, durationBucket } from '../../l
 import { useAgentChatStore } from '../../stores/agentChatStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { useResizableTopHandle } from '../../hooks/useResizableTopHandle';
 
 const EMPTY_THREADS: AgentThreadSummary[] = [];
 
@@ -232,8 +233,9 @@ export function AgentChatPanel({ workId }: Props) {
     if (suggestionIds.length === 0) return;
     setError(null);
     try {
-      // 방금 만든 제안들 — 'pending' 상태부터 fetch (이미 처리된 것도 보이게 하려면 status 생략)
-      const all = await listSuggestions();
+      // 방금 만든 제안들 — 'pending' 상태부터 fetch (이미 처리된 것도 보이게 하려면 status 생략).
+      // workId 필터링으로 다른 작품의 제안이 매칭되지 않도록 격리.
+      const all = await listSuggestions(undefined, undefined, workId);
       const map = new Map(all.map((s) => [s.id, s]));
       const matched = suggestionIds
         .map((id) => map.get(id))
@@ -962,6 +964,10 @@ function ReviewOverlay({
     setCollapsed(false);
   }, [current.id]);
 
+  // 상단 드래그 핸들로 본문 높이 조절 — 초기 26vh.
+  const { height: bodyHeight, onPointerDown: onResizeHandlePointerDown } =
+    useResizableTopHandle();
+
   // spelling_batch 의 체크 상태를 부모에서 직접 관리 — 외부 footer 액션 버튼이 같은 state 사용.
   // 카드 전환 시 (idx 변경) 새 spelling_batch 의 fixes 길이만큼 모두 체크된 상태로 리셋.
   const batchFixCount = useMemo(() => {
@@ -1004,6 +1010,16 @@ function ReviewOverlay({
 
   return (
     <div className="flex shrink-0 flex-col border-t border-primary/30 bg-card shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+      {/* 상단 리사이즈 핸들 — 위/아래 드래그로 본문 영역 높이 조절 */}
+      <div
+        onPointerDown={onResizeHandlePointerDown}
+        className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center bg-primary/5 hover:bg-primary/20"
+        title="드래그해서 높이 조절"
+        aria-label="제안 카드 높이 조절"
+        role="separator"
+      >
+        <div className="h-0.5 w-10 rounded-full bg-border group-hover:bg-primary/60" />
+      </div>
       {/* 헤더 — 카운터·entity 칩·닫기 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 py-1.5">
         <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
@@ -1044,7 +1060,10 @@ function ReviewOverlay({
           spelling_batch 는 controlledChecked 로 체크 상태를 부모와 공유 → footer 의 [적용 (N)] 버튼이 같은 selection 사용.
           collapsed 면 본문 영역 숨김 — 헤더 + 푸터 액션 버튼만 표시되어 한 줄에 가까운 컴팩트 UI. */}
       {!collapsed && (
-        <div className="max-h-[26vh] min-h-0 overflow-y-auto px-3 py-1.5">
+        <div
+          style={{ height: bodyHeight }}
+          className="min-h-0 overflow-y-auto px-3 py-1.5"
+        >
           <SuggestionBodyPreview
             s={current}
             workId={current.work_id}

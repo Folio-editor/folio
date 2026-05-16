@@ -19,7 +19,6 @@ import { useAiContextPayload } from '../../../../hooks/useAiContextPayload';
 import { useNetworkStatus } from '../../../../hooks/useNetworkStatus';
 import { AgentChatPanel } from '../../../../features/agent/AgentChatPanel';
 import { describeAiError, INSUFFICIENT_CREDITS_PREFIX } from '../errors';
-import { setPendingFirstPrompt } from './pendingPrompt';
 import { ReviewInputScreen } from './Review';
 import { SpellcheckInputScreen, SpellcheckResultScreen } from './Spellcheck';
 import { SummarizeInputScreen, SummarizeResultScreen } from './Summarize';
@@ -149,13 +148,14 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
   // 결과는 propose_review_issue + spelling_batch 큐로 적재 → create-streaming 화면이 인라인 검토.
   const reviewFocusPrompt = useAiSessionStore((s) => s.reviewFocusPrompt);
   const startCreateAction = useAiSessionStore((s) => s.startCreate);
+  const startCreateStream = useAiSessionStore((s) => s.startCreateStream);
   const failCreateAction = useAiSessionStore((s) => s.failCreate);
   const createState = useAiSessionStore((s) => s.createState);
 
   const handleReview = useCallback(async () => {
     if (!selectedWorkId || !pinnedEpisode) return;
-    // ★ 더블 클릭 / 동시 호출 가드 — 진행 중 stream 이 있으면 무시. 없으면 두 번째 호출이 첫 번째
-    //   thread 의 setPendingFirstPrompt 를 덮어써 첫 SSE 가 prompt 없이 무한 대기.
+    // ★ 더블 클릭 / 동시 호출 가드 — 진행 중 stream 이 있으면 무시.
+    //   store 의 startCreateStream 도 내부적으로 이전 stream 을 abort 하지만, UX 상 명시 가드 유지.
     if (createState === 'streaming') return;
     // 검수 prompt 자동 조립 — 단일 회차 + 중점 사항.
     // ★ episode_id (UUID) 만 식별자로 명시. sort_order 는 작가 임의 정렬값이라 절대 노출 X.
@@ -180,10 +180,10 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
       );
       const tid = r?.thread_id;
       if (!tid) throw new Error('thread_id 누락');
-      // create-streaming 화면이 takePendingFirstPrompt 로 SSE 시작 — 같은 인프라 재사용.
       // origin='review-input' 명시 — '다시 만들기' / breadcrumb 가 검수 화면으로 정확히 라우팅.
+      // SSE 는 store 가 보유 — CreateStreamingScreen unmount 와 무관하게 스트림 유지.
       startCreateAction(tid, 'review-input');
-      setPendingFirstPrompt(tid, fullPrompt);
+      startCreateStream(tid, fullPrompt);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       failCreateAction(`검수 시작 실패: ${msg}`);
@@ -198,7 +198,7 @@ export function AiTabContent({ selectedWorkId, mainSection, mainItemId }: AiTabC
         reason_code: e instanceof ApiError ? String(e.status) : 'unknown',
       });
     }
-  }, [selectedWorkId, pinnedEpisode, reviewFocusPrompt, startCreateAction, failCreateAction, createState]);
+  }, [selectedWorkId, pinnedEpisode, reviewFocusPrompt, startCreateAction, startCreateStream, failCreateAction, createState]);
 
   const handleSpellcheck = useCallback(async (mode: 'episode' | 'selection' = 'episode') => {
     if (!pinnedEpisode) return;

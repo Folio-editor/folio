@@ -1,6 +1,23 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+
+/**
+ * 현재 매치 위치로 뷰포트를 스크롤한다.
+ * Why: nextMatch/prevMatch 시 데코레이션만 갱신되면 사용자가 매치를 시각적으로 따라갈 수 없다.
+ * 입력 박스에 포커스가 있는 상태에서 ProseMirror selection만 옮기므로 DOM focus는 유지된다.
+ */
+function scrollToCurrentMatch(
+  tr: import('@tiptap/pm/state').Transaction,
+  storage: FindReplaceStorage,
+) {
+  const { results, currentIndex } = storage;
+  if (currentIndex < 0 || currentIndex >= results.length) return;
+  const { from, to } = results[currentIndex];
+  const docSize = tr.doc.content.size;
+  if (from > docSize || to > docSize) return;
+  tr.setSelection(TextSelection.create(tr.doc, from, to)).scrollIntoView();
+}
 
 export interface FindReplaceStorage {
   searchTerm: string;
@@ -82,6 +99,7 @@ const FindReplace = Extension.create<Record<string, never>, FindReplaceStorage>(
             if (dispatch) {
               // Force a transaction to trigger plugin decoration rebuild
               tr.setMeta(findReplacePluginKey, true);
+              scrollToCurrentMatch(tr, this.storage);
               dispatch(tr);
             }
 
@@ -106,6 +124,7 @@ const FindReplace = Extension.create<Record<string, never>, FindReplaceStorage>(
 
             if (dispatch) {
               tr.setMeta(findReplacePluginKey, true);
+              scrollToCurrentMatch(tr, this.storage);
               dispatch(tr);
             }
 
@@ -124,6 +143,7 @@ const FindReplace = Extension.create<Record<string, never>, FindReplaceStorage>(
 
             if (dispatch) {
               tr.setMeta(findReplacePluginKey, true);
+              scrollToCurrentMatch(tr, this.storage);
               dispatch(tr);
             }
 

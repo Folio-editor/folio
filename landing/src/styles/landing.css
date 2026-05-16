@@ -31,6 +31,163 @@ html {
 .folio-landing .sans {
   font-family: var(--sans);
 }
+.folio-landing [id] {
+  scroll-margin-top: calc(var(--nav-h) + 24px);
+}
+
+.folio-landing .scroll-to-top {
+  position: fixed;
+  right: 28px;
+  bottom: 32px;
+  z-index: 90;
+  width: 46px;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(17, 17, 17, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(17, 17, 17, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.folio-landing .scroll-to-top.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.folio-landing .scroll-to-top:hover {
+  background: #ffffff;
+  border-color: rgba(17, 17, 17, 0.38);
+  transform: translateY(-2px);
+}
+.folio-landing .scroll-to-top:active {
+  transform: translateY(0);
+}
+.folio-landing .scroll-to-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.folio-landing .bookmark-nav {
+  position: fixed;
+  right: 28px;
+  top: 50%;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+.folio-landing .bookmark-nav-item {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+  padding: 7px 0;
+  color: rgba(17, 17, 17, 0.38);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.folio-landing .bookmark-nav-item::before {
+  content: '';
+  grid-column: 1 / -1;
+  width: 22px;
+  height: 1px;
+  margin-left: 2px;
+  background: rgba(17, 17, 17, 0.18);
+  transition:
+    width 0.18s ease,
+    background 0.18s ease;
+}
+.folio-landing .bookmark-nav-item:hover,
+.folio-landing .bookmark-nav-item.active {
+  color: var(--ink);
+}
+.folio-landing .bookmark-nav-item:hover {
+  transform: translateX(-2px);
+}
+.folio-landing .bookmark-nav-item.active::before {
+  width: 54px;
+  background: var(--ink);
+}
+.folio-landing .bookmark-nav-num {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+.folio-landing .bookmark-nav-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.folio-landing .bookmark-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.folio-landing .bookmark-nav-top {
+  width: 34px;
+  height: 34px;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(17, 17, 17, 0.55);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(17, 17, 17, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(17, 17, 17, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+.folio-landing .bookmark-nav-top:hover {
+  color: var(--ink);
+  background: #ffffff;
+  border-color: rgba(17, 17, 17, 0.38);
+  transform: translateY(-2px);
+}
+.folio-landing .bookmark-nav-top:active {
+  transform: translateY(0);
+}
+.folio-landing .bookmark-nav-top:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.folio-landing .guide-bookmark-nav {
+  gap: 2px;
+}
+.folio-landing .guide-bookmark-nav .bookmark-nav-item {
+  min-width: 102px;
+  padding: 5px 0;
+}
+
+@media (max-width: 1180px) {
+  .folio-landing .bookmark-nav {
+    display: none;
+  }
+}
 
 /* ── Top Navigation ───────────────────────────────────── */
 .folio-landing .nav {
@@ -429,12 +586,96 @@ html {
   height: auto;
   border-radius: 8px;
 }
+.folio-landing .sync-preview-frame {
+  overflow: visible;
+}
+.folio-landing .sync-status-chip {
+  position: absolute;
+  z-index: 2;
+  width: min(38vw, 330px);
+  padding: 12px 14px 11px;
+  font-family: var(--sans);
+  color: #5f6672;
+  background: #ffffff;
+  border: 1px solid rgba(17, 17, 17, 0.06);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(17, 17, 17, 0.04),
+    0 12px 28px -8px rgba(17, 17, 17, 0.12),
+    0 32px 64px -24px rgba(17, 17, 17, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.folio-landing .sync-status-chip-pending {
+  left: -5%;
+  bottom: -7%;
+}
+.folio-landing .sync-status-chip-online {
+  right: -8%;
+  top: -5%;
+}
+.folio-landing .sync-status-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.folio-landing .sync-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.folio-landing .sync-status-dot.blue,
+.folio-landing .sync-status-fill.blue {
+  background: #4f79bd;
+}
+.folio-landing .sync-status-dot.green,
+.folio-landing .sync-status-fill.green {
+  background: #4f8650;
+}
+.folio-landing .sync-status-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.04);
+}
+.folio-landing .sync-status-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+.folio-landing .sync-status-chip-pending .sync-status-fill {
+  width: 72%;
+}
+.folio-landing .sync-status-chip-online .sync-status-fill {
+  width: 0;
+}
 @media (max-width: 900px) {
   .folio-landing .mock-frame {
     width: 100%;
     margin-left: 0;
     padding: 10px;
     border-radius: 12px;
+  }
+  .folio-landing .sync-status-chip {
+    width: min(70vw, 250px);
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .folio-landing .sync-status-chip-pending {
+    left: -8px;
+    bottom: -18px;
+  }
+  .folio-landing .sync-status-chip-online {
+    right: -8px;
+    top: -14px;
+  }
+  .folio-landing .sync-status-label {
+    font-size: 12px;
   }
 }
 .folio-landing .tool-text {
@@ -1168,6 +1409,13 @@ html {
 
 /* ── Mobile ≤720px ────────────────────────────────────── */
 @media (max-width: 720px) {
+  .folio-landing .scroll-to-top {
+    right: 18px;
+    bottom: 22px;
+    width: 42px;
+    height: 42px;
+  }
+
   .folio-landing .nav-inner {
     padding: 0 1.25rem;
   }

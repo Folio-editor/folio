@@ -4,7 +4,7 @@
 DB INSERT 까지 한 번에 처리. 카드 모드 사용자가 SuggestionInbox 또는 카드 내부에서 [적용]/
 [거절] 을 선택할 수 있도록 하는 통합 흐름의 백엔드 진입점.
 
-비용: Haiku 1회 (~5 크레딧). 큐 적재 (DB INSERT) 는 LLM 비용 없음.
+비용: Sonnet 1회 (~25 크레딧). 큐 적재 (DB INSERT) 는 LLM 비용 없음.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ async def quick_spellcheck(
       - suggestion_id : 적재된 extraction_suggestion 행 id (issues 가 0건이면 None)
       - suggestion_error : 적재 실패 시 사유 (정상 시 누락)
     """
-    # 1) 기존 spellcheck 흐름 그대로 — Haiku 호출 + whitelist 필터 + 정규화
+    # 1) 기존 spellcheck 흐름 그대로 — Sonnet 호출 + whitelist 필터 + 정규화
     numbered_content = extract_numbered_text(req.content)
     whitelist = collect_spellcheck_whitelist(req.context)
     whitelist_block = "\n".join(f"- {name}" for name in sorted(whitelist))
@@ -81,8 +81,11 @@ async def quick_spellcheck(
         system=SPELLCHECK_SYSTEM_PROMPT,
         user=user_prompt,
         schema_hint=SPELLCHECK_SCHEMA_HINT,
-        model_override=settings.claude_haiku_model,
+        model_override=settings.claude_sonnet_model,
         max_tokens=3000,
+        # 맞춤법은 규정 기준 정답이 명확한 영역 — greedy 샘플링으로 매번 동일 결과 보장.
+        # Anthropic 은 seed 미지원이라 100% 재현은 아니지만 사용자 체감 99%+ 일관.
+        temperature=0,
     )
 
     normalized = _normalize_spellcheck_result(raw)
