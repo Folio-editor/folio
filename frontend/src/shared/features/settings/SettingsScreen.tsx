@@ -41,8 +41,9 @@ const FONT_SIZE_OPTIONS = [14, 15, 16, 17, 18, 20, 22];
 
 interface SettingsScreenProps {
   settingsItemId: SettingsItemId;
-  /** AboutSettings 의 "튜토리얼 가이드 다시 시작" 후 부모로 새 workId 전달 */
-  onTutorialReset?: (newWorkId: string) => void;
+  /** AboutSettings 의 "튜토리얼 가이드 다시 시작" 후 부모로 알림.
+   *  새 가이드 워크스페이스를 즉시 만들지 않고 home 진입 + 설정 닫기 → OnboardingGuideDialog 자동 노출. */
+  onTutorialReset?: () => void;
 }
 
 export function SettingsScreen({ settingsItemId, onTutorialReset }: SettingsScreenProps) {

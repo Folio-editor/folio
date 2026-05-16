@@ -344,9 +344,11 @@ export function AuthenticatedApp() {
   }, []);
 
   // 설정 → "튜토리얼 가이드 다시 시작" 후 호출 — 새 시드 작품으로 즉시 home 진입 + 설정 닫기
-  // home 탭 도움말은 SecondarySidebar 의 자동 노출 useEffect 가 키 미존재로 1회 노출
-  const handleTutorialReset = useCallback((newWorkId: string) => {
-    setSelectedWorkId(newWorkId);
+  // home 탭 도움말은 SecondarySidebar 의 자동 노출 useEffect 가 키 미존재로 1회 노출.
+  // 새 가이드 워크스페이스는 여기서 만들지 않는다 — 작품 선택 해제 + home 진입만 하면
+  // 본 컴포넌트의 onboarding useEffect 가 1초 후 OnboardingGuideDialog 를 자동 노출.
+  const handleTutorialReset = useCallback(() => {
+    setSelectedWorkId(null);
     setActivity('home');
     setSettingsMode(false);
   }, []);

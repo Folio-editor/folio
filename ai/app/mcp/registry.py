@@ -104,8 +104,10 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_plots",
         "description": (
-            "peek — 플롯 제목 배열 + 매핑. 반환: "
-            "{titles, id_map, status_map, parent_map}. 본문은 get_plot."
+            "peek — 플롯 정식 제목 배열 + 매핑. 반환: "
+            "{titles, id_map, status_map, parent_map}. 사용자가 약칭(예: '1막')으로 "
+            "묻더라도 후속 get_plot 은 본 도구가 반환한 정식 제목(예: '챕터 1 — 낯선 만남')으로 호출. "
+            "본문은 get_plot."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
@@ -115,7 +117,13 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string"},
+                "title": {
+                    "type": "string",
+                    "description": (
+                        "list_plots 의 titles 배열에 있는 정식 제목 그대로. "
+                        "사용자 발화 약칭은 list 의 풀 제목으로 먼저 매핑한 뒤 호출."
+                    ),
+                },
                 "plot_id": {"type": "string"},
             },
             "required": [],
@@ -124,8 +132,9 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_characters",
         "description": (
-            "peek — 인물 이름 배열 + drill 용 id_map. 반환: {names, id_map}. "
-            "성별·나이·외형·성격 등 상세는 get_character drill."
+            "peek — 인물 정식 이름 배열 + drill 용 id_map. 반환: {names, id_map}. "
+            "사용자가 약칭(예: '앤')으로 묻더라도 후속 get_character 는 본 도구가 반환한 "
+            "정식 이름(예: '앤 셜리')으로 호출. 상세(성별·나이·외형·성격)는 get_character drill."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
@@ -134,15 +143,26 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
         "description": "drill — 단건 인물 풀 프로필 (외모·성격·MBTI·custom_fields).",
         "input_schema": {
             "type": "object",
-            "properties": {"name": {"type": "string"}},
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "list_characters 의 names 배열에 있는 정식 이름 그대로. "
+                        "사용자 발화 약칭(예: '앤')은 list 의 풀네임(예: '앤 셜리')으로 "
+                        "먼저 매핑한 뒤 호출."
+                    ),
+                },
+            },
             "required": ["name"],
         },
     },
     {
         "name": "list_world_notes",
         "description": (
-            "peek — 세계관 노트 이름 배열 + 매핑. 반환: {names, id_map, parent_map}. "
-            "parent_map None = root. 본문은 get_world_note."
+            "peek — 세계관 노트 정식 이름 배열 + 매핑. 반환: {names, id_map, parent_map}. "
+            "parent_map None = root. 사용자가 약칭(예: '애번리')으로 묻더라도 후속 "
+            "get_world_note 는 본 도구가 반환한 정식 이름(예: '애번리 마을')으로 호출. "
+            "본문은 get_world_note."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
@@ -151,7 +171,16 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
         "description": "drill — 단건 세계관 노트 본문.",
         "input_schema": {
             "type": "object",
-            "properties": {"name": {"type": "string"}},
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "list_world_notes 의 names 배열에 있는 정식 이름 그대로. "
+                        "사용자 발화 약칭(예: '애번리')은 list 의 풀네임(예: '애번리 마을')으로 "
+                        "먼저 매핑한 뒤 호출."
+                    ),
+                },
+            },
             "required": ["name"],
         },
     },
@@ -709,7 +738,11 @@ _BASE_MCP_TOOLS: list[dict[str, Any]] = [
                 "severity": {
                     "type": "string",
                     "enum": ["critical", "warning", "info"],
-                    "description": "critical: 모순/오류 / warning: 일관성 우려 / info: 제안",
+                    "description": (
+                        "critical: 작가 노트/직전 회차와 명백히 충돌 — 본문 라인 + 도구 결과 둘 다 충돌 명시. "
+                        "warning: 일관성 우려 — 한쪽 근거만 있거나 작가 의도 가능성 존재. "
+                        "info: 단순 제안. 헷갈리면 한 단계 낮춰라."
+                    ),
                 },
                 "issue_type": {
                     "type": "string",
