@@ -3,7 +3,7 @@ import { usePowerSync } from '@powersync/react';
 import { useLocalWrite } from './useLocalWrite';
 import {
   ONBOARDING_WORK,
-  ONBOARDING_PLAN_NOTE,
+  ONBOARDING_PLAN_NOTES,
   ONBOARDING_PLAN_META,
   ONBOARDING_CHARACTERS,
   ONBOARDING_CHARACTER_COMMON_NOTE,
@@ -17,8 +17,9 @@ import {
 /**
  * 신규 가입자가 OnboardingGuideDialog 에서 "샘플 작품 만들기" 를 눌렀을 때 호출되는 시드 훅.
  *
- * 작품 1 + 기획 노트 1 + 세계관 트리(부모×N + 자식×N) + 캐릭터 3(intro 단일 + 공통노트 + 개별노트)
- * + 플롯 막 2(각 막당 자식 회차 3) + 복선 2(+ foreshadow_link) + 회차 3 + 아이디어 3 일괄 INSERT.
+ * 작품 1 + 기획 노트 N(작품 기획안 + 주제·모티프 노트) + 세계관 트리(부모×N + 자식×N)
+ * + 캐릭터 3(intro 단일 + 공통노트 + 개별노트) + 플롯 막 2(각 막당 자식 회차 3~5)
+ * + 복선 2(+ foreshadow_link) + 회차 5 + 아이디어 3 일괄 INSERT.
  *
  * ※ 외형/성격 노트는 자동 생성 X — ensureCharacterNotes 가 intro 1개만 만들고,
  *   인물 묘사는 모두 introContent 에 합쳐서 작성. (2026-05-09 변경)
@@ -45,14 +46,13 @@ export function useOnboardingSeed() {
       moods: JSON.stringify(ONBOARDING_PLAN_META.moods),
     });
 
-    // 2. 기획 노트 1개 — plan 테이블은 ERD 정리 2단계로 폐기됨.
+    // 2. 기획 노트 N개 — plan 테이블은 ERD 정리 2단계로 폐기됨.
     //    plan_note 가 work_id 를 직접 FK 로 가지므로 별도 부모 행 불필요.
-    await localWrite.createPlanNote(
-      workId,
-      ONBOARDING_PLAN_NOTE.title,
-      0,
-      ONBOARDING_PLAN_NOTE.content,
-    );
+    //    실제 소설 기획서를 본떠 "작품 기획안 / 주제·모티프 노트" 2개 문서로 분리.
+    for (let i = 0; i < ONBOARDING_PLAN_NOTES.length; i++) {
+      const pn = ONBOARDING_PLAN_NOTES[i];
+      await localWrite.createPlanNote(workId, pn.title, i * 1000, pn.content);
+    }
 
     // 3. 세계관 트리 — 부모 노트 N개 + 각 부모 아래 자식 1개
     for (let i = 0; i < ONBOARDING_WORLD_NOTES.length; i++) {

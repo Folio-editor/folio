@@ -4,14 +4,16 @@ import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import path from 'node:path';
 import {
   loginWithGoogle,
+  restoreAfterWithdrawal,
   logout,
   tryRestoreLogin,
   getAccessToken,
   tokenRefreshScheduler,
   getLastKnownWriterId,
   commitLastKnownWriterId,
+  clearLastKnownWriterId,
 } from './auth/googleOAuth';
-import { getOrCreateGuestId } from './auth/guestId';
+import { getOrCreateGuestId, rotateGuestId } from './auth/guestId';
 import {
   saveMaterial as saveEncryptionMaterial,
   loadMaterial as loadEncryptionMaterial,
@@ -162,14 +164,25 @@ function registerAuthHandlers() {
     bringWindowToFrontAfter(win, LOGIN_RETURN_DELAY_MS);
     return result;
   });
+  ipcMain.handle('auth:restoreAfterWithdrawal', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    minimizeWindowForOAuth(win);
+    const result = await restoreAfterWithdrawal({
+      onCodeReceived: () => bringWindowToFrontAfter(win, LOGIN_RETURN_DELAY_MS),
+    });
+    bringWindowToFrontAfter(win, LOGIN_RETURN_DELAY_MS);
+    return result;
+  });
   ipcMain.handle('auth:logout', async () => logout());
   ipcMain.handle('auth:tryRestore', async () => tryRestoreLogin());
   ipcMain.handle('auth:getAccessToken', () => getAccessToken());
   ipcMain.handle('auth:getGuestId', () => getOrCreateGuestId());
+  ipcMain.handle('auth:rotateGuestId', () => rotateGuestId());
   ipcMain.handle('auth:getLastKnownWriterId', () => getLastKnownWriterId());
   ipcMain.handle('auth:commitLastKnownWriterId', (_e, writerId: string) =>
     commitLastKnownWriterId(writerId),
   );
+  ipcMain.handle('auth:clearLastKnownWriterId', () => clearLastKnownWriterId());
 }
 
 function registerCryptoHandlers() {

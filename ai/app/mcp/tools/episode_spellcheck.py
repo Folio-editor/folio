@@ -1,6 +1,6 @@
 """MCP 도구: 회차 본문 한국어 맞춤법 검사 (typo / spacing / punctuation).
 
-기존 /v1/spellcheck 엔드포인트와 동일한 Haiku 프롬프트·필터를 재사용하되,
+기존 /v1/spellcheck 엔드포인트와 동일한 Sonnet 프롬프트·필터를 재사용하되,
 agent flow 에서 호출 가능하도록 ctx 기반 입력 + propose_review_issue 가
 받을 수 있는 형태로 issues 를 반환한다.
 
@@ -134,20 +134,22 @@ async def check_spelling(
         f"{numbered}"
     )
 
-    # 3) Haiku 호출
+    # 3) Sonnet 호출
     llm = get_llm()
-    haiku_model = getattr(llm, "_haiku_model", None) or settings.claude_haiku_model
+    sonnet_model = getattr(llm, "_sonnet_model", None) or settings.claude_sonnet_model
     try:
         result = await llm.generate_json(
             system=SPELLCHECK_SYSTEM_PROMPT,
             user=user_prompt,
             schema_hint=SPELLCHECK_SCHEMA_HINT,
-            model_override=haiku_model,
+            model_override=sonnet_model,
             max_tokens=3000,
             cache_system=True,    # 동일 turn 여러 회차 check_spelling 시 system 캐시 hit
+            # 맞춤법은 규정 기준 정답이 명확한 영역 — greedy 샘플링으로 매번 동일 결과 보장.
+            temperature=0,
         )
     except Exception as e:
-        return {"error": "haiku_spellcheck_failed", "reason": str(e)[:200], "episode_id": episode_id}
+        return {"error": "sonnet_spellcheck_failed", "reason": str(e)[:200], "episode_id": episode_id}
 
     normalized = _normalize_spellcheck_result(result)
     issues = filter_whitelisted_issues(list(normalized.get("issues", [])), whitelist)

@@ -4,7 +4,6 @@ import { AlertCircle, Bug, CheckCircle2, ClipboardList, Download, ExternalLink, 
 import { FEEDBACK_LINKS, openExternalLink } from '../../constants/externalLinks';
 import { useUpdater } from '../../hooks/useUpdater';
 import { useLocalWrite } from '../../hooks/useLocalWrite';
-import { useOnboardingSeed } from '../../hooks/useOnboardingSeed';
 import { useWriterId } from '../../hooks/useWriterId';
 import { ONBOARDING_WORK } from '../../constants/onboardingContent';
 import { resetTabHelpShownFlags } from '../../constants/tabHelpContent';
@@ -12,8 +11,10 @@ import { DeleteConfirmDialog } from '../../components/ui/DeleteConfirmDialog';
 import { cn } from '../../lib/cn';
 
 interface AboutSettingsProps {
-  /** "튜토리얼 가이드 다시 시작" 후 호출 — 부모에서 새 workId 로 home 진입 + 설정 닫기 */
-  onTutorialReset?: (newWorkId: string) => void;
+  /** "튜토리얼 가이드 다시 시작" 후 호출 — 부모에서 home 진입 + 설정 닫기.
+   *  새 가이드 워크스페이스는 즉시 생성하지 않고, AuthenticatedApp 의 useEffect 가
+   *  플래그 미존재 + 가이드 작품 없음 조건을 감지해 OnboardingGuideDialog 를 자동 노출한다. */
+  onTutorialReset?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -49,7 +50,6 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
   // ── 튜토리얼 가이드 다시 시작 ─────────────────────────────────
   const writerId = useWriterId();
   const { deleteWork } = useLocalWrite();
-  const { seed: seedOnboarding } = useOnboardingSeed();
   const [restartConfirm, setRestartConfirm] = useState(false);
   const [restartBusy, setRestartBusy] = useState(false);
 
@@ -73,19 +73,19 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
     restartingRef.current = true;
     setRestartBusy(true);
     try {
-      // 기존 가이드 작품(매칭된 경우)을 휴지통으로 이동 — description 마커 없는 사용자 작품은 보존
+      // 기존 가이드 작품(매칭된 경우)을 휴지통으로 이동 — kind!='onboarding' 사용자 작품은 보존
       if (matchedGuide) {
         await deleteWork(matchedGuide.id);
       }
-      // 새 빨간머리앤 샘플 워크스페이스 즉시 시드
-      const newWorkId = await seedOnboarding();
-      // localStorage 초기화 — 환영 다이얼로그(2개) + 8개 탭별 도움말 자동 노출 플래그
+      // 새 가이드 워크스페이스는 즉시 생성하지 않는다. 사용자 허락 없이 작품을 만들지 않도록
+      // localStorage 플래그만 초기화 — AuthenticatedApp 의 useEffect 가 (플래그 미존재 +
+      // 가이드 작품 없음) 을 감지해 OnboardingGuideDialog 를 자동 노출, 사용자가 직접 선택.
       localStorage.removeItem('folio.onboarding.guideOffered');
       localStorage.removeItem('folio.welcomeTour.completed');
       resetTabHelpShownFlags();
       setRestartConfirm(false);
-      // 부모로 콜백 — home 진입 + 설정 닫기 → home 탭 도움말이 자동 1회 노출
-      onTutorialReset?.(newWorkId);
+      // 부모로 콜백 — home 진입 + 설정 닫기. 그 후 OnboardingGuideDialog 자동 노출.
+      onTutorialReset?.();
     } finally {
       setRestartBusy(false);
       restartingRef.current = false;
@@ -351,7 +351,7 @@ export function AboutSettings({ onTutorialReset }: AboutSettingsProps = {}) {
       {restartConfirm && (
         <DeleteConfirmDialog
           title="튜토리얼 가이드 다시 시작"
-          message={`기존 샘플 작품 '${ONBOARDING_WORK.title}' 을 휴지통으로 옮기고 새 샘플 워크스페이스로 즉시 이동합니다. 30일 안에 휴지통에서 복원할 수 있습니다.`}
+          message={`기존 샘플 작품 '${ONBOARDING_WORK.title}' 을 휴지통으로 옮기고 튜토리얼 안내 화면으로 돌아갑니다. 안내 화면에서 새 샘플 워크스페이스를 만들거나 건너뛸 수 있습니다. 30일 안에 휴지통에서 복원할 수 있습니다.`}
           warning="작품 안에서 작성하신 내용은 함께 휴지통으로 이동합니다."
           confirmLabel="다시 시작"
           busyLabel="처리 중…"
