@@ -18,6 +18,7 @@ import { FlowSection } from './FlowSection';
 import { PricingSection } from './PricingSection';
 import { FAQSection } from './FAQSection';
 import { FinFooter } from './FinFooter';
+import { LandingBookmarkNav } from './LandingBookmarkNav';
 import { TOOLS, type ToolMockupKey } from '../../data/landing-content';
 import { trackLandingEvent } from '../../lib/analytics';
 
@@ -128,6 +129,7 @@ export function FolioLanding() {
       <PricingSection />
       <FAQSection />
       <FinFooter />
+      <LandingBookmarkNav />
 
       <LoginRequiredModal open={loginOpen} onClose={() => setLoginOpen(false)} />
     </div>
