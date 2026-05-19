@@ -1,287 +1,387 @@
-# 🐛 AI Agent SSE 응답 종료 직후 `AuthorizationDeniedException` 발생
+# 🐛 AI Agent SSE 응답 후 클라이언트 `network error` 발생
 
-> **status:** 원인 확정 (98%) / 미수정
-> **재현:** AI 회차 생성 같은 장시간 Agent stream 작업 후 항상 발생
-> **사용자 영향:** 작업 자체는 성공했는데 화면에 "전송 실패: network error" 빨간 경고
-> **발견 시점:** 2026-05-12 운영 로그
-> **영향 사용자:** `6c1117b3...` + `cffba617...` 동일 패턴 확인 → 전체 시스템 패턴
-
----
-
-## 1. 증상
-
-작가가 AI 챗에서 "4화 회차 작성해줘" 요청 → AI 가 본문 1200+자 정상 생성 → 화면에 실시간 출력 → 마지막 줄까지 표시 후 **빨간 ⚠️ "전송 실패: network error"**.
-
-### 클라이언트 콘솔
-```
-streamSSE 에러 (구체 메시지 없음)
-```
-
-### 서버 응답
-```
-HTTP 200, body_bytes_sent=19558, request_time=89.292s
-그러나 응답 끝맺음 직전 백엔드에서 connection 강제 종료
-nginx: "upstream prematurely closed connection while reading upstream"
-```
+> **status:** ✅ 해결 완료 (commit `49ed816` / master 머지 `1853b96`)
+> **재현:** AI 회차 생성 같은 30초+ Agent stream 작업 후 항상 발생
+> **사용자 영향:** 작업은 성공했는데 화면에 ⚠️ "전송 실패: network error" + DevTools `ERR_HTTP2_PROTOCOL_ERROR`
+> **발견:** 2026-05-12 운영 환경
+> **영향 사용자:** 시스템 전반 (모든 SSE 호출 사용자)
 
 ---
 
-## 2. 핵심 진실
+## 1. 증상 — 사용자가 본 것
 
-| 항목 | 상태 |
+```
+[Folio AI 챗 화면]
+
+4화 "첫 번째 아침"을 작성했습니다.
+이 회차에서는 앤이 초록지붕 집에서의...
+[본문 1200자 모두 정상 표시]
+작가님의 승인을 기다리고 있습니다.
+
+⚠️ 전송 실패: network error    ← 빨간 경고
+```
+
+```
+[브라우저 DevTools Console]
+
+POST https://folio-editor.co.kr/api/v1/agent/threads/.../messages/stream
+net::ERR_HTTP2_PROTOCOL_ERROR 200 (OK)
+```
+
+**모순적 상황:**
+- HTTP 상태 코드: 200 OK ✅
+- 본문은 1200자 모두 도착 ✅
+- 그런데 클라이언트는 "에러" 로 인지 ❌
+
+---
+
+## 2. 핵심 진실 정리
+
+| 항목 | 실제 상태 |
 |---|---|
 | AI 본문 생성 | ✅ 성공 (LLM 호출 89.27초 후 정상 종료) |
 | 토큰 차감 | ✅ 성공 (`balance 2026 → 1460`) |
 | AGENT-RECEIPT 발급 | ✅ 성공 |
 | SSE 본문 전송 | ✅ 성공 (19,558 bytes 클라이언트 도달) |
-| **응답 종료 신호** | ❌ 실패 (보안 거부 → 연결 강제 종료) |
+| **응답 종료 신호** | ❌ 실패 (HTTP/2 프레임 손상으로 강제 종료) |
 
-**작업 자체는 100% 성공.** 단지 "정상 종료 신호" 만 클라이언트에 전달 못 함.
-
----
-
-## 3. 원인
-
-### 한 줄
-**`SseEmitter.complete()` 후 Spring MVC 가 비동기 응답을 마무리하는 내부 dispatch 가 새 Tomcat 워커에서 처리되는데, 이 워커에는 `SecurityContext` 가 전파되지 않아 anonymous 사용자로 인지됨. `anyRequest().authenticated()` 룰에 막혀 `AuthorizationDeniedException`. `/error` 로 forward 도 권한 가드에 막혀서 연결 강제 종료.**
-
-### 스레드 흐름
-
-```
-T0  Tomcat 워커 X
-    POST /api/v1/agent/threads/.../messages/stream 도착
-    JwtAuthenticationFilter → SecurityContext 설정 ✅
-    AgentController.streamMessage() 실행
-    SseEmitter emitter 생성 후 return → 워커 풀로 복귀
-
-T1  virtual-521 (AiClient.streamAgentMessage)
-    Thread.startVirtualThread(TraceContextFilter.wrapMdc(...))
-    ↑ MDC 만 전파, SecurityContext 전파 안 함
-    89초 동안 AI 서버에 HTTP POST → SSE 청크 수신 → emitter.send() 반복
-    완료 후 emitter.complete()
-
-T2  Tomcat 워커 9 (exec-9, 새 워커)
-    Spring MVC 의 AsyncContext 가 dispatch 발생
-    그러나 dispatch 된 요청에 JWT 헤더 없음
-    → AnonymousAuthenticationFilter 가 anonymous 로 설정
-    → AuthorizationFilter 가 anyRequest().authenticated() 룰에 막힘
-    → AuthorizationDeniedException
-
-T3  ExceptionTranslationFilter
-    표준 에러 응답 시도 → 응답 이미 committed (T1 에서 SSE 송신 완료)
-    → "Unable to handle the Spring Security Exception because
-       the response is already committed"
-
-T4  Spring Boot ErrorPage
-    Exception Processing [ErrorPage[errorCode=0, location=/error]]
-    → /error 로 forward 시도
-    → /error 도 PUBLIC_ENDPOINTS 에 없어서 또 권한 가드 막힘
-    → connection 강제 종료
-
-T5  nginx
-    upstream prematurely closed connection
-    → 클라이언트 "network error"
-```
+**작업 자체는 100% 성공.** 문제는 응답을 "정상 종료" 했다고 클라이언트에 알리는 마지막 단계.
 
 ---
 
-## 4. 증거 체인 (98% 확정)
+## 3. 왜 "network error" 가 떴나 — 클라이언트 측 원인 사슬
 
-### 4-1. 로그 증거
-
-#### 모든 정상 로그는 MDC 박혀있음
 ```
-"httpPath":"/api/v1/agent/threads/.../messages/stream"
-"userId":"6c1117b3..."
-"role":"USER"
+1. 백엔드가 SSE 본문 19KB 정상 송신 → 클라이언트 받음
+2. 백엔드가 응답 마무리 단계에서 권한 거부 발생
+3. Spring 이 에러 응답 보내려 함
+4. 그러나 응답은 이미 송신 완료 상태 (committed)
+5. HTTP 프로토콜상 한 번 committed 된 응답에 추가 송신 불가
+6. Spring 이 처리 못하고 connection 강제 종료
+7. nginx: "upstream prematurely closed connection"
+8. nginx → 클라이언트: HTTP/2 프레임 손상 상태로 응답 끊김
+9. 브라우저: ERR_HTTP2_PROTOCOL_ERROR 인지
+10. 프론트엔드 SSE 라이브러리: connection 끊김 = 에러
+11. 화면에 빨간 ⚠️ "전송 실패: network error" 표시
 ```
 
-#### Access Denied 로그만 MDC 비어있음
+**핵심:** 본문은 다 받았는데, 백엔드가 "끝났습니다" 깨끗한 신호를 못 보내고 연결을 강제로 끊어서 클라이언트가 "비정상 종료" 로 인지.
+
+---
+
+## 4. 근본 원인 — 백엔드 측 원인 사슬
+
+### Spring 의 비동기 응답 처리 메커니즘
+
+SSE 같은 비동기 응답을 Spring 이 어떻게 처리하는지:
+
 ```
-httpPath 없음
-userId 없음
-role 없음
+1. 클라이언트 요청 (Authorization 헤더 포함)
+2. [SecurityFilterChain 1차 실행]
+   - JwtAuthenticationFilter: 토큰 검증, SecurityContext 설정 ✅
+   - AuthorizationFilter: URL 권한 검사 ✅
+3. 컨트롤러 진입
+4. SseEmitter 반환 → 컨트롤러 메서드 종료 (즉시 반환)
+5. 가상 스레드가 89초 동안 SSE 본문 송신
+6. 송신 완료 시 emitter.complete() 호출
+7. ⭐ Spring 이 자동으로 ASYNC dispatch 발생
+   - 같은 URL 로 가짜 servlet 요청 한 번 더 생성
+   - 비동기 요청 마무리·자원 정리 목적
+8. [SecurityFilterChain 2차 실행] ← 여기서 문제 발생
+   - JwtAuthenticationFilter: 가짜 요청에 헤더 없음 → SecurityContext 못 채움
+   - AnonymousAuthenticationFilter: anonymous 로 설정
+   - AuthorizationFilter: anyRequest().authenticated() 룰 위반 → 거부
+   - AuthorizationDeniedException 발생
+9. ExceptionTranslationFilter 가 에러 응답 시도
+   - response.isCommitted() == true (SSE 로 이미 송신 완료)
+   - ServletException: "Unable to handle ... response is already committed"
+10. Spring 이 응답 마무리 못 하고 connection 강제 종료
+11. nginx 가 "upstream prematurely closed connection" 감지
+12. 클라이언트에 HTTP/2 프레임 손상 상태로 종료 전달
 ```
-→ **정상 요청 처리 흐름이 아닌 Spring 내부 forward 라는 시그널**
 
-#### `Exception Processing [ErrorPage[errorCode=0, location=/error]]`
-→ `/error` 로 forward 시도 직접 확인
+### 왜 ASYNC dispatch 가 일어나나
 
-#### `exec-9` 워커의 1시간 히스토리
-- 평소 처리: `/api/v1/sync/upload`, `/internal/v1/token-receipts`
-- 평소엔 `/error` 한 번도 처리 안 함
-- 05:22:40 에 갑자기 `/error` 관련 예외 처리
-→ **이건 외부 요청이 아니라 내부 dispatch**
+**Spring MVC 의 표준 동작.** 비동기 응답 마무리 시 자원 정리를 위해 같은 요청 흐름을 한 번 더 실행:
 
-#### nginx access log
-- 05:22:30 ~ 05:22:48 사이 사용자 IP 의 다른 요청 **없음**
-- 오직 `POST /messages/stream` 1건 (status=200, 89.292s)
-- → **클라이언트가 별도 호출한 게 아님 = 내부 dispatch 확정**
+- AsyncContext 종료
+- Servlet 응답 stream close
+- Tomcat 워커 풀 반환
+- 인터셉터 afterCompletion 콜백
+- 트레이싱·로깅 정리
 
-### 4-2. 코드 증거
+→ 우리가 끄거나 우회할 수 없는 Spring 내부 동작.
 
-#### `AiClient.streamAgentMessage` — SecurityContext 전파 누락
-**위치:** `backend/src/main/java/com/storyzip/ai/client/AiClient.java:294`
+### 왜 dispatch 된 요청에 헤더가 없나
+
+**Spring 의 구조적 한계.** ASYNC dispatch 가 만든 가짜 servlet 요청은 원래 클라이언트가 보낸 HTTP 헤더를 자동으로 상속받지 않음:
+
+```
+원래 요청 (클라이언트):
+  Authorization: Bearer abc...    ← JWT 있음
+
+ASYNC dispatch 시 가짜 요청 (Spring 내부):
+  (헤더 없음)                     ← JWT 없음
+```
+
+→ JwtAuthenticationFilter 가 토큰 못 찾음 → SecurityContext 못 설정 → anonymous → 거부.
+
+### 왜 거부 → 에러 응답이 깨지나
+
+**HTTP 프로토콜 제약.** 응답 body 의 첫 바이트가 클라이언트에 송신되면 `response.isCommitted() == true` 상태.
+
+- Committed 응답에는 헤더·상태코드 변경 불가
+- 추가 body 데이터 송신 시 HTTP/2 프레이밍 깨짐
+- Spring 이 에러 응답을 쓰려고 하면 ServletException 발생
+- 결국 connection 강제 종료
+
+### 증거 체인
+
+#### 백엔드 로그 (수정 전)
+
+```
+[EXT_OK] op=streamAgentMessage elapsedMs=89270 status=ok          ← 정상 종료
+                  ↓ (2ms 후)
+AuthorizationDeniedException: Access Denied                       ← 1차 에러
+  at AuthorizationFilter.doFilter(line 99)
+                  ↓
+Unable to handle the Spring Security Exception
+because the response is already committed                          ← 2차 에러
+                  ↓
+Cannot render error page for request [null] as the response
+has already been committed                                          ← 3차 에러
+```
+
+#### nginx 로그 (수정 전)
+
+```
+upstream prematurely closed connection while reading upstream
+client: 14.50.47.100
+request: "POST /api/v1/agent/threads/.../messages/stream HTTP/2.0"
+status: 200, request_time: 89.292
+```
+
+#### 결정적 단서
+
+- `[EXT_OK]` 와 `AuthorizationDeniedException` 사이 시간차 **2ms** = SSE 정상 종료 직후 발생
+- Access Denied 로그의 MDC 가 비어있음 (`httpPath`, `userId` 없음) = 정상 요청 흐름 아닌 내부 dispatch 증거
+- `Exception Processing [ErrorPage[errorCode=0, location=/error]]` = `/error` forward 시도
+
+---
+
+## 5. 시도한 해결책 — 6번의 여정
+
+### Track 1️⃣ — AiClient 가상 스레드에 SecurityContext 전파
+
+**가설:** 가상 스레드가 부모 스레드의 SecurityContext 를 상속받지 못해 거부됨.
+
+**적용:** `TraceContextFilter.wrapMdcAndSecurity()` 헬퍼 추가. SecurityContext 를 명시 전파.
+
+**결과:** ❌ 실패. dispatch 가 새 SecurityFilterChain 을 실행하면서 anonymous 로 덮어씀.
+
+**보존 가치:** 가상 스레드 안에서의 정상 동작 안전망. 다른 코드 경로에도 유효.
+
+### Track 2️⃣ — `/error` 를 PUBLIC_ENDPOINTS 에 추가
+
+**가설:** `/error` 가 권한 가드에 막혀 forward 가 깨지는 게 원인.
+
+**적용:** `SecurityConfig.PUBLIC_ENDPOINTS` 에 `"/error"` 추가.
+
+**결과:** ❌ 실패. `/error` 통과는 했지만 응답이 이미 committed 라 `Cannot render error page` 로 또 깨짐.
+
+**보존 가치:** Spring Boot 공식 권장 패턴. 다른 ErrorPage forward 안전망.
+
+### Track 3️⃣ — nginx `chunked_transfer_encoding off` 제거
+
+**가설:** nginx 의 chunked encoding 옵션이 HTTP/2 변환과 충돌해 프레이밍 손상.
+
+**적용:** `infra/prod/nginx/nginx.conf` 의 SSE location 블록에서 `chunked_transfer_encoding off;` 삭제.
+
+**결과:** 부분 도움. nginx 측 프로토콜 위생은 해결. 하지만 백엔드 측 원인은 그대로.
+
+**보존 가치:** HTTP/2 + SSE 환경에서 정확한 nginx 설정.
+
+### Track 4️⃣ — GlobalExceptionHandler 에 AuthorizationDeniedException 핸들러
+
+**가설:** 권한 거부 예외를 `@RestControllerAdvice` 에서 가로채 `response.isCommitted()` 시 조용히 무시.
+
+**적용:** `GlobalExceptionHandler.handleAuthorizationDenied()` 추가.
+
+**결과:** ❌ 실패. `@RestControllerAdvice` 는 Spring MVC DispatcherServlet 단계에서 작동하는데, `AuthorizationDeniedException` 은 그 이전 SecurityFilterChain 단계에서 발생. 핸들러에 도달조차 못 함.
+
+**보존 가치:** 다른 권한 거부 케이스 안전망.
+
+### Track 5️⃣ — SecurityConfig 에 accessDeniedHandler 등록
+
+**가설:** Spring Security 의 공식 권한 거부 핸들러로 committed 가드.
+
+**적용:** `SecurityConfig.exceptionHandling().accessDeniedHandler(...)` 람다 추가.
+
+**결과:** ❌ 실패. Spring Security 의 `ExceptionTranslationFilter:140` 가 `response.isCommitted() == true` 면 `accessDeniedHandler` 를 호출하기 **전에** `ServletException` 을 던짐. 핸들러 도달 불가.
+
 ```java
-Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
-    // MDC 만 전파, SecurityContext 안 전파
-}));
+// Spring Security 코드
+if (response.isCommitted()) {
+    throw new ServletException("Unable to handle the Spring Security Exception because the response is already committed.", ex);
+}
+this.accessDeniedHandler.handle(...);   // ← committed 면 이 줄 도달 못 함
 ```
 
-#### `SecurityConfig.PUBLIC_ENDPOINTS` — `/error` 누락
-**위치:** `backend/src/main/java/com/storyzip/config/SecurityConfig.java:20-51`
+**보존 가치:** 다른 권한 거부 케이스 안전망.
+
+### Track 6️⃣ ⭐ — SSE 엔드포인트를 SecurityFilterChain 자체에서 우회 (성공)
+
+**가설:** 권한 거부 발생 *후* 처리하는 모든 방법이 실패. 거부 자체를 발생시키지 말자.
+
+**적용 1:** `SecurityConfig.PUBLIC_ENDPOINTS` 에 SSE 엔드포인트 추가.
+
 ```java
-private static final String[] PUBLIC_ENDPOINTS = {
-    "/actuator/health",
-    "/actuator/info",
-    ...
-    "/api/v1/admin/**"
-    // "/error" 누락
-};
+"/api/v1/agent/threads/*/messages/stream"
 ```
 
-### 4-3. 재현 패턴
-- 동일 증상이 다른 사용자 `cffba617...` 의 51초 작업에서도 발생
-- 사용자별 권한 문제 아니라 **시스템 패턴**
+**적용 2:** `AgentController.streamMessage` 에 anonymous 차단 가드 추가.
+
+```java
+if (auth == null || "anonymousUser".equals(auth.getName())) {
+    throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+}
+```
+
+**작동 원리:**
+- `AuthorizationFilter` 가 SSE URL 을 permitAll 룰로 인식 → 검사 패스
+- 1차 진입 시: 컨트롤러 첫 줄의 anonymous 가드 + thread owner 검증이 인증·인가 수행
+- 2차 dispatch 시: AuthorizationFilter 또 패스 → 거부 발생 안 함 → 응답 충돌 없음
+- 응답 정상 종료 → 클라이언트 `ERR_HTTP2_PROTOCOL_ERROR` 사라짐
+
+**결과:** ✅ 성공
 
 ---
 
-## 5. 영향 범위
+## 6. 최종 해결책 — 코드 변경 요약
 
-### 직접 영향
-- **사용자 경험**: AI Agent stream API 사용 시 마지막에 "network error" 표시. 작업은 성공했는데 실패한 것처럼 보임.
-- **운영 로그 오염**: 정상 시나리오인데 `AuthorizationDeniedException` ERROR 레벨로 매번 4건씩 쌓임.
-
-### 잠재 영향
-- **다른 SSE 호출도 같은 문제 가능성**: `AiClient.streamDraft` 등 같은 패턴이면 동일 버그.
-- **`/error` 가 평소 권한 가드에 막힘**: 다른 컨트롤러에서 예외 발생 시에도 잠재적 영향. Spring Boot 공식 권장 위반.
-
-### 영향 없는 것
-- AI 작업 결과 (본문, 토큰 차감, 영수증 발급 모두 정상)
-- 사용자 데이터 손실 없음
-- 시스템 안정성 (단지 한 요청의 응답 마무리만 깨짐)
-
----
-
-## 6. 해결책
-
-### Track 1 — 응급 패치 (1줄, 1분)
-**`/error` 를 PUBLIC_ENDPOINTS 에 추가**
+### 변경 1: `SecurityConfig.java`
 
 ```diff
-// backend/src/main/java/com/storyzip/config/SecurityConfig.java
-
  private static final String[] PUBLIC_ENDPOINTS = {
      "/actuator/health",
      ...
--    "/api/v1/admin/**"
-+    "/api/v1/admin/**",
-+    "/error"
+     "/api/v1/admin/**",
++    // AI Agent SSE 스트리밍 — Spring Security 의 ASYNC dispatch 처리가 committed
++    // 응답에서 깨지는 구조적 이슈(ERR_HTTP2_PROTOCOL_ERROR) 우회.
++    // JwtAuthenticationFilter 는 permitAll 과 무관하게 동작하므로 SecurityContext 는
++    // 정상 채워지고, 컨트롤러의 Authentication auth 파라미터로 사용자 검증을 직접 수행.
++    "/api/v1/agent/threads/*/messages/stream",
  };
 ```
 
-**효과:**
-- 비동기 dispatch 가 `/error` 로 forward 되면 통과
-- 응답 정상 마무리
-- 클라이언트 "network error" 안 뜸
-
-**한계:**
-- 근본 원인 (SecurityContext 미전파) 은 그대로
-- 로그에 anonymous + `/error` forward 패턴 여전히 찍힘 (오염은 줄지만 깨끗하진 않음)
-
-**Spring Boot 공식 권장이기도 함** — `/error` 는 일반적으로 permitAll 처리.
-
-### Track 2 — 근본 해결 (10줄+, 30분)
-**`AiClient` 의 virtual thread 에 SecurityContext 명시 전파**
+### 변경 2: `AgentController.java`
 
 ```diff
-// backend/src/main/java/com/storyzip/ai/client/AiClient.java
-
- public void streamAgentMessage(
-         String threadId,
-         AgentMessageRequest body,
-         SseEmitter emitter
+ public SseEmitter streamMessage(
+         @PathVariable String threadId,
+         @RequestBody MessageClientRequest body,
+         Authentication auth,
+         HttpServletResponse response
  ) {
-+    SecurityContext context = SecurityContextHolder.getContext();
-+
-     Thread.startVirtualThread(TraceContextFilter.wrapMdc(() -> {
-+        SecurityContextHolder.setContext(context);
-+        try {
-             // 기존 로직
-+        } finally {
-+            SecurityContextHolder.clearContext();
-+        }
-     }));
++    // 본 엔드포인트는 SecurityConfig 의 PUBLIC_ENDPOINTS 에 등록되어
++    // AuthorizationFilter 의 거부를 우회한다. 대신 인증/소유권 검증은
++    // 본 컨트롤러에서 직접 수행.
++    if (auth == null || auth.getName() == null || "anonymousUser".equals(auth.getName())) {
++        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "authentication required");
++    }
+     UUID writerUuid = UUID.fromString(auth.getName());
+     Map<String, Object> thread = aiClient.getAgentThread(threadId);
+     String scenario = (String) thread.get("scenario");
+     if (!auth.getName().equals(thread.get("writer_id"))) {
+         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "thread owner mismatch");
+     }
+     ...
  }
 ```
 
-**효과:**
-- 모든 dispatch 워커가 SecurityContext 가져감
-- AuthorizationFilter 가 정상 사용자로 인식
-- `/error` forward 자체가 안 일어남
-- 로그 깨끗
+---
 
-**적용 범위:**
-- `streamAgentMessage`
-- `streamDraft`
-- 기타 `Thread.startVirtualThread` 로 SSE 송신하는 모든 메서드
+## 7. 보안 영향 분석
 
-**선택:** `wrapMdc` 와 합쳐서 `wrapMdcAndSecurity` 같은 헬퍼 함수로 추출하면 깔끔.
+| 검증 항목 | 변경 전 | 변경 후 |
+|---|---|---|
+| JWT 토큰 검증 | `JwtAuthenticationFilter` | `JwtAuthenticationFilter` (그대로) |
+| 사용자 식별 | SecurityContext 자동 | SecurityContext 자동 (그대로) |
+| anonymous 차단 | `AuthorizationFilter` (자동) | 컨트롤러 첫 줄 (수동) |
+| Thread owner 검증 | 컨트롤러 | 컨트롤러 (그대로) |
+| 토큰 잔액 검증 | 컨트롤러 | 컨트롤러 (그대로) |
+| 거부 결과 | 401 / 403 | 401 / 403 (동일) |
+
+**보호 동일.** 검사 위치만 SecurityFilterChain → 컨트롤러 첫 줄로 이동.
+
+### 잠재 트레이드오프
+
+1. **89초 사이 사용자 권한 변경 감지 불가** — Spring 의 2차 검사 목적 (세션 만료, 권한 박탈 감지) 이 사라짐. 그러나 89초는 짧고, 즉시 강퇴는 별도 메커니즘 (토큰 블랙리스트 등) 으로 처리 가능.
+
+2. **새 SSE 엔드포인트 추가 시 같은 패턴 반복 필요** — `PUBLIC_ENDPOINTS` 추가 + 컨트롤러 가드. 팀 컨벤션으로 명문화 권장.
+
+3. **컨트롤러에 보안 책임 추가** — 누군가 가드 빼먹으면 진짜 보안 구멍. 코드 리뷰 시 주의.
 
 ---
 
-## 7. 권장 진행
+## 8. 적용 후 검증
 
-### 단기 (시연 영상 직전)
-**Track 1 적용 → 자동 배포 → 시연 영상 진행**
+### 백엔드 로그 (수정 후)
 
-근거:
-- 1줄 수정, 영향 명확, 즉시 가능
-- Spring Boot 공식 권장과 일치
-- 시연 영상 녹화 중 또 발생 시 짜증
+```
+[EXT_OK] op=streamAgentMessage elapsedMs=89270 status=ok    ← 정상 종료
+(이후 아무 ERROR 없음)
+```
 
-### 중기 (정식 출시 준비)
-**Track 2 적용 → 코드 리팩토링**
+`AuthorizationDeniedException`, `Cannot render error page`, `response is already committed` 모두 사라짐.
 
-근거:
-- 진짜 근본 원인 제거
-- 다른 SSE 호출에서도 같은 문제 재발 방지
-- 로그 깨끗
+### 클라이언트 측
 
-### 둘 다 적용 시
-- Track 1 은 그대로 두는 게 안전 (Spring Boot 권장)
-- Track 2 적용 후 Track 1 은 백업 안전망 역할
+- DevTools Console: `ERR_HTTP2_PROTOCOL_ERROR` 사라짐 ✅
+- 화면 빨간 ⚠️ "전송 실패" 사라짐 ✅
+- SSE 본문 정상 수신 + 깔끔한 종료 ✅
+
+### nginx 로그
+
+- `upstream prematurely closed connection` 사라짐 ✅
 
 ---
 
-## 8. 백로그 등록 정보
+## 9. 향후 개선 (백로그)
 
-### 제목
-```
-AI Agent SSE 응답 종료 시 AuthorizationDeniedException 발생 — SecurityContext virtual thread 전파 누락
-```
+### 단기
 
-### 라벨
-- `bug`
-- `priority: high`
-- `area: agent`
-- `area: security`
+- [ ] 신규 SSE 엔드포인트 추가 시 본 패턴 적용을 보장하는 코드 리뷰 가이드 작성
+- [ ] 컨트롤러의 anonymous 가드를 공통 유틸 메서드로 추출 (예: `ensureAuthenticated(auth)`)
 
-### 우선순위 근거
-- 모든 AI Agent stream 호출에서 항상 발생
-- 사용자 경험 직접 손상 (성공한 작업이 실패한 것처럼 보임)
-- 정식 출시 전 필수 수정
+### 중기
 
-### 재현 절차
-1. 작가 계정으로 로그인
-2. AI 챗에서 회차 생성 같은 30초+ 작업 요청
-3. 작업 완료 후 화면 우하단 확인
-4. "전송 실패: network error" 빨간 경고 표시
-5. 백엔드 로그에서 `AuthorizationDeniedException` 확인
+- [ ] Spring Security 의 별도 `SecurityFilterChain` Bean 분리 검토 — SSE 전용 정책
+- [ ] `StreamingResponseBody` 등 비동기 메커니즘 대안 평가
 
-### 작업 항목
-- [ ] Track 1: `SecurityConfig.PUBLIC_ENDPOINTS` 에 `/error` 추가
-- [ ] Track 2: `AiClient.streamAgentMessage` 에 SecurityContext 전파
-- [ ] Track 2: `AiClient.streamDraft` 등 다른 SSE 메서드도 동일 패턴 적용
-- [ ] `wrapMdc` 와 `wrapSecurityContext` 를 합친 헬퍼 함수 추출
-- [ ] 회귀 테스트 추가 (Agent stream 호출 후 응답 정상 종료 확인)
+### 장기
+
+- [ ] WebSocket 전환 검토 (Spring 의 STOMP 또는 raw WebSocket) — 양방향 통신 + 더 안정적인 권한 처리
+
+---
+
+## 10. 변경 이력
+
+| 커밋 | 내용 | 효과 |
+|---|---|---|
+| `1830f13` (Track 1) | `AiClient` 가상 스레드 SecurityContext 전파 | 안전망 |
+| `225a747` (Track 2) | `/error` permitAll 추가 | 안전망 |
+| `b3032ac` (Track 3) | nginx `chunked_transfer_encoding off` 제거 | 부분 해결 |
+| `6d79a49` (Track 4) | `GlobalExceptionHandler` 권한 거부 핸들러 | 안전망 (미발화) |
+| `0e66135` (Track 5) | `SecurityConfig.accessDeniedHandler` | 안전망 (미발화) |
+| **`49ed816` (Track 6)** ⭐ | **SSE 엔드포인트 SecurityFilterChain 우회** | **진짜 해결** |
+| `1853b96` | `develop → master` 머지 (Track 6 배포) | 운영 반영 |
+
+---
+
+## 11. 참고
+
+- Spring Security 의 `ExceptionTranslationFilter` 동작: 응답 committed 시 핸들러 우회 후 ServletException
+- Spring MVC 의 ASYNC dispatch: 비동기 응답 마무리 표준 절차
+- HTTP/2 프레이밍 제약: committed 응답에 추가 송신 불가
+- nginx 의 `proxy_buffering off` + HTTP/1.1 keep-alive: SSE 권장 설정
