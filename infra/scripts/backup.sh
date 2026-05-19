@@ -153,10 +153,15 @@ find "$MONTHLY_DIR" -name "mongo-*.archive.gz" -mtime +$MONTHLY_KEEP_DAYS -delet
 echo "[backup] Rotation done (daily=${DAILY_KEEP_DAYS}d, weekly=${WEEKLY_KEEP_DAYS}d, monthly=${MONTHLY_KEEP_DAYS}d)."
 
 # ─── 디스크 사용량 워치 (90% 초과 시 알람) ───────────────────
-USE_PCT=$(df -P /opt | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+# 백업이 실제로 저장되는 경로를 기준으로 측정한다. 현재는 /opt 가 루트와
+# 같은 마운트지만, 추후 /opt 만 별도 볼륨으로 떼어내는 변경에도 알람이
+# 깨지지 않도록 BACKUP_ROOT 를 직접 넘긴다 — df 가 알아서 해당 경로를
+# 담은 파일시스템의 사용률을 반환.
+USE_PCT=$(df -P "$BACKUP_ROOT" | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+MOUNT_POINT=$(df -P "$BACKUP_ROOT" | awk 'NR==2 {print $6}')
 if [ "${USE_PCT:-0}" -ge 90 ]; then
-    notify_failure "[Folio][backup] DISK_HIGH ${USE_PCT}%" \
-        "/opt 디스크 사용량이 ${USE_PCT}% 입니다. 백업은 성공했으나 보존 기간 축소 필요."
+    notify_failure "[Folio][backup] DISK_HIGH ${USE_PCT}% (${MOUNT_POINT})" \
+        "백업 경로(${BACKUP_ROOT}) 가 위치한 마운트(${MOUNT_POINT}) 사용량이 ${USE_PCT}% 입니다. 백업은 성공했으나 보존 기간 축소 필요."
 fi
 
 echo "=== Folio Backup Complete: $(date -Iseconds) ==="
