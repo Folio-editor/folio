@@ -156,25 +156,43 @@ Let's Encrypt + Certbot 사용. 초기 발급은 [ec2-setup-guide.md](ec2-setup-
 
 ### 일일 백업 (`infra/scripts/backup.sh`)
 
+SSAFY EC2 환경 제약(외부 AWS 콘솔 접근 불가)으로 **로컬 디스크 전용** 으로 운영.
+
 | 대상 | 도구 | 저장 위치 |
 |------|------|----------|
-| PostgreSQL | `pg_dump` → gzip | S3 `daily/`, `weekly/`, `monthly/` |
-| MongoDB | `mongodump` → gzip | S3 `daily/`, `weekly/`, `monthly/` |
+| PostgreSQL | `pg_dump` → gzip | `/opt/folio/data/backups/{daily,weekly,monthly}/` |
+| MongoDB | `mongodump` → gzip archive | `/opt/folio/data/backups/{daily,weekly,monthly}/` |
 
-보존 정책: 일일 7일, 주간 4주, 월간 3개월.
+보존 정책: daily 7일 / weekly 4주 / monthly 3개월. weekly/monthly 는 daily 의
+hardlink 라 디스크 추가 점유 없음.
 
-cron: `0 3 * * *` (매일 새벽 3시)
+cron 등록(ubuntu user):
+```bash
+crontab -e
+# 추가:
+0 3 * * * DOPPLER_TOKEN=<dt.st...> /opt/folio/infra/scripts/backup.sh >> /opt/folio/data/backups/backup.log 2>&1
+```
+
+- `DOPPLER_TOKEN` 은 prd 서비스 토큰 (`INTERNAL_API_KEY` 조회용). 미설정 시
+  백업은 동작하지만 실패 알람 메일이 skip 됨.
+- 알람: 스크립트 실패 또는 디스크 90% 초과 시 backend `/internal/ops/notify`
+  호출 → `EmailNotifier` → 운영자 메일 (`MAIL_OPERATOR_TO`) 발송.
+
+> ⚠️ **한계**: 같은 EC2 디스크 안에서만 보존되므로 인스턴스 자체 장애에는
+> 대응 못 함. 정식 운영(자체 인프라) 전환 시 RDS 자동 백업 / 외부 스토리지
+> 로 교체 예정.
 
 ### 복원
 
 ```bash
 # PostgreSQL 복원
-gunzip -c pg-2026-04-22.sql.gz | docker exec -i folio-postgresql-prod \
-  psql -U folio -d folio
+gunzip -c /opt/folio/data/backups/daily/pg-2026-05-19_030000.sql.gz \
+  | docker exec -i folio-postgresql-prod psql -U folio -d folio
 
 # MongoDB 복원
 docker exec -i folio-mongo-prod mongorestore \
-  --archive --gzip --db powersync < mongo-2026-04-22.gz
+  --archive --gzip --db powersync \
+  < /opt/folio/data/backups/daily/mongo-2026-05-19_030000.archive.gz
 ```
 
 ---

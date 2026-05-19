@@ -1,84 +1,167 @@
 #!/bin/bash
 # ============================================================
-# Folio — 일일 백업 스크립트 (PostgreSQL + MongoDB → S3)
+# Folio — 일일 DB 백업 스크립트 (PostgreSQL + MongoDB → 로컬 디스크)
 #
-# crontab:
-#   0 3 * * * /opt/folio/infra/scripts/backup.sh >> /opt/folio/data/backup.log 2>&1
+# 정책:
+#   - daily/   매일 새벽 3시, 7일 보존
+#   - weekly/  일요일에 daily 에서 hardlink 카피, 4주 보존
+#   - monthly/ 매월 1일에 daily 에서 hardlink 카피, 3개월 보존
 #
-# 전제 조건:
-#   - AWS CLI 설치 및 자격증명 설정
-#   - Docker 컨테이너 실행 중
-#   - S3 버킷 생성 완료
+# 알람:
+#   실패 시 backend /internal/ops/notify 로 운영자 메일 발송.
+#   (백엔드가 죽어있으면 메일 못 보냄 — Grafana/Prometheus 가 별도로 백엔드 down 감지)
+#
+# crontab (ubuntu user):
+#   0 3 * * * DOPPLER_TOKEN=<dt.st...> /opt/folio/infra/scripts/backup.sh \
+#               >> /opt/folio/data/backups/backup.log 2>&1
+#
+# 전제:
+#   - Docker 컨테이너 folio-postgresql-prod / folio-mongo-prod 실행 중
+#   - 디스크 /opt/folio/data 여유 (1회 ~20MB, 14개 보존 시 ~300MB)
+#   - Doppler CLI 설치 + 토큰 (INTERNAL_API_KEY 조회용. 미설정 시 알람 메일만 skip)
 # ============================================================
 set -euo pipefail
 
-# 설정
-BACKUP_DIR="/opt/folio/data/backups"
-S3_BUCKET="${S3_BACKUP_BUCKET:-folio-backups}"
-S3_REGION="${S3_REGION:-ap-northeast-2}"
+# ─── 설정 ────────────────────────────────────────────────────
+BACKUP_ROOT="/opt/folio/data/backups"
+DAILY_DIR="${BACKUP_ROOT}/daily"
+WEEKLY_DIR="${BACKUP_ROOT}/weekly"
+MONTHLY_DIR="${BACKUP_ROOT}/monthly"
 DATE=$(date +%Y-%m-%d_%H%M%S)
-DAY_OF_WEEK=$(date +%u)  # 1=Mon, 7=Sun
+DAY_OF_WEEK=$(date +%u)   # 1=Mon, 7=Sun
 DAY_OF_MONTH=$(date +%d)
 
-mkdir -p "$BACKUP_DIR"
+DAILY_KEEP_DAYS=7
+WEEKLY_KEEP_DAYS=28
+MONTHLY_KEEP_DAYS=90
 
-echo "=== Folio Backup Started: $(date) ==="
+PG_CONTAINER="${PG_CONTAINER:-folio-postgresql-prod}"
+MONGO_CONTAINER="${MONGO_CONTAINER:-folio-mongo-prod}"
+DB_USERNAME="${DB_USERNAME:-folio}"
+DB_NAME="${DB_NAME:-folio}"
+MONGO_DB="${MONGO_DB:-powersync}"
+
+BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:8080}"
+
+mkdir -p "$DAILY_DIR" "$WEEKLY_DIR" "$MONTHLY_DIR"
+
+PG_FILE="${DAILY_DIR}/pg-${DATE}.sql.gz"
+MONGO_FILE="${DAILY_DIR}/mongo-${DATE}.archive.gz"
+
+# ─── 알람 헬퍼 ───────────────────────────────────────────────
+# 백엔드 /internal/ops/notify 로 운영자 메일 발송 트리거.
+# INTERNAL_API_KEY 를 Doppler 에서 가져오지 못하면 메일은 skip, stderr 만 남김.
+notify_failure() {
+    local subject="$1"
+    local body="$2"
+    local key=""
+    if command -v doppler >/dev/null 2>&1 && [ -n "${DOPPLER_TOKEN:-}" ]; then
+        key=$(doppler secrets get INTERNAL_API_KEY --plain 2>/dev/null || echo "")
+    fi
+    if [ -z "$key" ]; then
+        echo "[notify] INTERNAL_API_KEY unavailable — mail skipped. subject=${subject}" >&2
+        return 0
+    fi
+    # body 가 줄바꿈/특수문자 포함 가능 → jq 가 있으면 사용, 없으면 raw escape.
+    local payload
+    if command -v jq >/dev/null 2>&1; then
+        payload=$(jq -n --arg s "$subject" --arg b "$body" '{subject:$s, body:$b}')
+    else
+        # fallback: 줄바꿈을 literal \n 으로 치환하고 따옴표 escape
+        local esc_body
+        esc_body=$(printf '%s' "$body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+        payload="{\"subject\":\"${subject}\",\"body\":\"${esc_body}\"}"
+    fi
+    curl -sS -m 10 -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Internal-Api-Key: ${key}" \
+        --data "$payload" \
+        "${BACKEND_URL}/internal/ops/notify" \
+        >/dev/null \
+        || echo "[notify] backend call failed — mail not sent" >&2
+}
+
+# 스크립트 자체 실패(set -e 트랩) 시에도 알람.
+trap '
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        notify_failure "[Folio][backup] FAILED rc=${rc}" \
+            "백업 스크립트가 비정상 종료됨.
+호스트: $(hostname)
+일시: $(date -Iseconds)
+종료 코드: ${rc}
+로그 확인: tail -200 ${BACKUP_ROOT}/backup.log"
+    fi
+' EXIT
+
+echo "=== Folio Backup Started: $(date -Iseconds) ==="
 
 # ─── PostgreSQL 백업 ─────────────────────────────────────────
 echo "[backup] PostgreSQL dump..."
-PG_FILE="${BACKUP_DIR}/pg-${DATE}.sql.gz"
-
-docker exec folio-postgresql-prod pg_dump \
-    -U "${DB_USERNAME:-folio}" \
-    -d "${DB_NAME:-folio}" \
+docker exec "$PG_CONTAINER" pg_dump \
+    -U "$DB_USERNAME" \
+    -d "$DB_NAME" \
     --no-owner --no-privileges \
     | gzip > "$PG_FILE"
 
+# 결과 sanity check — pg_dump 실패 시 gzip 헤더만 있는 빈 파일이 남을 수 있음.
+PG_SIZE_BYTES=$(stat -c%s "$PG_FILE")
+if [ "$PG_SIZE_BYTES" -lt 1024 ]; then
+    echo "[backup] PostgreSQL dump suspiciously small (${PG_SIZE_BYTES} bytes)" >&2
+    exit 11
+fi
 PG_SIZE=$(du -h "$PG_FILE" | cut -f1)
 echo "[backup] PostgreSQL dump complete: $PG_FILE ($PG_SIZE)"
 
 # ─── MongoDB 백업 ────────────────────────────────────────────
 echo "[backup] MongoDB dump..."
-MONGO_FILE="${BACKUP_DIR}/mongo-${DATE}.gz"
-
-docker exec folio-mongo-prod mongodump \
+docker exec "$MONGO_CONTAINER" mongodump \
     --archive \
     --gzip \
-    --db powersync \
+    --db "$MONGO_DB" \
     > "$MONGO_FILE"
 
+MONGO_SIZE_BYTES=$(stat -c%s "$MONGO_FILE")
+if [ "$MONGO_SIZE_BYTES" -lt 1024 ]; then
+    echo "[backup] MongoDB dump suspiciously small (${MONGO_SIZE_BYTES} bytes)" >&2
+    exit 12
+fi
 MONGO_SIZE=$(du -h "$MONGO_FILE" | cut -f1)
 echo "[backup] MongoDB dump complete: $MONGO_FILE ($MONGO_SIZE)"
 
-# ─── S3 업로드 ───────────────────────────────────────────────
-echo "[backup] Uploading to S3..."
-
-# 일일 백업
-aws s3 cp "$PG_FILE" "s3://${S3_BUCKET}/daily/pg-${DATE}.sql.gz" --region "$S3_REGION"
-aws s3 cp "$MONGO_FILE" "s3://${S3_BUCKET}/daily/mongo-${DATE}.gz" --region "$S3_REGION"
-
-# 주간 백업 (일요일)
+# ─── 주간/월간 카피 (hardlink — 디스크 추가 점유 0) ──────────
 if [ "$DAY_OF_WEEK" = "7" ]; then
-    aws s3 cp "$PG_FILE" "s3://${S3_BUCKET}/weekly/pg-${DATE}.sql.gz" --region "$S3_REGION"
-    aws s3 cp "$MONGO_FILE" "s3://${S3_BUCKET}/weekly/mongo-${DATE}.gz" --region "$S3_REGION"
-    echo "[backup] Weekly backup saved."
+    ln -f "$PG_FILE" "${WEEKLY_DIR}/$(basename "$PG_FILE")"
+    ln -f "$MONGO_FILE" "${WEEKLY_DIR}/$(basename "$MONGO_FILE")"
+    echo "[backup] Weekly hardlink saved."
 fi
-
-# 월간 백업 (1일)
 if [ "$DAY_OF_MONTH" = "01" ]; then
-    aws s3 cp "$PG_FILE" "s3://${S3_BUCKET}/monthly/pg-${DATE}.sql.gz" --region "$S3_REGION"
-    aws s3 cp "$MONGO_FILE" "s3://${S3_BUCKET}/monthly/mongo-${DATE}.gz" --region "$S3_REGION"
-    echo "[backup] Monthly backup saved."
+    ln -f "$PG_FILE" "${MONTHLY_DIR}/$(basename "$PG_FILE")"
+    ln -f "$MONGO_FILE" "${MONTHLY_DIR}/$(basename "$MONGO_FILE")"
+    echo "[backup] Monthly hardlink saved."
 fi
 
-# ─── 로컬 정리 (7일 이상 된 파일 삭제) ──────────────────────
-find "$BACKUP_DIR" -name "pg-*.sql.gz" -mtime +7 -delete
-find "$BACKUP_DIR" -name "mongo-*.gz" -mtime +7 -delete
-echo "[backup] Local files older than 7 days cleaned."
+# ─── 보존 정책 적용 (mtime 기준 삭제) ────────────────────────
+# hardlink 이므로 weekly/monthly 에 카피된 파일이 daily 에서 지워져도 그쪽엔 유지됨.
+find "$DAILY_DIR"   -name "pg-*.sql.gz"        -mtime +$DAILY_KEEP_DAYS   -delete
+find "$DAILY_DIR"   -name "mongo-*.archive.gz" -mtime +$DAILY_KEEP_DAYS   -delete
+find "$WEEKLY_DIR"  -name "pg-*.sql.gz"        -mtime +$WEEKLY_KEEP_DAYS  -delete
+find "$WEEKLY_DIR"  -name "mongo-*.archive.gz" -mtime +$WEEKLY_KEEP_DAYS  -delete
+find "$MONTHLY_DIR" -name "pg-*.sql.gz"        -mtime +$MONTHLY_KEEP_DAYS -delete
+find "$MONTHLY_DIR" -name "mongo-*.archive.gz" -mtime +$MONTHLY_KEEP_DAYS -delete
 
-# ─── S3 보존 정책 (일일: 7일, 주간: 4주, 월간: 3개월) ────────
-# S3 Lifecycle Policy로 관리 권장. CLI 대안:
-# aws s3 rm "s3://${S3_BUCKET}/daily/" --recursive --exclude "*" \
-#   --include "*.gz" --older-than 7d  (aws CLI v2에서 미지원, lifecycle 사용)
+echo "[backup] Rotation done (daily=${DAILY_KEEP_DAYS}d, weekly=${WEEKLY_KEEP_DAYS}d, monthly=${MONTHLY_KEEP_DAYS}d)."
 
-echo "=== Folio Backup Complete: $(date) ==="
+# ─── 디스크 사용량 워치 (90% 초과 시 알람) ───────────────────
+# 백업이 실제로 저장되는 경로를 기준으로 측정한다. 현재는 /opt 가 루트와
+# 같은 마운트지만, 추후 /opt 만 별도 볼륨으로 떼어내는 변경에도 알람이
+# 깨지지 않도록 BACKUP_ROOT 를 직접 넘긴다 — df 가 알아서 해당 경로를
+# 담은 파일시스템의 사용률을 반환.
+USE_PCT=$(df -P "$BACKUP_ROOT" | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+MOUNT_POINT=$(df -P "$BACKUP_ROOT" | awk 'NR==2 {print $6}')
+if [ "${USE_PCT:-0}" -ge 90 ]; then
+    notify_failure "[Folio][backup] DISK_HIGH ${USE_PCT}% (${MOUNT_POINT})" \
+        "백업 경로(${BACKUP_ROOT}) 가 위치한 마운트(${MOUNT_POINT}) 사용량이 ${USE_PCT}% 입니다. 백업은 성공했으나 보존 기간 축소 필요."
+fi
+
+echo "=== Folio Backup Complete: $(date -Iseconds) ==="
