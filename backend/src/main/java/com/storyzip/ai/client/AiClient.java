@@ -38,6 +38,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * FastAPI AI 서버 호출용 얇은 클라이언트.
@@ -285,12 +287,34 @@ public class AiClient {
     /**
      * Agent SSE 스트리밍 — AI 서버 /v1/agent/threads/{tid}/messages/stream 프록시.
      * step / done / error 이벤트를 그대로 SseEmitter 로 전달.
+     *
+     * <p><b>Cancel 전파</b>: 다운스트림(브라우저) 이 끊기면 SseEmitter 의 onCompletion/
+     * onError/onTimeout 이 발화 → upstream 의 {@link java.io.InputStream} 을 즉시 close
+     * 해서 FastAPI 와의 TCP 를 끊는다. 그러면 FastAPI 의 StreamingResponse generator
+     * 가 CancelledError 로 풀려 {@code finally} 에서 {@code task.cancel()} → run_agent
+     * 가 중단되고 {@code async with client.messages.stream(...)} context 가 닫혀
+     * <b>Claude API 호출도 끝까지 진행되지 않는다</b> (불필요한 토큰 비용 차단).
      */
     public void streamAgentMessage(
             String threadId,
             AgentMessageRequest body,
             SseEmitter emitter
     ) {
+        // 다운스트림 끊김 시 upstream 종료를 트리거하기 위한 핸들.
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        AtomicReference<java.io.InputStream> upstreamRef = new AtomicReference<>();
+        Runnable cancelUpstream = () -> {
+            if (cancelled.compareAndSet(false, true)) {
+                java.io.InputStream is = upstreamRef.get();
+                if (is != null) {
+                    try { is.close(); } catch (Exception ignored) {}
+                }
+            }
+        };
+        emitter.onCompletion(cancelUpstream);
+        emitter.onError(err -> cancelUpstream.run());
+        emitter.onTimeout(cancelUpstream);
+
         // wrapMdcAndSecurity: MDC + Spring SecurityContext 를 가상 스레드에 전파.
         // SecurityContext 가 없으면 emitter.complete() 후 Spring MVC 내부 dispatch 가
         // anonymous 로 인지되어 보안 거부 → 응답 강제 종료.
@@ -316,6 +340,16 @@ public class AiClient {
                 HttpResponse<java.io.InputStream> resp = sseClient.send(
                         httpReq, HttpResponse.BodyHandlers.ofInputStream()
                 );
+                upstreamRef.set(resp.body());
+                // sseClient.send 가 응답 헤더만 받아오는 사이에 다운스트림이 이미 끊겼을 수
+                // 있다 — 그 경우 onCompletion 콜백은 upstreamRef 가 null 이라 close 못 함.
+                // 여기서 한 번 더 체크해 즉시 종료.
+                if (cancelled.get()) {
+                    try { resp.body().close(); } catch (Exception ignored) {}
+                    long el = (System.nanoTime() - startNanos) / 1_000_000L;
+                    log.info("[EXT_CANCEL] op=streamAgentMessage elapsedMs={} reason=client_disconnected_before_stream", el);
+                    return;
+                }
                 if (resp.statusCode() != 200) {
                     long el = (System.nanoTime() - startNanos) / 1_000_000L;
                     log.warn("[EXT_FAIL] op=streamAgentMessage elapsedMs={} status={}",
@@ -326,14 +360,18 @@ public class AiClient {
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(resp.body(), StandardCharsets.UTF_8))) {
                     String line;
-                    while ((line = reader.readLine()) != null) {
+                    while (!cancelled.get() && (line = reader.readLine()) != null) {
                         if (line.startsWith("data: ")) {
                             String data = line.substring(6);
                             try {
                                 emitter.send(SseEmitter.event().data(data,
                                         org.springframework.http.MediaType.APPLICATION_JSON));
                             } catch (Exception sendErr) {
-                                log.debug("agent SSE downstream disconnected; drain upstream");
+                                // 다운스트림이 끊겼다 — upstream drain 계속하면 Claude 호출이
+                                // 끝까지 진행되어 비용 발생. 즉시 break 후 InputStream 닫는다.
+                                log.info("agent SSE downstream disconnected; cancelling upstream");
+                                cancelUpstream.run();
+                                break;
                             }
                         } else if (line.startsWith(":")) {
                             // SSE 주석 (heartbeat) 그대로 forward — nginx/Cloudflare idle timeout
@@ -346,19 +384,36 @@ public class AiClient {
                             try {
                                 emitter.send(SseEmitter.event().comment(commentBody));
                             } catch (Exception sendErr) {
-                                log.debug("agent SSE heartbeat forward failed (downstream gone)");
+                                log.info("agent SSE heartbeat forward failed (downstream gone); cancelling upstream");
+                                cancelUpstream.run();
+                                break;
                             }
                         }
                     }
                 }
                 long el = (System.nanoTime() - startNanos) / 1_000_000L;
-                log.info("[EXT_OK] op=streamAgentMessage elapsedMs={} status=ok", el);
-                try { emitter.complete(); } catch (Exception ignored) {}
+                if (cancelled.get()) {
+                    log.info("[EXT_CANCEL] op=streamAgentMessage elapsedMs={} reason=client_disconnected", el);
+                } else {
+                    log.info("[EXT_OK] op=streamAgentMessage elapsedMs={} status=ok", el);
+                    try { emitter.complete(); } catch (Exception ignored) {}
+                }
+            } catch (java.io.IOException ioe) {
+                // cancelled 상태에서 InputStream.close() 가 readLine 을 IOException 으로
+                // 깨우는 정상 종료 경로 — 에러 전파하지 않는다.
+                long el = (System.nanoTime() - startNanos) / 1_000_000L;
+                if (cancelled.get()) {
+                    log.info("[EXT_CANCEL] op=streamAgentMessage elapsedMs={} reason=upstream_closed", el);
+                } else {
+                    log.warn("[EXT_FAIL] op=streamAgentMessage elapsedMs={} errType={} errMsg={}",
+                            el, ioe.getClass().getSimpleName(), ioe.getMessage(), ioe);
+                    try { emitter.completeWithError(ioe); } catch (Exception ignored) {}
+                }
             } catch (Exception e) {
                 long el = (System.nanoTime() - startNanos) / 1_000_000L;
                 log.warn("[EXT_FAIL] op=streamAgentMessage elapsedMs={} errType={} errMsg={}",
                         el, e.getClass().getSimpleName(), e.getMessage(), e);
-                emitter.completeWithError(e);
+                try { emitter.completeWithError(e); } catch (Exception ignored) {}
             }
         }));
     }
