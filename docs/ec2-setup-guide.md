@@ -239,28 +239,41 @@ rm .env
 
 ## 10. 백업 Cron 등록
 
+SSAFY EC2 환경 제약(외부 AWS 콘솔 접근 불가)으로 **로컬 디스크 전용 백업**.
+스크립트는 [`infra/scripts/backup.sh`](../infra/scripts/backup.sh) 참조.
+정책/복원/한계는 [deployment.md §7 백업·복원](./deployment.md#7-백업복원) 참조.
+
 ```bash
-# AWS CLI v2 설치 (S3 업로드용)
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-sudo apt-get install -y unzip  # unzip 없으면 설치
-unzip awscliv2.zip
-sudo ./aws/install
-rm -rf awscliv2.zip aws/
+# 의존성 확인 — 모두 이미 설치되어 있어야 함 (다른 단계에서 설치됨)
+which doppler   # Doppler CLI — 백업 실패 알람 메일용 INTERNAL_API_KEY 조회
+which docker    # pg_dump / mongodump 실행
 
-# 확인
-aws --version  # aws-cli/2.x.x 출력
+# (선택) jq 설치 — 알람 페이로드 escape 안전성 향상
+sudo apt-get install -y jq
 
-# AWS 자격증명 설정
-aws configure
-# → Access Key, Secret Key, Region 입력
+# 스크립트 실행 권한 보장 (git 에 chmod +x 박혀있지만 안전벨트)
+chmod +x /opt/folio/infra/scripts/*.sh
 
-# Cron 등록
+# Doppler 서비스 토큰 발급 (prd config 의 ci-prd 토큰 재사용 가능)
+#   - GitLab CI Variables 의 DOPPLER_TOKEN_PRD 값과 동일.
+#   - 또는 Doppler 대시보드에서 새 서비스 토큰 발급.
+
+# Cron 등록 — DOPPLER_TOKEN 은 crontab 줄에 직접 박는다 (cron 은 사용자
+# 셸 환경변수를 상속하지 않음).
 crontab -e
 # 추가:
-# 0 3 * * * /opt/folio/infra/scripts/backup.sh >> /opt/folio/data/backups/backup.log 2>&1
+# 0 3 * * * DOPPLER_TOKEN=dt.st.xxxxxxxxxxxx /opt/folio/infra/scripts/backup.sh >> /opt/folio/data/backups/backup.log 2>&1
 
-# 스크립트 실행 권한
-chmod +x /opt/folio/infra/scripts/*.sh
+# 동작 확인 — 한 번 즉시 실행해서 결과 보기
+DOPPLER_TOKEN=dt.st.xxxxxxxxxxxx /opt/folio/infra/scripts/backup.sh
+ls -lh /opt/folio/data/backups/daily/
+tail -50 /opt/folio/data/backups/backup.log
+```
+
+**테스트**: `pg_dump` 컨테이너 이름을 일부러 잘못 줘서 알람 메일이 오는지 1회 확인:
+```bash
+PG_CONTAINER=does-not-exist DOPPLER_TOKEN=dt.st.xxx /opt/folio/infra/scripts/backup.sh
+# → 운영자 메일함에 "[Folio][backup] FAILED rc=..." 도착해야 정상
 ```
 
 ---
